@@ -1,0 +1,41 @@
+{
+    "P1": {
+        "active": true,
+        "type": "long",
+        "element_type": ["WALL"],
+        "capacity": 1.0,
+        "min_edge_distance": 300.0,
+        "attributes": {
+            "RecessLength": 130.0,
+            "RecessHeight": 110.0,
+            "RecessInnerLength": 25.0,
+            "DistOutOfBeam": -30.0
+        }
+    },
+    "P2": {
+        "active": true,
+        "type": "long",
+        "element_type": ["WALL"],
+        "capacity": 2.0,
+        "min_edge_distance": 350.0,
+        "attributes": {
+            "RecessLength": 130.0,
+            "RecessHeight": 110.0,
+            "RecessInnerLength": 25.0,
+            "DistOutOfBeam": -30.0
+        }
+    },
+    "P3": {
+        "active": true,
+        "type": "long",
+        "element_type": ["SANDWICH_WALL"],
+        "capacity": 2.0,
+        "min_edge_distance": 350.0,
+        "attributes": {
+            "RecessLength": 130.0,
+            "RecessHeight": 110.0,
+            "RecessInnerLength": 25.0,
+            "DistOutOfBeam": -30.0
+        }
+    }
+}

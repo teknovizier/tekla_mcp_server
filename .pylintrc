@@ -1,0 +1,5 @@
+[MAIN]
+max-line-length=200
+
+# Suppress some import warnings
+disable=E0611, E0401, C0411, C0413, W0611

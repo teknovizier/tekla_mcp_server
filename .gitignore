@@ -1,0 +1,13 @@
+__pycache__
+.github
+.vscode
+
+# Config
+config/settings.json
+config/lifting_anchor_types.json
+config/precast_element_types.json
+
+# Build
+build
+dist
+tekla_mcp.spec

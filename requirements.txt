@@ -1,0 +1,4 @@
+clr==1.0.3
+mcp==1.6.0
+pydantic==2.11.3
+pythonnet==3.0.1
