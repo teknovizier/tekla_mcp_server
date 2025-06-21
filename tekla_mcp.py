@@ -17,8 +17,7 @@ from models import (
     CustomDetailComponent,
 )
 
-from utils import (
-    get_model_and_selected_objects,
+from tools import (
     process_detail_or_component,
     process_seam_or_connection,
     insert_lifting_anchors,
@@ -30,6 +29,7 @@ from utils import (
     draw_names_on_elements,
     insert_boolean_parts_as_real_parts,
 )
+from utils import get_model_and_selected_objects
 
 
 mcp = FastMCP("Tekla MCP Server")
