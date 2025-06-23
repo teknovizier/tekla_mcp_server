@@ -43,7 +43,7 @@ class TestLiftingAnchors(unittest.TestCase):
         - Calls `get_required_anchors()` with weight and thickness parameters.
         - Ensures at least two valid anchors are selected.
         """
-        n, valid = LiftingAnchors.get_required_anchors(self.element_type, 2000, 10, self.anchor_types)
+        n, valid = LiftingAnchors.get_required_anchors(self.element_type.name, 2000, 10, self.anchor_types)
         self.assertIn("A", valid)
         self.assertEqual(n, 2)
 
@@ -57,7 +57,7 @@ class TestLiftingAnchors(unittest.TestCase):
         - Ensures the system correctly assigns four anchors.
         """
         anchor_types = {"A": {"element_type": ["WALL"], "active": True, "capacity": 1.0}}
-        n, valid = LiftingAnchors.get_required_anchors(self.element_type, 3600, 10, anchor_types)
+        n, valid = LiftingAnchors.get_required_anchors(self.element_type.name, 3600, 10, anchor_types)
         self.assertEqual(n, 4)
         self.assertIn("A", valid)
 
@@ -72,7 +72,7 @@ class TestLiftingAnchors(unittest.TestCase):
         """
         anchor_types = {"A": {"element_type": ["WALL"], "active": True, "capacity": 0.1}}
         with self.assertRaises(ValueError):
-            LiftingAnchors.get_required_anchors(self.element_type, 10000, 10, anchor_types)
+            LiftingAnchors.get_required_anchors(self.element_type.name, 10000, 10, anchor_types)
 
     def test_calculate_anchor_placement_valid(self):
         """

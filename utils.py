@@ -51,10 +51,10 @@ STRING_MATCH_TYPE_MAPPING = {
     StringMatchType.NOT_ENDS_WITH: StringOperatorType.NOT_ENDS_WITH,
 }
 
-# Precast element types
-with open(Path(__file__).parent.joinpath("config", "precast_element_types.json"), "r", encoding="utf-8") as file:
-    precast_element_types = json.load(file)
-    PRECAST_ELEMENT_TYPE_MAPPING = {getattr(PrecastElementType, key): value for key, value in precast_element_types.items()}
+# Element types by material (supports both "Steel" and "Concrete")
+with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", encoding="utf-8") as file:
+    ELEMENT_TYPE_MAPPING: dict[str, dict[str, list[int]]] = json.load(file)
+
 
 # Lifting anchor types
 with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"), "r", encoding="utf-8") as file:
@@ -191,18 +191,19 @@ def insert_component(selected_object: ModelObject, number: int, name: str, attri
     return c.Insert()
 
 
-def get_element_type_by_class(class_number: str) -> str | None:
+def get_element_type_by_class(class_number: str) -> tuple[str, str] | None:
     """
-    Returns the element type name for a given class number using the provided mapping.
+    Returns (material, element type name) for a given class number using the mapping.
     """
     try:
         class_number = int(class_number)
     except (ValueError, TypeError):
         return None
 
-    for element_type, class_numbers in PRECAST_ELEMENT_TYPE_MAPPING.items():
-        if class_number in class_numbers:
-            return element_type
+    for material, types in ELEMENT_TYPE_MAPPING.items():
+        for element_type, class_numbers in types.items():
+            if class_number in class_numbers:
+                return material, element_type
     return None
 
 

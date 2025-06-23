@@ -5,7 +5,7 @@ __pycache__
 # Config
 config/settings.json
 config/lifting_anchor_types.json
-config/precast_element_types.json
+config/element_types.json
 
 # Build
 build

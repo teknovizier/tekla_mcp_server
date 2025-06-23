@@ -111,7 +111,7 @@ class LiftingAnchors(BaseModel):
             required_capacity += required_capacity * safety_margin / 100
 
             # Find anchors that meet the capacity requirement
-            valid_anchors = {key: value for key, value in anchor_types.items() if value["capacity"] >= required_capacity and element_type.name in value["element_type"] and value["active"]}
+            valid_anchors = {key: value for key, value in anchor_types.items() if value["capacity"] >= required_capacity and element_type in value["element_type"] and value["active"]}
 
             if valid_anchors:
                 break  # Stop if valid anchors are found

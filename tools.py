@@ -24,7 +24,7 @@ from utils import (
     insert_component,
     insert_detail,
     insert_seam,
-    PRECAST_ELEMENT_TYPE_MAPPING,
+    ELEMENT_TYPE_MAPPING,
     STRING_MATCH_TYPE_MAPPING,
     LIFTING_ANCHOR_TYPES,
 )
@@ -145,9 +145,11 @@ def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_obj
     total_weight = weight * 1.05
 
     # Get element type by class
-    element_type = get_element_type_by_class(selected_object.Class)
-    if not element_type:
+    material, element_type = get_element_type_by_class(selected_object.Class)
+    if not material or not element_type:
         raise ValueError("Failed to get element type.")
+    if material != "Concrete":
+        raise ValueError(f"Unsupported material type: {material}. Only concrete elements are supported.")
 
     # Calculate the necessary number of anchors and get their type
     number_of_anchors, valid_anchors = LiftingAnchors.get_required_anchors(element_type, total_weight, component.safety_margin, LIFTING_ANCHOR_TYPES)
@@ -278,7 +280,10 @@ def select_elements_by_filter(element_type: Union[list[int], PrecastElementType]
         if isinstance(element_type, list):
             tekla_classes = element_type
         elif isinstance(element_type, PrecastElementType):
-            tekla_classes = PRECAST_ELEMENT_TYPE_MAPPING.get(element_type, [])
+            tekla_classes = []
+            for material_types in ELEMENT_TYPE_MAPPING.values():
+                if element_type.name in material_types:
+                    tekla_classes.extend(material_types[element_type.name])
         else:
             raise ValueError("Invalid input. Please enter a Tekla class number or element type.")
 

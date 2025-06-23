@@ -41,7 +41,7 @@ Python 3.11, along with some libraries, is required. You can install all the nec
 | `tekla_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin" | The path to the directory where Tekla Structures is located                      |
 
 * Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
-* Rename `config/precast_element_types.sample.json` to `config/precast_element_types.json`, and set the values of Tekla classes used in your model
+* Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model
 * Configure `tekla_mcp.py` as a custom MCP server in your MCP client
 
 ## Distribution
