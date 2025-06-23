@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 
 
 from models import (
+    SelectionMode,
     StringMatchType,
     PrecastElementType,
     ComponentType,
@@ -25,7 +26,7 @@ from tools import (
     remove_components,
     insert_custom_detail_component,
     select_elements_by_filter,
-    get_selected_elements_as_assemblies,
+    select_assemblies_or_main_parts,
     draw_names_on_elements,
     insert_boolean_parts_as_real_parts,
 )
@@ -101,13 +102,13 @@ def select_elements(element_type: Union[list[int], PrecastElementType] = None, n
 
 
 @mcp.tool()
-def select_elements_assemblies() -> dict[str, Any]:
+def select_elements_assemblies_or_main_parts(mode: SelectionMode) -> dict[str, Any]:
     """
     Selects assemblies selected elements belong to.
     """
     try:
         _, selected_objects = get_model_and_selected_objects()
-        count = get_selected_elements_as_assemblies(selected_objects)
+        count = select_assemblies_or_main_parts(selected_objects, mode)
         if count:
             return {"status": "success", "selected_elements": count}
         else:

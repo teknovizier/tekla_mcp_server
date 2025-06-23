@@ -10,6 +10,15 @@ from enum import Enum
 from pydantic import BaseModel, Field, PrivateAttr, PositiveInt, PositiveFloat, conint, confloat
 
 
+class SelectionMode(Enum):
+    """
+    Represents selection modes for Tekla objects.
+    """
+
+    ASSEMBLY = "Assembly"
+    MAIN_PART = "Main Part"
+
+
 class StringMatchType(Enum):
     """
     Represents the matching types for String objects:

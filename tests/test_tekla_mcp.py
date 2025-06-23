@@ -8,6 +8,7 @@ Tested modules:
 import unittest
 
 from models import (
+    SelectionMode,
     StringMatchType,
     PrecastElementType,
     LiftingAnchors,
@@ -18,7 +19,7 @@ from tekla_mcp import (
     remove_wall_lifting_anchors,
     put_custom_detail_components,
     select_elements,
-    select_elements_assemblies,
+    select_elements_assemblies_or_main_parts,
     draw_elements_names,
     convert_cut_parts_to_real_parts,
 )
@@ -258,12 +259,17 @@ class UnitTests(unittest.TestCase):
 
         Steps:
         - Selects `self.test_wall1` and `self.test_wall2`.
-        - Calls `select_elements_assemblies()`.
-        - Verifies that assemblies are selected correctly with "success" status.
+        - Calls `select_elements_assemblies`.
+        - Verifies that assemblies or main parts are selected correctly with "success" status.
         - Ensures the expected number of selected elements is correct.
         """
         self.select_test_elements([self.test_wall1, self.test_wall2])
-        result = select_elements_assemblies()
+        result = select_elements_assemblies_or_main_parts(SelectionMode.ASSEMBLY)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["selected_elements"], 2)
+
+        self.select_test_elements([self.test_wall1, self.test_wall2])
+        result = select_elements_assemblies_or_main_parts(SelectionMode.MAIN_PART)
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["selected_elements"], 2)
 

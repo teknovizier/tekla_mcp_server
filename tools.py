@@ -7,6 +7,7 @@ import re
 
 from init import load_dlls, logger
 from models import (
+    SelectionMode,
     StringMatchType,
     PrecastElementType,
     ComponentType,
@@ -310,16 +311,21 @@ def select_elements_by_filter(element_type: Union[list[int], PrecastElementType]
     return filtered_parts.Count
 
 
-def get_selected_elements_as_assemblies(selected_objects: ModelObjectEnumerator) -> int:
+def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mode: SelectionMode) -> int:
     """
-    Returns assemblies for the given selected objects.
+    Returns assemblies or main parts for the given selected objects.
     """
     # Process filtered parts
     filtered_parts = ArrayList()
     for selected_object in selected_objects:
         assembly = selected_object.GetAssembly()
+        while assembly is not None and assembly.GetAssembly() is not None:
+            assembly = assembly.GetAssembly()  # Find the top-level assembly
         if isinstance(assembly, Assembly):
-            filtered_parts.Add(assembly)
+            if mode == SelectionMode.ASSEMBLY:
+                filtered_parts.Add(assembly)
+            elif mode == SelectionMode.MAIN_PART:
+                filtered_parts.Add(assembly.GetMainPart())
 
     selector = ModelObjectSelector()
     selector.Select(filtered_parts)
