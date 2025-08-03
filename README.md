@@ -33,7 +33,7 @@ The server provides the following tools:
 
 Python 3.11 or newer, along with some libraries, is required. You can install all the necessary libraries by running:
 
-    $ pip install -r requirements.txt
+    $ uv pip install -r requirements.txt
 
 You may experience a naming conflict with the `clr` string styling package. A solution is to rename or delete the folder `C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\site-packages\clr`.
 
@@ -53,7 +53,7 @@ You may experience a naming conflict with the `clr` string styling package. A so
 
 A standalone binary file can be created using [PyInstaller](https://pyinstaller.org) for easier distribution. To do this, install PyInstaller:
 
-    $ pip install pyinstaller
+    $ uv pip install pyinstaller
 
 Then, generate an executable with:
 
