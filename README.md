@@ -24,7 +24,7 @@ The server provides the following tools:
 - `remove_wall_lifting_anchors`: Remove `Lifting Anchor (80)` Tekla components from the selected elements
 - `put_custom_detail_components`: Insert custom detail components with specified name to the selected elements
 - `select_elements`: Select elements in Tekla model based on their type or Tekla class and name
-- `select_elements_by_guid`: Select elements in Tekla model by their GUID
+- `select_elements_using_guid`: Select elements in Tekla model by their GUID
 - `select_elements_assemblies_or_main_parts`: Get assemblies or main parts for the elements selected in Tekla model and select them
 - `draw_elements_names`: Draw the temporary names for the selected elements in Tekla in the currently active rendered view
 - `convert_cut_parts_to_real_parts`: Convert all cut parts in the selected elements into real model parts
