@@ -33,7 +33,7 @@ from utils import (
 # Tekla OpenAPI imports
 load_dlls()
 from System.Collections import ArrayList
-from Tekla.Structures import TeklaStructuresDatabaseTypeEnum
+from Tekla.Structures import Identifier, TeklaStructuresDatabaseTypeEnum
 from Tekla.Structures.Geometry3d import Point
 from Tekla.Structures.Model import (
     Model,
@@ -309,6 +309,24 @@ def select_elements_by_filter(element_type: Union[list[int], PrecastElementType]
     selector.Select(filtered_parts)
     assert tekla_objects.GetSize(), filtered_parts.Count
     return filtered_parts.Count
+
+
+def select_elements_by_guid(guids: list[str]) -> int:
+    """
+    Selects elements in the Tekla model by their GUID.
+    """
+    model = get_tekla_model()
+
+    objects_to_select = ArrayList()
+    for guid in guids:
+        obj = model.SelectModelObject(Identifier(guid))
+        if obj is not None:
+            objects_to_select.Add(obj)
+
+    selector = ModelObjectSelector()
+    selector.Select(objects_to_select)
+
+    return objects_to_select.Count
 
 
 def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mode: SelectionMode) -> int:

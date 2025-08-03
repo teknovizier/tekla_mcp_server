@@ -19,6 +19,7 @@ from tekla_mcp import (
     remove_wall_lifting_anchors,
     put_custom_detail_components,
     select_elements,
+    select_elements_using_guid,
     select_elements_assemblies_or_main_parts,
     draw_elements_names,
     convert_cut_parts_to_real_parts,
@@ -30,7 +31,6 @@ from utils import get_tekla_model
 # Tekla OpenAPI imports
 load_dlls()
 from System.Collections import ArrayList
-from Tekla.Structures import Identifier
 from Tekla.Structures.Geometry3d import Point
 from Tekla.Structures.Model import Beam, Model, Position
 from Tekla.Structures.Model.UI import ModelObjectSelector, ViewHandler
@@ -45,6 +45,7 @@ class UnitTests(unittest.TestCase):
     - Removing wall lifting anchors
     - Adding a custom component
     - Selecting specified elements
+    - Selecting elements by GUID
     - Selecting assemblies the specified elements belong to
     """
 
@@ -252,6 +253,35 @@ class UnitTests(unittest.TestCase):
 
         result = select_elements(name_match_type=StringMatchType.IS_EQUAL)
         self.assertEqual(result["status"], "error")
+
+    def test_select_elements_using_guid(self):
+        """
+        Tests the `select_elements_using_guid` function, ensuring it correctly selects elements based on their GUID.
+
+        Steps:
+        - Tests invalid inputs like a single integer or string instead of a list.
+        - Checks selection of specific elements.
+        """
+        result = select_elements_using_guid([])
+        self.assertEqual(result["status"], "error")
+
+        # Check `int` instead of `list[str]`
+        result = select_elements_using_guid(0)
+        self.assertEqual(result["status"], "error")
+        
+        # Check `str` instead of `list[str]`
+        result = select_elements_using_guid("TEST_WALL2")
+        self.assertEqual(result["status"], "error")
+
+        # Check wall `TEST_WALL2`
+        result = select_elements_using_guid([self.test_wall2.Identifier.GUID.ToString()])
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["selected_elements"], 1)
+
+        # Check walls `TEST_WALL1` and `TEST_WALL2`
+        result = select_elements_using_guid([self.test_wall1.Identifier.GUID.ToString(), self.test_wall2.Identifier.GUID.ToString()])
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["selected_elements"], 2)
 
     def test_select_elements_assemblies(self):
         """

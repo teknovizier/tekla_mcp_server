@@ -26,6 +26,7 @@ from tools import (
     remove_components,
     insert_custom_detail_component,
     select_elements_by_filter,
+    select_elements_by_guid,
     select_assemblies_or_main_parts,
     draw_names_on_elements,
     insert_boolean_parts_as_real_parts,
@@ -94,6 +95,19 @@ def select_elements(element_type: Union[list[int], PrecastElementType] = None, n
     """
     try:
         count = select_elements_by_filter(element_type, name, name_match_type)
+        if count:
+            return {"status": "success", "selected_elements": count}
+        return {"status": "error", "message": "No elements have been selected."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool()
+def select_elements_using_guid(guids: list[str]) -> dict[str, Any]:
+    """
+    Selects elements by their GUID.
+    """
+    try:
+        count = select_elements_by_guid(guids)
         if count:
             return {"status": "success", "selected_elements": count}
         return {"status": "error", "message": "No elements have been selected."}
