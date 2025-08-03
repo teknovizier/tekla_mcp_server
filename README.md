@@ -29,9 +29,11 @@ The server provides the following tools:
 
 ## Requirements
 
-Python 3.11, along with some libraries, is required. You can install all the necessary libraries by running:
+Python 3.11 or newer, along with some libraries, is required. You can install all the necessary libraries by running:
 
     $ pip install -r requirements.txt
+
+You may experience a naming conflict with the `clr` string styling package. A solution is to rename or delete the folder `C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\site-packages\clr`.
 
 ## Setting up
 
