@@ -19,6 +19,15 @@ class SelectionMode(Enum):
     MAIN_PART = "Main Part"
 
 
+class UDASetMode(Enum):
+    """
+    Defines modes for applying UDAs to Tekla objects.
+    """
+
+    KEEP = "Keep existing values"
+    OVERWRITE = "Overwrite existing values"
+
+
 class StringMatchType(Enum):
     """
     Represents the matching types for String objects:

@@ -9,6 +9,7 @@ import unittest
 
 from models import (
     SelectionMode,
+    UDASetMode,
     StringMatchType,
     PrecastElementType,
     LiftingAnchors,
@@ -23,6 +24,7 @@ from tekla_mcp import (
     select_elements_assemblies_or_main_parts,
     draw_elements_names,
     convert_cut_parts_to_real_parts,
+    set_elements_udas,
 )
 
 from init import load_dlls
@@ -268,7 +270,7 @@ class UnitTests(unittest.TestCase):
         # Check `int` instead of `list[str]`
         result = select_elements_using_guid(0)
         self.assertEqual(result["status"], "error")
-        
+
         # Check `str` instead of `list[str]`
         result = select_elements_using_guid("TEST_WALL2")
         self.assertEqual(result["status"], "error")
@@ -333,6 +335,57 @@ class UnitTests(unittest.TestCase):
         self.select_test_elements([self.test_wall1, self.test_wall2])
         result = convert_cut_parts_to_real_parts()
         self.assertEqual(result["status"], "error")
+
+    def test_set_elements_udas(self):
+        """
+        Tests the `set_elements_udas` function to ensure correct behavior for applying UDAs
+        to Tekla model elements under different update modes.
+
+        Steps:
+        1. Select a test element (`self.test_wall1`).
+        2. Set initial UDAs using OVERWRITE mode and verify values are written correctly.
+        3. Attempt to set new UDAs using KEEP mode and confirm original values are preserved.
+        4. Overwrite UDAs with new values using OVERWRITE mode and verify changes.
+        """
+        self.select_test_elements([self.test_wall1])
+
+        # Initial UDA assignment using OVERWRITE mode
+        test_udas = {"TEST_UDA1": "TEST_VALUE_1", "TEST_UDA2": "TEST_VALUE_2"}
+        result = set_elements_udas(test_udas, UDASetMode.OVERWRITE)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["updated_elements"], 1)
+
+        uda_exists, uda_value = self.test_wall1.GetUserProperty("TEST_UDA1", str())
+        self.assertEqual(uda_exists, True)
+        self.assertEqual(uda_value, "TEST_VALUE_1")
+
+        uda_exists, uda_value = self.test_wall1.GetUserProperty("TEST_UDA2", str())
+        self.assertEqual(uda_exists, True)
+        self.assertEqual(uda_value, "TEST_VALUE_2")
+
+        # Attempt to update UDAs using KEEP mode
+        test_udas = {"TEST_UDA1": "TEST_VALUE_1_UPD", "TEST_UDA2": "TEST_VALUE_2_UPD"}
+        result = set_elements_udas(test_udas, UDASetMode.KEEP)
+
+        uda_exists, uda_value = self.test_wall1.GetUserProperty("TEST_UDA1", str())
+        self.assertEqual(uda_exists, True)
+        self.assertEqual(uda_value, "TEST_VALUE_1")
+
+        uda_exists, uda_value = self.test_wall1.GetUserProperty("TEST_UDA2", str())
+        self.assertEqual(uda_exists, True)
+        self.assertEqual(uda_value, "TEST_VALUE_2")
+
+        # Reassign UDAs using OVERWRITE mode
+        test_udas = {"TEST_UDA1": "TEST_VALUE_1_UPD", "TEST_UDA2": "TEST_VALUE_2_UPD"}
+        result = set_elements_udas(test_udas, UDASetMode.OVERWRITE)
+
+        uda_exists, uda_value = self.test_wall1.GetUserProperty("TEST_UDA1", str())
+        self.assertEqual(uda_exists, True)
+        self.assertEqual(uda_value, "TEST_VALUE_1_UPD")
+
+        uda_exists, uda_value = self.test_wall1.GetUserProperty("TEST_UDA2", str())
+        self.assertEqual(uda_exists, True)
+        self.assertEqual(uda_value, "TEST_VALUE_2_UPD")
 
 
 if __name__ == "__main__":

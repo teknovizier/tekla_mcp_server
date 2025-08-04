@@ -17,6 +17,7 @@ Verified to work correctly with [chatmcp](https://github.com/daodao97/chatmcp) a
 - Selection of main parts of the assemblies the specified elements belong to
 - Showing of temporary names for selected elements in the model
 - Converting cut parts into real parts
+- Updating of UDAs 
 
 ### Tools
 The server provides the following tools:
@@ -28,6 +29,7 @@ The server provides the following tools:
 - `select_elements_assemblies_or_main_parts`: Get assemblies or main parts for the elements selected in Tekla model and select them
 - `draw_elements_names`: Draw the temporary names for the selected elements in Tekla in the currently active rendered view
 - `convert_cut_parts_to_real_parts`: Convert all cut parts in the selected elements into real model parts
+- `set_elements_udas`: Sets custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones
 
 ## Requirements
 

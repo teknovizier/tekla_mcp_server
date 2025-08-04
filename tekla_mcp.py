@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 
 from models import (
     SelectionMode,
+    UDASetMode,
     StringMatchType,
     PrecastElementType,
     ComponentType,
@@ -30,6 +31,7 @@ from tools import (
     select_assemblies_or_main_parts,
     draw_names_on_elements,
     insert_boolean_parts_as_real_parts,
+    set_udas_on_elements,
 )
 from utils import get_model_and_selected_objects
 
@@ -101,6 +103,7 @@ def select_elements(element_type: Union[list[int], PrecastElementType] = None, n
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+
 @mcp.tool()
 def select_elements_using_guid(guids: list[str]) -> dict[str, Any]:
     """
@@ -159,6 +162,23 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
             return {"status": "success", "inserted_parts": count}
         else:
             return {"status": "error", "message": "No cut parts have been created."}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def set_elements_udas(udas: dict[str, Any], mode: UDASetMode) -> dict[str, Any]:
+    """
+    Finds boolean parts and inserts them as real model objects.
+    """
+    try:
+        _, selected_objects = get_model_and_selected_objects()
+        count = set_udas_on_elements(selected_objects, udas, mode)
+        if count:
+            return {"status": "success", "updated_elements": count}
+        else:
+            return {"status": "error", "message": "No UDAs have been updated."}
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

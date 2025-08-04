@@ -8,6 +8,7 @@ import re
 from init import load_dlls, logger
 from models import (
     SelectionMode,
+    UDASetMode,
     StringMatchType,
     PrecastElementType,
     ComponentType,
@@ -380,3 +381,21 @@ def insert_boolean_parts_as_real_parts(model: Model, selected_objects: ModelObje
     if inserted_count > 0:
         model.CommitChanges()
     return inserted_count
+
+
+def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str, Any], mode: UDASetMode) -> int:
+    """
+    Applies UDAs to a collection of Tekla model objects.
+    """
+    count = 0
+    for selected_object in selected_objects:
+        if isinstance(selected_object, ModelObject):
+            for key, value in udas.items():
+                uda_exists, _ = selected_object.GetUserProperty(key, value)
+                if mode == UDASetMode.KEEP and uda_exists:
+                    pass
+                else:
+                    selected_object.SetUserProperty(key, value)
+            count += 1
+
+    return count
