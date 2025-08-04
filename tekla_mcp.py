@@ -6,7 +6,7 @@ speed-up modeling processes.
 """
 
 from typing import Any, Callable, Union
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 
 
 from models import (
