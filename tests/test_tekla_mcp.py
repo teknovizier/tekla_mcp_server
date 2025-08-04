@@ -353,7 +353,8 @@ class UnitTests(unittest.TestCase):
         test_udas = {"TEST_UDA1": "TEST_VALUE_1", "TEST_UDA2": "TEST_VALUE_2"}
         result = set_elements_udas(test_udas, UDASetMode.OVERWRITE)
         self.assertEqual(result["status"], "success")
-        self.assertEqual(result["updated_elements"], 1)
+        self.assertEqual(result["processed_elements"], 1)
+        self.assertEqual(result["updated_attributes"], 2)
 
         uda_exists, uda_value = self.test_wall1.GetUserProperty("TEST_UDA1", str())
         self.assertEqual(uda_exists, True)

@@ -61,22 +61,30 @@ from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectF
 
 
 # Helper functions
-def process_detail_or_component(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: Model, component: Any, *args: Any, **kwargs: Any) -> int:
+def process_detail_or_component(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: Model, component: Any, *args: Any, **kwargs: Any) -> dict:
     """
     Processes a list of selected objects, applying a callback to each object that is an instance of Beam.
     Used for components that require only one primary object.
     """
-    c_counter = 0
+    processed_elements = 0
+    processed_components = 0
     for selected_object in selected_objects:
         if isinstance(selected_object, Beam):
             success = callback(model, component, selected_object, *args, **kwargs)
             if success:
-                c_counter += success
+                processed_components += success
+            processed_elements += 1
     model.CommitChanges()
-    return c_counter
+
+    return {
+        "status": "success" if processed_components else "error",
+        "total_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "processed_components": processed_components,
+    }
 
 
-def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: Model, component: Any, *args: Any, **kwargs: Any) -> int:
+def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: Model, component: Any, *args: Any, **kwargs: Any) -> dict:
     """
     Processes seams or connections between selected objects in the model.
     This function is intended for use with components that require two objects, such as wall joints.
@@ -87,14 +95,23 @@ def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback
         raise ValueError("Only one element selected. Please select two elements.")
     if total_selected > 2:
         raise ValueError("More than two elements selected.")
+
+    processed_elements = 0
+    processed_components = 0
+
     wall_pairs = get_wall_pairs(selected_objects)
-    c_counter = 0
     for pair in wall_pairs:
         success = callback(model, component, pair[1], pair[0], *args, **kwargs)
         if success:
-            c_counter += success
+            processed_components += success
     model.CommitChanges()
-    return c_counter
+
+    return {
+        "status": "success" if processed_components else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "inserted_components": processed_components,
+    }
 
 
 # Tools functions
@@ -262,7 +279,7 @@ def insert_custom_detail_component(model: Model, component: CustomDetailComponen
     return counter
 
 
-def select_elements_by_filter(element_type: Union[list[int], PrecastElementType] = None, name: str = None, name_match_type: StringMatchType = StringMatchType.IS_EQUAL) -> int:
+def select_elements_by_filter(element_type: Union[list[int], PrecastElementType] = None, name: str = None, name_match_type: StringMatchType = StringMatchType.IS_EQUAL) -> dict:
     """
     Selects elements in the Tekla model based on type, class, and name filters.
     """
@@ -309,10 +326,14 @@ def select_elements_by_filter(element_type: Union[list[int], PrecastElementType]
     selector = ModelObjectSelector()
     selector.Select(filtered_parts)
     assert tekla_objects.GetSize(), filtered_parts.Count
-    return filtered_parts.Count
+
+    return {
+        "status": "success" if filtered_parts.Count else "error",
+        "selected_elements": filtered_parts.Count,
+    }
 
 
-def select_elements_by_guid(guids: list[str]) -> int:
+def select_elements_by_guid(guids: list[str]) -> dict:
     """
     Selects elements in the Tekla model by their GUID.
     """
@@ -327,13 +348,18 @@ def select_elements_by_guid(guids: list[str]) -> int:
     selector = ModelObjectSelector()
     selector.Select(objects_to_select)
 
-    return objects_to_select.Count
+    return {
+        "status": "success" if objects_to_select.Count else "error",
+        "selected_elements": objects_to_select.Count,
+    }
 
 
-def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mode: SelectionMode) -> int:
+def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mode: SelectionMode) -> dict:
     """
     Returns assemblies or main parts for the given selected objects.
     """
+    processed_elements = 0
+    selected_object_types = ""
     # Process filtered parts
     filtered_parts = ArrayList()
     for selected_object in selected_objects:
@@ -343,33 +369,50 @@ def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mod
         if isinstance(assembly, Assembly):
             if mode == SelectionMode.ASSEMBLY:
                 filtered_parts.Add(assembly)
+                selected_object_types = "selected_assemblies"
             elif mode == SelectionMode.MAIN_PART:
                 filtered_parts.Add(assembly.GetMainPart())
+                selected_object_types = "selected_main_parts"
+        processed_elements += 1
 
     selector = ModelObjectSelector()
     selector.Select(filtered_parts)
 
-    return filtered_parts.Count
+    return {
+        "status": "success" if filtered_parts.Count else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        selected_object_types: filtered_parts.Count,
+    }
 
 
-def draw_names_on_elements(selected_objects: ModelObjectEnumerator) -> int:
+def draw_names_on_elements(selected_objects: ModelObjectEnumerator) -> dict:
     """
     Draws names for the given Tekla model objects using the GraphicsDrawer.
     """
     drawer = GraphicsDrawer()
-    count = 0
+    processed_elements = 0
+    drawn_labels = 0
     for selected_object in selected_objects:
         if isinstance(selected_object, ModelObject):
-            drawer.DrawText(get_cog_coordinates(selected_object), selected_object.Name, Color(0.0, 0.0, 0.0))
-            count += 1
-    return count
+            if drawer.DrawText(get_cog_coordinates(selected_object), selected_object.Name, Color(0.0, 0.0, 0.0)):
+                drawn_labels += 1
+            processed_elements += 1
+
+    return {
+        "status": "success" if drawn_labels else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "drawn_labels": drawn_labels,
+    }
 
 
-def insert_boolean_parts_as_real_parts(model: Model, selected_objects: ModelObjectEnumerator) -> int:
+def insert_boolean_parts_as_real_parts(model: Model, selected_objects: ModelObjectEnumerator) -> dict:
     """
     Inserts operative parts from boolean parts as real model objects.
     """
-    inserted_count = 0
+    processed_elements = 0
+    inserted_booleans = 0
     for selected_object in selected_objects:
         boolean_part_enum = selected_object.GetBooleans()
         while boolean_part_enum.MoveNext():
@@ -377,25 +420,42 @@ def insert_boolean_parts_as_real_parts(model: Model, selected_objects: ModelObje
             if isinstance(boolean_part, BooleanPart):
                 operative_part = boolean_part.OperativePart
                 if operative_part.Insert():
-                    inserted_count += 1
-    if inserted_count > 0:
+                    inserted_booleans += 1
+        processed_elements += 1
+    if inserted_booleans > 0:
         model.CommitChanges()
-    return inserted_count
+
+    return {
+        "status": "success" if inserted_booleans else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "converted_booleans": inserted_booleans,
+    }
 
 
-def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str, Any], mode: UDASetMode) -> int:
+def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str, Any], mode: UDASetMode) -> dict:
     """
     Applies UDAs to a collection of Tekla model objects.
     """
-    count = 0
+    processed_elements = 0
+    updated_attributes = 0
+    skipped_attributes = 0
     for selected_object in selected_objects:
         if isinstance(selected_object, ModelObject):
             for key, value in udas.items():
                 uda_exists, _ = selected_object.GetUserProperty(key, value)
                 if mode == UDASetMode.KEEP and uda_exists:
-                    pass
+                    skipped_attributes += 1
+                    continue
                 else:
-                    selected_object.SetUserProperty(key, value)
-            count += 1
+                    if selected_object.SetUserProperty(key, value):
+                        updated_attributes += 1
+            processed_elements += 1
 
-    return count
+    return {
+        "status": "success" if updated_attributes else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "skipped_attributes": skipped_attributes,
+        "updated_attributes": updated_attributes,
+    }

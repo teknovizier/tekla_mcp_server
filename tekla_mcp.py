@@ -46,17 +46,15 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
     """
     try:
         model, selected_objects = get_model_and_selected_objects()
-        c_counter = 0
+        result = {}
         if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
-            c_counter = process_detail_or_component(selected_objects, callback, model, component, *args, **kwargs)
+            result = process_detail_or_component(selected_objects, callback, model, component, *args, **kwargs)
         elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
-            c_counter = process_seam_or_connection(selected_objects, callback, model, component, *args, **kwargs)
+            result = process_seam_or_connection(selected_objects, callback, model, component, *args, **kwargs)
         else:
             pass  # For other types do nothing
-        if c_counter:
-            return {"status": "success", "component_amount": c_counter}
-        else:
-            return {"status": "error", "message": "no components processed"}
+        return result
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -96,10 +94,8 @@ def select_elements(element_type: Union[list[int], PrecastElementType] = None, n
     Selects specified elements based on their type or Tekla class, name, and matching criteria.
     """
     try:
-        count = select_elements_by_filter(element_type, name, name_match_type)
-        if count:
-            return {"status": "success", "selected_elements": count}
-        return {"status": "error", "message": "No elements have been selected."}
+        return select_elements_by_filter(element_type, name, name_match_type)
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -110,10 +106,8 @@ def select_elements_using_guid(guids: list[str]) -> dict[str, Any]:
     Selects elements by their GUID.
     """
     try:
-        count = select_elements_by_guid(guids)
-        if count:
-            return {"status": "success", "selected_elements": count}
-        return {"status": "error", "message": "No elements have been selected."}
+        return select_elements_by_guid(guids)
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -125,11 +119,7 @@ def select_elements_assemblies_or_main_parts(mode: SelectionMode) -> dict[str, A
     """
     try:
         _, selected_objects = get_model_and_selected_objects()
-        count = select_assemblies_or_main_parts(selected_objects, mode)
-        if count:
-            return {"status": "success", "selected_elements": count}
-        else:
-            return {"status": "error", "message": "No elements have been selected."}
+        return select_assemblies_or_main_parts(selected_objects, mode)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -142,10 +132,8 @@ def draw_elements_names() -> dict[str, Any]:
     """
     try:
         _, selected_objects = get_model_and_selected_objects()
-        count = draw_names_on_elements(selected_objects)
-        if count:
-            return {"status": "success", "selected_elements": count}
-        return {"status": "error", "message": "No element names have been drawn."}
+        return draw_names_on_elements(selected_objects)
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -157,11 +145,7 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
     """
     try:
         model, selected_objects = get_model_and_selected_objects()
-        count = insert_boolean_parts_as_real_parts(model, selected_objects)
-        if count:
-            return {"status": "success", "inserted_parts": count}
-        else:
-            return {"status": "error", "message": "No cut parts have been created."}
+        return insert_boolean_parts_as_real_parts(model, selected_objects)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -174,11 +158,7 @@ def set_elements_udas(udas: dict[str, Any], mode: UDASetMode) -> dict[str, Any]:
     """
     try:
         _, selected_objects = get_model_and_selected_objects()
-        count = set_udas_on_elements(selected_objects, udas, mode)
-        if count:
-            return {"status": "success", "updated_elements": count}
-        else:
-            return {"status": "error", "message": "No UDAs have been updated."}
+        return set_udas_on_elements(selected_objects, udas, mode)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
