@@ -19,7 +19,7 @@ from tekla_mcp import (
     put_wall_lifting_anchors,
     remove_wall_lifting_anchors,
     put_custom_detail_components,
-    select_elements_using_name_or_type,
+    select_elements_using_filter,
     select_elements_using_guid,
     select_elements_assemblies_or_main_parts,
     draw_elements_names,
@@ -175,9 +175,9 @@ class UnitTests(unittest.TestCase):
         result = put_custom_detail_components("DIR_ARR")
         self.assertEqual(result["status"], "success")
 
-    def test_select_elements_using_name_or_type(self):
+    def test_select_elements_using_filter(self):
         """
-        Tests the `select_elements_using_name_or_type` function, ensuring it correctly selects elements based on various parameters.
+        Tests the `select_elements_using_filter` function, ensuring it correctly selects elements based on various parameters.
 
         Steps:
         - Validates behavior when no elements are provided (should return "error").
@@ -187,73 +187,78 @@ class UnitTests(unittest.TestCase):
         - Validates selection by name, ensuring correct matching methods (`STARTS_WITH`, `ENDS_WITH`, `CONTAINS`).
         """
         # Nothing is specified
-        result = select_elements_using_name_or_type()
+        result = select_elements_using_filter()
         self.assertEqual(result["status"], "error")
 
-        result = select_elements_using_name_or_type([])
+        result = select_elements_using_filter([])
         self.assertEqual(result["status"], "error")
 
         # Check `int` instead of `list[int]`
-        result = select_elements_using_name_or_type(1)
+        result = select_elements_using_filter(1)
         self.assertEqual(result["status"], "error")
 
         # Check non-existing class
-        result = select_elements_using_name_or_type([-777])
+        result = select_elements_using_filter([-777])
         self.assertEqual(result["status"], "error")
 
         # Check tribunes
-        result = select_elements_using_name_or_type(PrecastElementType.TRIBUNE)
+        result = select_elements_using_filter(PrecastElementType.TRIBUNE)
         self.assertEqual(result["status"], "error")
 
         # Check walls
-        result = select_elements_using_name_or_type(PrecastElementType.WALL)
+        result = select_elements_using_filter(PrecastElementType.WALL)
         self.assertEqual(result["status"], "success")
 
-        result = select_elements_using_name_or_type([1])
+        result = select_elements_using_filter([1])
         self.assertEqual(result["status"], "success")
 
         # Check walls and sandwich walls
-        result = select_elements_using_name_or_type([1, 8])
+        result = select_elements_using_filter([1, 8])
         self.assertEqual(result["status"], "success")
 
         # Check wall `TEST_WALL2`
-        result = select_elements_using_name_or_type(PrecastElementType.WALL, "TEST_WALL2")
+        result = select_elements_using_filter(PrecastElementType.WALL, "TEST_WALL2")
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["selected_elements"], 1)
 
-        result = select_elements_using_name_or_type([8], "TEST_WALL2")
+        result = select_elements_using_filter([8], "TEST_WALL2")
         self.assertEqual(result["status"], "error")
 
-        result = select_elements_using_name_or_type([1], "TEST_WALL2")
+        result = select_elements_using_filter([1], "TEST_WALL2")
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["selected_elements"], 1)
 
-        result = select_elements_using_name_or_type(name="TEST_WALL2")
+        result = select_elements_using_filter(name="TEST_WALL2")
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["selected_elements"], 1)
 
-        result = select_elements_using_name_or_type(name="EST_WALL2", name_match_type=StringMatchType.ENDS_WITH)
+        result = select_elements_using_filter(name="EST_WALL2", name_match_type=StringMatchType.ENDS_WITH)
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["selected_elements"], 1)
 
-        result = select_elements_using_name_or_type(name="TEST_WALL2", name_match_type=StringMatchType.CONTAINS)
+        result = select_elements_using_filter(name="TEST_WALL2", name_match_type=StringMatchType.CONTAINS)
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["selected_elements"], 1)
+
+        # Check profile selection
+        result = select_elements_using_filter(element_type=PrecastElementType.WALL, profile="3000*200", profile_match_type=StringMatchType.IS_EQUAL)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["selected_elements"], 4)
 
         # Check multiple other variations
-        result = select_elements_using_name_or_type(name="TEST_WALL", name_match_type=StringMatchType.CONTAINS)
+        result = select_elements_using_filter(name="TEST_WALL", name_match_type=StringMatchType.CONTAINS)
         self.assertEqual(result["status"], "success")
 
-        result = select_elements_using_name_or_type(name="TEST_WALL8585", name_match_type=StringMatchType.STARTS_WITH)
+        result = select_elements_using_filter(name="TEST_WALL8585", name_match_type=StringMatchType.STARTS_WITH)
         self.assertEqual(result["status"], "error")
 
-        result = select_elements_using_name_or_type(name="TEST_WALL8585", name_match_type=StringMatchType.ENDS_WITH)
+        result = select_elements_using_filter(name="TEST_WALL8585", name_match_type=StringMatchType.ENDS_WITH)
         self.assertEqual(result["status"], "error")
 
-        result = select_elements_using_name_or_type(name="TEST_WALL", name_match_type=StringMatchType.IS_EQUAL)
+        result = select_elements_using_filter(name="TEST_WALL", name_match_type=StringMatchType.IS_EQUAL)
         self.assertEqual(result["status"], "error")
 
-        result = select_elements_using_name_or_type(name_match_type=StringMatchType.IS_EQUAL)
+        result = select_elements_using_filter(name_match_type=StringMatchType.IS_EQUAL)
         self.assertEqual(result["status"], "error")
 
     def test_select_elements_using_guid(self):

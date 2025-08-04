@@ -89,12 +89,18 @@ def put_custom_detail_components(component_name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def select_elements_using_name_or_type(element_type: Union[list[int], PrecastElementType] = None, name: str = None, name_match_type: StringMatchType = StringMatchType.IS_EQUAL) -> dict[str, Any]:
+def select_elements_using_filter(
+    element_type: Union[list[int], PrecastElementType] = None,
+    name: str = None,
+    name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+    profile: str = None,
+    profile_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+) -> dict[str, Any]:
     """
     Selects specified elements based on their type or Tekla class, name, and matching criteria.
     """
     try:
-        return select_elements_by_filter(element_type, name, name_match_type)
+        return select_elements_by_filter(element_type, name, name_match_type, profile, profile_match_type)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

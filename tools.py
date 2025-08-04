@@ -279,7 +279,13 @@ def insert_custom_detail_component(model: Model, component: CustomDetailComponen
     return counter
 
 
-def select_elements_by_filter(element_type: Union[list[int], PrecastElementType] = None, name: str = None, name_match_type: StringMatchType = StringMatchType.IS_EQUAL) -> dict:
+def select_elements_by_filter(
+    element_type: Union[list[int], PrecastElementType] = None,
+    name: str = None,
+    name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+    profile: str = None,
+    profile_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+) -> dict:
     """
     Selects elements in the Tekla model based on type, class, and name filters.
     """
@@ -317,6 +323,12 @@ def select_elements_by_filter(element_type: Union[list[int], PrecastElementType]
         match_type = STRING_MATCH_TYPE_MAPPING.get(name_match_type)
         filter_name = BinaryFilterExpression(PartFilterExpressions.Name(), match_type, StringConstantFilterExpression(name))
         filter_collection.Add(BinaryFilterExpressionItem(filter_name, BinaryFilterOperatorType.BOOLEAN_AND))
+
+    # Filter on profile
+    if profile:
+        match_type = STRING_MATCH_TYPE_MAPPING.get(profile_match_type)
+        filter_profile = BinaryFilterExpression(PartFilterExpressions.Profile(), match_type, StringConstantFilterExpression(profile))
+        filter_collection.Add(BinaryFilterExpressionItem(filter_profile, BinaryFilterOperatorType.BOOLEAN_AND))
 
     tekla_objects = model.GetModelObjectSelector().GetObjectsByFilter(filter_collection)
     filtered_parts = ArrayList()

@@ -11,7 +11,7 @@ Verified to work correctly with [chatmcp](https://github.com/daodao97/chatmcp) a
 ### Features
 - Insert/remove `Lifting Anchor (80)` Tekla component
 - Insert custom components
-- Selection of elements based on their type or Tekla class and name
+- Selection of elements based on their type or Tekla class and name or profile
 - Selection of elements by their GUID
 - Selection of assemblies the specified elements belong to
 - Selection of main parts of the assemblies the specified elements belong to
@@ -24,7 +24,7 @@ The server provides the following tools:
 - `put_wall_lifting_anchors`: Insert `Lifting Anchor (80)` Tekla components in the selected elements
 - `remove_wall_lifting_anchors`: Remove `Lifting Anchor (80)` Tekla components from the selected elements
 - `put_custom_detail_components`: Insert custom detail components with specified name to the selected elements
-- `select_elements_using_name_or_type`: Select elements in Tekla model based on their type or Tekla class and name
+- `select_elements_using_filter`: Select elements in Tekla model based on their type or Tekla class and name or profile
 - `select_elements_using_guid`: Select elements in Tekla model by their GUID
 - `select_elements_assemblies_or_main_parts`: Get assemblies or main parts for the elements selected in Tekla model and select them
 - `draw_elements_names`: Draw the temporary names for the selected elements in Tekla in the currently active rendered view
