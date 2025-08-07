@@ -7,7 +7,9 @@ Tested modules:
 
 import pytest
 
-from models import PrecastElementType, LiftingAnchors
+from pydantic_core import ValidationError
+
+from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, PrecastElementTypeModel, ComponentTypeModel, PrecastElementType, LiftingAnchors
 
 
 @pytest.fixture
@@ -147,3 +149,181 @@ def test_calculate_anchor_placement_distances_are_multiples_of_5():
     distance_from_start, distance_from_end, _ = res
     assert distance_from_start % 5 == 0
     assert distance_from_end % 5 == 0
+
+
+@pytest.mark.parametrize(
+    "input_val,expected_enum",
+    [
+        ("Assembly", "ASSEMBLY"),
+        ("Main Part", "MAIN_PART"),
+    ],
+)
+def test_selection_mode_model_valid(input_val, expected_enum):
+    """Tests SelectionModeModel with valid values."""
+    model = SelectionModeModel(value=input_val)
+    assert model.to_enum().name == expected_enum
+
+
+@pytest.mark.parametrize(
+    "input_val",
+    [
+        "Assemblies",
+        "Parts",
+        "",
+        "Random",
+    ],
+)
+def test_selection_mode_model_invalid(input_val):
+    """Tests SelectionModeModel with invalid values."""
+    with pytest.raises(ValidationError):
+        SelectionModeModel(value=input_val)
+
+
+@pytest.mark.parametrize(
+    "input_val,expected_enum",
+    [
+        ("Keep Existing Values", "KEEP"),
+        ("Overwrite Existing Values", "OVERWRITE"),
+    ],
+)
+def test_uda_set_mode_model_valid(input_val, expected_enum):
+    """
+    Checks UDASetModeModel accepts valid values and maps to correct enum.
+    """
+    model = UDASetModeModel(value=input_val)
+    assert model.to_enum().name == expected_enum
+
+
+@pytest.mark.parametrize(
+    "input_val",
+    [
+        "Invalid Mode",
+        "",
+        "Keep",
+        "Overwrite",
+    ],
+)
+def test_uda_set_mode_model_invalid(input_val):
+    """
+    Checks UDASetModeModel raises error for invalid values.
+    """
+    with pytest.raises(ValidationError):
+        UDASetModeModel(value=input_val)
+
+
+@pytest.mark.parametrize(
+    "input_val,expected_enum",
+    [
+        ("Is Equal", "IS_EQUAL"),
+        ("Is Not Equal", "IS_NOT_EQUAL"),
+        ("Contains", "CONTAINS"),
+        ("Not Contains", "NOT_CONTAINS"),
+        ("Starts With", "STARTS_WITH"),
+        ("Not Starts With", "NOT_STARTS_WITH"),
+        ("Ends With", "ENDS_WITH"),
+        ("Not Ends With", "NOT_ENDS_WITH"),
+    ],
+)
+def test_string_match_type_model_valid(input_val, expected_enum):
+    """
+    Checks StringMatchTypeModel accepts valid values and maps to correct enum.
+    """
+    model = StringMatchTypeModel(value=input_val)
+    assert model.to_enum().name == expected_enum
+
+
+@pytest.mark.parametrize(
+    "input_val",
+    [
+        "Equals",
+        "NotEquals",
+        "",
+        "is equal",
+        "Random",
+    ],
+)
+def test_string_match_type_model_invalid(input_val):
+    """
+    Checks StringMatchTypeModel raises error for invalid values.
+    """
+    with pytest.raises(ValidationError):
+        StringMatchTypeModel(value=input_val)
+
+
+@pytest.mark.parametrize(
+    "input_val,expected_enum",
+    [
+        ("Wall", "WALL"),
+        ("Sandwich Wall", "SANDWICH_WALL"),
+        ("Stair Flight", "STAIR_FLIGHT"),
+        ("Hollow Core Slab", "HCS"),
+        ("Massive Slab", "MASSIVE_SLAB"),
+        ("Column", "COLUMN"),
+        ("Beam", "BEAM"),
+        ("Filigree Wall", "FILIGREE_WALL"),
+        ("Filigree Slab", "FILIGREE_SLAB"),
+        ("Tribune", "TRIBUNE"),
+        ("TT Slab", "TT_SLAB"),
+        ("Balcony Slab", "BALCONY_SLAB"),
+        ("Stair Landing", "STAIR_LANDING"),
+        ("Curved Stair", "CURVED_STAIR"),
+    ],
+)
+def test_precast_element_type_model_valid(input_val, expected_enum):
+    """
+    Checks PrecastElementTypeModel accepts valid values and maps to correct enum.
+    """
+    model = PrecastElementTypeModel(value=input_val)
+    assert model.to_enum().name == expected_enum
+
+
+@pytest.mark.parametrize(
+    "input_val",
+    [
+        "Walll",
+        "Slab",
+        "",
+        "Random",
+    ],
+)
+def test_precast_element_type_model_invalid(input_val):
+    """
+    Checks PrecastElementTypeModel raises error for invalid values.
+    """
+    with pytest.raises(ValidationError):
+        PrecastElementTypeModel(value=input_val)
+
+
+@pytest.mark.parametrize(
+    "input_val,expected_enum",
+    [
+        ("Component", "COMPONENT"),
+        ("Connection", "CONNECTION"),
+        ("Custom Part", "CUSTOM_PART"),
+        ("Detail", "DETAIL"),
+        ("Seam", "SEAM"),
+    ],
+)
+def test_component_type_model_valid(input_val, expected_enum):
+    """
+    Checks ComponentTypeModel accepts valid values and maps to correct enum.
+    """
+    model = ComponentTypeModel(value=input_val)
+    assert model.to_enum().name == expected_enum
+
+
+@pytest.mark.parametrize(
+    "input_val",
+    [
+        "componentt",
+        "details",
+        "",
+        "Random",
+    ],
+)
+def test_component_type_model_invalid(input_val):
+    """
+    Checks ComponentTypeModel raises error for invalid values.
+    """
+    with pytest.raises(ValidationError):
+        ComponentTypeModel(value=input_val)

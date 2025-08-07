@@ -7,25 +7,13 @@ Tested modules:
 
 import pytest
 
+from fastmcp import Client
+
 from models import (
-    SelectionMode,
-    UDASetMode,
-    StringMatchType,
-    PrecastElementType,
     LiftingAnchors,
 )
 
-from tekla_mcp import (
-    put_wall_lifting_anchors,
-    remove_wall_lifting_anchors,
-    put_custom_detail_components,
-    select_elements_using_filter,
-    select_elements_using_guid,
-    select_elements_assemblies_or_main_parts,
-    draw_elements_names,
-    convert_cut_parts_to_real_parts,
-    set_elements_udas,
-)
+from tekla_mcp import mcp
 
 from init import load_dlls
 from utils import get_tekla_model
@@ -88,7 +76,8 @@ def model_objects():
     model.CommitChanges()
 
 
-def test_put_wall_lifting_anchors_walls(model_objects):
+@pytest.mark.asyncio
+async def test_put_wall_lifting_anchors_walls(model_objects):
     """
     Validates the `put_wall_lifting_anchors` function for standard walls.
 
@@ -99,11 +88,19 @@ def test_put_wall_lifting_anchors_walls(model_objects):
     - Ensures that the operation returns a "success" status.
     """
     select_elements([model_objects["test_wall1"]])
-    assert put_wall_lifting_anchors(LiftingAnchors())["status"] == "success"
-    assert put_wall_lifting_anchors(LiftingAnchors(safety_margin=10))["status"] == "success"
+
+    async with Client(mcp) as client:
+        # Default parameters
+        result1 = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors()})
+        assert result1.data["status"] == "success"
+
+        # Custom safety margin
+        result2 = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors(safety_margin=10)})
+        assert result2.data["status"] == "success"
 
 
-def test_put_wall_lifting_anchors_sandwich(model_objects):
+@pytest.mark.asyncio
+async def test_put_wall_lifting_anchors_sandwich(model_objects):
     """
     Validates the `put_wall_lifting_anchors` function for sandwich walls.
 
@@ -113,10 +110,13 @@ def test_put_wall_lifting_anchors_sandwich(model_objects):
     - Ensures the operation completes successfully.
     """
     select_elements([model_objects["test_sw1"]])
-    assert put_wall_lifting_anchors(LiftingAnchors())["status"] == "success"
+    async with Client(mcp) as client:
+        result = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors()})
+        assert result.data["status"] == "success"
 
 
-def test_remove_wall_lifting_anchors(model_objects):
+@pytest.mark.asyncio
+async def test_remove_wall_lifting_anchors(model_objects):
     """
     Tests the removal of wall lifting anchors using `remove_wall_lifting_anchors`.
 
@@ -126,11 +126,14 @@ def test_remove_wall_lifting_anchors(model_objects):
     - Ensures that the function successfully removes the anchors.
     """
     select_elements([model_objects["test_wall1"]])
-    put_wall_lifting_anchors(LiftingAnchors())
-    assert remove_wall_lifting_anchors()["status"] == "success"
+    async with Client(mcp) as client:
+        _ = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors()})
+        result2 = await client.call_tool("remove_wall_lifting_anchors")
+        assert result2.data["status"] == "success"
 
 
-def test_put_custom_detail_components(model_objects):
+@pytest.mark.asyncio
+async def test_put_custom_detail_components(model_objects):
     """
     Tests the `put_custom_detail_components` function.
 
@@ -140,86 +143,97 @@ def test_put_custom_detail_components(model_objects):
     - Ensures successful placement.
     """
     select_elements([model_objects["test_wall1"], model_objects["test_wall2"]])
-    assert put_custom_detail_components("DIR_ARR")["status"] == "success"
-
-
-@pytest.mark.parametrize(
-    "args,expected_status",
-    [
-        ({}, "error"),
-        ([], "error"),
-        (1, "error"),
-        ([-777], "error"),
-        (PrecastElementType.TRIBUNE, "error"),
-        ([1], "success"),
-        ([1, 8], "success"),
-        (PrecastElementType.WALL, "success"),
-    ],
-)
-def test_select_elements_filter_basic(args, expected_status):
-    """
-    Tests the `select_elements_using_filter` function, ensuring it correctly selects elements based on various parameters.
-
-    Steps:
-    - Validates behavior when no elements are provided (should return "error").
-    - Tests invalid inputs like a single integer instead of a list.
-    - Ensures non-existing classes return "error".
-    - Checks selection of specific element types (`WALL`, `TRIBUNE`, etc.).
-    """
-    assert select_elements_using_filter(args)["status"] == expected_status
+    async with Client(mcp) as client:
+        result = await client.call_tool("put_custom_detail_components", {"component_name": "DIR_ARR"})
+        assert result.data["status"] == "success"
 
 
 @pytest.mark.parametrize(
     "kwargs,expected",
     [
-        ({"element_type": PrecastElementType.WALL, "name": "TEST_WALL2"}, 1),
-        ({"element_type": [8], "name": "TEST_WALL2"}, None),
-        ({"element_type": [1], "name": "TEST_WALL2"}, 1),
-        ({"name": "TEST_WALL2"}, 1),
-        ({"name": "EST_WALL2", "name_match_type": StringMatchType.ENDS_WITH}, 1),
-        ({"name": "TEST_WALL2", "name_match_type": StringMatchType.CONTAINS}, 1),
+        ({"element_type": []}, "error"),
+        ({"element_type": [-777]}, "error"),
+        ({"element_type": "Tribune"}, "error"),
+        ({"element_type": [1]}, "success"),
+        ({"element_type": 1}, "success"),
+        ({"element_type": [1, 8]}, "success"),
+        ({"element_type": "Wall"}, "success"),
     ],
 )
-def test_select_elements_by_name(kwargs, expected):
+@pytest.mark.asyncio
+async def test_select_elements_filter_basic(kwargs, expected):
+    """
+    Tests the `select_elements_using_filter` function, ensuring it correctly selects elements based on various parameters.
+
+    Steps:
+    - Validates behavior when no elements are provided (should return "error").
+    - Ensures non-existing classes return "error".
+    - Checks selection of specific element types (`WALL`, `TRIBUNE`, etc.).
+    """
+    async with Client(mcp) as client:
+        result = await client.call_tool("select_elements_using_filter", kwargs)
+        assert result.data["status"] == expected
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        ({"element_type": "Wall", "name": "TEST_WALL2"}, 1),
+        ({"element_type": [8], "name": "TEST_WALL2"}, None),
+        ({"element_type": 8, "name": "TEST_WALL2"}, None),
+        ({"element_type": [1], "name": "TEST_WALL2"}, 1),
+        ({"name": "TEST_WALL2"}, 1),
+        ({"name": "EST_WALL2", "name_match_type": "Ends With"}, 1),
+        ({"name": "TEST_WALL2", "name_match_type": "Contains"}, 1),
+    ],
+)
+@pytest.mark.asyncio
+async def test_select_elements_by_name(kwargs, expected):
     """
     Steps:
     - Validates selection by type and name, ensuring correct matching methods (`STARTS_WITH`, `ENDS_WITH`, `CONTAINS`).
     """
-    result = select_elements_using_filter(**kwargs)
-    assert result["status"] == ("success" if expected else "error")
-    if expected:
-        assert result["selected_elements"] == expected
+    async with Client(mcp) as client:
+        result = await client.call_tool("select_elements_using_filter", kwargs)
+        assert result.data["status"] == ("success" if expected else "error")
+        if expected:
+            assert result.data["selected_elements"] == expected
 
 
-def test_select_elements_by_profile():
+@pytest.mark.asyncio
+async def test_select_elements_by_profile():
     """
     Steps:
-    - Validates selection by profile, ensuring correct matching methods (`STARTS_WITH`, `ENDS_WITH`, `CONTAINS`).
+    - Validates selection by profile, ensuring correct matching methods.
     """
-    result = select_elements_using_filter(element_type=PrecastElementType.WALL, profile="3000*200", profile_match_type=StringMatchType.IS_EQUAL)
-    assert result["status"] == "success"
-    assert result["selected_elements"] == 4
+    async with Client(mcp) as client:
+        result = await client.call_tool("select_elements_using_filter", {"element_type": "Wall", "profile": "3000*200", "profile_match_type": "Is Equal"})
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 4
 
 
 @pytest.mark.parametrize(
-    "name,match_type,expected_status",
+    "name,match_type,expected",
     [
-        ("TEST_WALL", StringMatchType.CONTAINS, "success"),
-        ("TEST_WALL8585", StringMatchType.STARTS_WITH, "error"),
-        ("TEST_WALL8585", StringMatchType.ENDS_WITH, "error"),
-        ("TEST_WALL", StringMatchType.IS_EQUAL, "error"),
+        ("TEST_WALL", "Contains", "success"),
+        ("TEST_WALL8585", "Starts With", "error"),
+        ("TEST_WALL8585", "Ends With", "error"),
+        ("TEST_WALL", "Is Equal", "error"),
     ],
 )
-def test_select_elements_name_matching(name, match_type, expected_status):
+@pytest.mark.asyncio
+async def test_select_elements_name_matching(name, match_type, expected):
     """
     Steps:
-    - Validates selection by name, ensuring correct matching methods (`STARTS_WITH`, `ENDS_WITH`, `CONTAINS`).
+    - Validates selection by name, ensuring correct matching methods.
     """
-    result = select_elements_using_filter(name=name, name_match_type=match_type)
-    assert result["status"] == expected_status
+    async with Client(mcp) as client:
+        result = await client.call_tool("select_elements_using_filter", {"name": name, "name_match_type": match_type})
+        assert result.data["status"] == expected
 
 
-def test_select_elements_using_guid(model_objects):
+@pytest.mark.asyncio
+async def test_select_elements_using_guid(model_objects):
     """
     Tests the `select_elements_using_guid` function, ensuring it correctly selects elements based on their GUID.
 
@@ -227,23 +241,33 @@ def test_select_elements_using_guid(model_objects):
     - Tests invalid inputs like a single integer or string instead of a list.
     - Checks selection of specific elements.
     """
-    assert select_elements_using_guid([])["status"] == "error"
-    assert select_elements_using_guid(0)["status"] == "error"
-    assert select_elements_using_guid("TEST_WALL2")["status"] == "error"
+    async with Client(mcp) as client:
+        # Invalid inputs
+        result = await client.call_tool("select_elements_using_guid", {"guids": []})
+        assert result.data["status"] == "error"
 
-    wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
-    result = select_elements_using_guid([wall2_guid])
-    assert result["status"] == "success"
-    assert result["selected_elements"] == 1
+        result = await client.call_tool("select_elements_using_guid", {"guids": [""]})
+        assert result.data["status"] == "error"
 
-    wall1_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
-    result = select_elements_using_guid([wall1_guid, wall2_guid])
-    assert result["status"] == "success"
-    assert result["selected_elements"] == 2
+        result = await client.call_tool("select_elements_using_guid", {"guids": ["TEST_WALL2"]})
+        assert result.data["status"] == "error"
+
+        # Valid single GUID
+        wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
+        result = await client.call_tool("select_elements_using_guid", {"guids": [wall2_guid]})
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 1
+
+        # Valid multiple GUIDs
+        wall1_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
+        result = await client.call_tool("select_elements_using_guid", {"guids": [wall1_guid, wall2_guid]})
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 2
 
 
-@pytest.mark.parametrize("mode, expected_count", [(SelectionMode.ASSEMBLY, 2), (SelectionMode.MAIN_PART, 2)])
-def test_select_elements_assemblies(model_objects, mode, expected_count):
+@pytest.mark.parametrize("mode, expected_count", [("Assembly", 2), ("Main Part", 2)])
+@pytest.mark.asyncio
+async def test_select_elements_assemblies(model_objects, mode, expected_count):
     """
     Tests the `select_elements_assemblies_or_main_parts` function to ensure correct assembly selection.
 
@@ -252,12 +276,15 @@ def test_select_elements_assemblies(model_objects, mode, expected_count):
     - Verifies selection behavior under different modes.
     """
     select_elements([model_objects["test_wall1"], model_objects["test_wall2"]])
-    result = select_elements_assemblies_or_main_parts(mode)
-    assert result["status"] == "success"
-    assert result["selected_elements"] == expected_count
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": mode})
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == expected_count
 
 
-def test_draw_elements_names(model_objects):
+@pytest.mark.asyncio
+async def test_draw_elements_names(model_objects):
     """
     Tests the `draw_elements_names` function to ensure it correctly labels elements.
 
@@ -266,16 +293,18 @@ def test_draw_elements_names(model_objects):
     - Calls drawing method and refreshes views.
     """
     select_elements([model_objects["test_wall1"], model_objects["test_wall2"]])
-    result = draw_elements_names()
-    assert result["status"] == "success"
-    assert result["selected_elements"] == 2
+    async with Client(mcp) as client:
+        result = await client.call_tool("draw_elements_names")
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 2
 
-    view_enum = ViewHandler.GetAllViews()
-    while view_enum.MoveNext():
-        ViewHandler.RedrawView(view_enum.Current)
+        view_enum = ViewHandler.GetAllViews()
+        while view_enum.MoveNext():
+            ViewHandler.RedrawView(view_enum.Current)
 
 
-def test_convert_cut_parts_to_real_parts(model_objects):
+@pytest.mark.asyncio
+async def test_convert_cut_parts_to_real_parts(model_objects):
     """
     Tests the `convert_cut_parts_to_real_parts` function.
 
@@ -284,12 +313,13 @@ def test_convert_cut_parts_to_real_parts(model_objects):
     - Verifies it returns "error" when no cut parts are present.
     """
     select_elements([model_objects["test_wall1"], model_objects["test_wall2"]])
-    result = convert_cut_parts_to_real_parts()
-    assert result["status"] == "error"
+    async with Client(mcp) as client:
+        result = await client.call_tool("convert_cut_parts_to_real_parts")
+        assert result.data["status"] == "error"
 
 
-# 🌟 Test: Set UDAs with different modes
-def test_set_elements_udas(model_objects):
+@pytest.mark.asyncio
+async def test_set_elements_udas(model_objects):
     """
     Tests the `set_elements_udas` function with OVERWRITE and KEEP modes.
 
@@ -301,31 +331,32 @@ def test_set_elements_udas(model_objects):
     wall = model_objects["test_wall1"]
     select_elements([wall])
 
-    # Initial UDA assignment using OVERWRITE mod
-    initial_udas = {"TEST_UDA1": "TEST_VALUE_1", "TEST_UDA2": "TEST_VALUE_2"}
-    result = set_elements_udas(initial_udas, UDASetMode.OVERWRITE)
-    assert result["status"] == "success"
-    assert result["processed_elements"] == 1
-    assert result["updated_attributes"] == 2
+    async with Client(mcp) as client:
+        # Initial UDA assignment using OVERWRITE mod
+        initial_udas = {"TEST_UDA1": "TEST_VALUE_1", "TEST_UDA2": "TEST_VALUE_2"}
+        result = await client.call_tool("set_elements_udas", {"udas": initial_udas, "mode": "Overwrite Existing Values"})
+        assert result.data["status"] == "success"
+        assert result.data["processed_elements"] == 1
+        assert result.data["updated_attributes"] == 2
 
-    exists, value = wall.GetUserProperty("TEST_UDA1", str())
-    assert exists and value == "TEST_VALUE_1"
-    exists, value = wall.GetUserProperty("TEST_UDA2", str())
-    assert exists and value == "TEST_VALUE_2"
+        exists, value = wall.GetUserProperty("TEST_UDA1", str())
+        assert exists and value == "TEST_VALUE_1"
+        exists, value = wall.GetUserProperty("TEST_UDA2", str())
+        assert exists and value == "TEST_VALUE_2"
 
-    # KEEP mode: should not overwrite
-    update_attempt = {"TEST_UDA1": "TEST_VALUE_1_UPD", "TEST_UDA2": "TEST_VALUE_2_UPD"}
-    result = set_elements_udas(update_attempt, UDASetMode.KEEP)
+        # KEEP mode: should not overwrite
+        update_attempt = {"TEST_UDA1": "TEST_VALUE_1_UPD", "TEST_UDA2": "TEST_VALUE_2_UPD"}
+        result = await client.call_tool("set_elements_udas", {"udas": update_attempt, "mode": "Keep Existing Values"})
 
-    exists, value = wall.GetUserProperty("TEST_UDA1", str())
-    assert exists and value == "TEST_VALUE_1"
-    exists, value = wall.GetUserProperty("TEST_UDA2", str())
-    assert exists and value == "TEST_VALUE_2"
+        exists, value = wall.GetUserProperty("TEST_UDA1", str())
+        assert exists and value == "TEST_VALUE_1"
+        exists, value = wall.GetUserProperty("TEST_UDA2", str())
+        assert exists and value == "TEST_VALUE_2"
 
-    # OVERWRITE mode: now it should update
-    result = set_elements_udas(update_attempt, UDASetMode.OVERWRITE)
+        # OVERWRITE mode: now it should update
+        result = await client.call_tool("set_elements_udas", {"udas": update_attempt, "mode": "Overwrite Existing Values"})
 
-    exists, value = wall.GetUserProperty("TEST_UDA1", str())
-    assert exists and value == "TEST_VALUE_1_UPD"
-    exists, value = wall.GetUserProperty("TEST_UDA2", str())
-    assert exists and value == "TEST_VALUE_2_UPD"
+        exists, value = wall.GetUserProperty("TEST_UDA1", str())
+        assert exists and value == "TEST_VALUE_1_UPD"
+        exists, value = wall.GetUserProperty("TEST_UDA2", str())
+        assert exists and value == "TEST_VALUE_2_UPD"

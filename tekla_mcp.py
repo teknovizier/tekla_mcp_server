@@ -6,14 +6,14 @@ speed-up modeling processes.
 """
 
 from typing import Any, Callable, Union
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 
 from models import (
-    SelectionMode,
-    UDASetMode,
-    StringMatchType,
-    PrecastElementType,
+    SelectionModeModel,
+    UDASetModeModel,
+    StringMatchTypeModel,
+    PrecastElementTypeModel,
     ComponentType,
     LiftingAnchors,
     CustomDetailComponent,
@@ -61,7 +61,7 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
 
 # MCP tools
 @mcp.tool()
-def put_wall_lifting_anchors(component: LiftingAnchors) -> dict[str, Any]:
+def put_wall_lifting_anchors(component: LiftingAnchors = LiftingAnchors()) -> dict[str, Any]:
     """
     Inserts wall lifting anchors into selected objects, optionally removing old anchors.
     """
@@ -90,17 +90,48 @@ def put_custom_detail_components(component_name: str) -> dict[str, Any]:
 
 @mcp.tool()
 def select_elements_using_filter(
-    element_type: Union[list[int], PrecastElementType] = None,
+    element_type: Union[int, list[int], str] = None,
     name: str = None,
-    name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+    name_match_type: str = "Is Equal",
     profile: str = None,
-    profile_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+    profile_match_type: str = "Is Equal",
 ) -> dict[str, Any]:
     """
     Selects specified elements based on their type or Tekla class, name, and matching criteria.
+
+    Valid precast element types:
+    - `Wall`
+    - `Sandwich Wall`
+    - `Stair Flight`
+    - `Hollow Core Slab`
+    - `Massive Slab`
+    - `Column`
+    - `Beam`
+    - `Filigree Wall`
+    - `Filigree Slab`
+    - `Tribune`
+    - `TT Slab`
+    - `Balcony Slab`
+    - `Stair Landing`
+    - `Curved Stair`
+
+    Valid match types:
+    - `IS_EQUAL`: Checks for exact match.
+    - `IS_NOT_EQUAL`: Checks for exact mismatch.
+    - `CONTAINS`: Checks if one string is a substring of another.
+    - `NOT_CONTAINS`: Checks if one string is not a substring of another.
+    - `STARTS_WITH`: Checks if a string starts with a specified substring.
+    - `NOT_STARTS_WITH`: Checks if a string does not start with a specified substring.
+    - `ENDS_WITH`: Checks if a string ends with a specified substring.
+    - `NOT_ENDS_WITH`: Checks if a string does not end with a specified substring.
     """
     try:
-        return select_elements_by_filter(element_type, name, name_match_type, profile, profile_match_type)
+        if isinstance(element_type, str):
+            element_type = PrecastElementTypeModel(value=element_type).to_enum()
+
+        name_match_type_object = StringMatchTypeModel(value=name_match_type)
+        profile_match_type_object = StringMatchTypeModel(value=profile_match_type)
+        return select_elements_by_filter(element_type, name, name_match_type_object.to_enum(), profile, profile_match_type_object.to_enum())
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -119,13 +150,18 @@ def select_elements_using_guid(guids: list[str]) -> dict[str, Any]:
 
 
 @mcp.tool()
-def select_elements_assemblies_or_main_parts(mode: SelectionMode) -> dict[str, Any]:
+def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
     """
     Selects assemblies selected elements belong to.
+
+    Valid modes:
+    - `Assembly`
+    - `Main Part`
     """
     try:
         _, selected_objects = get_model_and_selected_objects()
-        return select_assemblies_or_main_parts(selected_objects, mode)
+        mode_object = SelectionModeModel(value=mode)
+        return select_assemblies_or_main_parts(selected_objects, mode_object.to_enum())
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -158,13 +194,18 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
 
 
 @mcp.tool()
-def set_elements_udas(udas: dict[str, Any], mode: UDASetMode) -> dict[str, Any]:
+def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
     """
     Finds boolean parts and inserts them as real model objects.
+
+    Valid modes:
+    - `Keep Existing Values`
+    - `Overwrite Existing Values`
     """
     try:
         _, selected_objects = get_model_and_selected_objects()
-        return set_udas_on_elements(selected_objects, udas, mode)
+        mode_object = UDASetModeModel(value=mode)
+        return set_udas_on_elements(selected_objects, udas, mode_object.to_enum())
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

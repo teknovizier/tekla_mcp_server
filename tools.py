@@ -280,7 +280,7 @@ def insert_custom_detail_component(model: Model, component: CustomDetailComponen
 
 
 def select_elements_by_filter(
-    element_type: Union[list[int], PrecastElementType] = None,
+    element_type: Union[int, list[int], PrecastElementType] = None,
     name: str = None,
     name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
     profile: str = None,
@@ -302,6 +302,8 @@ def select_elements_by_filter(
     # Filter on element types = Tekla classes
     if element_type:
         tekla_classes = []
+        if isinstance(element_type, int):
+            element_type = [element_type]
         if isinstance(element_type, list):
             tekla_classes = element_type
         elif isinstance(element_type, PrecastElementType):

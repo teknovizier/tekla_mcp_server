@@ -7,9 +7,12 @@ and wall joint configurations.
 import math
 
 from enum import Enum
-from pydantic import BaseModel, Field, PrivateAttr, PositiveInt, PositiveFloat, conint, confloat
+from pydantic import BaseModel, Field, PrivateAttr, conint, confloat, field_validator
+from pydantic_core import PydanticCustomError
+from typing import ClassVar
 
 
+# Enums
 class SelectionMode(Enum):
     """
     Represents selection modes for Tekla objects.
@@ -24,21 +27,13 @@ class UDASetMode(Enum):
     Defines modes for applying UDAs to Tekla objects.
     """
 
-    KEEP = "Keep existing values"
-    OVERWRITE = "Overwrite existing values"
+    KEEP = "Keep Existing Values"
+    OVERWRITE = "Overwrite Existing Values"
 
 
 class StringMatchType(Enum):
     """
     Represents the matching types for String objects:
-    - `IS_EQUAL`: Checks for exact match.
-    - `IS_NOT_EQUAL`: Checks for exact mismatch.
-    - `CONTAINS`: Checks if one string is a substring of another.
-    - `NOT_CONTAINS`: Checks if one string is not a substring of another.
-    - `STARTS_WITH`: Checks if a string starts with a specified substring.
-    - `NOT_STARTS_WITH`: Checks if a string does not start with a specified substring.
-    - `ENDS_WITH`: Checks if a string ends with a specified substring.
-    - `NOT_ENDS_WITH`: Checks if a string does not end with a specified substring.
     """
 
     IS_EQUAL = "Is Equal"
@@ -53,7 +48,7 @@ class StringMatchType(Enum):
 
 class PrecastElementType(Enum):
     """
-    Enum representing different types of precast concrete elements.
+    Represents different types of precast concrete elements.
     """
 
     WALL = "Wall"
@@ -74,7 +69,7 @@ class PrecastElementType(Enum):
 
 class ComponentType(Enum):
     """
-    Enum representing different types of components in Tekla.
+    Represents different types of components in Tekla.
     """
 
     COMPONENT = "Component"
@@ -84,16 +79,136 @@ class ComponentType(Enum):
     SEAM = "Seam"
 
 
+# Mappings
+SELECTION_MODES = {e.value for e in SelectionMode}
+UDA_SET_MODES = {e.value for e in UDASetMode}
+STRING_MATCH_TYPES = {e.value for e in StringMatchType}
+PRECAST_ELEMENT_TYPES = {e.value for e in PrecastElementType}
+COMPONENT_TYPES = {e.value for e in ComponentType}
+
+
+# Classes
+class EnumWrapper(BaseModel):
+    """
+    A generic base model for validating string inputs against a predefined set of enum values.
+
+    This class is designed to be subclassed by specific enum models (e.g., SelectionModeModel, UDASetModeModel),
+    allowing consistent validation logic and error handling across multiple enum types.
+    """
+
+    value: str
+    _valid_values: ClassVar[set[str]] = set()
+    _error_code: ClassVar[str] = "invalid_enum"
+
+    @field_validator("value", mode="after")
+    @classmethod
+    def validate_value(cls, v: str) -> str:
+        """
+        Validates and normalizes the input string.
+        - Strips leading/trailing whitespace
+        - Checks against allowed values
+        """
+        normalized = v.strip()
+        if normalized not in cls._valid_values:
+            raise PydanticCustomError(cls._error_code, f"Invalid value: {v}. Allowed: {', '.join(cls._valid_values)}")
+        return normalized
+
+
+class SelectionModeModel(EnumWrapper):
+    """
+    Represents a validated selection mode for Tekla objects.
+    """
+
+    _valid_values = SELECTION_MODES
+    _error_code = "invalid_selection_mode"
+
+    def to_enum(self) -> SelectionMode:
+        """
+        Converts the validated string value to a enum.
+        """
+        return SelectionMode(self.value)
+
+
+class UDASetModeModel(EnumWrapper):
+    """
+    Represents a validated UDA set mode for Tekla objects.
+    """
+
+    _valid_values = UDA_SET_MODES
+    _error_code = "invalid_uda_set_mode"
+
+    def to_enum(self) -> UDASetMode:
+        """
+        Converts the validated string value to a enum.
+        """
+        return UDASetMode(self.value)
+
+
+class StringMatchTypeModel(EnumWrapper):
+    """
+    Represents a validated string match type.
+    """
+
+    _valid_values = STRING_MATCH_TYPES
+    _error_code = "invalid_string_match_mode"
+
+    def to_enum(self) -> StringMatchType:
+        """
+        Converts the validated string value to a enum.
+        """
+        return StringMatchType(self.value)
+
+
+class PrecastElementTypeModel(EnumWrapper):
+    """
+    Represents a validated precast element type.
+    """
+
+    _valid_values = PRECAST_ELEMENT_TYPES
+    _error_code = "invalid_precast_element_type"
+
+    def to_enum(self) -> PrecastElementType:
+        """
+        Converts the validated string value to a enum.
+        """
+        return PrecastElementType(self.value)
+
+
+class ComponentTypeModel(EnumWrapper):
+    """
+    Represents a validated component type.
+    """
+
+    _valid_values = COMPONENT_TYPES
+    _error_code = "invalid_component_type"
+
+    def to_enum(self) -> ComponentType:
+        """
+        Converts the validated string value to a enum.
+        """
+        return ComponentType(self.value)
+
+
 class LiftingAnchors(BaseModel):
     """
     Represents the configuration for Lifting Anchor components in the model.
     """
 
-    _name: str = PrivateAttr("Lifting Anchor")
-    _number: int = PrivateAttr(30000080)
-    _component_type: ComponentType = PrivateAttr(ComponentType.COMPONENT)
     remove_old_components: bool = Field(default=False, description="Set to true to remove existing components before placing new ones. False if they have to be kept intact.")
     safety_margin: conint(ge=0, le=50) = Field(default=5, description="Bearing capacity reserve in %. Must be between 0 and 50.")
+
+    # Private attributes
+    _name: str = PrivateAttr()
+    _number: int = PrivateAttr()
+    _component_type: ComponentType = PrivateAttr()
+
+    def model_post_init(self, __context) -> None:
+        """
+        Initializes private attributes after model creation.
+        """
+        self._name = "Lifting Anchor"
+        self._number = 30000080
+        self._component_type = ComponentType.COMPONENT
 
     # Getter methods
     @property
@@ -202,8 +317,17 @@ class CustomDetailComponent(BaseModel):
     """
 
     name: str = Field(description="The name of the custom detail component.")
-    _number: int = PrivateAttr(-1)
-    _component_type: ComponentType = PrivateAttr(ComponentType.DETAIL)
+
+    # Private attributes
+    _number: int = PrivateAttr()
+    _component_type: ComponentType = PrivateAttr()
+
+    def model_post_init(self, __context) -> None:
+        """
+        Initializes private attributes after model creation.
+        """
+        self._number = -1
+        self._component_type = ComponentType.DETAIL
 
     # Getter methods
     @property
