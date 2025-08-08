@@ -8,18 +8,17 @@ Tested modules:
 import os
 import pytest
 
-from utils import get_element_type_by_class, get_wall_pairs
+if os.getenv("CI") == "true":
+    pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-# Skip Tekla-related imports in CI
-if os.getenv("CI") != "true":
-    from init import load_dlls
+from tekla_utils import get_wall_pairs
+from init import load_dlls
 
-    # Tekla OpenAPI imports
-    load_dlls()
-    from Tekla.Structures.Model import Beam
+# Tekla OpenAPI imports
+load_dlls()
+from Tekla.Structures.Model import Beam
 
 
-@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def mock_beam(x, y, z, name="TEST_WALL"):
     """Helper for mocking beams."""
     beam = Beam()
@@ -33,31 +32,6 @@ def mock_beam(x, y, z, name="TEST_WALL"):
     return beam
 
 
-@pytest.mark.parametrize(
-    "input_val,expected",
-    [
-        ("1", ("Concrete", "WALL")),
-        ("100", ("Steel", "BEAM")),
-        ("101", ("Steel", "COLUMN")),
-        ("999999", None),
-        ("not_a_number", None),
-        (None, None),
-        (1, ("Concrete", "WALL")),
-        ("-1", None),
-    ],
-)
-def test_get_element_type_by_class_cases(input_val, expected):
-    """
-    Unit tests for `get_element_type_by_class` utility function.
-
-    Covers:
-    - Valid class strings and integers
-    - Invalid, non-integer, None, and edge cases
-    """
-    assert get_element_type_by_class(input_val) == expected
-
-
-@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_pair_two_matching_walls():
     """Checks pairing of two matching walls."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -66,7 +40,6 @@ def test_pair_two_matching_walls():
     assert result == [(wall1, wall2)]
 
 
-@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_pair_multiple_walls():
     """Checks pairing of multiple wall pairs."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -79,7 +52,6 @@ def test_pair_multiple_walls():
     assert len(result) == 2
 
 
-@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_less_than_two_elements_raises_error():
     """Checks error for less than two elements."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -87,7 +59,6 @@ def test_less_than_two_elements_raises_error():
         get_wall_pairs([wall1])
 
 
-@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_more_than_two_floors_raises_error():
     """Checks error for more than two floors."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -97,7 +68,6 @@ def test_more_than_two_floors_raises_error():
         get_wall_pairs([wall1, wall2, wall3])
 
 
-@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_z_coordinate_mismatch_raises_error():
     """Checks error for Z coordinate mismatch."""
     wall = mock_beam(0, 0, 0, "TEST_WALL")
@@ -106,7 +76,6 @@ def test_z_coordinate_mismatch_raises_error():
         get_wall_pairs([wall, wall])
 
 
-@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_non_beam_objects_are_ignored():
     """Checks that non-beam objects are ignored."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")

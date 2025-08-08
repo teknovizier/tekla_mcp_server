@@ -11,4 +11,4 @@ config/element_types.json
 # Build
 build
 dist
-tekla_mcp.spec
+mcp_server.spec

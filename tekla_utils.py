@@ -2,9 +2,7 @@
 Module for utility classes and functions used for geometry manipulations.
 """
 
-import json
 from functools import wraps
-from pathlib import Path
 from typing import Any, Callable, Union
 
 from init import load_dlls, logger
@@ -47,15 +45,6 @@ STRING_MATCH_TYPE_MAPPING = {
     StringMatchType.ENDS_WITH: StringOperatorType.ENDS_WITH,
     StringMatchType.NOT_ENDS_WITH: StringOperatorType.NOT_ENDS_WITH,
 }
-
-# Element types by material (supports both "Steel" and "Concrete")
-with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", encoding="utf-8") as file:
-    ELEMENT_TYPE_MAPPING: dict[str, dict[str, list[int]]] = json.load(file)
-
-
-# Lifting anchor types
-with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"), "r", encoding="utf-8") as file:
-    LIFTING_ANCHOR_TYPES = json.load(file)
 
 
 def get_tekla_model() -> Model:
@@ -186,22 +175,6 @@ def insert_component(selected_object: ModelObject, number: int, name: str, attri
     ci.AddInputObject(selected_object)
     c.SetComponentInput(ci)
     return c.Insert()
-
-
-def get_element_type_by_class(class_number: str) -> tuple[str, str] | None:
-    """
-    Returns (material, element type name) for a given class number using the mapping.
-    """
-    try:
-        class_number = int(class_number)
-    except (ValueError, TypeError):
-        return None
-
-    for material, types in ELEMENT_TYPE_MAPPING.items():
-        for element_type, class_numbers in types.items():
-            if class_number in class_numbers:
-                return material, element_type
-    return None
 
 
 def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelObject, ModelObject]]:

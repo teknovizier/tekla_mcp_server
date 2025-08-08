@@ -4,9 +4,11 @@ It includes classes representing different elements, component types, lifting an
 and wall joint configurations.
 """
 
+import json
 import math
 
 from enum import Enum
+from pathlib import Path
 from pydantic import BaseModel, Field, PrivateAttr, conint, confloat, field_validator
 from pydantic_core import PydanticCustomError
 from typing import ClassVar
@@ -92,6 +94,14 @@ UDA_SET_MODES = {e.value for e in UDASetMode}
 STRING_MATCH_TYPES = {e.value for e in StringMatchType}
 ELEMENT_TYPES = {e.value for e in ElementType}
 COMPONENT_TYPES = {e.value for e in ComponentType}
+
+# Element types by material (supports both "Steel" and "Concrete")
+with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", encoding="utf-8") as file:
+    ELEMENT_TYPE_MAPPING: dict[str, dict[str, list[int]]] = json.load(file)
+
+# Lifting anchor types
+with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"), "r", encoding="utf-8") as file:
+    LIFTING_ANCHOR_TYPES = json.load(file)
 
 
 # Classes
@@ -180,6 +190,22 @@ class ElementTypeModel(EnumWrapper):
         """
         return ElementType(self.value)
 
+    @staticmethod
+    def get_element_type_by_class(class_number: str) -> tuple[str, str] | None:
+        """
+        Returns (material, element type name) for a given class number using the mapping.
+        """
+        try:
+            class_number = int(class_number)
+        except (ValueError, TypeError):
+            return None
+
+        for material, types in ELEMENT_TYPE_MAPPING.items():
+            for element_type, class_numbers in types.items():
+                if class_number in class_numbers:
+                    return material, element_type
+        return None
+
 
 class ComponentTypeModel(EnumWrapper):
     """
@@ -234,7 +260,7 @@ class LiftingAnchors(BaseModel):
         return self._component_type
 
     @staticmethod
-    def get_required_anchors(element_type: str, element_weight: float, safety_margin: int, anchor_types: dict) -> tuple[int, dict]:
+    def get_required_anchors(element_type: str, element_weight: float, safety_margin: int, anchor_types: dict = LIFTING_ANCHOR_TYPES) -> tuple[int, dict]:
         """
         Determines the required number of lifting anchors for an element based on its weight and safety margin.
 

@@ -8,26 +8,23 @@ Tested modules:
 import os
 import pytest
 
+if os.getenv("CI") == "true":
+    pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
+
 from fastmcp import Client
 
 from models import LiftingAnchors
 
+from init import load_dlls
+from mcp_server import mcp
+from tekla_utils import get_tekla_model
 
-# Skip Tekla-related imports in CI
-if os.getenv("CI") != "true":
-    from init import load_dlls
-    from tekla_mcp import mcp
-    from utils import get_tekla_model
-
-    # Tekla OpenAPI imports
-    load_dlls()
-    from System.Collections import ArrayList
-    from Tekla.Structures.Geometry3d import Point
-    from Tekla.Structures.Model import Beam, Position
-    from Tekla.Structures.Model.UI import ModelObjectSelector, ViewHandler
-
-# Skip tests in CI environment
-pytestmark = pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
+# Tekla OpenAPI imports
+load_dlls()
+from System.Collections import ArrayList
+from Tekla.Structures.Geometry3d import Point
+from Tekla.Structures.Model import Beam, Position
+from Tekla.Structures.Model.UI import ModelObjectSelector, ViewHandler
 
 
 def create_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):

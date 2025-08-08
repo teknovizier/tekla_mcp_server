@@ -7,6 +7,7 @@ import re
 
 from init import load_dlls, logger
 from models import (
+    ELEMENT_TYPE_MAPPING,
     SelectionMode,
     UDASetMode,
     StringMatchType,
@@ -14,21 +15,19 @@ from models import (
     ComponentType,
     LiftingAnchors,
     CustomDetailComponent,
+    ElementTypeModel,
 )
 
-from utils import (
+from tekla_utils import (
+    STRING_MATCH_TYPE_MAPPING,
     get_tekla_model,
     get_model_and_selected_objects,
     get_cog_coordinates,
-    get_element_type_by_class,
     get_wall_pairs,
     ensure_transformation_plane,
     insert_component,
     insert_detail,
     insert_seam,
-    ELEMENT_TYPE_MAPPING,
-    STRING_MATCH_TYPE_MAPPING,
-    LIFTING_ANCHOR_TYPES,
 )
 
 # Tekla OpenAPI imports
@@ -164,14 +163,14 @@ def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_obj
     total_weight = weight * 1.05
 
     # Get element type by class
-    material, element_type = get_element_type_by_class(selected_object.Class)
+    material, element_type = ElementTypeModel.get_element_type_by_class(selected_object.Class)
     if not material or not element_type:
         raise ValueError("Failed to get element type.")
     if material != "Concrete":
         raise ValueError(f"Unsupported material type: {material}. Only concrete elements are supported.")
 
     # Calculate the necessary number of anchors and get their type
-    number_of_anchors, valid_anchors = LiftingAnchors.get_required_anchors(element_type, total_weight, component.safety_margin, LIFTING_ANCHOR_TYPES)
+    number_of_anchors, valid_anchors = LiftingAnchors.get_required_anchors(element_type, total_weight, component.safety_margin)
 
     # Get the first anchor's attributes
     first_anchor_key = next(iter(valid_anchors))

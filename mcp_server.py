@@ -33,7 +33,7 @@ from tools import (
     insert_boolean_parts_as_real_parts,
     set_udas_on_elements,
 )
-from utils import get_model_and_selected_objects
+from tekla_utils import get_model_and_selected_objects
 
 
 mcp = FastMCP("Tekla MCP Server")
