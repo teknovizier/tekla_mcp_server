@@ -32,6 +32,7 @@ from tools import (
     draw_names_on_elements,
     insert_boolean_parts_as_real_parts,
     set_udas_on_elements,
+    get_assemblies_props,
 )
 from tekla_utils import get_model_and_selected_objects
 
@@ -212,6 +213,28 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
         _, selected_objects = get_model_and_selected_objects()
         mode_object = UDASetModeModel(value=mode)
         return set_udas_on_elements(selected_objects, udas, mode_object.to_enum())
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def get_assemblies_properties():
+    """
+    Retrieves key properties for the selected assemblies in the Tekla model.
+
+    The returned data to be presented in a Markdown table format, each row represents one assembly, with columns for:
+    - Assembly Position
+    - GUID
+    - Main Part Name
+    - Profile
+    - Material
+    - Finish
+    - Class
+    """
+    try:
+        _, selected_objects = get_model_and_selected_objects()
+        return get_assemblies_props(selected_objects)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

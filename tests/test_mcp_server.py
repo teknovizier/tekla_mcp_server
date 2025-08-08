@@ -5,6 +5,7 @@ Tested modules:
 - tekla_mcp.py: Functions for managing Tekla components (lifting anchors, custom details, etc.)
 """
 
+import json
 import os
 import pytest
 
@@ -65,7 +66,7 @@ def model_objects():
     test_wall3 = create_test_beam("TEST_WALL3", Point(2000, 0, 0), Point(4000, 0, 0), "3000*200")
     test_wall4 = create_test_beam("TEST_WALL4", Point(2000, 0, 3020), Point(4000, 0, 3020), "3000*200")
     test_sw1 = create_test_beam("TEST_SW1", Point(4000, 0, 0), Point(6000, 0, 0), "3000*200", class_type="8")
-    test_slab1 = create_test_beam("TEST_SLAB1", Point(1000, 0, 3020), Point(1000, 6000, 3020), "UPB200(200X1200)", class_type="3")
+    test_slab1 = create_test_beam("TEST_SLAB1", Point(1000, 0, 3020), Point(1000, 6000, 3020), "P20(200X1200)", class_type="3")
 
     model.CommitChanges()
 
@@ -361,3 +362,63 @@ async def test_set_elements_udas(model_objects):
         assert exists and value == "TEST_VALUE_1_UPD"
         exists, value = wall.GetUserProperty("TEST_UDA2", str())
         assert exists and value == "TEST_VALUE_2_UPD"
+
+
+@pytest.mark.asyncio
+async def test_get_assemblies_properties(model_objects):
+    """
+    Tests the `get_assemblies_properties` MCP tool by selecting known Tekla elements and validating
+    their extracted assembly properties.
+    """
+    elements_to_select = [
+        model_objects["test_wall1"],
+        model_objects["test_wall2"],
+        model_objects["test_sw1"],
+        model_objects["test_slab1"],
+    ]
+    select_elements(elements_to_select)
+
+    async with Client(mcp) as client:
+        # Select assemblies
+        result = await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
+        assert result.data["status"] == "success"
+
+        result = await client.call_tool("get_assemblies_properties")
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] >= 4
+        assert result.data["processed_elements"] == 4
+
+        # Deserialize JSON result
+        assemblies = json.loads(result.data["assemblies_list"])
+        assert isinstance(assemblies, list)
+        assert len(assemblies) == 4
+
+        # Basic property validation
+        for assembly in assemblies:
+            assert isinstance(assembly["guid"], str)
+            assert isinstance(assembly["position"], str)
+            assert isinstance(assembly["main_part_name"], str)
+            assert isinstance(assembly["main_part_profile"], str)
+            assert isinstance(assembly["main_part_material"], str)
+            assert isinstance(assembly["main_part_finish"], str)
+            assert isinstance(assembly["main_part_class"], str)
+
+        # Specific checks for known elements
+        names = [a["main_part_name"] for a in assemblies]
+        profiles = {a["main_part_name"]: a["main_part_profile"] for a in assemblies}
+        classes = {a["main_part_name"]: a["main_part_class"] for a in assemblies}
+
+        assert "TEST_WALL1" in names
+        assert "TEST_WALL2" in names
+        assert "TEST_SW1" in names
+        assert "TEST_SLAB1" in names
+
+        assert profiles["TEST_WALL1"] == "3000*200"
+        assert profiles["TEST_WALL2"] == "3000*200"
+        assert profiles["TEST_SW1"] == "3000*200"
+        assert profiles["TEST_SLAB1"] == "P20(200X1200)"
+
+        assert classes["TEST_WALL1"] == "1"
+        assert classes["TEST_WALL2"] == "1"
+        assert classes["TEST_SW1"] == "8"
+        assert classes["TEST_SLAB1"] == "3"

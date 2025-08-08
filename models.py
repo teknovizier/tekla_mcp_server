@@ -372,3 +372,17 @@ class CustomDetailComponent(BaseModel):
     def component_type(self) -> str:
         """Returns `_component_type`"""
         return self._component_type
+
+
+class AssemblyProperties(BaseModel):
+    """
+    Represents key properties of an Assembly object extracted from Tekla Structures.
+    """
+
+    position: str
+    guid: str
+    main_part_name: str
+    main_part_profile: str
+    main_part_material: str
+    main_part_finish: str
+    main_part_class: str

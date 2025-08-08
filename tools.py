@@ -3,6 +3,7 @@ Module for tools used for Tekla model operations.
 """
 
 from typing import Any, Callable, Union
+import json
 import re
 
 from init import load_dlls, logger
@@ -16,6 +17,7 @@ from models import (
     LiftingAnchors,
     CustomDetailComponent,
     ElementTypeModel,
+    AssemblyProperties,
 )
 
 from tekla_utils import (
@@ -471,4 +473,43 @@ def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str
         "processed_elements": processed_elements,
         "skipped_attributes": skipped_attributes,
         "updated_attributes": updated_attributes,
+    }
+
+
+def get_assemblies_props(selected_objects: ModelObjectEnumerator):
+    """
+    Extracts and serializes key assembly properties from a collection of model objects.
+    """
+    processed_elements = 0
+    assemblies: list[AssemblyProperties] = []
+    for selected_object in selected_objects:
+        if isinstance(selected_object, Assembly):
+            guid = selected_object.Identifier.GUID.ToString()
+            main = selected_object.GetMainPart()
+
+            is_ok, position = selected_object.GetReportProperty("ASSEMBLY_POS", str())
+            if not is_ok:
+                raise AttributeError(f"Failed to retrieve assembly position for the element with GUID {guid}.")
+
+            assemblies.append(
+                AssemblyProperties(
+                    position=position,
+                    guid=guid,
+                    main_part_name=main.Name,
+                    main_part_profile=main.Profile.ProfileString,
+                    main_part_material=main.Material.MaterialString,
+                    main_part_finish=main.Finish,
+                    main_part_class=main.Class,
+                )
+            )
+            processed_elements += 1
+
+    # JSON serialization
+    serialized_assemblies = json.dumps([a.model_dump() for a in assemblies], ensure_ascii=False, indent=2)
+
+    return {
+        "status": "success" if assemblies else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "assemblies_list": serialized_assemblies,
     }

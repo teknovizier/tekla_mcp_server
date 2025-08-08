@@ -25,7 +25,8 @@ To use this server, users must first install and configure an MCP client.
 - Selection of main parts of the assemblies the specified elements belong to
 - Showing of temporary names for selected elements in the model
 - Converting cut parts into real parts
-- Updating of UDAs 
+- Updating of UDAs
+- Retrieval of key assembly properties for selected elements
 
 ### Tools
 The server provides the following tools:
@@ -40,6 +41,7 @@ The server provides the following tools:
 | `draw_elements_names`            | Draw the temporary names for the selected elements in Tekla in the currently active rendered view |
 | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts       |
 | `set_elements_udas`              | Sets custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones |
+| `get_assemblies_properties`       | Retrieves structured data about selected assemblies in the Tekla model, including key properties like position, GUID, and main part details |
 
 ### Compatibility
 The server was tested to work with **only Tekla 2022** and may not be compatible with other versions of Tekla Structures.
