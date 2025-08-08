@@ -5,16 +5,21 @@ Tested modules:
 - utils.py: Contains utility classes and functions used for geometry manipulations.
 """
 
+import os
 import pytest
 
-from init import load_dlls
 from utils import get_element_type_by_class, get_wall_pairs
 
-# Tekla OpenAPI imports
-load_dlls()
-from Tekla.Structures.Model import Beam
+# Skip Tekla-related imports in CI
+if os.getenv("CI") != "true":
+    from init import load_dlls
+
+    # Tekla OpenAPI imports
+    load_dlls()
+    from Tekla.Structures.Model import Beam
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def mock_beam(x, y, z, name="TEST_WALL"):
     """Helper for mocking beams."""
     beam = Beam()
@@ -52,6 +57,7 @@ def test_get_element_type_by_class_cases(input_val, expected):
     assert get_element_type_by_class(input_val) == expected
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_pair_two_matching_walls():
     """Checks pairing of two matching walls."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -60,6 +66,7 @@ def test_pair_two_matching_walls():
     assert result == [(wall1, wall2)]
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_pair_multiple_walls():
     """Checks pairing of multiple wall pairs."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -72,6 +79,7 @@ def test_pair_multiple_walls():
     assert len(result) == 2
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_less_than_two_elements_raises_error():
     """Checks error for less than two elements."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -79,6 +87,7 @@ def test_less_than_two_elements_raises_error():
         get_wall_pairs([wall1])
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_more_than_two_floors_raises_error():
     """Checks error for more than two floors."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -88,6 +97,7 @@ def test_more_than_two_floors_raises_error():
         get_wall_pairs([wall1, wall2, wall3])
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_z_coordinate_mismatch_raises_error():
     """Checks error for Z coordinate mismatch."""
     wall = mock_beam(0, 0, 0, "TEST_WALL")
@@ -96,6 +106,7 @@ def test_z_coordinate_mismatch_raises_error():
         get_wall_pairs([wall, wall])
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_non_beam_objects_are_ignored():
     """Checks that non-beam objects are ignored."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")

@@ -1,5 +1,6 @@
-[![License](https://img.shields.io/github/license/teknovizier/tekla_mcp_server?color=green)](https://github.com/teknovizier/tekla_mcp_server/blob/main/LICENSE)
+[![Python Tests](https://github.com/teknovizier/tekla_mcp_server/actions/workflows/python-tests.yml/badge.svg)](https://github.com/teknovizier/tekla_mcp_server/actions/workflows/python-tests.yml)
 [![Python versions](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue?style=flat&logo=python)](https://github.com/teknovizier/tekla_mcp_server/blob/main/README.md#requirements)
+[![License](https://img.shields.io/github/license/teknovizier/tekla_mcp_server?color=green)](https://github.com/teknovizier/tekla_mcp_server/blob/main/LICENSE)
 
 ![Tekla MCP Server](assets/tekla_mcp_server_logo_small.png)
 

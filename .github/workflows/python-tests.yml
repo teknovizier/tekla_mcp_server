@@ -1,0 +1,38 @@
+name: Python Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.13"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Rename sample config files
+      run: |
+        Get-ChildItem -Path config -Filter "*.sample.json" | ForEach-Object {
+          $newName = $_.Name -replace '\.sample\.json$', '.json'
+          Rename-Item $_.FullName -NewName $newName
+        }
+
+    - name: Run tests
+      env:
+        CI: true
+      run: |
+        python -m pytest

@@ -5,10 +5,11 @@ Tested modules:
 - init.py: Contains functions needed for correct application initialization.
 """
 
+import os
 import pytest
 
 from pathlib import Path
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import patch, mock_open
 
 import clr
 import System
@@ -79,6 +80,7 @@ def test_read_config_wrong_type(monkeypatch):
         read_config()
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_load_dlls_success():
     """
     Checks that all DLLs are loaded and returns True.
@@ -89,6 +91,7 @@ def test_load_dlls_success():
         assert mock_add_ref.call_count == 9  # 9 DLLs
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_load_dlls_file_not_found_triggers_critical_and_exit():
     """
     Checks error handling when DLL is missing.
