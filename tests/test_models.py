@@ -9,7 +9,7 @@ import pytest
 
 from pydantic_core import ValidationError
 
-from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, PrecastElementTypeModel, ComponentTypeModel, PrecastElementType, LiftingAnchors
+from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, ElementTypeModel, ComponentTypeModel, ElementType, LiftingAnchors
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def element_type():
     """
     Fixture: default element type.
     """
-    return PrecastElementType.WALL
+    return ElementType.WALL
 
 
 def test_get_required_anchors_valid(anchor_types, element_type):
@@ -267,13 +267,17 @@ def test_string_match_type_model_invalid(input_val):
         ("Balcony Slab", "BALCONY_SLAB"),
         ("Stair Landing", "STAIR_LANDING"),
         ("Curved Stair", "CURVED_STAIR"),
+        ("Steel Beam", "STEEL_BEAM"),
+        ("Steel Column", "STEEL_COLUMN"),
+        ("Steel Truss", "STEEL_TRUSS"),
+        ("Steel Brace", "STEEL_BRACE"),
     ],
 )
-def test_precast_element_type_model_valid(input_val, expected_enum):
+def test_element_type_model_valid(input_val, expected_enum):
     """
-    Checks PrecastElementTypeModel accepts valid values and maps to correct enum.
+    Checks ElementTypeModel accepts valid values and maps to correct enum.
     """
-    model = PrecastElementTypeModel(value=input_val)
+    model = ElementTypeModel(value=input_val)
     assert model.to_enum().name == expected_enum
 
 
@@ -286,12 +290,12 @@ def test_precast_element_type_model_valid(input_val, expected_enum):
         "Random",
     ],
 )
-def test_precast_element_type_model_invalid(input_val):
+def test_element_type_model_invalid(input_val):
     """
-    Checks PrecastElementTypeModel raises error for invalid values.
+    Checks ElementTypeModel raises error for invalid values.
     """
     with pytest.raises(ValidationError):
-        PrecastElementTypeModel(value=input_val)
+        ElementTypeModel(value=input_val)
 
 
 @pytest.mark.parametrize(

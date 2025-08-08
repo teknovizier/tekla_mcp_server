@@ -1,6 +1,6 @@
 """
 This module defines core data structures, enumerations, and models used in the project.
-It includes classes representing different precast elements, component types, lifting anchors,
+It includes classes representing different elements, component types, lifting anchors,
 and wall joint configurations.
 """
 
@@ -46,11 +46,12 @@ class StringMatchType(Enum):
     NOT_ENDS_WITH = "Not Ends With"
 
 
-class PrecastElementType(Enum):
+class ElementType(Enum):
     """
-    Represents different types of precast concrete elements.
+    Represents different types of elements in Tekla.
     """
 
+    # Concrete
     WALL = "Wall"
     SANDWICH_WALL = "Sandwich Wall"
     STAIR_FLIGHT = "Stair Flight"
@@ -65,6 +66,12 @@ class PrecastElementType(Enum):
     BALCONY_SLAB = "Balcony Slab"
     STAIR_LANDING = "Stair Landing"
     CURVED_STAIR = "Curved Stair"
+
+    # Steel
+    STEEL_BEAM = "Steel Beam"
+    STEEL_COLUMN = "Steel Column"
+    STEEL_TRUSS = "Steel Truss"
+    STEEL_BRACE = "Steel Brace"
 
 
 class ComponentType(Enum):
@@ -83,7 +90,7 @@ class ComponentType(Enum):
 SELECTION_MODES = {e.value for e in SelectionMode}
 UDA_SET_MODES = {e.value for e in UDASetMode}
 STRING_MATCH_TYPES = {e.value for e in StringMatchType}
-PRECAST_ELEMENT_TYPES = {e.value for e in PrecastElementType}
+ELEMENT_TYPES = {e.value for e in ElementType}
 COMPONENT_TYPES = {e.value for e in ComponentType}
 
 
@@ -159,19 +166,19 @@ class StringMatchTypeModel(EnumWrapper):
         return StringMatchType(self.value)
 
 
-class PrecastElementTypeModel(EnumWrapper):
+class ElementTypeModel(EnumWrapper):
     """
-    Represents a validated precast element type.
+    Represents a validated element type.
     """
 
-    _valid_values = PRECAST_ELEMENT_TYPES
-    _error_code = "invalid_precast_element_type"
+    _valid_values = ELEMENT_TYPES
+    _error_code = "invalid_element_type"
 
-    def to_enum(self) -> PrecastElementType:
+    def to_enum(self) -> ElementType:
         """
         Converts the validated string value to a enum.
         """
-        return PrecastElementType(self.value)
+        return ElementType(self.value)
 
 
 class ComponentTypeModel(EnumWrapper):

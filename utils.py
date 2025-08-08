@@ -8,10 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Union
 
 from init import load_dlls, logger
-from models import (
-    StringMatchType,
-    PrecastElementType,
-)
+from models import StringMatchType
 
 # Tekla OpenAPI imports
 load_dlls()

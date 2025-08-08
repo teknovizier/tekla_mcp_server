@@ -10,7 +10,7 @@ from models import (
     SelectionMode,
     UDASetMode,
     StringMatchType,
-    PrecastElementType,
+    ElementType,
     ComponentType,
     LiftingAnchors,
     CustomDetailComponent,
@@ -280,7 +280,7 @@ def insert_custom_detail_component(model: Model, component: CustomDetailComponen
 
 
 def select_elements_by_filter(
-    element_type: Union[int, list[int], PrecastElementType] = None,
+    element_type: Union[int, list[int], ElementType] = None,
     name: str = None,
     name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
     profile: str = None,
@@ -306,7 +306,7 @@ def select_elements_by_filter(
             element_type = [element_type]
         if isinstance(element_type, list):
             tekla_classes = element_type
-        elif isinstance(element_type, PrecastElementType):
+        elif isinstance(element_type, ElementType):
             tekla_classes = []
             for material_types in ELEMENT_TYPE_MAPPING.values():
                 if element_type.name in material_types:

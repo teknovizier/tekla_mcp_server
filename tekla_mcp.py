@@ -13,7 +13,7 @@ from models import (
     SelectionModeModel,
     UDASetModeModel,
     StringMatchTypeModel,
-    PrecastElementTypeModel,
+    ElementTypeModel,
     ComponentType,
     LiftingAnchors,
     CustomDetailComponent,
@@ -99,7 +99,7 @@ def select_elements_using_filter(
     """
     Selects specified elements based on their type or Tekla class, name, and matching criteria.
 
-    Valid precast element types:
+    Valid concrete element types:
     - `Wall`
     - `Sandwich Wall`
     - `Stair Flight`
@@ -115,6 +115,12 @@ def select_elements_using_filter(
     - `Stair Landing`
     - `Curved Stair`
 
+    Valid steel element types:
+    - `Steel Beam`
+    - `Steel Column`
+    - `Steel Truss`
+    - `Steel Brace`
+
     Valid match types:
     - `IS_EQUAL`: Checks for exact match.
     - `IS_NOT_EQUAL`: Checks for exact mismatch.
@@ -127,7 +133,7 @@ def select_elements_using_filter(
     """
     try:
         if isinstance(element_type, str):
-            element_type = PrecastElementTypeModel(value=element_type).to_enum()
+            element_type = ElementTypeModel(value=element_type).to_enum()
 
         name_match_type_object = StringMatchTypeModel(value=name_match_type)
         profile_match_type_object = StringMatchTypeModel(value=profile_match_type)
