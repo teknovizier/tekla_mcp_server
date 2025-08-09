@@ -130,8 +130,6 @@ def get_weight(element: ModelObject) -> tuple[float, float]:
 
     total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
 
-    print(total_parts_weight)
-    print(weight_rebars)
     return total_parts_weight, weight_rebars
 
 
