@@ -17,8 +17,8 @@ from Tekla.Structures.Model import (
     Model,
     ModelObject,
     ModelObjectEnumerator,
+    ModelObjectSelector,
     Assembly,
-    ModelObject,
     BooleanPart,
     Beam,
     PolyBeam,
@@ -29,8 +29,8 @@ from Tekla.Structures.Model import (
     Detail,
     Seam,
 )
-from Tekla.Structures.Model.UI import ModelObjectSelector
-from Tekla.Structures.Filtering import StringOperatorType
+from Tekla.Structures.Model.UI import ModelObjectSelector as ModelObjectSelectorUI
+from Tekla.Structures.Filtering import StringOperatorType, FilterExpression
 
 
 # Mappings
@@ -47,36 +47,53 @@ STRING_MATCH_TYPE_MAPPING = {
 }
 
 
-def get_tekla_model() -> Model:
+# Classes
+class TeklaModel:
     """
-    Checks the connection status of the Tekla model and returns the Model object.
-
-    Raises:
-        ConnectionError: If Tekla Structures is not running or no model is currently open.
+    A wrapper class around the Tekla Structures Model object.
     """
-    model = Model()
-    # Check model connection status
-    if not model.GetConnectionStatus():
-        raise ConnectionError("Cannot connect to Tekla model. Please check that Tekla Structures is running and the model is opened.")
 
-    return model
+    def __init__(self):
+        self.model = Model()
+        if not self.model.GetConnectionStatus():
+            raise ConnectionError("Cannot connect to Tekla model. Please check that Tekla Structures is running and the model is opened.")
 
+    def get_all_objects(self) -> ModelObjectEnumerator:
+        """
+        Returns all objects in the model.
+        """
+        selector = ModelObjectSelector()
+        return selector.GetAllObjects()
 
-def get_model_and_selected_objects() -> tuple[Model, ModelObjectEnumerator]:
-    """
-    Returns the Tekla model and currently selected objects.
+    def get_selected_objects(self) -> ModelObjectEnumerator:
+        """
+        Returns currently selected objects in the model.
 
-    Raises:
-        ValueError: If no objects are selected.
-    """
-    model = get_tekla_model()
-    selector = ModelObjectSelector()
-    selected_objects = selector.GetSelectedObjects()
+        Raises:
+            ValueError: If no objects are selected.
+        """
+        selector = ModelObjectSelectorUI()
+        selected_objects = selector.GetSelectedObjects()
 
-    if not selected_objects.GetSize():
-        raise ValueError("No elements selected.")
+        if not selected_objects.GetSize():
+            raise ValueError("No objects are currently selected in the model.")
 
-    return model, selected_objects
+        return selected_objects
+
+    def get_objects_by_filter(self, filter_expression: FilterExpression) -> ModelObjectEnumerator:
+        """
+        Returns objects in the model selected by the given selection filter definition.
+
+        Raises:
+            ValueError: If no objects can be selected.
+        """
+        selector = ModelObjectSelector()
+        objects_to_select = selector.GetObjectsByFilter(filter_expression)
+
+        if not objects_to_select.GetSize():
+            raise ValueError("No objects match the provided filter expression.")
+
+        return objects_to_select
 
 
 def get_report_property(element: ModelObject, property_name: str, property_type: type) -> Union[str, int, float]:

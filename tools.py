@@ -22,8 +22,7 @@ from models import (
 
 from tekla_utils import (
     STRING_MATCH_TYPE_MAPPING,
-    get_tekla_model,
-    get_model_and_selected_objects,
+    TeklaModel,
     get_report_property,
     get_user_property,
     get_cog_coordinates,
@@ -294,7 +293,6 @@ def select_elements_by_filter(
     if not element_type and not name:
         raise ValueError("At least one argument (element type or Tekla class or name) must be provided.")
 
-    model = get_tekla_model()
     filter_collection = BinaryFilterExpressionCollection()
 
     # Filter on parts
@@ -334,7 +332,7 @@ def select_elements_by_filter(
         filter_profile = BinaryFilterExpression(PartFilterExpressions.Profile(), match_type, StringConstantFilterExpression(profile))
         filter_collection.Add(BinaryFilterExpressionItem(filter_profile, BinaryFilterOperatorType.BOOLEAN_AND))
 
-    tekla_objects = model.GetModelObjectSelector().GetObjectsByFilter(filter_collection)
+    tekla_objects = TeklaModel().get_objects_by_filter(filter_collection)
     filtered_parts = ArrayList()
     for tekla_object in tekla_objects:
         filtered_parts.Add(tekla_object)
@@ -353,7 +351,7 @@ def select_elements_by_guid(guids: list[str]) -> dict:
     """
     Selects elements in the Tekla model by their GUID.
     """
-    model = get_tekla_model()
+    model = TeklaModel().model
 
     objects_to_select = ArrayList()
     for guid in guids:

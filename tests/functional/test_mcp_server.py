@@ -25,7 +25,7 @@ from models import LiftingAnchors
 
 from init import load_dlls
 from mcp_server import mcp
-from tekla_utils import get_tekla_model, get_user_property
+from tekla_utils import TeklaModel, get_user_property
 
 # Tekla OpenAPI imports
 load_dlls()
@@ -67,7 +67,7 @@ def model_objects():
     """
     Fixture: Test setup and teardown.
     """
-    model = get_tekla_model()
+    model = TeklaModel().model
     test_wall1 = create_test_beam("TEST_WALL1", Point(0, 0, 0), Point(2000, 0, 0), "3000*200")
     test_wall2 = create_test_beam("TEST_WALL2", Point(0, 0, 3020), Point(2000, 0, 3020), "3000*200")
     test_wall3 = create_test_beam("TEST_WALL3", Point(2000, 0, 0), Point(4000, 0, 0), "3000*200")

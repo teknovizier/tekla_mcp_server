@@ -34,7 +34,7 @@ from tools import (
     set_udas_on_elements,
     get_assemblies_props,
 )
-from tekla_utils import get_model_and_selected_objects
+from tekla_utils import TeklaModel
 
 
 mcp = FastMCP("Tekla MCP Server")
@@ -46,12 +46,13 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
     Applies a component operation to selected objects in the Tekla model using a specified callback function.
     """
     try:
-        model, selected_objects = get_model_and_selected_objects()
+        tekla_model = TeklaModel()
+        selected_objects = tekla_model.get_selected_objects()
         result = {}
         if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
-            result = process_detail_or_component(selected_objects, callback, model, component, *args, **kwargs)
+            result = process_detail_or_component(selected_objects, callback, tekla_model.model, component, *args, **kwargs)
         elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
-            result = process_seam_or_connection(selected_objects, callback, model, component, *args, **kwargs)
+            result = process_seam_or_connection(selected_objects, callback, tekla_model.model, component, *args, **kwargs)
         else:
             pass  # For other types do nothing
         return result
@@ -166,7 +167,7 @@ def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
     - `Main Part`
     """
     try:
-        _, selected_objects = get_model_and_selected_objects()
+        selected_objects = TeklaModel().get_selected_objects()
         mode_object = SelectionModeModel(value=mode)
         return select_assemblies_or_main_parts(selected_objects, mode_object.to_enum())
 
@@ -180,7 +181,7 @@ def draw_elements_names() -> dict[str, Any]:
     Draws temporary element names in the Tekla model.
     """
     try:
-        _, selected_objects = get_model_and_selected_objects()
+        selected_objects = TeklaModel().get_selected_objects()
         return draw_names_on_elements(selected_objects)
 
     except Exception as e:
@@ -193,8 +194,9 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
     Finds boolean parts and inserts them as real model objects.
     """
     try:
-        model, selected_objects = get_model_and_selected_objects()
-        return insert_boolean_parts_as_real_parts(model, selected_objects)
+        tekla_model = TeklaModel()
+        selected_objects = tekla_model.get_selected_objects()
+        return insert_boolean_parts_as_real_parts(tekla_model.model, selected_objects)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -210,7 +212,7 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
     - `Overwrite Existing Values`
     """
     try:
-        _, selected_objects = get_model_and_selected_objects()
+        selected_objects = TeklaModel().get_selected_objects()
         mode_object = UDASetModeModel(value=mode)
         return set_udas_on_elements(selected_objects, udas, mode_object.to_enum())
 
@@ -236,7 +238,7 @@ def get_assemblies_properties():
     Weight rounded to one decimal place.
     """
     try:
-        _, selected_objects = get_model_and_selected_objects()
+        selected_objects = TeklaModel().get_selected_objects()
         return get_assemblies_props(selected_objects)
 
     except Exception as e:
