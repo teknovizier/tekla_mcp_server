@@ -3,13 +3,14 @@ Module for utility classes and functions used for geometry manipulations.
 """
 
 from functools import wraps
-from typing import Any, Callable, Union
+from typing import Any, Callable, Iterable, Union
 
 from init import load_dlls, logger
 from models import StringMatchType
 
 # Tekla OpenAPI imports
 load_dlls()
+from System.Collections import ArrayList
 from Tekla.Structures import PositionTypeEnum, DetailTypeEnum, AutoDirectionTypeEnum
 from Tekla.Structures.Geometry3d import Point, Vector
 
@@ -94,6 +95,18 @@ class TeklaModel:
             raise ValueError("No objects match the provided filter expression.")
 
         return objects_to_select
+
+    @staticmethod
+    def select_objects(model_objects: Iterable) -> bool:
+        """
+        Selects the given model objects in the model.
+        """
+        selector = ModelObjectSelectorUI()
+        array_list = ArrayList()
+        for model_object in model_objects:
+            array_list.Add(model_object)
+
+        return selector.Select(array_list)
 
 
 def get_report_property(element: ModelObject, property_name: str, property_type: type) -> Union[str, int, float]:

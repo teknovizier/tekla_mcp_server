@@ -332,18 +332,12 @@ def select_elements_by_filter(
         filter_profile = BinaryFilterExpression(PartFilterExpressions.Profile(), match_type, StringConstantFilterExpression(profile))
         filter_collection.Add(BinaryFilterExpressionItem(filter_profile, BinaryFilterOperatorType.BOOLEAN_AND))
 
-    tekla_objects = TeklaModel().get_objects_by_filter(filter_collection)
-    filtered_parts = ArrayList()
-    for tekla_object in tekla_objects:
-        filtered_parts.Add(tekla_object)
-
-    selector = ModelObjectSelector()
-    selector.Select(filtered_parts)
-    assert tekla_objects.GetSize(), filtered_parts.Count
+    objects_to_select = TeklaModel().get_objects_by_filter(filter_collection)
+    TeklaModel.select_objects(objects_to_select)
 
     return {
-        "status": "success" if filtered_parts.Count else "error",
-        "selected_elements": filtered_parts.Count,
+        "status": "success" if objects_to_select.GetSize() else "error",
+        "selected_elements": objects_to_select.GetSize(),
     }
 
 

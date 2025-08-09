@@ -29,10 +29,9 @@ from tekla_utils import TeklaModel, get_user_property
 
 # Tekla OpenAPI imports
 load_dlls()
-from System.Collections import ArrayList
 from Tekla.Structures.Geometry3d import Point
 from Tekla.Structures.Model import Beam, Position
-from Tekla.Structures.Model.UI import ModelObjectSelector, ViewHandler
+from Tekla.Structures.Model.UI import ViewHandler
 
 
 def create_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):
@@ -49,17 +48,6 @@ def create_test_beam(name, start_point, end_point, profile, material="Concrete_U
     beam.EndPoint = end_point
     beam.Insert()
     return beam
-
-
-def select_elements(elements):
-    """
-    Utility function to select an element.
-    """
-    selector = ModelObjectSelector()
-    model_objects = ArrayList()
-    for element in elements:
-        model_objects.Add(element)
-    selector.Select(model_objects)
 
 
 @pytest.fixture(scope="module")
@@ -96,7 +84,7 @@ async def test_put_wall_lifting_anchors_walls(model_objects):
     - Tests with a 10% safety margin.
     - Ensures that the operation returns a "success" status.
     """
-    select_elements([model_objects["test_wall1"]])
+    TeklaModel.select_objects([model_objects["test_wall1"]])
 
     async with Client(mcp) as client:
         # Default parameters
@@ -118,7 +106,7 @@ async def test_put_wall_lifting_anchors_sandwich(model_objects):
     - Applies default lifting anchor placement.
     - Ensures the operation completes successfully.
     """
-    select_elements([model_objects["test_sw1"]])
+    TeklaModel.select_objects([model_objects["test_sw1"]])
     async with Client(mcp) as client:
         result = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors()})
         assert result.data["status"] == "success"
@@ -134,7 +122,7 @@ async def test_remove_wall_lifting_anchors(model_objects):
     - Calls `remove_wall_lifting_anchors()`.
     - Ensures that the function successfully removes the anchors.
     """
-    select_elements([model_objects["test_wall1"]])
+    TeklaModel.select_objects([model_objects["test_wall1"]])
     async with Client(mcp) as client:
         _ = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors()})
         result2 = await client.call_tool("remove_wall_lifting_anchors")
@@ -151,7 +139,7 @@ async def test_put_custom_detail_components(model_objects):
     - Adds a predefined custom detail (`DIR_ARR`).
     - Ensures successful placement.
     """
-    select_elements([model_objects["test_wall1"], model_objects["test_wall2"]])
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     async with Client(mcp) as client:
         result = await client.call_tool("put_custom_detail_components", {"component_name": "DIR_ARR"})
         assert result.data["status"] == "success"
@@ -284,7 +272,7 @@ async def test_select_elements_assemblies(model_objects, mode, expected_count):
     - Selects `TEST_WALL1` and `TEST_WALL2`.
     - Verifies selection behavior under different modes.
     """
-    select_elements([model_objects["test_wall1"], model_objects["test_wall2"]])
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
 
     async with Client(mcp) as client:
         result = await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": mode})
@@ -301,7 +289,7 @@ async def test_draw_elements_names(model_objects):
     - Selects `TEST_WALL1` and `TEST_WALL2`.
     - Calls drawing method and refreshes views.
     """
-    select_elements([model_objects["test_wall1"], model_objects["test_wall2"]])
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     async with Client(mcp) as client:
         result = await client.call_tool("draw_elements_names")
         assert result.data["status"] == "success"
@@ -321,7 +309,7 @@ async def test_convert_cut_parts_to_real_parts(model_objects):
     - Selects `TEST_WALL1` and `TEST_WALL2`.
     - Verifies it returns "error" when no cut parts are present.
     """
-    select_elements([model_objects["test_wall1"], model_objects["test_wall2"]])
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     async with Client(mcp) as client:
         result = await client.call_tool("convert_cut_parts_to_real_parts")
         assert result.data["status"] == "error"
@@ -338,7 +326,7 @@ async def test_set_elements_udas(model_objects):
     3. Use OVERWRITE to update values.
     """
     wall = model_objects["test_wall1"]
-    select_elements([wall])
+    TeklaModel.select_objects([wall])
 
     async with Client(mcp) as client:
         # Initial UDA assignment using OVERWRITE mod
@@ -383,7 +371,7 @@ async def test_get_assemblies_properties(model_objects):
         model_objects["test_sw1"],
         model_objects["test_slab1"],
     ]
-    select_elements(elements_to_select)
+    TeklaModel.select_objects(elements_to_select)
 
     async with Client(mcp) as client:
         # Select assemblies
