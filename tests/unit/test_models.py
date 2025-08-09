@@ -21,9 +21,9 @@ def anchor_types():
     Fixture: anchor types.
     """
     return {
-        "A": {"element_type": ["WALL"], "active": True, "capacity": 1.5},
-        "B": {"element_type": ["WALL"], "active": True, "capacity": 2.0},
-        "C": {"element_type": ["WALL"], "active": True, "capacity": 0.5},
+        "A": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 1.5},
+        "B": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 2.0},
+        "C": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 0.5},
     }
 
 
@@ -32,19 +32,19 @@ def element_type():
     """
     Fixture: default element type.
     """
-    return ElementType.WALL
+    return ElementType.CONCRETE_WALL
 
 
 @pytest.mark.parametrize(
     "input_val,expected",
     [
-        ("1", ("Concrete", "WALL")),
-        ("100", ("Steel", "BEAM")),
-        ("101", ("Steel", "COLUMN")),
+        ("1", ("Concrete", "CONCRETE_WALL")),
+        ("100", ("Steel", "STEEL_BEAM")),
+        ("101", ("Steel", "STEEL_COLUMN")),
         ("999999", None),
         ("not_a_number", None),
         (None, None),
-        (1, ("Concrete", "WALL")),
+        (1, ("Concrete", "CONCRETE_WALL")),
         ("-1", None),
     ],
 )
@@ -81,7 +81,7 @@ def test_get_required_anchors_try_four(element_type):
     - Calls the function with **element_weight=3600**.
     - Ensures the system correctly assigns four anchors.
     """
-    anchor_types = {"A": {"element_type": ["WALL"], "active": True, "capacity": 1.0}}
+    anchor_types = {"A": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 1.0}}
     n, valid = LiftingAnchors.get_required_anchors(element_type.name, 3600, 10, anchor_types)
     assert n == 4
     assert "A" in valid
@@ -96,7 +96,7 @@ def test_get_required_anchors_not_valid(element_type):
     - Calls the function with **element_weight=10000**.
     - Ensures a `ValueError` is raised due to inability to support the load.
     """
-    anchor_types = {"A": {"element_type": ["WALL"], "active": True, "capacity": 0.1}}
+    anchor_types = {"A": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 0.1}}
     with pytest.raises(ValueError):
         LiftingAnchors.get_required_anchors(element_type.name, 10000, 10, anchor_types)
 
@@ -280,20 +280,20 @@ def test_string_match_type_model_invalid(input_val):
 @pytest.mark.parametrize(
     "input_val,expected_enum",
     [
-        ("Wall", "WALL"),
-        ("Sandwich Wall", "SANDWICH_WALL"),
-        ("Stair Flight", "STAIR_FLIGHT"),
-        ("Hollow Core Slab", "HCS"),
-        ("Massive Slab", "MASSIVE_SLAB"),
-        ("Column", "COLUMN"),
-        ("Beam", "BEAM"),
-        ("Filigree Wall", "FILIGREE_WALL"),
-        ("Filigree Slab", "FILIGREE_SLAB"),
-        ("Tribune", "TRIBUNE"),
-        ("TT Slab", "TT_SLAB"),
-        ("Balcony Slab", "BALCONY_SLAB"),
-        ("Stair Landing", "STAIR_LANDING"),
-        ("Curved Stair", "CURVED_STAIR"),
+        ("Wall", "CONCRETE_WALL"),
+        ("Sandwich Wall", "CONCRETE_SANDWICH_WALL"),
+        ("Stair Flight", "CONCRETE_STAIR_FLIGHT"),
+        ("Hollow Core Slab", "CONCRETE_HCS"),
+        ("Massive Slab", "CONCRETE_MASSIVE_SLAB"),
+        ("Column", "CONCRETE_COLUMN"),
+        ("Beam", "CONCRETE_BEAM"),
+        ("Filigree Wall", "CONCRETE_FILIGREE_WALL"),
+        ("Filigree Slab", "CONCRETE_FILIGREE_SLAB"),
+        ("Tribune", "CONCRETE_TRIBUNE"),
+        ("TT Slab", "CONCRETE_TT_SLAB"),
+        ("Balcony Slab", "CONCRETE_BALCONY_SLAB"),
+        ("Stair Landing", "CONCRETE_STAIR_LANDING"),
+        ("Curved Stair", "CONCRETE_CURVED_STAIR"),
         ("Steel Beam", "STEEL_BEAM"),
         ("Steel Column", "STEEL_COLUMN"),
         ("Steel Truss", "STEEL_TRUSS"),

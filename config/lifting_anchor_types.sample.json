@@ -2,7 +2,7 @@
     "P1": {
         "active": true,
         "type": "long",
-        "element_type": ["WALL"],
+        "element_type": ["CONCRETE_WALL"],
         "capacity": 1.0,
         "min_edge_distance": 300.0,
         "attributes": {
@@ -15,7 +15,7 @@
     "P2": {
         "active": true,
         "type": "long",
-        "element_type": ["WALL"],
+        "element_type": ["CONCRETE_WALL"],
         "capacity": 2.0,
         "min_edge_distance": 350.0,
         "attributes": {
@@ -28,7 +28,7 @@
     "P3": {
         "active": true,
         "type": "long",
-        "element_type": ["SANDWICH_WALL"],
+        "element_type": ["CONCRETE_SANDWICH_WALL"],
         "capacity": 2.0,
         "min_edge_distance": 350.0,
         "attributes": {

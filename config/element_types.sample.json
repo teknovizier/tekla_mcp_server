@@ -1,24 +1,24 @@
 {
     "Concrete": {
-        "WALL": [1],
-        "SANDWICH_WALL": [2, 3],
-        "STAIR_FLIGHT": [4],
-        "HCS": [5, 6, 7, 8],
-        "MASSIVE_SLAB": [9],
-        "COLUMN": [10],
-        "BEAM": [11],
-        "FILIGREE_WALL": [12],
-        "FILIGREE_SLAB": [13],
-        "TRIBUNE": [14],
-        "TT_SLAB": [15],
-        "BALCONY_SLAB": [16],
-        "STAIR_LANDING": [17],
-        "CURVED_STAIR": [18]
+        "CONCRETE_WALL": [1],
+        "CONCRETE_SANDWICH_WALL": [2, 3],
+        "CONCRETE_STAIR_FLIGHT": [4],
+        "CONCRETE_HCS": [5, 6, 7, 8],
+        "CONCRETE_MASSIVE_SLAB": [9],
+        "CONCRETE_COLUMN": [10],
+        "CONCRETE_BEAM": [11],
+        "CONCRETE_FILIGREE_WALL": [12],
+        "CONCRETE_FILIGREE_SLAB": [13],
+        "CONCRETE_TRIBUNE": [14],
+        "CONCRETE_TT_SLAB": [15],
+        "CONCRETE_BALCONY_SLAB": [16],
+        "CONCRETE_STAIR_LANDING": [17],
+        "CONCRETE_CURVED_STAIR": [18]
     },
     "Steel": {
-        "BEAM": [100],
-        "COLUMN": [101],
-        "TRUSS": [102],
-        "BRACE": [103]
+        "STEEL_BEAM": [100],
+        "STEEL_COLUMN": [101],
+        "STEEL_TRUSS": [102],
+        "STEEL_BRACE": [103]
     }
 }
