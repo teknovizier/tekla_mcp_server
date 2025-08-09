@@ -50,6 +50,9 @@ STRING_MATCH_TYPE_MAPPING = {
 def get_tekla_model() -> Model:
     """
     Checks the connection status of the Tekla model and returns the Model object.
+
+    Raises:
+        ConnectionError: If Tekla Structures is not running or no model is currently open.
     """
     model = Model()
     # Check model connection status
@@ -59,17 +62,66 @@ def get_tekla_model() -> Model:
     return model
 
 
+def get_model_and_selected_objects() -> tuple[Model, ModelObjectEnumerator]:
+    """
+    Returns the Tekla model and currently selected objects.
+
+    Raises:
+        ValueError: If no objects are selected.
+    """
+    model = get_tekla_model()
+    selector = ModelObjectSelector()
+    selected_objects = selector.GetSelectedObjects()
+
+    if not selected_objects.GetSize():
+        raise ValueError("No elements selected.")
+
+    return model, selected_objects
+
+
+def get_report_property(element: ModelObject, property_name: str, property_type: type) -> Union[str, int, float]:
+    """
+    Retrieves a report property for a given Tekla model object.
+
+    Raises:
+        TypeError: If the provided property type is not str, int, or float.
+        AttributeError: If the property retrieval fails for the given element.
+    """
+    if property_type not in (str, int, float):
+        raise TypeError("Property type must be one of these types: str, int, float.")
+
+    is_ok, value = element.GetReportProperty(property_name, property_type())
+    if not is_ok:
+        raise AttributeError(f"Failed to retrieve property `{property_name}` for the element with GUID `{element.Identifier.GUID.ToString()}`.")
+
+    return value
+
+
+def get_user_property(element: ModelObject, property_name: str, property_type: type) -> Union[str, int, float]:
+    """
+    Retrieves a user property for a given Tekla model object.
+
+    Raises:
+        TypeError: If the provided property type is not str, int, or float.
+        AttributeError: If the property retrieval fails for the given element.
+    """
+    if property_type not in (str, int, float):
+        raise TypeError("Property type must be one of these types: str, int, float.")
+
+    is_ok, value = element.GetUserProperty(property_name, property_type())
+    if not is_ok:
+        raise AttributeError(f"Failed to retrieve property `{property_name}` for the element with GUID `{element.Identifier.GUID.ToString()}`.")
+
+    return value
+
+
 def get_cog_coordinates(element: ModelObject) -> Point:
     """
     Retrieves the center of gravity (COG) point for a given Tekla model object.
     """
-
-    is_ok_x, cog_x = element.GetReportProperty("COG_X", float())
-    is_ok_y, cog_y = element.GetReportProperty("COG_Y", float())
-    is_ok_z, cog_z = element.GetReportProperty("COG_Z", float())
-
-    if not (is_ok_x and is_ok_y and is_ok_z):
-        raise AttributeError("Failed to retrieve COG for the object.")
+    cog_x = get_report_property(element, "COG_X", float)
+    cog_y = get_report_property(element, "COG_Y", float)
+    cog_z = get_report_property(element, "COG_Z", float)
 
     return Point(cog_x, cog_y, cog_z)
 
@@ -87,66 +139,38 @@ def get_weight(element: ModelObject) -> tuple[float, float]:
     weight_subassemblies = 0.0
     weight_rebars = 0.0
 
-    guid = element.Identifier.GUID.ToString()
-
     # Get the main part
     mainpart = element.GetMainPart() if isinstance(element, Assembly) else element
-    is_ok, weight_main_part = mainpart.GetReportProperty("WEIGHT", float())
-    if not is_ok:
-        raise AttributeError(f"Failed to retrieve main part weight for element with GUID {guid}.")
+    weight_main_part = get_report_property(mainpart, "WEIGHT", float)
 
     # Rebars on main part
     for rebar in mainpart.GetReinforcements():
-        is_ok, weight_rebar = rebar.GetReportProperty("WEIGHT_TOTAL", float())
-        if not is_ok:
-            raise AttributeError(f"Failed to retrieve rebar weight for element with GUID {guid}.")
+        weight_rebar = get_report_property(rebar, "WEIGHT_TOTAL", float)
         weight_rebars += weight_rebar
 
     if isinstance(element, Assembly):
         # Secondary parts and their rebars
         for secondary in element.GetSecondaries():
-            is_ok, weight_secondary = secondary.GetReportProperty("WEIGHT", float())
-            if not is_ok:
-                raise AttributeError(f"Failed to retrieve secondary part weight for element with GUID {guid}.")
+            weight_secondary = get_report_property(secondary, "WEIGHT", float)
             weight_secondaries += weight_secondary
 
             for rebar in secondary.GetReinforcements():
-                is_ok, weight_rebar = rebar.GetReportProperty("WEIGHT_TOTAL", float())
-                if not is_ok:
-                    raise AttributeError(f"Failed to retrieve rebar weight for element with GUID {guid}.")
+                weight_rebar = get_report_property(rebar, "WEIGHT_TOTAL", float)
                 weight_rebars += weight_rebar
 
         # Subassemblies
         for subassembly in element.GetSubAssemblies():
-            is_ok, weight_sub = subassembly.GetReportProperty("WEIGHT", float())
-            if not is_ok:
-                raise AttributeError(f"Failed to retrieve subassembly weight for element with GUID {guid}.")
-
-            _, rebar_type = subassembly.GetReportProperty("REBAR_ASSEMBLY_TYPE", str())
-            if rebar_type:
+            weight_sub = get_report_property(subassembly, "WEIGHT", float)
+            try:
+                rebar_type = get_report_property(subassembly, "REBAR_ASSEMBLY_TYPE", str)
+                assert rebar_type  # Must be truthy for rebar assemblies
                 weight_rebars += weight_sub
-            else:
+            except AttributeError:
                 weight_subassemblies += weight_sub
 
     total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
 
     return total_parts_weight, weight_rebars
-
-
-def get_model_and_selected_objects() -> tuple[Model, ModelObjectEnumerator]:
-    """
-    Returns the Tekla model and currently selected objects.
-
-    Raises an error if no objects are selected.
-    """
-    model = get_tekla_model()
-    selector = ModelObjectSelector()
-    selected_objects = selector.GetSelectedObjects()
-
-    if not selected_objects.GetSize():
-        raise ValueError("No elements selected.")
-
-    return model, selected_objects
 
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Any:

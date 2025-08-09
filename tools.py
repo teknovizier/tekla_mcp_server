@@ -24,6 +24,8 @@ from tekla_utils import (
     STRING_MATCH_TYPE_MAPPING,
     get_tekla_model,
     get_model_and_selected_objects,
+    get_report_property,
+    get_user_property,
     get_cog_coordinates,
     get_weight,
     get_wall_pairs,
@@ -158,9 +160,7 @@ def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_obj
     width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
 
     # Get cast unit total weight
-    is_ok, weight = assembly.GetReportProperty("WEIGHT", float())
-    if not is_ok:
-        raise AttributeError("Failed to retrieve element weight.")
+    weight = get_report_property(assembly, "WEIGHT", float)
 
     # Assume the total element weight is increased by 5% to account for the weight of subassemblies and rebars
     total_weight = weight * 1.05
@@ -459,7 +459,12 @@ def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str
     for selected_object in selected_objects:
         if isinstance(selected_object, ModelObject):
             for key, value in udas.items():
-                uda_exists, _ = selected_object.GetUserProperty(key, value)
+                try:
+                    _ = get_user_property(selected_object, key, type(value))
+                    uda_exists = True
+                except AttributeError:
+                    uda_exists = False
+
                 if mode == UDASetMode.KEEP and uda_exists:
                     skipped_attributes += 1
                     continue
@@ -485,18 +490,14 @@ def get_assemblies_props(selected_objects: ModelObjectEnumerator):
     assemblies: list[AssemblyProperties] = []
     for selected_object in selected_objects:
         if isinstance(selected_object, Assembly):
-            guid = selected_object.Identifier.GUID.ToString()
-            is_ok, position = selected_object.GetReportProperty("ASSEMBLY_POS", str())
-            if not is_ok:
-                raise AttributeError(f"Failed to retrieve assembly position for the element with GUID {guid}.")
-
-            main = selected_object.GetMainPart()
+            position = get_report_property(selected_object, "ASSEMBLY_POS", str)
             weight, _ = get_weight(selected_object)
+            main = selected_object.GetMainPart()
 
             assemblies.append(
                 AssemblyProperties(
                     position=position,
-                    guid=guid,
+                    guid=selected_object.Identifier.GUID.ToString(),
                     main_part_name=main.Name,
                     main_part_profile=main.Profile.ProfileString,
                     main_part_material=main.Material.MaterialString,
