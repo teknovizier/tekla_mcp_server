@@ -1,8 +1,14 @@
 """
-This module covers DLL loading logic, verifying successful loading and proper error handling when DLLs are missing.
+Unit tests for DLL loading and configuration parsing logic.
+
+This module verifies the robustness of the DLL loading mechanism and configuration file handling
+used to initialize Tekla Structures integrations. It ensures proper error reporting and graceful
+exit behavior when configuration issues or missing DLLs are encountered.
+
+Tests involving actual DLL loading are skipped in CI environments where Tekla is not available.
 
 Tested modules:
-- init.py: Contains functions needed for correct application initialization.
+- init.py
 """
 
 import os

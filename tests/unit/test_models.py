@@ -1,8 +1,11 @@
 """
-This module contains unit tests for models, including anchor placement and spacing calculations.
+Unit tests for core models and anchor placement logic.
+
+This module verifies the correctness of data models, validation logic, and anchor placement
+calculations used in Tekla component operations.
 
 Tested modules:
-- models.py: Contains classes for managing Tekla components such as lifting anchors.
+- models.py
 """
 
 import pytest

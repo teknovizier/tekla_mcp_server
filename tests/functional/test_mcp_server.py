@@ -1,8 +1,15 @@
 """
-This module contains unit tests for various functions, including component placement, selection, and modifications.
+Functional tests for Tekla operations via MCP server.
+
+This module validates end-to-end behavior of component placement, selection, and modification
+within a Tekla Structures model using the MCP server interface. It interacts with real model
+objects and tests asynchronous workflows.
+
+These tests require a live Tekla Structures environment and will be skipped in CI environments
+where Tekla is not available.
 
 Tested modules:
-- tekla_mcp.py: Functions for managing Tekla components (lifting anchors, custom details, etc.)
+- mcp_server.py
 """
 
 import json

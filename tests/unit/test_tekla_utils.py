@@ -1,8 +1,11 @@
 """
-This module contains unit tests for utility functions.
+Unit tests for Tekla utility functions.
+
+These tests require a live Tekla Structures environment and will be skipped in CI environments
+where Tekla is not available.
 
 Tested modules:
-- utils.py: Contains utility classes and functions used for geometry manipulations.
+- tekla_utils.py
 """
 
 import os
