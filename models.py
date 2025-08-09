@@ -386,3 +386,4 @@ class AssemblyProperties(BaseModel):
     main_part_material: str
     main_part_finish: str
     main_part_class: str
+    weight: float

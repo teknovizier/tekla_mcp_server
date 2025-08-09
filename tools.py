@@ -25,6 +25,7 @@ from tekla_utils import (
     get_tekla_model,
     get_model_and_selected_objects,
     get_cog_coordinates,
+    get_weight,
     get_wall_pairs,
     ensure_transformation_plane,
     insert_component,
@@ -485,11 +486,12 @@ def get_assemblies_props(selected_objects: ModelObjectEnumerator):
     for selected_object in selected_objects:
         if isinstance(selected_object, Assembly):
             guid = selected_object.Identifier.GUID.ToString()
-            main = selected_object.GetMainPart()
-
             is_ok, position = selected_object.GetReportProperty("ASSEMBLY_POS", str())
             if not is_ok:
                 raise AttributeError(f"Failed to retrieve assembly position for the element with GUID {guid}.")
+
+            main = selected_object.GetMainPart()
+            weight, _ = get_weight(selected_object)
 
             assemblies.append(
                 AssemblyProperties(
@@ -500,6 +502,7 @@ def get_assemblies_props(selected_objects: ModelObjectEnumerator):
                     main_part_material=main.Material.MaterialString,
                     main_part_finish=main.Finish,
                     main_part_class=main.Class,
+                    weight=weight,
                 )
             )
             processed_elements += 1

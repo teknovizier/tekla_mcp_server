@@ -231,6 +231,9 @@ def get_assemblies_properties():
     - Material
     - Finish
     - Class
+    - Weight, kg
+
+    Weight rounded to one decimal place.
     """
     try:
         _, selected_objects = get_model_and_selected_objects()

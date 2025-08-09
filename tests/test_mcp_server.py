@@ -407,6 +407,7 @@ async def test_get_assemblies_properties(model_objects):
         names = [a["main_part_name"] for a in assemblies]
         profiles = {a["main_part_name"]: a["main_part_profile"] for a in assemblies}
         classes = {a["main_part_name"]: a["main_part_class"] for a in assemblies}
+        weights = {a["main_part_name"]: a["weight"] for a in assemblies}
 
         assert "TEST_WALL1" in names
         assert "TEST_WALL2" in names
@@ -422,3 +423,8 @@ async def test_get_assemblies_properties(model_objects):
         assert classes["TEST_WALL2"] == "1"
         assert classes["TEST_SW1"] == "8"
         assert classes["TEST_SLAB1"] == "3"
+
+        assert weights["TEST_WALL1"] == pytest.approx(2880.0, abs=0.1)
+        assert weights["TEST_WALL2"] == pytest.approx(2880.0, abs=0.1)
+        assert weights["TEST_SW1"] == pytest.approx(2857.6, abs=0.1)
+        assert weights["TEST_SLAB1"] == pytest.approx(1761.8, abs=0.1)

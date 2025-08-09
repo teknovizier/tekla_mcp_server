@@ -74,6 +74,67 @@ def get_cog_coordinates(element: ModelObject) -> Point:
     return Point(cog_x, cog_y, cog_z)
 
 
+def get_weight(element: ModelObject) -> tuple[float, float]:
+    """
+    Calculate the weight breakdown of a given object.
+
+    This function returns two weight values:
+    - The total weight of the element, including its main part, secondary parts, and subassemblies.
+    - The total weight of all reinforcement bars associated with the main part, secondary parts, and any rebar subassemblies.
+    """
+    weight_main_part = 0.0
+    weight_secondaries = 0.0
+    weight_subassemblies = 0.0
+    weight_rebars = 0.0
+
+    guid = element.Identifier.GUID.ToString()
+
+    # Get the main part
+    mainpart = element.GetMainPart() if isinstance(element, Assembly) else element
+    is_ok, weight_main_part = mainpart.GetReportProperty("WEIGHT", float())
+    if not is_ok:
+        raise AttributeError(f"Failed to retrieve main part weight for element with GUID {guid}.")
+
+    # Rebars on main part
+    for rebar in mainpart.GetReinforcements():
+        is_ok, weight_rebar = rebar.GetReportProperty("WEIGHT_TOTAL", float())
+        if not is_ok:
+            raise AttributeError(f"Failed to retrieve rebar weight for element with GUID {guid}.")
+        weight_rebars += weight_rebar
+
+    if isinstance(element, Assembly):
+        # Secondary parts and their rebars
+        for secondary in element.GetSecondaries():
+            is_ok, weight_secondary = secondary.GetReportProperty("WEIGHT", float())
+            if not is_ok:
+                raise AttributeError(f"Failed to retrieve secondary part weight for element with GUID {guid}.")
+            weight_secondaries += weight_secondary
+
+            for rebar in secondary.GetReinforcements():
+                is_ok, weight_rebar = rebar.GetReportProperty("WEIGHT_TOTAL", float())
+                if not is_ok:
+                    raise AttributeError(f"Failed to retrieve rebar weight for element with GUID {guid}.")
+                weight_rebars += weight_rebar
+
+        # Subassemblies
+        for subassembly in element.GetSubAssemblies():
+            is_ok, weight_sub = subassembly.GetReportProperty("WEIGHT", float())
+            if not is_ok:
+                raise AttributeError(f"Failed to retrieve subassembly weight for element with GUID {guid}.")
+
+            _, rebar_type = subassembly.GetReportProperty("REBAR_ASSEMBLY_TYPE", str())
+            if rebar_type:
+                weight_rebars += weight_sub
+            else:
+                weight_subassemblies += weight_sub
+
+    total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
+
+    print(total_parts_weight)
+    print(weight_rebars)
+    return total_parts_weight, weight_rebars
+
+
 def get_model_and_selected_objects() -> tuple[Model, ModelObjectEnumerator]:
     """
     Returns the Tekla model and currently selected objects.
