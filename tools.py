@@ -342,6 +342,19 @@ def select_elements_by_filter(
     }
 
 
+def select_elements_by_filter_name(filter_name: str) -> dict:
+    """
+    Selects elements in the Tekla model based on the existing filter.
+    """
+    objects_to_select = TeklaModel().get_objects_by_filter(filter_name)
+    TeklaModel.select_objects(objects_to_select)
+
+    return {
+        "status": "success" if objects_to_select.GetSize() else "error",
+        "selected_elements": objects_to_select.GetSize(),
+    }
+
+
 def select_elements_by_guid(guids: list[str]) -> dict:
     """
     Selects elements in the Tekla model by their GUID.

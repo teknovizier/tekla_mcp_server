@@ -230,6 +230,25 @@ async def test_select_elements_name_matching(name, match_type, expected):
 
 
 @pytest.mark.asyncio
+async def test_select_elements_using_filter_name(model_objects):
+    """
+    Tests the `select_elements_using_filter_name` function, ensuring it correctly selects elements based on the existing filter settings.
+
+    Steps:
+    - Checks selection of specific elements.
+    """
+    async with Client(mcp) as client:
+        # Invalid filter
+        result = await client.call_tool("select_elements_using_filter_name", {"filter_name": "non_standard"})
+        assert result.data["status"] == "error"
+
+        # Valid filter
+        result = await client.call_tool("select_elements_using_filter_name", {"filter_name": "standard"})
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"]
+
+
+@pytest.mark.asyncio
 async def test_select_elements_using_guid(model_objects):
     """
     Tests the `select_elements_using_guid` function, ensuring it correctly selects elements based on their GUID.

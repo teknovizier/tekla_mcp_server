@@ -28,6 +28,7 @@ from tools import (
     remove_components,
     insert_custom_detail_component,
     select_elements_by_filter,
+    select_elements_by_filter_name,
     select_elements_by_guid,
     select_assemblies_or_main_parts,
     draw_names_on_elements,
@@ -100,7 +101,7 @@ def select_elements_using_filter(
     profile_match_type: str = "Is Equal",
 ) -> dict[str, Any]:
     """
-    Selects specified elements based on their type or Tekla class, name, and matching criteria.
+    Selects elements based on their type or Tekla class, name, and matching criteria.
 
     Valid concrete element types:
     - `Wall`
@@ -141,6 +142,18 @@ def select_elements_using_filter(
         name_match_type_object = StringMatchTypeModel(value=name_match_type)
         profile_match_type_object = StringMatchTypeModel(value=profile_match_type)
         return select_elements_by_filter(element_type, name, name_match_type_object.to_enum(), profile, profile_match_type_object.to_enum())
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def select_elements_using_filter_name(filter_name: str) -> dict[str, Any]:
+    """
+    Selects elements applying an existing Tekla filter.
+    """
+    try:
+        return select_elements_by_filter_name(filter_name)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
