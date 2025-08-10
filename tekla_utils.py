@@ -81,15 +81,21 @@ class TeklaModel:
 
         return selected_objects
 
-    def get_objects_by_filter(self, filter_expression: FilterExpression) -> ModelObjectEnumerator:
+    def get_objects_by_filter(self, model_filter: Union[FilterExpression, str]) -> ModelObjectEnumerator:
         """
         Returns objects in the model selected by the given selection filter definition.
 
         Raises:
+            TypeError: If the provided filter type is not FilterExpression or str.
             ValueError: If no objects can be selected.
         """
         selector = ModelObjectSelector()
-        objects_to_select = selector.GetObjectsByFilter(filter_expression)
+        if isinstance(model_filter, FilterExpression):
+            objects_to_select = selector.GetObjectsByFilter(model_filter)
+        elif isinstance(model_filter, str):
+            objects_to_select = selector.GetObjectsByFilterName(model_filter)
+        else:
+            raise TypeError(f"Invalid filter type: {type(model_filter)}. Expected FilterExpression or str.")
 
         if not objects_to_select.GetSize():
             raise ValueError("No objects match the provided filter expression.")
