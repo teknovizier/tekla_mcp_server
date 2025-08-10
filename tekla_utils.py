@@ -3,7 +3,8 @@ Module for utility classes and functions used for geometry manipulations.
 """
 
 from functools import wraps
-from typing import Any, Callable, Iterable, Union
+from typing import Any
+from collections.abc import Callable, Iterable
 
 from init import load_dlls, logger
 from models import StringMatchType
@@ -81,7 +82,7 @@ class TeklaModel:
 
         return selected_objects
 
-    def get_objects_by_filter(self, model_filter: Union[FilterExpression, str]) -> ModelObjectEnumerator:
+    def get_objects_by_filter(self, model_filter: FilterExpression | str) -> ModelObjectEnumerator:
         """
         Returns objects in the model selected by the given selection filter definition.
 
@@ -115,7 +116,7 @@ class TeklaModel:
         return selector.Select(array_list)
 
 
-def get_report_property(element: ModelObject, property_name: str, property_type: type) -> Union[str, int, float]:
+def get_report_property(element: ModelObject, property_name: str, property_type: type) -> str | int | float:
     """
     Retrieves a report property for a given Tekla model object.
 
@@ -133,7 +134,7 @@ def get_report_property(element: ModelObject, property_name: str, property_type:
     return value
 
 
-def get_user_property(element: ModelObject, property_name: str, property_type: type) -> Union[str, int, float]:
+def get_user_property(element: ModelObject, property_name: str, property_type: type) -> str | int | float:
     """
     Retrieves a user property for a given Tekla model object.
 

@@ -5,9 +5,10 @@ This server facilitates interaction with Tekla Structures, allowing users to
 speed-up modeling processes.
 """
 
-from typing import Any, Callable, Union
-from fastmcp import FastMCP
+from typing import Any
+from collections.abc import Callable
 
+from fastmcp import FastMCP
 
 from models import (
     SelectionModeModel,
@@ -92,7 +93,7 @@ def put_custom_detail_components(component_name: str) -> dict[str, Any]:
 
 @mcp.tool()
 def select_elements_using_filter(
-    element_type: Union[int, list[int], str] = None,
+    element_type: int | list[int] | str = None,
     name: str = None,
     name_match_type: str = "Is Equal",
     profile: str = None,

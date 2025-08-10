@@ -2,7 +2,8 @@
 Module for tools used for Tekla model operations.
 """
 
-from typing import Any, Callable, Union
+from typing import Any
+from collections.abc import Callable
 import json
 import re
 
@@ -118,7 +119,7 @@ def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback
 
 
 # Tools functions
-def remove_components(model: Model, component: Union[LiftingAnchors, CustomDetailComponent], *selected_objects: ModelObject) -> int:
+def remove_components(model: Model, component: LiftingAnchors | CustomDetailComponent, *selected_objects: ModelObject) -> int:
     """
     Removes components with the specified number and name from the specified object in the Tekla model.
     """
@@ -281,7 +282,7 @@ def insert_custom_detail_component(model: Model, component: CustomDetailComponen
 
 
 def select_elements_by_filter(
-    element_type: Union[int, list[int], ElementType] = None,
+    element_type: int | list[int] | ElementType = None,
     name: str = None,
     name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
     profile: str = None,
