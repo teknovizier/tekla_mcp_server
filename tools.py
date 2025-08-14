@@ -3,6 +3,7 @@ Module for tools used for Tekla model operations.
 """
 
 from typing import Any
+from collections import defaultdict
 from collections.abc import Callable
 import json
 import re
@@ -10,6 +11,7 @@ import re
 from init import load_dlls, logger
 from models import (
     ELEMENT_TYPE_MAPPING,
+    PYTHON_DATA_TYPES,
     SelectionMode,
     UDASetMode,
     StringMatchType,
@@ -488,28 +490,44 @@ def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str
     }
 
 
-def get_assemblies_props(selected_objects: ModelObjectEnumerator):
+def get_assemblies_props(selected_objects: ModelObjectEnumerator, custom_props_definitions: dict[str, str]):
     """
     Extracts and serializes key assembly properties from a collection of model objects.
     """
     processed_elements = 0
     assemblies: list[AssemblyProperties] = []
+    custom_props_errors = defaultdict(dict)
     for selected_object in selected_objects:
         if isinstance(selected_object, Assembly):
             position = get_report_property(selected_object, "ASSEMBLY_POS", str)
             weight, _ = get_weight(selected_object)
+            guid = selected_object.Identifier.GUID.ToString()
             main = selected_object.GetMainPart()
+
+            custom_properties = {}
+            if custom_props_definitions:
+                for key, value in custom_props_definitions.items():
+                    try:
+                        custom_property_type = PYTHON_DATA_TYPES.get(value)
+                        if not custom_property_type:
+                            raise TypeError("Property type must be one of these types: str, int, float.")
+
+                        custom_property_value = get_report_property(selected_object, key, custom_property_type)
+                        custom_properties[key] = custom_property_value
+                    except Exception as e:
+                        custom_props_errors[guid][key] = str(e)
 
             assemblies.append(
                 AssemblyProperties(
                     position=position,
-                    guid=selected_object.Identifier.GUID.ToString(),
+                    guid=guid,
                     main_part_name=main.Name,
                     main_part_profile=main.Profile.ProfileString,
                     main_part_material=main.Material.MaterialString,
                     main_part_finish=main.Finish,
                     main_part_class=main.Class,
                     weight=weight,
+                    custom_properties=custom_properties,
                 )
             )
             processed_elements += 1
@@ -522,4 +540,5 @@ def get_assemblies_props(selected_objects: ModelObjectEnumerator):
         "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
         "assemblies_list": serialized_assemblies,
+        "custom_properties_errors": custom_props_errors,
     }

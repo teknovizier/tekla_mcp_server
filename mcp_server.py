@@ -235,7 +235,7 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_assemblies_properties():
+def get_assemblies_properties(custom_props_definitions: dict[str, str] = None):
     """
     Retrieves key properties for the selected assemblies in the Tekla model.
 
@@ -243,17 +243,28 @@ def get_assemblies_properties():
     - Assembly Position
     - GUID
     - Main Part Name
-    - Profile
-    - Material
-    - Finish
-    - Class
-    - Weight, kg
+    - Main Part Profile
+    - Main Part Material
+    - Main Part Finish
+    - Main Part Class
+    - Weight (kg), rounded to one decimal place
+    - Any available custom properties defined in `custom_props_definitions`
 
-    Weight rounded to one decimal place.
+    Custom properties are defined in `custom_props_definitions`, which is a dictionary mapping property names to their expected data types.
+
+    Each key is a string representing the name of a custom property to retrieve from an Assembly object.
+    Each value is a string indicating the expected Python type of the property value.
+
+    Supported types are:
+    - str
+    - float
+    - bool
+
+    If a custom property is not available or fails to retrieve, "N/A" to be shown in the corresponding table cell.
     """
     try:
         selected_objects = TeklaModel().get_selected_objects()
-        return get_assemblies_props(selected_objects)
+        return get_assemblies_props(selected_objects, custom_props_definitions)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

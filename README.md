@@ -30,7 +30,7 @@ The server provides the following tools:
 | `draw_elements_names`            | Draw the temporary names for the selected elements in Tekla in the currently active rendered view |
 | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts       |
 | `set_elements_udas`              | Set custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones |
-| `get_assemblies_properties`       | Retrieve structured data about selected assemblies in the Tekla model, including key properties like position, GUID, main part details and weight |
+| `get_assemblies_properties`       | Retrieve structured data about selected assemblies in the Tekla model, including key properties like position, GUID, main part details, weight, and any defined custom properties |
 
 ### Compatibility
 The server was tested to work with **only Tekla 2022** and may not be compatible with other versions of Tekla Structures.

@@ -103,6 +103,9 @@ with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", e
 with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"), "r", encoding="utf-8") as file:
     LIFTING_ANCHOR_TYPES = json.load(file)
 
+# Python data types
+PYTHON_DATA_TYPES = {"str": str, "float": float, "bool": bool}
+
 
 # Classes
 class EnumWrapper(BaseModel):
@@ -387,3 +390,4 @@ class AssemblyProperties(BaseModel):
     main_part_finish: str
     main_part_class: str
     weight: float
+    custom_properties: dict[str, str | float | bool] | None

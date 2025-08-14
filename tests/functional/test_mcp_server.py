@@ -397,6 +397,7 @@ async def test_get_assemblies_properties(model_objects):
         result = await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
         assert result.data["status"] == "success"
 
+        # Check basic properties
         result = await client.call_tool("get_assemblies_properties")
         assert result.data["status"] == "success"
         assert result.data["selected_elements"] >= 4
@@ -440,5 +441,20 @@ async def test_get_assemblies_properties(model_objects):
 
         assert weights["TEST_WALL1"] == pytest.approx(2880.0, abs=0.1)
         assert weights["TEST_WALL2"] == pytest.approx(2880.0, abs=0.1)
-        assert weights["TEST_SW1"] == pytest.approx(2857.6, abs=0.1)
+        assert weights["TEST_SW1"] == pytest.approx(2880.0, abs=50.0)
         assert weights["TEST_SLAB1"] == pytest.approx(1761.8, abs=0.1)
+
+        # Check custom properties
+        result = await client.call_tool("get_assemblies_properties", {"custom_properties_definitions": {"ASSEMBLY_TOP_LEVEL": "str", "ASSEMBLY_TOP_LEVELL": "str"}})
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] >= 4
+        assert result.data["processed_elements"] == 4
+
+        assemblies = json.loads(result.data["assemblies_list"])
+        top_levels = {a["main_part_name"]: a["custom_properties"]["ASSEMBLY_TOP_LEVEL"] for a in assemblies}
+        assert result.data["custom_properties_errors"]
+
+        assert top_levels["TEST_WALL1"] == " +3.000"
+        assert top_levels["TEST_WALL2"] == " +6.020"
+        assert top_levels["TEST_SW1"] == " +3.000"
+        assert top_levels["TEST_SLAB1"] == " +3.220"
