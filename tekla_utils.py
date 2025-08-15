@@ -36,9 +36,6 @@ from Tekla.Structures.Model import (
 from Tekla.Structures.Model.UI import ModelObjectSelector as ModelObjectSelectorUI
 from Tekla.Structures.Filtering import StringOperatorType, FilterExpression
 
-# Globals
-_template_attribute_cache: dict[str, ReportProperty] = {}
-
 # Mappings
 # String match types
 STRING_MATCH_TYPE_MAPPING = {
@@ -128,34 +125,39 @@ def parse_template_attribute(attribute_name: str) -> ReportProperty:
     parses all attribute definitions, and caches them in memory. Subsequent calls
     return cached results instantly without re-reading the file.
     """
-    global _template_attribute_cache
-    config = read_config()
-    with open(config["content_attributes_file_path"], "r", encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            if not stripped or stripped.startswith("//") or stripped.startswith("[") or stripped.lower().startswith("name"):
-                continue
+    if not hasattr(parse_template_attribute, "_cache"):
+        parse_template_attribute._cache = {}
+        parse_template_attribute._loaded = False
 
-            first_split = re.split(r"\s", stripped, maxsplit=1)
-            if len(first_split) < 2:
-                continue
+    # Load file only once
+    if not parse_template_attribute._loaded:
+        config = read_config()
+        with open(config["content_attributes_file_path"], "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("//") or stripped.startswith("[") or stripped.lower().startswith("name"):
+                    continue
 
-            name = first_split[0].strip()
-            if name != attribute_name:
-                continue
+                first_split = re.split(r"\s", stripped, maxsplit=1)
+                if len(first_split) < 2:
+                    continue
 
-            remainder = first_split[1].strip()
-            rest_parts = re.split(r"\s{2,}", remainder)
-            while len(rest_parts) < 8:
-                rest_parts.append(None)
+                name = first_split[0].strip()
+                remainder = first_split[1].strip()
+                rest_parts = re.split(r"\s{2,}", remainder)
+                while len(rest_parts) < 8:
+                    rest_parts.append(None)
 
-            dtype = rest_parts[0]
-            unit = rest_parts[6] if rest_parts[6] != "*" else None
+                dtype = rest_parts[0]
+                unit = rest_parts[6] if rest_parts[6] != "*" else None
 
-            _template_attribute_cache[name] = ReportProperty(name=name, data_type=dtype, unit=unit)
+                parse_template_attribute._cache[name] = ReportProperty(name=name, data_type=dtype, unit=unit)
 
-    if attribute_name in _template_attribute_cache:
-        return _template_attribute_cache[attribute_name]
+        parse_template_attribute._loaded = True
+
+    # Return from cache
+    if attribute_name in parse_template_attribute._cache:
+        return parse_template_attribute._cache[attribute_name]
 
     raise ValueError(f"Attribute '{attribute_name}' not found.")
 
