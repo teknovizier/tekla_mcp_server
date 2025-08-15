@@ -43,7 +43,7 @@ def read_config() -> dict[str, Any]:
         Checks that all required keys are present and have the correct types.
         """
 
-        required_keys = {"tekla_path": str}
+        required_keys = {"tekla_path": str, "content_attributes_file_path": str}
 
         # Check for required keys and types at the top level
         for key, expected_type in required_keys.items():

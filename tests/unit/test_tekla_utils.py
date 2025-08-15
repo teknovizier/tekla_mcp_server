@@ -14,7 +14,8 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_utils import get_wall_pairs
+from models import ReportProperty
+from tekla_utils import _template_attribute_cache, get_wall_pairs, parse_template_attribute
 from init import load_dlls
 
 # Tekla OpenAPI imports
@@ -86,3 +87,25 @@ def test_non_beam_objects_are_ignored():
     not_beam = object()
     result = get_wall_pairs([wall1, wall2, not_beam])
     assert result == [(wall1, wall2)]
+
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Clear the attribute cache before and after each test."""
+    _template_attribute_cache.clear()
+    yield
+    _template_attribute_cache.clear()
+
+
+@pytest.mark.parametrize(
+    "attr_name,expected_type,expected_unit",
+    [("ASSEMBLY_TOP_LEVEL", str, None), ("AREA", float, "m2"), ("ASSEMBLY_TOP_LEVEL_UNFORMATTED_BASEPOINT", float, "mm"), ("SHIPMENT_NUMBER", str, None)],
+)
+def test_parse_template_attribute(attr_name, expected_type, expected_unit):
+    """Checks that `parse_template_attribute` returns correct template attributes properties."""
+    rp = parse_template_attribute(attr_name)
+
+    assert isinstance(rp, ReportProperty)
+    assert rp.name == attr_name
+    assert rp.data_type == expected_type
+    assert rp.unit == expected_unit

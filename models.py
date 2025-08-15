@@ -9,7 +9,7 @@ import math
 
 from enum import Enum
 from pathlib import Path
-from pydantic import BaseModel, Field, PrivateAttr, conint, confloat, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, conint, confloat, field_validator, field_serializer
 from pydantic_core import PydanticCustomError
 from typing import ClassVar
 
@@ -102,9 +102,6 @@ with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", e
 # Lifting anchor types
 with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"), "r", encoding="utf-8") as file:
     LIFTING_ANCHOR_TYPES = json.load(file)
-
-# Python data types
-PYTHON_DATA_TYPES = {"str": str, "int": int, "float": float}
 
 
 # Classes
@@ -377,6 +374,37 @@ class CustomDetailComponent(BaseModel):
         return self._component_type
 
 
+class ReportProperty(BaseModel):
+    """
+    Represents key properties of a global attribute in Tekla:
+    - Attribute name
+    - Data type (converted from string to Python type)
+    - Unit
+    - Value
+    """
+
+    name: str
+    data_type: type
+    unit: str | None
+    value: float | str | int | None = None
+
+    @field_validator("data_type", mode="before")
+    @classmethod
+    def map_string_to_type(cls, v: str) -> type:
+        """
+        Converts a string like `FLOAT` to the corresponding Python type.
+        """
+        type_map = {"FLOAT": float, "CHARACTER": str, "INTEGER": int}
+        return type_map.get(v.upper(), str)  # .upper() for safety
+
+    @field_serializer("data_type")
+    def serialize_type(self, v: type, _info):
+        """
+        Converts the data_type class object to its name string for JSON output.
+        """
+        return v.__name__
+
+
 class ElementProperties(BaseModel):
     """
     Represents key properties of an Assembly or Part object extracted from Tekla Structures.
@@ -390,4 +418,4 @@ class ElementProperties(BaseModel):
     main_part_finish: str
     main_part_class: str
     weight: float
-    custom_properties: dict[str, str | float | bool] | None
+    custom_properties: list[ReportProperty] | None

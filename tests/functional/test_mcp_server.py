@@ -469,11 +469,10 @@ async def test_get_elements_properties_valid_custom_properties(model_objects):
     TeklaModel.select_objects(elements_to_select)
     async with Client(mcp) as client:
         await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        result = await client.call_tool("get_elements_properties", {"custom_props_definitions": {"ASSEMBLY_TOP_LEVEL": "str"}})
+        result = await client.call_tool("get_elements_properties", {"custom_props_definitions": ["ASSEMBLY_TOP_LEVEL"]})
 
         assemblies = json.loads(result.data["assemblies_list"])
-        top_levels = {a["main_part_name"]: a["custom_properties"]["ASSEMBLY_TOP_LEVEL"] for a in assemblies}
-
+        top_levels = {a["main_part_name"]: prop["value"] for a in assemblies for prop in a["custom_properties"] if prop["name"] == "ASSEMBLY_TOP_LEVEL"}
         assert top_levels["TEST_WALL1"] == " +3.000"
         assert top_levels["TEST_WALL2"] == " +6.020"
         assert top_levels["TEST_SW1"] == " +3.000"
@@ -496,7 +495,7 @@ async def test_get_elements_properties_invalid_and_missing_custom_properties(mod
         await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
         result = await client.call_tool(
             "get_elements_properties",
-            {"custom_props_definitions": {"ASSEMBLY_TOP_LEVEL": "str", "ASSEMBLY_TOP_LEVELL": "str", "NON_EXISTENT_PROPERTY": "str", "ASSEMBLY_BOTTOM_LEVEL": "datetime"}},
+            {"custom_props_definitions": ["ASSEMBLY_TOP_LEVEL", "ASSEMBLY_TOP_LEVELL", "NON_EXISTENT_PROPERTY"]},
         )
 
         assemblies = json.loads(result.data["assemblies_list"])
@@ -505,9 +504,13 @@ async def test_get_elements_properties_invalid_and_missing_custom_properties(mod
 
         for assembly in assemblies:
             props = assembly["custom_properties"]
-            assert props.get("ASSEMBLY_TOP_LEVELL", "N/A") == "N/A"
-            assert props.get("NON_EXISTENT_PROPERTY", "N/A") == "N/A"
-            assert props.get("ASSEMBLY_TOP_LEVEL", "N/A") != "N/A"
+
+            def get_prop_value(prop_name: str, default="N/A"):
+                return next((p["value"] for p in props if p["name"] == prop_name), default)
+
+            assert get_prop_value("ASSEMBLY_TOP_LEVELL") == "N/A"
+            assert get_prop_value("NON_EXISTENT_PROPERTY") == "N/A"
+            assert get_prop_value("ASSEMBLY_TOP_LEVEL") != "N/A"
 
         for _, prop_errors in errors.items():
             for key, msg in prop_errors.items():

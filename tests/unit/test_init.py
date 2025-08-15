@@ -27,11 +27,12 @@ def test_read_config_valid(monkeypatch):
     """
     Checks that valid config is loaded and validated.
     """
-    valid_json = '{"tekla_path": "C:\\\\Tekla"}'
+    valid_json = '{"tekla_path": "C:\\\\Tekla", "content_attributes_file_path": "C:\\\\Tekla\\\\contentattributes_global.lst"}'
     mocked_open = mock_open(read_data=valid_json)
     monkeypatch.setattr(Path, "open", mocked_open)
     config = read_config()
     assert config["tekla_path"] == "C:\\Tekla"
+    assert config["content_attributes_file_path"] == "C:\\Tekla\\contentattributes_global.lst"
 
 
 def test_read_config_missing_file(monkeypatch):

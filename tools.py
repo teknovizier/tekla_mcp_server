@@ -11,7 +11,6 @@ import re
 from init import load_dlls, logger
 from models import (
     ELEMENT_TYPE_MAPPING,
-    PYTHON_DATA_TYPES,
     SelectionMode,
     UDASetMode,
     StringMatchType,
@@ -26,6 +25,7 @@ from models import (
 from tekla_utils import (
     STRING_MATCH_TYPE_MAPPING,
     TeklaModel,
+    parse_template_attribute,
     get_report_property,
     get_user_property,
     get_cog_coordinates,
@@ -491,7 +491,7 @@ def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str
     }
 
 
-def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_definitions: dict[str, str]):
+def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_definitions: list[str]):
     """
     Extracts and serializes key element properties from a collection of model objects.
     """
@@ -507,18 +507,15 @@ def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_def
         guid = selected_object.Identifier.GUID.ToString()
         main = selected_object.GetMainPart() if is_assembly else selected_object
 
-        custom_properties = {}
+        custom_properties = []
         if custom_props_definitions:
-            for key, value in custom_props_definitions.items():
+            for custom_prop_definition in custom_props_definitions:
                 try:
-                    custom_property_type = PYTHON_DATA_TYPES.get(value)
-                    if not custom_property_type:
-                        raise TypeError("Property type must be one of these types: str, int, float.")
-
-                    custom_property_value = get_report_property(selected_object, key, custom_property_type)
-                    custom_properties[key] = custom_property_value
+                    custom_property = parse_template_attribute(custom_prop_definition)
+                    custom_property.value = get_report_property(selected_object, custom_property.name, custom_property.data_type)
+                    custom_properties.append(custom_property)
                 except Exception as e:
-                    custom_props_errors[guid][key] = str(e)
+                    custom_props_errors[guid][custom_prop_definition] = str(e)
 
         return ElementProperties(
             position=position,

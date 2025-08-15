@@ -235,7 +235,7 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_elements_properties(custom_props_definitions: dict[str, str] = None):
+def get_elements_properties(custom_props_definitions: list[str] = None):
     """
     Retrieves key properties for the selected elements (assemblies or parts) in the Tekla model.
 
@@ -257,17 +257,9 @@ def get_elements_properties(custom_props_definitions: dict[str, str] = None):
     - Weight (kg), rounded to one decimal place
     - Any available custom properties defined in `custom_props_definitions`
 
-    Custom properties are defined in `custom_props_definitions`, which is a dictionary mapping property names to their expected data types.
-
-    Each key is a string representing the name of a custom property to retrieve from an Assembly or Part object.
-    Each value is a string indicating the expected Python type of the property value.
-
-    Supported types are:
-    - str
-    - int
-    - float
-
-    If a custom property is not available or fails to retrieve, "N/A" to be shown in the corresponding table cell.
+    Each custom property column header must include its unit in parentheses, if available. For example, if the property is "Area" and its unit is "m²", the column header should be "Area (m²)".
+    If no unit is available, use just the property name.
+    If a property fails to retrieve, display "N/A" in the corresponding cell.
     """
     try:
         selected_objects = TeklaModel().get_selected_objects()

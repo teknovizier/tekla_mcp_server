@@ -2,12 +2,14 @@
 Module for utility classes and functions used for geometry manipulations.
 """
 
+import re
+
 from functools import wraps
 from typing import Any
 from collections.abc import Callable, Iterable
 
-from init import load_dlls, logger
-from models import StringMatchType
+from init import load_dlls, read_config, logger
+from models import StringMatchType, ReportProperty
 
 # Tekla OpenAPI imports
 load_dlls()
@@ -34,6 +36,8 @@ from Tekla.Structures.Model import (
 from Tekla.Structures.Model.UI import ModelObjectSelector as ModelObjectSelectorUI
 from Tekla.Structures.Filtering import StringOperatorType, FilterExpression
 
+# Globals
+_template_attribute_cache: dict[str, ReportProperty] = {}
 
 # Mappings
 # String match types
@@ -114,6 +118,46 @@ class TeklaModel:
             array_list.Add(model_object)
 
         return selector.Select(array_list)
+
+
+def parse_template_attribute(attribute_name: str) -> ReportProperty:
+    """
+    Lazily loads and parses Tekla attribute definitions from the template file.
+
+    On first call, this function reads the Tekla template attributes file once,
+    parses all attribute definitions, and caches them in memory. Subsequent calls
+    return cached results instantly without re-reading the file.
+    """
+    global _template_attribute_cache
+    config = read_config()
+    with open(config["content_attributes_file_path"], "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("//") or stripped.startswith("[") or stripped.lower().startswith("name"):
+                continue
+
+            first_split = re.split(r"\s", stripped, maxsplit=1)
+            if len(first_split) < 2:
+                continue
+
+            name = first_split[0].strip()
+            if name != attribute_name:
+                continue
+
+            remainder = first_split[1].strip()
+            rest_parts = re.split(r"\s{2,}", remainder)
+            while len(rest_parts) < 8:
+                rest_parts.append(None)
+
+            dtype = rest_parts[0]
+            unit = rest_parts[6] if rest_parts[6] != "*" else None
+
+            _template_attribute_cache[name] = ReportProperty(name=name, data_type=dtype, unit=unit)
+
+    if attribute_name in _template_attribute_cache:
+        return _template_attribute_cache[attribute_name]
+
+    raise ValueError(f"Attribute '{attribute_name}' not found.")
 
 
 def get_report_property(element: ModelObject, property_name: str, property_type: type) -> str | int | float:
