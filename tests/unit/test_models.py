@@ -8,11 +8,12 @@ Tested modules:
 - models.py
 """
 
+import json
 import pytest
 
 from pydantic_core import ValidationError
 
-from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, ElementTypeModel, ComponentTypeModel, ElementType, LiftingAnchors
+from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, ElementTypeModel, ComponentTypeModel, ElementType, LiftingAnchors, ReportProperty, ElementProperties
 
 
 @pytest.fixture
@@ -358,3 +359,68 @@ def test_component_type_model_invalid(input_val):
     """
     with pytest.raises(ValidationError):
         ComponentTypeModel(value=input_val)
+
+
+@pytest.mark.parametrize(
+    "type_str, expected_type",
+    [
+        ("FLOAT", float),
+        ("CHARACTER", str),
+        ("INTEGER", int),
+        ("unknown", str),  # fallback
+    ],
+)
+def test_report_property_map_string_to_type(type_str, expected_type):
+    """Ensure data_type strings are mapped to the correct Python types."""
+    rp = ReportProperty(name="TEST", data_type=type_str, unit=None)
+    assert rp.data_type is expected_type
+
+
+def test_report_property_serialize_type_outputs_type_name():
+    """Ensure JSON serialization outputs type name instead of type object."""
+    rp = ReportProperty(name="LENGTH", data_type="FLOAT", unit="m", value=12.5)
+    json_data = rp.model_dump_json()
+    parsed = json.loads(json_data)
+    assert parsed["data_type"] == "float"
+    assert parsed["name"] == "LENGTH"
+    assert parsed["unit"] == "m"
+    assert parsed["value"] == 12.5
+
+
+def test_report_property_invalid_data_type_raises():
+    """Passing a non-string/non-type should fail."""
+    with pytest.raises(Exception):
+        ReportProperty(name="INVALID", data_type=12345, unit=None)
+
+
+def test_report_property_none_for_optional_fields():
+    """Unit and value should be allowed to be None."""
+    rp = ReportProperty(name="EMPTY_UNIT", data_type="INTEGER", unit=None, value=None)
+    assert rp.unit is None
+    assert rp.value is None
+
+
+def test_element_properties_with_custom_properties():
+    """Ensure ElementProperties can contain ReportProperty objects."""
+    custom_props = [
+        ReportProperty(name="AREA", data_type="FLOAT", unit="m2", value=123.4),
+        ReportProperty(name="DESCRIPTION", data_type="CHARACTER", unit=None, value="Test wall"),
+    ]
+    elem = ElementProperties(
+        position="P1",
+        guid="1234-5678",
+        main_part_name="Wall",
+        main_part_profile="200*3000",
+        main_part_material="Concrete",
+        main_part_finish="",
+        main_part_class="1",
+        weight=1000.0,
+        custom_properties=custom_props,
+    )
+    assert elem.custom_properties[0].data_type is float
+    assert elem.custom_properties[1].value == "Test wall"
+
+    # Check serialization
+    data = json.loads(elem.model_dump_json())
+    assert data["custom_properties"][0]["data_type"] == "float"
+    assert data["custom_properties"][1]["data_type"] == "str"
