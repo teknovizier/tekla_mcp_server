@@ -104,7 +104,7 @@ with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"),
     LIFTING_ANCHOR_TYPES = json.load(file)
 
 # Python data types
-PYTHON_DATA_TYPES = {"str": str, "float": float, "bool": bool}
+PYTHON_DATA_TYPES = {"str": str, "int": int, "float": float}
 
 
 # Classes

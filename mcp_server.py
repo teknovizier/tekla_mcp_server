@@ -264,8 +264,8 @@ def get_elements_properties(custom_props_definitions: dict[str, str] = None):
 
     Supported types are:
     - str
+    - int
     - float
-    - bool
 
     If a custom property is not available or fails to retrieve, "N/A" to be shown in the corresponding table cell.
     """
