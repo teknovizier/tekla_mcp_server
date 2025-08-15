@@ -34,7 +34,7 @@ from tools import (
     draw_names_on_elements,
     insert_boolean_parts_as_real_parts,
     set_udas_on_elements,
-    get_assemblies_props,
+    get_elements_props,
 )
 from tekla_utils import TeklaModel
 
@@ -235,24 +235,31 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_assemblies_properties(custom_props_definitions: dict[str, str] = None):
+def get_elements_properties(custom_props_definitions: dict[str, str] = None):
     """
-    Retrieves key properties for the selected assemblies in the Tekla model.
+    Retrieves key properties for the selected elements (assemblies or parts) in the Tekla model.
 
-    The returned data to be presented in a Markdown table format, each row represents one assembly, with columns for:
-    - Assembly Position
+    The returned data to be presented in a Markdown table format, each row represents one element, with columns for:
+    - Position
     - GUID
-    - Main Part Name
-    - Main Part Profile
-    - Main Part Material
-    - Main Part Finish
-    - Main Part Class
+    - For assemblies in `assemblies_list`: values are taken from the main part and labeled as:
+        - Main Part Name
+        - Main Part Profile
+        - Main Part Material
+        - Main Part Finish
+        - Main Part Class
+    - For parts in `parts_list`: values are labeled as:
+        - Name
+        - Profile
+        - Material
+        - Finish
+        - Class
     - Weight (kg), rounded to one decimal place
     - Any available custom properties defined in `custom_props_definitions`
 
     Custom properties are defined in `custom_props_definitions`, which is a dictionary mapping property names to their expected data types.
 
-    Each key is a string representing the name of a custom property to retrieve from an Assembly object.
+    Each key is a string representing the name of a custom property to retrieve from an Assembly or Part object.
     Each value is a string indicating the expected Python type of the property value.
 
     Supported types are:
@@ -264,7 +271,7 @@ def get_assemblies_properties(custom_props_definitions: dict[str, str] = None):
     """
     try:
         selected_objects = TeklaModel().get_selected_objects()
-        return get_assemblies_props(selected_objects, custom_props_definitions)
+        return get_elements_props(selected_objects, custom_props_definitions)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

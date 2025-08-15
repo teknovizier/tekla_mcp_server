@@ -20,7 +20,7 @@ from models import (
     LiftingAnchors,
     CustomDetailComponent,
     ElementTypeModel,
-    AssemblyProperties,
+    ElementProperties,
 )
 
 from tekla_utils import (
@@ -49,6 +49,7 @@ from Tekla.Structures.Model import (
     Assembly,
     Beam,
     BooleanPart,
+    Part,
     Position,
     Solid,
     TransformationPlane,
@@ -490,55 +491,63 @@ def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str
     }
 
 
-def get_assemblies_props(selected_objects: ModelObjectEnumerator, custom_props_definitions: dict[str, str]):
+def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_definitions: dict[str, str]):
     """
-    Extracts and serializes key assembly properties from a collection of model objects.
+    Extracts and serializes key element properties from a collection of model objects.
     """
     processed_elements = 0
-    assemblies: list[AssemblyProperties] = []
+    assemblies: list[ElementProperties] = []
+    parts: list[ElementProperties] = []
     custom_props_errors = defaultdict(dict)
+
+    def get_single_element_properties(selected_object: ModelObject, is_assembly: bool) -> ElementProperties:
+        position_key = "ASSEMBLY_POS" if is_assembly else "PART_POS"
+        position = get_report_property(selected_object, position_key, str)
+        weight, _ = get_weight(selected_object)
+        guid = selected_object.Identifier.GUID.ToString()
+        main = selected_object.GetMainPart() if is_assembly else selected_object
+
+        custom_properties = {}
+        if custom_props_definitions:
+            for key, value in custom_props_definitions.items():
+                try:
+                    custom_property_type = PYTHON_DATA_TYPES.get(value)
+                    if not custom_property_type:
+                        raise TypeError("Property type must be one of these types: str, int, float.")
+
+                    custom_property_value = get_report_property(selected_object, key, custom_property_type)
+                    custom_properties[key] = custom_property_value
+                except Exception as e:
+                    custom_props_errors[guid][key] = str(e)
+
+        return ElementProperties(
+            position=position,
+            guid=guid,
+            main_part_name=main.Name,
+            main_part_profile=main.Profile.ProfileString,
+            main_part_material=main.Material.MaterialString,
+            main_part_finish=main.Finish,
+            main_part_class=main.Class,
+            weight=weight,
+            custom_properties=custom_properties,
+        )
+
     for selected_object in selected_objects:
         if isinstance(selected_object, Assembly):
-            position = get_report_property(selected_object, "ASSEMBLY_POS", str)
-            weight, _ = get_weight(selected_object)
-            guid = selected_object.Identifier.GUID.ToString()
-            main = selected_object.GetMainPart()
-
-            custom_properties = {}
-            if custom_props_definitions:
-                for key, value in custom_props_definitions.items():
-                    try:
-                        custom_property_type = PYTHON_DATA_TYPES.get(value)
-                        if not custom_property_type:
-                            raise TypeError("Property type must be one of these types: str, int, float.")
-
-                        custom_property_value = get_report_property(selected_object, key, custom_property_type)
-                        custom_properties[key] = custom_property_value
-                    except Exception as e:
-                        custom_props_errors[guid][key] = str(e)
-
-            assemblies.append(
-                AssemblyProperties(
-                    position=position,
-                    guid=guid,
-                    main_part_name=main.Name,
-                    main_part_profile=main.Profile.ProfileString,
-                    main_part_material=main.Material.MaterialString,
-                    main_part_finish=main.Finish,
-                    main_part_class=main.Class,
-                    weight=weight,
-                    custom_properties=custom_properties,
-                )
-            )
-            processed_elements += 1
+            assemblies.append(get_single_element_properties(selected_object, True))
+        elif isinstance(selected_object, Part):
+            parts.append(get_single_element_properties(selected_object, False))
+        processed_elements += 1
 
     # JSON serialization
     serialized_assemblies = json.dumps([a.model_dump() for a in assemblies], ensure_ascii=False, indent=2)
+    serialized_parts = json.dumps([a.model_dump() for a in parts], ensure_ascii=False, indent=2)
 
     return {
-        "status": "success" if assemblies else "error",
+        "status": "success" if assemblies or parts else "error",
         "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
         "assemblies_list": serialized_assemblies,
+        "parts_list": serialized_parts,
         "custom_properties_errors": custom_props_errors,
     }

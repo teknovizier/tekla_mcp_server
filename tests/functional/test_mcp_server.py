@@ -379,10 +379,9 @@ async def test_set_elements_udas(model_objects):
 
 
 @pytest.mark.asyncio
-async def test_get_assemblies_properties(model_objects):
+async def test_get_elements_properties_basic_assembly_properties(model_objects):
     """
-    Tests the `get_assemblies_properties` MCP tool by selecting known Tekla elements and validating
-    their extracted assembly properties.
+    Tests the `get_elements_properties` MCP tool: basic assembly properties.
     """
     elements_to_select = [
         model_objects["test_wall1"],
@@ -391,24 +390,18 @@ async def test_get_assemblies_properties(model_objects):
         model_objects["test_slab1"],
     ]
     TeklaModel.select_objects(elements_to_select)
-
     async with Client(mcp) as client:
-        # Select assemblies
-        result = await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        assert result.data["status"] == "success"
+        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
+        result = await client.call_tool("get_elements_properties")
 
-        # Check basic properties
-        result = await client.call_tool("get_assemblies_properties")
         assert result.data["status"] == "success"
         assert result.data["selected_elements"] >= 4
         assert result.data["processed_elements"] == 4
 
-        # Deserialize JSON result
         assemblies = json.loads(result.data["assemblies_list"])
         assert isinstance(assemblies, list)
         assert len(assemblies) == 4
 
-        # Basic property validation
         for assembly in assemblies:
             assert isinstance(assembly["guid"], str)
             assert isinstance(assembly["position"], str)
@@ -418,7 +411,24 @@ async def test_get_assemblies_properties(model_objects):
             assert isinstance(assembly["main_part_finish"], str)
             assert isinstance(assembly["main_part_class"], str)
 
-        # Specific checks for known elements
+
+@pytest.mark.asyncio
+async def test_get_elements_properties_known_values_for_assemblies(model_objects):
+    """
+    Tests the `get_elements_properties` MCP tool: known values for assemblies.
+    """
+    elements_to_select = [
+        model_objects["test_wall1"],
+        model_objects["test_wall2"],
+        model_objects["test_sw1"],
+        model_objects["test_slab1"],
+    ]
+    TeklaModel.select_objects(elements_to_select)
+    async with Client(mcp) as client:
+        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
+        result = await client.call_tool("get_elements_properties")
+
+        assemblies = json.loads(result.data["assemblies_list"])
         names = [a["main_part_name"] for a in assemblies]
         profiles = {a["main_part_name"]: a["main_part_profile"] for a in assemblies}
         classes = {a["main_part_name"]: a["main_part_class"] for a in assemblies}
@@ -444,17 +454,62 @@ async def test_get_assemblies_properties(model_objects):
         assert weights["TEST_SW1"] == pytest.approx(2880.0, abs=50.0)
         assert weights["TEST_SLAB1"] == pytest.approx(1761.8, abs=0.1)
 
-        # Check custom properties
-        result = await client.call_tool("get_assemblies_properties", {"custom_properties_definitions": {"ASSEMBLY_TOP_LEVEL": "str", "ASSEMBLY_TOP_LEVELL": "str"}})
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] >= 4
-        assert result.data["processed_elements"] == 4
+
+@pytest.mark.asyncio
+async def test_get_elements_properties_valid_custom_properties(model_objects):
+    """
+    Tests the `get_elements_properties` MCP tool: valid custom properties.
+    """
+    elements_to_select = [
+        model_objects["test_wall1"],
+        model_objects["test_wall2"],
+        model_objects["test_sw1"],
+        model_objects["test_slab1"],
+    ]
+    TeklaModel.select_objects(elements_to_select)
+    async with Client(mcp) as client:
+        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
+        result = await client.call_tool("get_elements_properties", {"custom_props_definitions": {"ASSEMBLY_TOP_LEVEL": "str"}})
 
         assemblies = json.loads(result.data["assemblies_list"])
         top_levels = {a["main_part_name"]: a["custom_properties"]["ASSEMBLY_TOP_LEVEL"] for a in assemblies}
-        assert result.data["custom_properties_errors"]
 
         assert top_levels["TEST_WALL1"] == " +3.000"
         assert top_levels["TEST_WALL2"] == " +6.020"
         assert top_levels["TEST_SW1"] == " +3.000"
         assert top_levels["TEST_SLAB1"] == " +3.220"
+
+
+@pytest.mark.asyncio
+async def test_get_elements_properties_invalid_and_missing_custom_properties(model_objects):
+    """
+    Tests the `get_elements_properties` MCP tool: invalid and missing custom properties.
+    """
+    elements_to_select = [
+        model_objects["test_wall1"],
+        model_objects["test_wall2"],
+        model_objects["test_sw1"],
+        model_objects["test_slab1"],
+    ]
+    TeklaModel.select_objects(elements_to_select)
+    async with Client(mcp) as client:
+        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
+        result = await client.call_tool(
+            "get_elements_properties",
+            {"custom_props_definitions": {"ASSEMBLY_TOP_LEVEL": "str", "ASSEMBLY_TOP_LEVELL": "str", "NON_EXISTENT_PROPERTY": "str", "ASSEMBLY_BOTTOM_LEVEL": "datetime"}},
+        )
+
+        assemblies = json.loads(result.data["assemblies_list"])
+        errors = result.data["custom_properties_errors"]
+        assert errors
+
+        for assembly in assemblies:
+            props = assembly["custom_properties"]
+            assert props.get("ASSEMBLY_TOP_LEVELL", "N/A") == "N/A"
+            assert props.get("NON_EXISTENT_PROPERTY", "N/A") == "N/A"
+            assert props.get("ASSEMBLY_TOP_LEVEL", "N/A") != "N/A"
+
+        for _, prop_errors in errors.items():
+            for key, msg in prop_errors.items():
+                assert isinstance(key, str)
+                assert isinstance(msg, str)

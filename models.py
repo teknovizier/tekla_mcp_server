@@ -377,9 +377,9 @@ class CustomDetailComponent(BaseModel):
         return self._component_type
 
 
-class AssemblyProperties(BaseModel):
+class ElementProperties(BaseModel):
     """
-    Represents key properties of an Assembly object extracted from Tekla Structures.
+    Represents key properties of an Assembly or Part object extracted from Tekla Structures.
     """
 
     position: str
