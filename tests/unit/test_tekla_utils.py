@@ -39,15 +39,6 @@ def mock_beam(x, y, z, name="TEST_WALL"):
 
 
 # Tests for `TeklaModelObject`
-def test_guid_property():
-    """Checks that the GUID property is a non-null string of length 36."""
-    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
-    obj = TeklaModelObject(wall1)
-    assert obj.guid is not None
-    assert isinstance(obj.guid, str)
-    assert len(obj.guid) == 36
-
-
 def test_is_part_property():
     """Checks that a beam object is correctly identified as a part."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -62,6 +53,57 @@ def test_is_assembly_property():
     obj = TeklaModelObject(wall1.GetAssembly())
     assert obj.is_assembly is True
     assert obj.is_part is False
+
+
+def test_position_property():
+    """Checks that the position property is correctly retrieved."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.position is not None
+
+
+def test_guid_property():
+    """Checks that the GUID property is a non-null string of length 36."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.guid is not None
+    assert isinstance(obj.guid, str)
+    assert len(obj.guid) == 36
+
+
+def test_name_property():
+    """Checks that the name property is correctly retrieved."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.name == "TEST_WALL1"
+
+
+def test_profile_property():
+    """Checks that the profile property is correctly retrieved."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.profile == "3000*200"
+
+
+def test_material_property():
+    """Checks that the material property is correctly retrieved."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.material == "Concrete_Undefined"
+
+
+def test_finish_property():
+    """Checks that the finish property is correctly retrieved."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.finish == ""
+
+
+def test_tekla_class_property():
+    """Checks that the tekla_class property is correctly retrieved."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.tekla_class == "1"
 
 
 def test_main_part_property():
