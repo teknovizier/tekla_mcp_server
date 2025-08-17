@@ -141,9 +141,9 @@ def select_elements_using_filter(
         if isinstance(element_type, str):
             element_type = ElementTypeModel(value=element_type).to_enum()
 
-        name_match_type_object = StringMatchTypeModel(value=name_match_type)
-        profile_match_type_object = StringMatchTypeModel(value=profile_match_type)
-        return select_elements_by_filter(element_type, name, name_match_type_object.to_enum(), profile, profile_match_type_object.to_enum())
+        name_match_type_enum = StringMatchTypeModel(value=name_match_type).to_enum()
+        profile_match_type_enum = StringMatchTypeModel(value=profile_match_type).to_enum()
+        return select_elements_by_filter(element_type, name, name_match_type_enum, profile, profile_match_type_enum)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -184,8 +184,8 @@ def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
     """
     try:
         selected_objects = TeklaModel().get_selected_objects()
-        mode_object = SelectionModeModel(value=mode)
-        return select_assemblies_or_main_parts(selected_objects, mode_object.to_enum())
+        mode_enum = SelectionModeModel(value=mode).to_enum()
+        return select_assemblies_or_main_parts(selected_objects, mode_enum)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -208,8 +208,8 @@ def draw_elements_labels(label: str = None) -> dict[str, Any]:
     try:
         selected_objects = TeklaModel().get_selected_objects()
         label = label or "Name"
-        label_object = ElementLabelModel(value=label)
-        return draw_labels_on_elements(selected_objects, label_object.to_enum())
+        label_enum = ElementLabelModel(value=label).to_enum()
+        return draw_labels_on_elements(selected_objects, label_enum)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -254,8 +254,8 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
     """
     try:
         selected_objects = TeklaModel().get_selected_objects()
-        mode_object = UDASetModeModel(value=mode)
-        return set_udas_on_elements(selected_objects, udas, mode_object.to_enum())
+        mode_enum = UDASetModeModel(value=mode).to_enum()
+        return set_udas_on_elements(selected_objects, udas, mode_enum)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
