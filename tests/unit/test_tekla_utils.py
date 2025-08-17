@@ -15,27 +15,136 @@ if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
 from models import ReportProperty
-from tekla_utils import get_wall_pairs, parse_template_attribute
+from tekla_utils import TeklaModelObject, parse_template_attribute, get_wall_pairs
 from init import load_dlls
 
 # Tekla OpenAPI imports
 load_dlls()
-from Tekla.Structures.Model import Beam
+from Tekla.Structures.Model import Beam, Position
+from Tekla.Structures.Geometry3d import Point
 
 
 def mock_beam(x, y, z, name="TEST_WALL"):
     """Helper for mocking beams."""
     beam = Beam()
-    beam.StartPoint.X = x
-    beam.StartPoint.Y = y
-    beam.StartPoint.Z = z
-    beam.EndPoint.X = x
-    beam.EndPoint.Y = y
-    beam.EndPoint.Z = z
+    beam.Profile.ProfileString = "3000*200"
+    beam.Material.MaterialString = "Concrete_Undefined"
+    beam.Class = "1"
     beam.Name = name
+    beam.Position.Depth = Position.DepthEnum.FRONT
+    beam.StartPoint = Point(x, y, z)
+    beam.EndPoint = Point(x + 2000, y, z)
+    beam.Insert()
     return beam
 
 
+# Tests for `TeklaModelObject`
+def test_guid_property():
+    """Checks that the GUID property is a non-null string of length 36."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.guid is not None
+    assert isinstance(obj.guid, str)
+    assert len(obj.guid) == 36
+
+
+def test_is_part_property():
+    """Checks that a beam object is correctly identified as a part."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.is_part is True
+    assert obj.is_assembly is False
+
+
+def test_is_assembly_property():
+    """Checks that an assembly object is correctly identified as an assembly."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1.GetAssembly())
+    assert obj.is_assembly is True
+    assert obj.is_part is False
+
+
+def test_main_part_property():
+    """Checks that the main part of an assembly is a TeklaModelObject wrapping a Beam."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1.GetAssembly())
+    main_part = obj.main_part
+    assert isinstance(main_part, TeklaModelObject)
+    assert isinstance(main_part.model_object, Beam)
+
+
+def test_cog_property():
+    """Checks that the center of gravity (COG) is correctly calculated."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    cog = obj.cog
+    assert (cog.X, cog.Y, cog.Z) == (1000.0, 0.0, 1500.0)
+
+
+def test_weight_property():
+    """Checks that the total and rebar weights are correctly returned."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    total_weight, rebar_weight = obj.weight
+    assert total_weight == pytest.approx(2880.0, abs=0.1)
+    assert rebar_weight == 0.0
+
+
+def test_get_top_level_assembly():
+    """Checks that the top-level assembly is correctly retrieved."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assembly = obj.get_top_level_assembly()
+    assert assembly.is_assembly
+    assert assembly.model_object.Equals(wall1.GetAssembly())
+
+
+def test_get_report_property_weight_property():
+    """Checks that a report property can be retrieved correctly."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.get_report_property("WEIGHT", float) == pytest.approx(2880.0, abs=0.1)
+
+
+def test_get_user_property_invalid():
+    """Checks that accessing an invalid user property raises AttributeError."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    with pytest.raises(AttributeError):
+        obj.get_user_property("InvalidProperty", str)
+
+
+def test_get_user_property_test_property():
+    """Checks that a user-defined property can be retrieved correctly."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    obj.set_user_property("TestProperty", "TestValue")
+    assert obj.get_user_property("TestProperty", str) == "TestValue"
+
+
+def test_set_user_property_test_property():
+    """Checks that setting a user-defined property returns True on success."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert obj.set_user_property("TestProperty", "TestValue") is True
+
+
+# Tests for `parse_template_attribute`
+@pytest.mark.parametrize(
+    "attr_name,expected_type,expected_unit",
+    [("ASSEMBLY_TOP_LEVEL", str, None), ("AREA", float, "m2"), ("ASSEMBLY_TOP_LEVEL_UNFORMATTED_BASEPOINT", float, "mm"), ("SHIPMENT_NUMBER", str, None)],
+)
+def test_parse_template_attribute(attr_name, expected_type, expected_unit):
+    """Checks that `parse_template_attribute` returns correct template attributes properties."""
+    rp = parse_template_attribute(attr_name)
+
+    assert isinstance(rp, ReportProperty)
+    assert rp.name == attr_name
+    assert rp.data_type == expected_type
+    assert rp.unit == expected_unit
+
+
+# Tests for `get_wall_pairs`
 def test_pair_two_matching_walls():
     """Checks pairing of two matching walls."""
     wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
@@ -87,17 +196,3 @@ def test_non_beam_objects_are_ignored():
     not_beam = object()
     result = get_wall_pairs([wall1, wall2, not_beam])
     assert result == [(wall1, wall2)]
-
-
-@pytest.mark.parametrize(
-    "attr_name,expected_type,expected_unit",
-    [("ASSEMBLY_TOP_LEVEL", str, None), ("AREA", float, "m2"), ("ASSEMBLY_TOP_LEVEL_UNFORMATTED_BASEPOINT", float, "mm"), ("SHIPMENT_NUMBER", str, None)],
-)
-def test_parse_template_attribute(attr_name, expected_type, expected_unit):
-    """Checks that `parse_template_attribute` returns correct template attributes properties."""
-    rp = parse_template_attribute(attr_name)
-
-    assert isinstance(rp, ReportProperty)
-    assert rp.name == attr_name
-    assert rp.data_type == expected_type
-    assert rp.unit == expected_unit
