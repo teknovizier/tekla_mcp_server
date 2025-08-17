@@ -407,15 +407,24 @@ class ReportProperty(BaseModel):
 
 class ElementProperties(BaseModel):
     """
-    Represents key properties of an Assembly or Part object extracted from Tekla Structures.
+    Represents key properties of an Assembly or Part object extracted from Tekla:
+    - Position
+    - GUID
+    - Name
+    - Profile
+    - Material
+    - Finish
+    - Class
+    - Weight in kg
+    - Any available custom properties
     """
 
     position: str
     guid: str
-    main_part_name: str
-    main_part_profile: str
-    main_part_material: str
-    main_part_finish: str
-    main_part_class: str
+    name: str
+    profile: str
+    material: str
+    finish: str
+    tekla_class: str
     weight: float
     custom_properties: list[ReportProperty] | None

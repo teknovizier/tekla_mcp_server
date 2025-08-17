@@ -557,11 +557,11 @@ def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_def
         return ElementProperties(
             position=position,
             guid=selected_object.guid,
-            main_part_name=main_part.Name,
-            main_part_profile=main_part.Profile.ProfileString,
-            main_part_material=main_part.Material.MaterialString,
-            main_part_finish=main_part.Finish,
-            main_part_class=main_part.Class,
+            name=main_part.Name,
+            profile=main_part.Profile.ProfileString,
+            material=main_part.Material.MaterialString,
+            finish=main_part.Finish,
+            tekla_class=main_part.Class,
             weight=weight,
             custom_properties=custom_properties,
         )

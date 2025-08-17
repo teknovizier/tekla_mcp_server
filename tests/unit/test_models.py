@@ -409,11 +409,11 @@ def test_element_properties_with_custom_properties():
     elem = ElementProperties(
         position="P1",
         guid="1234-5678",
-        main_part_name="Wall",
-        main_part_profile="200*3000",
-        main_part_material="Concrete",
-        main_part_finish="",
-        main_part_class="1",
+        name="Wall",
+        profile="200*3000",
+        material="Concrete",
+        finish="",
+        tekla_class="1",
         weight=1000.0,
         custom_properties=custom_props,
     )

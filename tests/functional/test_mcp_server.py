@@ -426,11 +426,11 @@ async def test_get_elements_properties_basic_assembly_properties(model_objects):
         for assembly in assemblies:
             assert isinstance(assembly["guid"], str)
             assert isinstance(assembly["position"], str)
-            assert isinstance(assembly["main_part_name"], str)
-            assert isinstance(assembly["main_part_profile"], str)
-            assert isinstance(assembly["main_part_material"], str)
-            assert isinstance(assembly["main_part_finish"], str)
-            assert isinstance(assembly["main_part_class"], str)
+            assert isinstance(assembly["name"], str)
+            assert isinstance(assembly["profile"], str)
+            assert isinstance(assembly["material"], str)
+            assert isinstance(assembly["finish"], str)
+            assert isinstance(assembly["tekla_class"], str)
 
 
 @pytest.mark.asyncio
@@ -450,10 +450,10 @@ async def test_get_elements_properties_known_values_for_assemblies(model_objects
         result = await client.call_tool("get_elements_properties")
 
         assemblies = json.loads(result.data["assemblies_list"])
-        names = [a["main_part_name"] for a in assemblies]
-        profiles = {a["main_part_name"]: a["main_part_profile"] for a in assemblies}
-        classes = {a["main_part_name"]: a["main_part_class"] for a in assemblies}
-        weights = {a["main_part_name"]: a["weight"] for a in assemblies}
+        names = [a["name"] for a in assemblies]
+        profiles = {a["name"]: a["profile"] for a in assemblies}
+        classes = {a["name"]: a["tekla_class"] for a in assemblies}
+        weights = {a["name"]: a["weight"] for a in assemblies}
 
         assert "TEST_WALL1" in names
         assert "TEST_WALL2" in names
@@ -493,7 +493,7 @@ async def test_get_elements_properties_valid_custom_properties(model_objects):
         result = await client.call_tool("get_elements_properties", {"custom_props_definitions": ["ASSEMBLY_TOP_LEVEL"]})
 
         assemblies = json.loads(result.data["assemblies_list"])
-        top_levels = {a["main_part_name"]: prop["value"] for a in assemblies for prop in a["custom_properties"] if prop["name"] == "ASSEMBLY_TOP_LEVEL"}
+        top_levels = {a["name"]: prop["value"] for a in assemblies for prop in a["custom_properties"] if prop["name"] == "ASSEMBLY_TOP_LEVEL"}
         assert top_levels["TEST_WALL1"] == " +3.000"
         assert top_levels["TEST_WALL2"] == " +6.020"
         assert top_levels["TEST_SW1"] == " +3.000"
