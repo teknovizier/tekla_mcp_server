@@ -15,6 +15,7 @@ from models import (
     UDASetModeModel,
     StringMatchTypeModel,
     ElementTypeModel,
+    ElementLabelModel,
     ComponentType,
     LiftingAnchors,
     CustomDetailComponent,
@@ -31,7 +32,7 @@ from tools import (
     select_elements_by_filter_name,
     select_elements_by_guid,
     select_assemblies_or_main_parts,
-    draw_names_on_elements,
+    draw_labels_on_elements,
     zoom_to_selected_elements,
     insert_boolean_parts_as_real_parts,
     set_udas_on_elements,
@@ -191,13 +192,24 @@ def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def draw_elements_names() -> dict[str, Any]:
+def draw_elements_labels(label: str = None) -> dict[str, Any]:
     """
-    Draws temporary element names in the Tekla model.
+    Draws temporary labels in the Tekla model.
+
+    Valid labels:
+    - `Position`
+    - `GUID`
+    - `Name` (default)
+    - `Profile`
+    - `Material`
+    - `Finish`
+    - `Class`
     """
     try:
         selected_objects = TeklaModel().get_selected_objects()
-        return draw_names_on_elements(selected_objects)
+        label = label or "Name"
+        label_object = ElementLabelModel(value=label)
+        return draw_labels_on_elements(selected_objects, label_object.to_enum())
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

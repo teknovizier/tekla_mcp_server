@@ -16,6 +16,7 @@ from models import (
     StringMatchType,
     ElementType,
     ComponentType,
+    ElementLabel,
     LiftingAnchors,
     CustomDetailComponent,
     ElementTypeModel,
@@ -408,16 +409,26 @@ def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mod
     }
 
 
-def draw_names_on_elements(selected_objects: ModelObjectEnumerator) -> dict:
+def draw_labels_on_elements(selected_objects: ModelObjectEnumerator, label: ElementLabel) -> dict:
     """
-    Draws names for the given Tekla model objects using the GraphicsDrawer.
+    Draws labels for the given Tekla model objects using the GraphicsDrawer.
     """
     drawer = GraphicsDrawer()
     processed_elements = 0
     drawn_labels = 0
     for selected_object in selected_objects:
         selected_object = TeklaModelObject(selected_object)
-        if drawer.DrawText(selected_object.cog, selected_object.model_object.Name, Color(0.0, 0.0, 0.0)):
+        labels = {
+            ElementLabel.POSITION: selected_object.position,
+            ElementLabel.GUID: selected_object.guid,
+            ElementLabel.NAME: selected_object.name,
+            ElementLabel.PROFILE: selected_object.profile,
+            ElementLabel.MATERIAL: selected_object.material,
+            ElementLabel.FINISH: selected_object.finish,
+            ElementLabel.CLASS: selected_object.tekla_class,
+        }
+        text = labels.get(label, ElementLabel.NAME)
+        if drawer.DrawText(selected_object.cog, text, Color(0.0, 0.0, 0.0)):
             drawn_labels += 1
         processed_elements += 1
 
@@ -539,11 +550,7 @@ def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_def
     custom_props_errors = defaultdict(dict)
 
     def get_single_element_properties(selected_object: TeklaModelObject) -> ElementProperties:
-        position_key = "ASSEMBLY_POS" if selected_object.is_assembly else "PART_POS"
-        position = selected_object.get_report_property(position_key, str)
         weight, _ = selected_object.weight
-        main_part = selected_object.main_part.model_object
-
         custom_properties = []
         if custom_props_definitions:
             for custom_prop_definition in custom_props_definitions:
@@ -555,13 +562,13 @@ def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_def
                     custom_props_errors[selected_object.guid][custom_prop_definition] = str(e)
 
         return ElementProperties(
-            position=position,
+            position=selected_object.position,
             guid=selected_object.guid,
-            name=main_part.Name,
-            profile=main_part.Profile.ProfileString,
-            material=main_part.Material.MaterialString,
-            finish=main_part.Finish,
-            tekla_class=main_part.Class,
+            name=selected_object.name,
+            profile=selected_object.profile,
+            material=selected_object.material,
+            finish=selected_object.finish,
+            tekla_class=selected_object.tekla_class,
             weight=weight,
             custom_properties=custom_properties,
         )

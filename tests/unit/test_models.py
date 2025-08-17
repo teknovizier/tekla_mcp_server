@@ -13,7 +13,7 @@ import pytest
 
 from pydantic_core import ValidationError
 
-from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, ElementTypeModel, ComponentTypeModel, ElementType, LiftingAnchors, ReportProperty, ElementProperties
+from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, ElementTypeModel, ComponentTypeModel, ElementLabelModel, ElementType, LiftingAnchors, ReportProperty, ElementProperties
 
 
 @pytest.fixture
@@ -359,6 +359,43 @@ def test_component_type_model_invalid(input_val):
     """
     with pytest.raises(ValidationError):
         ComponentTypeModel(value=input_val)
+
+
+@pytest.mark.parametrize(
+    "input_val,expected_enum",
+    [
+        ("Position", "POSITION"),
+        ("GUID", "GUID"),
+        ("Name", "NAME"),
+        ("Profile", "PROFILE"),
+        ("Material", "MATERIAL"),
+        ("Finish", "FINISH"),
+        ("Class", "CLASS"),
+    ],
+)
+def test_element_label_model_valid(input_val, expected_enum):
+    """
+    Checks ElementLabelModel accepts valid values and maps to correct enum.
+    """
+    model = ElementLabelModel(value=input_val)
+    assert model.to_enum().name == expected_enum
+
+
+@pytest.mark.parametrize(
+    "input_val",
+    [
+        "positionn",
+        "guidd",
+        "",
+        "Unknown",
+    ],
+)
+def test_element_label_model_invalid(input_val):
+    """
+    Checks ElementLabelModel raises error for invalid values.
+    """
+    with pytest.raises(ValueError):
+        ElementLabelModel(value=input_val)
 
 
 @pytest.mark.parametrize(

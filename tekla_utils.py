@@ -126,7 +126,6 @@ class TeklaModelObject:
 
     def __init__(self, model_object: ModelObject):
         self.model_object = model_object
-        self.guid = model_object.Identifier.GUID.ToString()
         self._is_assembly = isinstance(model_object, Assembly)
         self._is_part = isinstance(model_object, Part)
 
@@ -143,6 +142,56 @@ class TeklaModelObject:
         Checks whether the Tekla model object is a Part.
         """
         return self._is_part
+
+    @property
+    def position(self) -> str:
+        """
+        Returns the position number of the Tekla model object.
+        """
+        key = "ASSEMBLY_POS" if self.is_assembly else "PART_POS"
+        return self.get_report_property(key, str)
+
+    @property
+    def guid(self) -> str:
+        """
+        Returns the GUID of the Tekla model object.
+        """
+        return self.model_object.Identifier.GUID.ToString()
+
+    @property
+    def name(self) -> str:
+        """
+        Returns the name of the main part.
+        """
+        return self.main_part.model_object.Name
+
+    @property
+    def profile(self) -> str:
+        """
+        Returns the profile of the main part.
+        """
+        return self.main_part.model_object.Profile.ProfileString
+
+    @property
+    def material(self) -> str:
+        """
+        Returns the material of the main part.
+        """
+        return self.main_part.model_object.Material.MaterialString
+
+    @property
+    def finish(self) -> str:
+        """
+        Returns the finish of the main part.
+        """
+        return self.main_part.model_object.Finish
+
+    @property
+    def tekla_class(self) -> str:
+        """
+        Returns the Tekla class of the main part.
+        """
+        return self.main_part.model_object.Class
 
     @property
     def main_part(self) -> TeklaModelObject:

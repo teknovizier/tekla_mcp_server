@@ -88,12 +88,27 @@ class ComponentType(Enum):
     SEAM = "Seam"
 
 
+class ElementLabel(Enum):
+    """
+    Represents the supported label types that can be drawn in the Tekla view.
+    """
+
+    POSITION = "Position"
+    GUID = "GUID"
+    NAME = "Name"
+    PROFILE = "Profile"
+    MATERIAL = "Material"
+    FINISH = "Finish"
+    CLASS = "Class"
+
+
 # Mappings
 SELECTION_MODES = {e.value for e in SelectionMode}
 UDA_SET_MODES = {e.value for e in UDASetMode}
 STRING_MATCH_TYPES = {e.value for e in StringMatchType}
 ELEMENT_TYPES = {e.value for e in ElementType}
 COMPONENT_TYPES = {e.value for e in ComponentType}
+ELEMENT_LABELS = {e.value for e in ElementLabel}
 
 # Element types by material (supports both "Steel" and "Concrete")
 with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", encoding="utf-8") as file:
@@ -220,6 +235,21 @@ class ComponentTypeModel(EnumWrapper):
         Converts the validated string value to a enum.
         """
         return ComponentType(self.value)
+
+
+class ElementLabelModel(EnumWrapper):
+    """
+    Represents a validated element label.
+    """
+
+    _valid_values = ELEMENT_LABELS
+    _error_code = "invalid_element_label"
+
+    def to_enum(self) -> ElementLabel:
+        """
+        Converts the validated string value to a enum.
+        """
+        return ElementLabel(self.value)
 
 
 class LiftingAnchors(BaseModel):

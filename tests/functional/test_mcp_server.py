@@ -300,17 +300,40 @@ async def test_select_elements_assemblies(model_objects, mode, expected_count):
 
 
 @pytest.mark.asyncio
-async def test_draw_elements_names(model_objects):
+async def test_draw_elements_labels(model_objects):
     """
-    Tests the `draw_elements_names` function to ensure it correctly labels elements.
+    Tests the `draw_elements_labels` function to ensure it correctly labels elements.
 
     Steps:
     - Selects `TEST_WALL1` and `TEST_WALL2`.
-    - Calls drawing method and refreshes views.
+    - Calls drawing method without arguments.
+    - Verifies success and redraws views.
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("draw_elements_names")
+        result = await client.call_tool("draw_elements_labels")
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 2
+
+        view_enum = ViewHandler.GetAllViews()
+        while view_enum.MoveNext():
+            ViewHandler.RedrawView(view_enum.Current)
+
+
+@pytest.mark.asyncio
+async def test_draw_elements_labels_with_label(model_objects):
+    """
+    Tests `draw_elements_labels` with a specific label value (`Profile`).
+
+    Steps:
+    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Calls drawing method with label argument.
+    - Verifies success and redraws views.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("draw_elements_labels", {"label": "Profile"})
         assert result.data["status"] == "success"
         assert result.data["selected_elements"] == 2
 
