@@ -385,16 +385,17 @@ def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mod
     # Process filtered parts
     filtered_parts = ArrayList()
     for selected_object in selected_objects:
-        assembly = selected_object.GetAssembly()
-        while assembly is not None and assembly.GetAssembly() is not None:
-            assembly = assembly.GetAssembly()  # Find the top-level assembly
-        if isinstance(assembly, Assembly):
-            if mode == SelectionMode.ASSEMBLY:
-                filtered_parts.Add(assembly)
-                selected_object_types = "selected_assemblies"
-            elif mode == SelectionMode.MAIN_PART:
-                filtered_parts.Add(assembly.GetMainPart())
-                selected_object_types = "selected_main_parts"
+        try:
+            selected_object = TeklaModelObject(selected_object)
+            assembly = selected_object.get_top_level_assembly()
+        except TypeError:
+            continue
+        if mode == SelectionMode.ASSEMBLY:
+            filtered_parts.Add(assembly.model_object)
+            selected_object_types = "selected_assemblies"
+        elif mode == SelectionMode.MAIN_PART:
+            filtered_parts.Add(assembly.get_main_part().model_object)
+            selected_object_types = "selected_main_parts"
         processed_elements += 1
 
     selector = ModelObjectSelector()

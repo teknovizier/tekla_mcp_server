@@ -140,6 +140,28 @@ class TeklaModelObject:
         """
         return isinstance(self.model_object, Part)
 
+    def get_top_level_assembly(self) -> TeklaModelObject | None:
+        """
+        Finds and returns the top-level assembly of this Tekla model object.
+
+        It goes up the assembly chain until it reaches the highest one.
+        If there's no assembly, it returns None.
+
+        Raises:
+            TypeError: If the returned object is not of type Assembly.
+        """
+        assembly = self.model_object.GetAssembly()
+        while assembly and assembly.GetAssembly():
+            assembly = assembly.GetAssembly()
+
+        if assembly is None:
+            return None
+
+        if not isinstance(assembly, Assembly):
+            raise TypeError(f"Expected Assembly object, got {type(assembly).__name__}.")
+
+        return TeklaModelObject(assembly)
+
     def get_main_part(self) -> TeklaModelObject:
         """
         Returns the main part of the Tekla model object.
