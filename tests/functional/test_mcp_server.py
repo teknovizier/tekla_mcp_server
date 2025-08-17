@@ -25,7 +25,7 @@ from models import LiftingAnchors
 
 from init import load_dlls
 from mcp_server import mcp
-from tekla_utils import TeklaModel, get_user_property
+from tekla_utils import TeklaModel, TeklaModelObject
 
 # Tekla OpenAPI imports
 load_dlls()
@@ -355,26 +355,27 @@ async def test_set_elements_udas(model_objects):
         assert result.data["processed_elements"] == 1
         assert result.data["updated_attributes"] == 2
 
-        value = get_user_property(wall, "TEST_UDA1", str)
+        wall = TeklaModelObject(wall)
+        value = wall.get_user_property("TEST_UDA1", str)
         assert value == "TEST_VALUE_1"
-        value = get_user_property(wall, "TEST_UDA2", str)
+        value = wall.get_user_property("TEST_UDA2", str)
         assert value == "TEST_VALUE_2"
 
         # KEEP mode: should not overwrite
         update_attempt = {"TEST_UDA1": "TEST_VALUE_1_UPD", "TEST_UDA2": "TEST_VALUE_2_UPD"}
         result = await client.call_tool("set_elements_udas", {"udas": update_attempt, "mode": "Keep Existing Values"})
 
-        value = get_user_property(wall, "TEST_UDA1", str)
+        value = wall.get_user_property("TEST_UDA1", str)
         assert value == "TEST_VALUE_1"
-        value = get_user_property(wall, "TEST_UDA2", str)
+        value = wall.get_user_property("TEST_UDA2", str)
         assert value == "TEST_VALUE_2"
 
         # OVERWRITE mode: now it should update
         result = await client.call_tool("set_elements_udas", {"udas": update_attempt, "mode": "Overwrite Existing Values"})
 
-        value = get_user_property(wall, "TEST_UDA1", str)
+        value = wall.get_user_property("TEST_UDA1", str)
         assert value == "TEST_VALUE_1_UPD"
-        value = get_user_property(wall, "TEST_UDA2", str)
+        value = wall.get_user_property("TEST_UDA2", str)
         assert value == "TEST_VALUE_2_UPD"
 
 

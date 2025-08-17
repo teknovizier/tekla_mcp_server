@@ -25,11 +25,8 @@ from models import (
 from tekla_utils import (
     STRING_MATCH_TYPE_MAPPING,
     TeklaModel,
+    TeklaModelObject,
     parse_template_attribute,
-    get_report_property,
-    get_user_property,
-    get_cog_coordinates,
-    get_weight,
     get_wall_pairs,
     ensure_transformation_plane,
     insert_component,
@@ -157,23 +154,23 @@ def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_obj
     """
     Inserts lifting anchors to the specified object in the Tekla model.
     """
-    assembly = selected_object.GetAssembly()
-    solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
-    length = abs(solid.MaximumPoint.X - solid.MinimumPoint.X)
-    width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
-
-    # Get cast unit total weight
-    weight = get_report_property(assembly, "WEIGHT", float)
-
-    # Assume the total element weight is increased by 5% to account for the weight of subassemblies and rebars
-    total_weight = weight * 1.05
-
     # Get element type by class
     material, element_type = ElementTypeModel.get_element_type_by_class(selected_object.Class)
     if not material or not element_type:
         raise ValueError("Failed to get element type.")
     if material != "Concrete":
         raise ValueError(f"Unsupported material type: {material}. Only concrete elements are supported.")
+
+    assembly = TeklaModelObject(selected_object.GetAssembly())
+    solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
+    length = abs(solid.MaximumPoint.X - solid.MinimumPoint.X)
+    width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
+
+    # Get cast unit total weight
+    weight = assembly.get_report_property("WEIGHT", float)
+
+    # Assume the total element weight is increased by 5% to account for the weight of subassemblies and rebars
+    total_weight = weight * 1.05
 
     # Calculate the necessary number of anchors and get their type
     number_of_anchors, valid_anchors = LiftingAnchors.get_required_anchors(element_type, total_weight, component.safety_margin)
@@ -183,7 +180,7 @@ def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_obj
     first_anchor_attributes = valid_anchors[first_anchor_key]["attributes"]
 
     # Get initial COG X-coordinate
-    cog = get_cog_coordinates(assembly)
+    cog = assembly.get_cog()
     local_plane = TransformationPlane(selected_object.GetCoordinateSystem())
     local_cog = local_plane.TransformationMatrixToLocal.Transform(cog)
 
@@ -419,10 +416,10 @@ def draw_names_on_elements(selected_objects: ModelObjectEnumerator) -> dict:
     processed_elements = 0
     drawn_labels = 0
     for selected_object in selected_objects:
-        if isinstance(selected_object, ModelObject):
-            if drawer.DrawText(get_cog_coordinates(selected_object), selected_object.Name, Color(0.0, 0.0, 0.0)):
-                drawn_labels += 1
-            processed_elements += 1
+        selected_object = TeklaModelObject(selected_object)
+        if drawer.DrawText(selected_object.get_cog(), selected_object.model_object.Name, Color(0.0, 0.0, 0.0)):
+            drawn_labels += 1
+        processed_elements += 1
 
     return {
         "status": "success" if drawn_labels else "error",
@@ -466,21 +463,21 @@ def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str
     updated_attributes = 0
     skipped_attributes = 0
     for selected_object in selected_objects:
-        if isinstance(selected_object, ModelObject):
-            for key, value in udas.items():
-                try:
-                    _ = get_user_property(selected_object, key, type(value))
-                    uda_exists = True
-                except AttributeError:
-                    uda_exists = False
+        selected_object = TeklaModelObject(selected_object)
+        for key, value in udas.items():
+            try:
+                _ = selected_object.get_user_property(key, type(value))
+                uda_exists = True
+            except AttributeError:
+                uda_exists = False
 
-                if mode == UDASetMode.KEEP and uda_exists:
-                    skipped_attributes += 1
-                    continue
-                else:
-                    if selected_object.SetUserProperty(key, value):
-                        updated_attributes += 1
-            processed_elements += 1
+            if mode == UDASetMode.KEEP and uda_exists:
+                skipped_attributes += 1
+                continue
+            else:
+                if selected_object.set_user_property(key, value):
+                    updated_attributes += 1
+        processed_elements += 1
 
     return {
         "status": "success" if updated_attributes else "error",
@@ -500,40 +497,40 @@ def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_def
     parts: list[ElementProperties] = []
     custom_props_errors = defaultdict(dict)
 
-    def get_single_element_properties(selected_object: ModelObject, is_assembly: bool) -> ElementProperties:
-        position_key = "ASSEMBLY_POS" if is_assembly else "PART_POS"
-        position = get_report_property(selected_object, position_key, str)
-        weight, _ = get_weight(selected_object)
-        guid = selected_object.Identifier.GUID.ToString()
-        main = selected_object.GetMainPart() if is_assembly else selected_object
+    def get_single_element_properties(selected_object: TeklaModelObject) -> ElementProperties:
+        position_key = "ASSEMBLY_POS" if selected_object.is_assembly() else "PART_POS"
+        position = selected_object.get_report_property(position_key, str)
+        weight, _ = selected_object.get_weight()
+        main = selected_object.get_main_part()
 
         custom_properties = []
         if custom_props_definitions:
             for custom_prop_definition in custom_props_definitions:
                 try:
                     custom_property = parse_template_attribute(custom_prop_definition)
-                    custom_property.value = get_report_property(selected_object, custom_property.name, custom_property.data_type)
+                    custom_property.value = selected_object.get_report_property(custom_property.name, custom_property.data_type)
                     custom_properties.append(custom_property)
                 except Exception as e:
-                    custom_props_errors[guid][custom_prop_definition] = str(e)
+                    custom_props_errors[selected_object.guid][custom_prop_definition] = str(e)
 
         return ElementProperties(
             position=position,
-            guid=guid,
-            main_part_name=main.Name,
-            main_part_profile=main.Profile.ProfileString,
-            main_part_material=main.Material.MaterialString,
-            main_part_finish=main.Finish,
-            main_part_class=main.Class,
+            guid=selected_object.guid,
+            main_part_name=main.model_object.Name,
+            main_part_profile=main.model_object.Profile.ProfileString,
+            main_part_material=main.model_object.Material.MaterialString,
+            main_part_finish=main.model_object.Finish,
+            main_part_class=main.model_object.Class,
             weight=weight,
             custom_properties=custom_properties,
         )
 
     for selected_object in selected_objects:
-        if isinstance(selected_object, Assembly):
-            assemblies.append(get_single_element_properties(selected_object, True))
-        elif isinstance(selected_object, Part):
-            parts.append(get_single_element_properties(selected_object, False))
+        selected_object = TeklaModelObject(selected_object)
+        if selected_object.is_assembly():
+            assemblies.append(get_single_element_properties(selected_object).model_copy(deep=True))
+        elif selected_object.is_part():
+            parts.append(get_single_element_properties(selected_object).model_copy(deep=True))
         processed_elements += 1
 
     # JSON serialization

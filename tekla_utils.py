@@ -2,6 +2,7 @@
 Module for utility classes and functions used for geometry manipulations.
 """
 
+from __future__ import annotations
 import re
 
 from functools import wraps
@@ -25,6 +26,7 @@ from Tekla.Structures.Model import (
     Assembly,
     BooleanPart,
     Beam,
+    Part,
     PolyBeam,
     Position,
     TransformationPlane,
@@ -117,6 +119,150 @@ class TeklaModel:
         return selector.Select(array_list)
 
 
+class TeklaModelObject:
+    """
+    A wrapper class around the Tekla Structures ModelObject object.
+    """
+
+    def __init__(self, model_object: ModelObject):
+        self.model_object = model_object
+        self.guid = model_object.Identifier.GUID.ToString()
+
+    def is_assembly(self):
+        """
+        Checks whether the Tekla model object is an Assembly.
+        """
+        return isinstance(self.model_object, Assembly)
+
+    def is_part(self):
+        """
+        Checks whether the Tekla model object is a Part.
+        """
+        return isinstance(self.model_object, Part)
+
+    def get_main_part(self) -> TeklaModelObject:
+        """
+        Returns the main part of the Tekla model object.
+
+        If the current object is an assembly, this method retrieves the main part
+        using GetMainPart() method. Otherwise, it returns the object itself.
+        """
+        if self.is_assembly():
+            return TeklaModelObject(self.model_object.GetMainPart())
+
+        return self
+
+    def get_report_property(self, property_name: str, property_type: type) -> str | int | float:
+        """
+        Retrieves a report property for a given Tekla model object.
+
+        Raises:
+            TypeError: If the provided property type is not str, int, or float.
+            AttributeError: If the property retrieval fails for the given element.
+        """
+        self._validate_property_type(property_type)
+        is_ok, value = self.model_object.GetReportProperty(property_name, property_type())
+        if not is_ok:
+            raise AttributeError(f"Failed to retrieve property `{property_name}`.")
+
+        return value
+
+    def get_user_property(self, property_name: str, property_type: type) -> str | int | float:
+        """
+        Retrieves a user property for a given Tekla model object.
+
+        Raises:
+            TypeError: If the provided property type is not str, int, or float.
+            AttributeError: If the property retrieval fails for the given element.
+        """
+        self._validate_property_type(property_type)
+        is_ok, value = self.model_object.GetUserProperty(property_name, property_type())
+        if not is_ok:
+            raise AttributeError(f"Failed to retrieve property `{property_name}`.")
+
+        return value
+
+    def set_user_property(self, property_name: str, property_value: str | int | float) -> bool:
+        """
+        Sets a user property for a given Tekla model object.
+
+        Raises:
+            TypeError: If the provided property type is not str, int, or float.
+        """
+        self._validate_property_type(type(property_value))
+        return self.model_object.SetUserProperty(property_name, property_value)
+
+    def get_cog(self) -> Point:
+        """
+        Retrieves the center of gravity (COG) point for a given Tekla model object.
+        """
+        cog_x = self.get_report_property("COG_X", float)
+        cog_y = self.get_report_property("COG_Y", float)
+        cog_z = self.get_report_property("COG_Z", float)
+
+        return Point(cog_x, cog_y, cog_z)
+
+    def get_weight(self) -> tuple[float, float]:
+        """
+        Calculate the weight breakdown of a given Tekla model object.
+
+        This function returns two weight values:
+        - The total weight of the element, including its main part, secondary parts, and subassemblies.
+        - The total weight of all reinforcement bars associated with the main part, secondary parts, and any rebar subassemblies.
+        """
+        weight_main_part = 0.0
+        weight_secondaries = 0.0
+        weight_subassemblies = 0.0
+        weight_rebars = 0.0
+
+        # Get the main part
+        main_part = self.get_main_part()
+        weight_main_part = main_part.get_report_property("WEIGHT", float)
+
+        # Rebars on main part
+        for rebar in main_part.model_object.GetReinforcements():
+            rebar = TeklaModelObject(rebar)
+            weight_rebar = rebar.get_report_property("WEIGHT_TOTAL", float)
+            weight_rebars += weight_rebar
+
+        if self.is_assembly():
+            # Secondary parts and their rebars
+            for secondary in self.model_object.GetSecondaries():
+                secondary = TeklaModelObject(secondary)
+                weight_secondary = secondary.get_report_property("WEIGHT", float)
+                weight_secondaries += weight_secondary
+
+                for rebar in secondary.model_object.GetReinforcements():
+                    weight_rebar = secondary.get_report_property("WEIGHT_TOTAL", float)
+                    weight_rebars += weight_rebar
+
+            # Subassemblies
+            for subassembly in self.model_object.GetSubAssemblies():
+                subassembly = TeklaModelObject(subassembly)
+                weight_sub = subassembly.get_report_property("WEIGHT", float)
+                try:
+                    rebar_type = subassembly.get_report_property("REBAR_ASSEMBLY_TYPE", str)
+                    assert rebar_type  # Must be truthy for rebar assemblies
+                    weight_rebars += weight_sub
+                except AttributeError:
+                    weight_subassemblies += weight_sub
+
+        total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
+
+        return total_parts_weight, weight_rebars
+
+    @staticmethod
+    def _validate_property_type(property_type: type):
+        """
+        Validates that the given type is one of the supported types: str, int, or float.
+
+        Raises:
+            TypeError: If the type is not supported.
+        """
+        if property_type not in (str, int, float):
+            raise TypeError("Property type must be one of: str, int, float.")
+
+
 def parse_template_attribute(attribute_name: str) -> ReportProperty:
     """
     Lazily loads and parses Tekla attribute definitions from the template file.
@@ -160,100 +306,6 @@ def parse_template_attribute(attribute_name: str) -> ReportProperty:
         return parse_template_attribute._cache[attribute_name]
 
     raise ValueError(f"Attribute '{attribute_name}' not found.")
-
-
-def get_report_property(element: ModelObject, property_name: str, property_type: type) -> str | int | float:
-    """
-    Retrieves a report property for a given Tekla model object.
-
-    Raises:
-        TypeError: If the provided property type is not str, int, or float.
-        AttributeError: If the property retrieval fails for the given element.
-    """
-    if property_type not in (str, int, float):
-        raise TypeError("Property type must be one of these types: str, int, float.")
-
-    is_ok, value = element.GetReportProperty(property_name, property_type())
-    if not is_ok:
-        raise AttributeError(f"Failed to retrieve property `{property_name}` for the element with GUID `{element.Identifier.GUID.ToString()}`.")
-
-    return value
-
-
-def get_user_property(element: ModelObject, property_name: str, property_type: type) -> str | int | float:
-    """
-    Retrieves a user property for a given Tekla model object.
-
-    Raises:
-        TypeError: If the provided property type is not str, int, or float.
-        AttributeError: If the property retrieval fails for the given element.
-    """
-    if property_type not in (str, int, float):
-        raise TypeError("Property type must be one of these types: str, int, float.")
-
-    is_ok, value = element.GetUserProperty(property_name, property_type())
-    if not is_ok:
-        raise AttributeError(f"Failed to retrieve property `{property_name}` for the element with GUID `{element.Identifier.GUID.ToString()}`.")
-
-    return value
-
-
-def get_cog_coordinates(element: ModelObject) -> Point:
-    """
-    Retrieves the center of gravity (COG) point for a given Tekla model object.
-    """
-    cog_x = get_report_property(element, "COG_X", float)
-    cog_y = get_report_property(element, "COG_Y", float)
-    cog_z = get_report_property(element, "COG_Z", float)
-
-    return Point(cog_x, cog_y, cog_z)
-
-
-def get_weight(element: ModelObject) -> tuple[float, float]:
-    """
-    Calculate the weight breakdown of a given object.
-
-    This function returns two weight values:
-    - The total weight of the element, including its main part, secondary parts, and subassemblies.
-    - The total weight of all reinforcement bars associated with the main part, secondary parts, and any rebar subassemblies.
-    """
-    weight_main_part = 0.0
-    weight_secondaries = 0.0
-    weight_subassemblies = 0.0
-    weight_rebars = 0.0
-
-    # Get the main part
-    mainpart = element.GetMainPart() if isinstance(element, Assembly) else element
-    weight_main_part = get_report_property(mainpart, "WEIGHT", float)
-
-    # Rebars on main part
-    for rebar in mainpart.GetReinforcements():
-        weight_rebar = get_report_property(rebar, "WEIGHT_TOTAL", float)
-        weight_rebars += weight_rebar
-
-    if isinstance(element, Assembly):
-        # Secondary parts and their rebars
-        for secondary in element.GetSecondaries():
-            weight_secondary = get_report_property(secondary, "WEIGHT", float)
-            weight_secondaries += weight_secondary
-
-            for rebar in secondary.GetReinforcements():
-                weight_rebar = get_report_property(rebar, "WEIGHT_TOTAL", float)
-                weight_rebars += weight_rebar
-
-        # Subassemblies
-        for subassembly in element.GetSubAssemblies():
-            weight_sub = get_report_property(subassembly, "WEIGHT", float)
-            try:
-                rebar_type = get_report_property(subassembly, "REBAR_ASSEMBLY_TYPE", str)
-                assert rebar_type  # Must be truthy for rebar assemblies
-                weight_rebars += weight_sub
-            except AttributeError:
-                weight_subassemblies += weight_sub
-
-    total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
-
-    return total_parts_weight, weight_rebars
 
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Any:
