@@ -180,9 +180,8 @@ def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_obj
     first_anchor_attributes = valid_anchors[first_anchor_key]["attributes"]
 
     # Get initial COG X-coordinate
-    cog = assembly.get_cog()
     local_plane = TransformationPlane(selected_object.GetCoordinateSystem())
-    local_cog = local_plane.TransformationMatrixToLocal.Transform(cog)
+    local_cog = local_plane.TransformationMatrixToLocal.Transform(assembly.cog)
 
     min_edge_distance = valid_anchors[first_anchor_key]["min_edge_distance"]
 
@@ -394,7 +393,7 @@ def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mod
             filtered_parts.Add(assembly.model_object)
             selected_object_types = "selected_assemblies"
         elif mode == SelectionMode.MAIN_PART:
-            filtered_parts.Add(assembly.get_main_part().model_object)
+            filtered_parts.Add(assembly.main_part.model_object)
             selected_object_types = "selected_main_parts"
         processed_elements += 1
 
@@ -418,7 +417,7 @@ def draw_names_on_elements(selected_objects: ModelObjectEnumerator) -> dict:
     drawn_labels = 0
     for selected_object in selected_objects:
         selected_object = TeklaModelObject(selected_object)
-        if drawer.DrawText(selected_object.get_cog(), selected_object.model_object.Name, Color(0.0, 0.0, 0.0)):
+        if drawer.DrawText(selected_object.cog, selected_object.model_object.Name, Color(0.0, 0.0, 0.0)):
             drawn_labels += 1
         processed_elements += 1
 
@@ -499,10 +498,10 @@ def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_def
     custom_props_errors = defaultdict(dict)
 
     def get_single_element_properties(selected_object: TeklaModelObject) -> ElementProperties:
-        position_key = "ASSEMBLY_POS" if selected_object.is_assembly() else "PART_POS"
+        position_key = "ASSEMBLY_POS" if selected_object.is_assembly else "PART_POS"
         position = selected_object.get_report_property(position_key, str)
-        weight, _ = selected_object.get_weight()
-        main = selected_object.get_main_part()
+        weight, _ = selected_object.weight
+        main_part = selected_object.main_part.model_object
 
         custom_properties = []
         if custom_props_definitions:
@@ -517,20 +516,20 @@ def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_def
         return ElementProperties(
             position=position,
             guid=selected_object.guid,
-            main_part_name=main.model_object.Name,
-            main_part_profile=main.model_object.Profile.ProfileString,
-            main_part_material=main.model_object.Material.MaterialString,
-            main_part_finish=main.model_object.Finish,
-            main_part_class=main.model_object.Class,
+            main_part_name=main_part.Name,
+            main_part_profile=main_part.Profile.ProfileString,
+            main_part_material=main_part.Material.MaterialString,
+            main_part_finish=main_part.Finish,
+            main_part_class=main_part.Class,
             weight=weight,
             custom_properties=custom_properties,
         )
 
     for selected_object in selected_objects:
         selected_object = TeklaModelObject(selected_object)
-        if selected_object.is_assembly():
+        if selected_object.is_assembly:
             assemblies.append(get_single_element_properties(selected_object).model_copy(deep=True))
-        elif selected_object.is_part():
+        elif selected_object.is_part:
             parts.append(get_single_element_properties(selected_object).model_copy(deep=True))
         processed_elements += 1
 
