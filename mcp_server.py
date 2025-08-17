@@ -32,6 +32,7 @@ from tools import (
     select_elements_by_guid,
     select_assemblies_or_main_parts,
     draw_names_on_elements,
+    zoom_to_selected_elements,
     insert_boolean_parts_as_real_parts,
     set_udas_on_elements,
     get_elements_props,
@@ -197,6 +198,20 @@ def draw_elements_names() -> dict[str, Any]:
     try:
         selected_objects = TeklaModel().get_selected_objects()
         return draw_names_on_elements(selected_objects)
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def zoom_to_selection() -> dict[str, Any]:
+    """
+    Zooms the Tekla current view to fit the currently selected model objects.
+    """
+    try:
+        tekla_model = TeklaModel()
+        selected_objects = tekla_model.get_selected_objects()
+        return zoom_to_selected_elements(selected_objects)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

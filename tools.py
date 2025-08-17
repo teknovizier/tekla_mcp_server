@@ -38,7 +38,7 @@ from tekla_utils import (
 load_dlls()
 from System.Collections import ArrayList
 from Tekla.Structures import Identifier, TeklaStructuresDatabaseTypeEnum
-from Tekla.Structures.Geometry3d import Point
+from Tekla.Structures.Geometry3d import AABB, Point
 from Tekla.Structures.Model import (
     Model,
     ModelObject,
@@ -51,7 +51,7 @@ from Tekla.Structures.Model import (
     Solid,
     TransformationPlane,
 )
-from Tekla.Structures.Model.UI import ModelObjectSelector, GraphicsDrawer, Color
+from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector, ViewHandler
 from Tekla.Structures.Filtering import (
     BinaryFilterOperatorType,
     BinaryFilterExpressionCollection,
@@ -426,6 +426,47 @@ def draw_names_on_elements(selected_objects: ModelObjectEnumerator) -> dict:
         "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
         "drawn_labels": drawn_labels,
+    }
+
+
+def zoom_to_selected_elements(selected_objects: ModelObjectEnumerator) -> dict:
+    """
+    Zooms the Tekla view to the provided model objects.
+    """
+    processed_elements = 0
+
+    min_x = min_y = min_z = float("inf")
+    max_x = max_y = max_z = float("-inf")
+
+    for selected_object in selected_objects:
+        solid = selected_object.GetSolid()
+        if solid is None:
+            continue
+
+        # Get the bounding box corners
+        sp = solid.MinimumPoint
+        ep = solid.MaximumPoint
+
+        # Update overall min/max
+        min_x = min(min_x, sp.X)
+        min_y = min(min_y, sp.Y)
+        min_z = min(min_z, sp.Z)
+        max_x = max(max_x, ep.X)
+        max_y = max(max_y, ep.Y)
+        max_z = max(max_z, ep.Z)
+
+        processed_elements += 1
+
+    # Create final AABB for all objects
+    min_point = Point(min_x, min_y, min_z)
+    max_point = Point(max_x, max_y, max_z)
+    bbox = AABB(min_point, max_point)
+    result = ViewHandler.ZoomToBoundingBox(bbox)
+
+    return {
+        "status": "success" if result else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
     }
 
 

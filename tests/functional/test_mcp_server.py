@@ -320,6 +320,26 @@ async def test_draw_elements_names(model_objects):
 
 
 @pytest.mark.asyncio
+async def test_zoom_to_selection(model_objects):
+    """
+    Tests the `zoom_to_selection` function to ensure it correctly labels elements.
+
+    Steps:
+    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Calls drawing method and refreshes views.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("zoom_to_selection")
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 2
+
+        view_enum = ViewHandler.GetAllViews()
+        while view_enum.MoveNext():
+            ViewHandler.RedrawView(view_enum.Current)
+
+
+@pytest.mark.asyncio
 async def test_convert_cut_parts_to_real_parts(model_objects):
     """
     Tests the `convert_cut_parts_to_real_parts` function.
