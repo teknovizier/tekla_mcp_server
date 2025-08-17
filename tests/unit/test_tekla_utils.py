@@ -24,6 +24,21 @@ from Tekla.Structures.Model import Beam, Position
 from Tekla.Structures.Geometry3d import Point
 
 
+created_elements = []
+
+
+@pytest.fixture(scope="module", autouse=True)
+def cleanup():
+    """
+    Fixture that ensures all Tekla model objects created during
+    the test module are deleted after the tests complete.
+    """
+    yield
+    for element in created_elements:
+        if element.Identifier.IsValid():
+            element.Delete()
+
+
 def mock_beam(x, y, z, name="TEST_WALL"):
     """Helper for mocking beams."""
     beam = Beam()
@@ -35,6 +50,7 @@ def mock_beam(x, y, z, name="TEST_WALL"):
     beam.StartPoint = Point(x, y, z)
     beam.EndPoint = Point(x + 2000, y, z)
     beam.Insert()
+    created_elements.append(beam)
     return beam
 
 
