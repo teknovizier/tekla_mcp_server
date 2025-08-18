@@ -5,11 +5,13 @@ This server facilitates interaction with Tekla Structures, allowing users to
 speed-up modeling processes.
 """
 
+from functools import wraps
 from typing import Any
 from collections.abc import Callable
 
 from fastmcp import FastMCP
 
+from init import logger
 from models import (
     SelectionModeModel,
     UDASetModeModel,
@@ -47,24 +49,48 @@ mcp = FastMCP("Tekla MCP Server")
 
 
 # Helper functions
+def log_mcp_tool_call(func):
+    """
+    Decorator for MCP tools that logs function calls and handles exceptions.
+
+    Logs:
+    - Function name
+    - Positional and keyword arguments
+    - Exceptions with traceback
+
+    Returns:
+    - Original function result if successful
+    - Standardized error dictionary if an exception occurs
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        logger.info("[%s] called with args=%s, kwargs=%s", func.__name__, args, kwargs)
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.exception("[%s] failed: %s", func.__name__, str(e))
+            return {"status": "error", "message": str(e)}
+
+    return wrapper
+
+
+@log_mcp_tool_call
 def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """
     Applies a component operation to selected objects in the Tekla model using a specified callback function.
     """
-    try:
-        tekla_model = TeklaModel()
-        selected_objects = tekla_model.get_selected_objects()
-        result = {}
-        if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
-            result = process_detail_or_component(selected_objects, callback, tekla_model.model, component, *args, **kwargs)
-        elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
-            result = process_seam_or_connection(selected_objects, callback, tekla_model.model, component, *args, **kwargs)
-        else:
-            pass  # For other types do nothing
-        return result
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    tekla_model = TeklaModel()
+    selected_objects = tekla_model.get_selected_objects()
+    result = {}
+    if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
+        result = process_detail_or_component(selected_objects, callback, tekla_model.model, component, *args, **kwargs)
+    elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
+        result = process_seam_or_connection(selected_objects, callback, tekla_model.model, component, *args, **kwargs)
+    else:
+        pass  # For other types do nothing
+    return result
 
 
 # MCP tools
@@ -73,6 +99,7 @@ def put_wall_lifting_anchors(component: LiftingAnchors = LiftingAnchors()) -> di
     """
     Inserts wall lifting anchors into selected objects, optionally removing old anchors.
     """
+
     if component.remove_old_components:
         remove_wall_lifting_anchors()
     return manage_components_on_selected_objects(insert_lifting_anchors, component)
@@ -83,6 +110,7 @@ def remove_wall_lifting_anchors() -> dict[str, Any]:
     """
     Removes wall lifting anchors from selected objects.
     """
+
     component = LiftingAnchors()
     return manage_components_on_selected_objects(remove_lifting_anchors, component)
 
@@ -92,11 +120,13 @@ def put_custom_detail_components(component_name: str) -> dict[str, Any]:
     """
     Inserts custom wall components into selected objects.
     """
+
     component = CustomDetailComponent(name=component_name)
     return manage_components_on_selected_objects(insert_custom_detail_component, component)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def select_elements_using_filter(
     element_type: int | list[int] | str = None,
     name: str = None,
@@ -139,43 +169,36 @@ def select_elements_using_filter(
     - `ENDS_WITH`: Checks if a string ends with a specified substring.
     - `NOT_ENDS_WITH`: Checks if a string does not end with a specified substring.
     """
-    try:
-        if isinstance(element_type, str):
-            element_type = ElementTypeModel(value=element_type).to_enum()
 
-        name_match_type_enum = StringMatchTypeModel(value=name_match_type).to_enum()
-        profile_match_type_enum = StringMatchTypeModel(value=profile_match_type).to_enum()
-        return select_elements_by_filter(element_type, name, name_match_type_enum, profile, profile_match_type_enum)
+    if isinstance(element_type, str):
+        element_type = ElementTypeModel(value=element_type).to_enum()
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    name_match_type_enum = StringMatchTypeModel(value=name_match_type).to_enum()
+    profile_match_type_enum = StringMatchTypeModel(value=profile_match_type).to_enum()
+    return select_elements_by_filter(element_type, name, name_match_type_enum, profile, profile_match_type_enum)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def select_elements_using_filter_name(filter_name: str) -> dict[str, Any]:
     """
     Selects elements applying an existing Tekla filter.
     """
-    try:
-        return select_elements_by_filter_name(filter_name)
-
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    return select_elements_by_filter_name(filter_name)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def select_elements_using_guid(guids: list[str]) -> dict[str, Any]:
     """
     Selects elements by their GUID.
     """
-    try:
-        return select_elements_by_guid(guids)
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    return select_elements_by_guid(guids)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
     """
     Selects assemblies selected elements belong to.
@@ -184,16 +207,14 @@ def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
     - `Assembly`
     - `Main Part`
     """
-    try:
-        selected_objects = TeklaModel().get_selected_objects()
-        mode_enum = SelectionModeModel(value=mode).to_enum()
-        return select_assemblies_or_main_parts(selected_objects, mode_enum)
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    selected_objects = TeklaModel().get_selected_objects()
+    mode_enum = SelectionModeModel(value=mode).to_enum()
+    return select_assemblies_or_main_parts(selected_objects, mode_enum)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def draw_elements_labels(label: str = None) -> dict[str, Any]:
     """
     Draws temporary labels in the Tekla model.
@@ -207,59 +228,51 @@ def draw_elements_labels(label: str = None) -> dict[str, Any]:
     - `Finish`
     - `Class`
     """
-    try:
-        selected_objects = TeklaModel().get_selected_objects()
-        label = label or "Name"
-        label_enum = ElementLabelModel(value=label).to_enum()
-        return draw_labels_on_elements(selected_objects, label_enum)
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    selected_objects = TeklaModel().get_selected_objects()
+    label = label or "Name"
+    label_enum = ElementLabelModel(value=label).to_enum()
+    return draw_labels_on_elements(selected_objects, label_enum)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def zoom_to_selection() -> dict[str, Any]:
     """
     Zooms the Tekla current view to fit the currently selected model objects.
     """
-    try:
-        tekla_model = TeklaModel()
-        selected_objects = tekla_model.get_selected_objects()
-        return zoom_to_selected_elements(selected_objects)
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    tekla_model = TeklaModel()
+    selected_objects = tekla_model.get_selected_objects()
+    return zoom_to_selected_elements(selected_objects)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def show_only_selected() -> dict[str, Any]:
     """
     Shows only the currently selected model objects in the Tekla current view, hiding all others.
     """
-    try:
-        tekla_model = TeklaModel()
-        selected_objects = tekla_model.get_selected_objects()
-        return show_only_selected_elements(selected_objects)
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    tekla_model = TeklaModel()
+    selected_objects = tekla_model.get_selected_objects()
+    return show_only_selected_elements(selected_objects)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def convert_cut_parts_to_real_parts() -> dict[str, Any]:
     """
     Finds boolean parts and inserts them as real model objects.
     """
-    try:
-        tekla_model = TeklaModel()
-        selected_objects = tekla_model.get_selected_objects()
-        return insert_boolean_parts_as_real_parts(tekla_model.model, selected_objects)
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    tekla_model = TeklaModel()
+    selected_objects = tekla_model.get_selected_objects()
+    return insert_boolean_parts_as_real_parts(tekla_model.model, selected_objects)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
     """
     Finds boolean parts and inserts them as real model objects.
@@ -268,16 +281,14 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
     - `Keep Existing Values`
     - `Overwrite Existing Values`
     """
-    try:
-        selected_objects = TeklaModel().get_selected_objects()
-        mode_enum = UDASetModeModel(value=mode).to_enum()
-        return set_udas_on_elements(selected_objects, udas, mode_enum)
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    selected_objects = TeklaModel().get_selected_objects()
+    mode_enum = UDASetModeModel(value=mode).to_enum()
+    return set_udas_on_elements(selected_objects, udas, mode_enum)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def get_all_elements_udas() -> dict[str, Any]:
     """
     Retrieves all UDAs for the selected elements (assemblies or parts) in the Tekla model.
@@ -290,15 +301,13 @@ def get_all_elements_udas() -> dict[str, Any]:
     Each UDA is returned using its property name as the column header.
     If an attribute is missing, the corresponding cell to be left empty.
     """
-    try:
-        selected_objects = TeklaModel().get_selected_objects()
-        return get_all_udas_for_elements(selected_objects)
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    selected_objects = TeklaModel().get_selected_objects()
+    return get_all_udas_for_elements(selected_objects)
 
 
 @mcp.tool()
+@log_mcp_tool_call
 def get_elements_properties(custom_props_definitions: list[str] = None):
     """
     Retrieves key properties for the selected elements (assemblies or parts) in the Tekla model.
@@ -325,12 +334,9 @@ def get_elements_properties(custom_props_definitions: list[str] = None):
     If no unit is available, use just the property name.
     If a property fails to retrieve, display "N/A" in the corresponding cell.
     """
-    try:
-        selected_objects = TeklaModel().get_selected_objects()
-        return get_elements_props(selected_objects, custom_props_definitions)
 
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    selected_objects = TeklaModel().get_selected_objects()
+    return get_elements_props(selected_objects, custom_props_definitions)
 
 
 # Run the MCP server locally

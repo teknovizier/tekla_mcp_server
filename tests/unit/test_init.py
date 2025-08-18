@@ -44,9 +44,9 @@ def test_read_config_missing_file(monkeypatch):
         raise FileNotFoundError("not found")
 
     monkeypatch.setattr(type(CONFIG_FILE_PATH), "open", raise_file_not_found)
-    with patch("init.logger.critical") as mock_critical, patch("init.sys.exit") as mock_exit:
+    with patch("init.logger.exception") as mock_exception, patch("init.sys.exit") as mock_exit:
         read_config()
-        mock_critical.assert_called_once()
+        mock_exception.assert_called_once()
         mock_exit.assert_called_once_with(1)
 
 
@@ -57,9 +57,9 @@ def test_read_config_invalid_json(monkeypatch):
     invalid_json = "{invalid json"
     mocked_open = mock_open(read_data=invalid_json)
     monkeypatch.setattr(type(CONFIG_FILE_PATH), "open", mocked_open)
-    with patch("init.logger.critical") as mock_critical, patch("init.sys.exit") as mock_exit:
+    with patch("init.logger.exception") as mock_exception, patch("init.sys.exit") as mock_exit:
         read_config()
-        mock_critical.assert_called_once()
+        mock_exception.assert_called_once()
         mock_exit.assert_called_once_with(1)
 
 
@@ -70,9 +70,9 @@ def test_read_config_missing_key(monkeypatch):
     invalid_json = '{"wrong_key": "value"}'
     mocked_open = mock_open(read_data=invalid_json)
     monkeypatch.setattr(type(CONFIG_FILE_PATH), "open", mocked_open)
-    with patch("init.logger.critical") as mock_critical, patch("init.sys.exit") as mock_exit:
+    with patch("init.logger.exception") as mock_exception, patch("init.sys.exit") as mock_exit:
         read_config()
-        mock_critical.assert_called_once()
+        mock_exception.assert_called_once()
         mock_exit.assert_called_once_with(1)
 
 
@@ -83,7 +83,7 @@ def test_read_config_wrong_type(monkeypatch):
     invalid_json = '{"tekla_path": 123}'
     mocked_open = mock_open(read_data=invalid_json)
     monkeypatch.setattr(type(CONFIG_FILE_PATH), "open", mocked_open)
-    with patch("init.logger.critical") as mock_critical, patch("init.sys.exit") as mock_exit:
+    with patch("init.logger.exception") as mock_exception, patch("init.sys.exit") as mock_exit:
         read_config()
 
 
@@ -99,14 +99,14 @@ def test_load_dlls_success():
 
 
 @pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
-def test_load_dlls_file_not_found_triggers_critical_and_exit():
+def test_load_dlls_file_not_found_triggers_exception_and_exit():
     """
     Checks error handling when DLL is missing.
     """
     fake_config = {"tekla_path": "C:\\Tekla"}
-    with patch("init.read_config", return_value=fake_config), patch("init.clr.AddReference", side_effect=System.IO.FileNotFoundException), patch("init.logger.critical") as mock_critical, patch(
+    with patch("init.read_config", return_value=fake_config), patch("init.clr.AddReference", side_effect=System.IO.FileNotFoundException), patch("init.logger.exception") as mock_exception, patch(
         "init.sys.exit"
     ) as mock_exit:
         load_dlls()
-        mock_critical.assert_called_once()
+        mock_exception.assert_called_once()
         mock_exit.assert_called_once_with(1)

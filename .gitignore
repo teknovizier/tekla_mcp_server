@@ -8,6 +8,9 @@ config/settings.json
 config/lifting_anchor_types.json
 config/element_types.json
 
+# Log
+app.log
+
 # Build
 build
 dist

@@ -16,9 +16,12 @@ import System
 
 # Constants
 CONFIG_FILE_PATH = Path(__file__).parent.joinpath("config", "settings.json")  # Path to the configuration file
+LOG_FILE_PATH = Path(__file__).parent.joinpath("app.log")  # Path to the log file
 
 # Logging
 logging.basicConfig(
+    filename=str(LOG_FILE_PATH),  # Log file name
+    filemode="a",  # Append mode
     format="%(asctime)s: %(levelname)s: %(message)s",  # Format for log messages
     datefmt="%Y-%m-%d %H:%M:%S",  # Date format
 )
@@ -56,15 +59,16 @@ def read_config() -> dict[str, Any]:
         with CONFIG_FILE_PATH.open("r", encoding="utf-8") as f:
             config = json.load(f)
             validate_config(config)
+            logger.info("Successfully read config file")
             return config
     except FileNotFoundError as e:
-        logger.critical("Error: Configuration file not found: %s", e)
+        logger.exception("Configuration file not found: %s", e)
         sys.exit(1)
     except json.JSONDecodeError as e:
-        logger.critical("Error: Invalid JSON format in configuration file: %s", e)
+        logger.exception("Invalid JSON format in configuration file: %s", e)
         sys.exit(1)
     except ValueError as e:
-        logger.critical("Error: Invalid configuration file structure: %s", e)
+        logger.exception("Invalid configuration file structure: %s", e)
         sys.exit(1)
 
 
@@ -95,8 +99,10 @@ def load_dlls() -> bool:
     try:
         for dll in dlls:
             clr.AddReference(os.path.join(tekla_path, dll))
+
+        logger.info("Successfully loaded all Tekla Structures DLLs")
         return True
 
     except System.IO.FileNotFoundException:
-        logger.critical("Error: Tekla Structures DLLs not found. Check the `tekla_path` parameter in configuration file: '%s'", CONFIG_FILE_PATH)
+        logger.exception("Tekla Structures DLLs not found. Check the `tekla_path` parameter in configuration file: '%s'", CONFIG_FILE_PATH)
         sys.exit(1)
