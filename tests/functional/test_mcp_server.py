@@ -302,7 +302,7 @@ async def test_select_elements_assemblies(model_objects, mode, expected_count):
 @pytest.mark.asyncio
 async def test_draw_elements_labels(model_objects):
     """
-    Tests the `draw_elements_labels` function to ensure it correctly labels elements.
+    Tests that `draw_elements_labels` function can be run.
 
     Steps:
     - Selects `TEST_WALL1` and `TEST_WALL2`.
@@ -323,7 +323,7 @@ async def test_draw_elements_labels(model_objects):
 @pytest.mark.asyncio
 async def test_draw_elements_labels_with_label(model_objects):
     """
-    Tests `draw_elements_labels` with a specific label value (`Profile`).
+    Tests that `draw_elements_labels` function can be run with a specific label value (`Profile`).
 
     Steps:
     - Selects `TEST_WALL1` and `TEST_WALL2`.
@@ -345,7 +345,7 @@ async def test_draw_elements_labels_with_label(model_objects):
 @pytest.mark.asyncio
 async def test_zoom_to_selection(model_objects):
     """
-    Tests the `zoom_to_selection` function to ensure it correctly labels elements.
+    Tests that `zoom_to_selection` function can be run.
 
     Steps:
     - Selects `TEST_WALL1` and `TEST_WALL2`.
