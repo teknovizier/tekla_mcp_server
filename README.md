@@ -27,8 +27,9 @@ The server provides the following tools:
 | `select_elements_using_filter_name`   | Select elements in Tekla model based on the predefined filter |
 | `select_elements_using_guid`     | Select elements in Tekla model by their GUID                                |
 | `select_elements_assemblies_or_main_parts` | Get assemblies or main parts for the elements selected in Tekla model and select them |
-| `draw_elements_labels`            | Draw the temporary labels (position, GUID, name, profile, material, finish, Tekla class) for the selected elements in Tekla in the currently active rendered view.  |
+| `draw_elements_labels`            | Draw the temporary labels (position, GUID, name, profile, material, finish, Tekla class) for the selected elements in Tekla in the currently active rendered view  |
 | `zoom_to_selection`            | Zooms the currently active rendered view to fit the currently selected elements |
+| `show_only_selected`            | Show only the currently selected elements in the currently active rendered view  |
 | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts       |
 | `set_elements_udas`              | Set custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones |
 | `get_all_elements_udas`       | Retrieve structured data about all custom attributes for the selected Tekla elements |

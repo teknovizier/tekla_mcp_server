@@ -349,11 +349,33 @@ async def test_zoom_to_selection(model_objects):
 
     Steps:
     - Selects `TEST_WALL1` and `TEST_WALL2`.
-    - Calls drawing method and refreshes views.
+    - Calls a method.
+    - Verifies success and redraws views.
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     async with Client(mcp) as client:
         result = await client.call_tool("zoom_to_selection")
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 2
+
+        view_enum = ViewHandler.GetAllViews()
+        while view_enum.MoveNext():
+            ViewHandler.RedrawView(view_enum.Current)
+
+
+@pytest.mark.asyncio
+async def test_show_only_selected(model_objects):
+    """
+    Tests that `show_only_selected` function can be run.
+
+    Steps:
+    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Calls a drawing method.
+    - Verifies success and redraws views.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("show_only_selected")
         assert result.data["status"] == "success"
         assert result.data["selected_elements"] == 2
 

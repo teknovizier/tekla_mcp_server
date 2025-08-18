@@ -34,6 +34,7 @@ from tools import (
     select_assemblies_or_main_parts,
     draw_labels_on_elements,
     zoom_to_selected_elements,
+    show_only_selected_elements,
     insert_boolean_parts_as_real_parts,
     set_udas_on_elements,
     get_all_udas_for_elements,
@@ -225,6 +226,20 @@ def zoom_to_selection() -> dict[str, Any]:
         tekla_model = TeklaModel()
         selected_objects = tekla_model.get_selected_objects()
         return zoom_to_selected_elements(selected_objects)
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def show_only_selected() -> dict[str, Any]:
+    """
+    Shows only the currently selected model objects in the Tekla current view, hiding all others.
+    """
+    try:
+        tekla_model = TeklaModel()
+        selected_objects = tekla_model.get_selected_objects()
+        return show_only_selected_elements(selected_objects)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

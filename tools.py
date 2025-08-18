@@ -53,6 +53,7 @@ from Tekla.Structures.Model import (
     Solid,
     TransformationPlane,
 )
+from Tekla.Structures.Model.Operations import Operation
 from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector, ViewHandler
 from Tekla.Structures.Filtering import (
     BinaryFilterOperatorType,
@@ -477,6 +478,18 @@ def zoom_to_selected_elements(selected_objects: ModelObjectEnumerator) -> dict:
         "status": "success" if result else "error",
         "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
+    }
+
+
+def show_only_selected_elements(selected_objects: ModelObjectEnumerator) -> dict:
+    """
+    Updates the Tekla view to show only the currently selected model objects.
+    """
+    Operation.ShowOnlySelected(Operation.UnselectedModeEnum.Hidden)
+
+    return {
+        "status": "success",
+        "selected_elements": selected_objects.GetSize(),
     }
 
 
