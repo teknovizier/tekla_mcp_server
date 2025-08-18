@@ -125,6 +125,9 @@ class TeklaModelObject:
     """
 
     def __init__(self, model_object: ModelObject):
+        if not isinstance(model_object, (Assembly, Part)):
+            raise TypeError(f"{self.__class__.__name__} requires an object of type Assembly or Part, " f"but got {type(model_object).__name__}")
+
         self.model_object = model_object
         self._is_assembly = isinstance(model_object, Assembly)
         self._is_part = isinstance(model_object, Part)
@@ -245,8 +248,8 @@ class TeklaModelObject:
                 weight_secondary = secondary.get_report_property("WEIGHT", float)
                 weight_secondaries += weight_secondary
 
-                for rebar in secondary.model_object.GetReinforcements():
-                    weight_rebar = secondary.get_report_property("WEIGHT_TOTAL", float)
+                for rebar in wrap_model_objects(secondary.model_object.GetReinforcements()):
+                    weight_rebar = rebar.get_report_property("WEIGHT_TOTAL", float)
                     weight_rebars += weight_rebar
 
             # Subassemblies
