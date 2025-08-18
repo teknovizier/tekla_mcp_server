@@ -540,6 +540,35 @@ def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str
     }
 
 
+def get_all_udas_for_elements(selected_objects: ModelObjectEnumerator) -> dict:
+    """
+    Retrieves GUID, position, and all UDAs for a collection of model objects.
+    """
+    processed_elements = 0
+    assemblies: list[dict] = []
+    parts: list[dict] = []
+
+    def extract_metadata(selected_object: TeklaModelObject) -> dict:
+        return {"guid": selected_object.guid, "position": selected_object.position, "udas": selected_object.get_all_user_properties()}
+
+    for selected_object in selected_objects:
+        selected_object = TeklaModelObject(selected_object)
+        metadata = extract_metadata(selected_object)
+        if selected_object.is_assembly:
+            assemblies.append(metadata)
+        elif selected_object.is_part:
+            parts.append(metadata)
+        processed_elements += 1
+
+    return {
+        "status": "success" if assemblies or parts else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "assemblies": assemblies,
+        "parts": parts,
+    }
+
+
 def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_definitions: list[str]):
     """
     Extracts and serializes key element properties from a collection of model objects.
@@ -575,10 +604,11 @@ def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_def
 
     for selected_object in selected_objects:
         selected_object = TeklaModelObject(selected_object)
+        metadata = get_single_element_properties(selected_object).model_copy(deep=True)
         if selected_object.is_assembly:
-            assemblies.append(get_single_element_properties(selected_object).model_copy(deep=True))
+            assemblies.append(metadata)
         elif selected_object.is_part:
-            parts.append(get_single_element_properties(selected_object).model_copy(deep=True))
+            parts.append(metadata)
         processed_elements += 1
 
     # JSON serialization

@@ -31,6 +31,7 @@ The server provides the following tools:
 | `zoom_to_selection`            | Zooms the currently active rendered view to fit the currently selected elements |
 | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts       |
 | `set_elements_udas`              | Set custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones |
+| `get_all_elements_udas`       | Retrieve structured data about all custom attributes for the selected Tekla elements |
 | `get_elements_properties`       | Retrieve structured data about selected elements in the Tekla model, including key properties (position, GUID, name, profile, material, finish, Tekla class), weight, and any defined custom properties |
 
 ### Compatibility

@@ -36,6 +36,7 @@ from tools import (
     zoom_to_selected_elements,
     insert_boolean_parts_as_real_parts,
     set_udas_on_elements,
+    get_all_udas_for_elements,
     get_elements_props,
 )
 from tekla_utils import TeklaModel
@@ -256,6 +257,27 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
         selected_objects = TeklaModel().get_selected_objects()
         mode_enum = UDASetModeModel(value=mode).to_enum()
         return set_udas_on_elements(selected_objects, udas, mode_enum)
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def get_all_elements_udas() -> dict[str, Any]:
+    """
+    Retrieves all UDAs for the selected elements (assemblies or parts) in the Tekla model.
+
+    The returned data to be presented in a Markdown table format, each row represents one element, with columns for:
+    - Position
+    - GUID
+    - Any available UDAs
+
+    Each UDA is returned using its property name as the column header.
+    If an attribute is missing, the corresponding cell to be left empty.
+    """
+    try:
+        selected_objects = TeklaModel().get_selected_objects()
+        return get_all_udas_for_elements(selected_objects)
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

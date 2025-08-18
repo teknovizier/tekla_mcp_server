@@ -187,6 +187,22 @@ def test_set_user_property_test_property():
     assert obj.set_user_property("TestProperty", "TestValue") is True
 
 
+def test_get_all_user_properties_empty():
+    """Checks that an empty dictionary is returned when no user-defined properties exist."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    assert not obj.get_all_user_properties()
+
+
+def test_get_all_user_properties_test_property():
+    """Checks that a user-defined property can be retrieved correctly."""
+    wall1 = mock_beam(0, 0, 0, "TEST_WALL1")
+    obj = TeklaModelObject(wall1)
+    obj.set_user_property("TestProperty", "TestValue")
+    assert len(obj.get_all_user_properties()) == 1
+    assert obj.get_all_user_properties()["TestProperty"] == "TestValue"
+
+
 # Tests for `parse_template_attribute`
 @pytest.mark.parametrize(
     "attr_name,expected_type,expected_unit",

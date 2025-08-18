@@ -423,6 +423,32 @@ async def test_set_elements_udas(model_objects):
 
 
 @pytest.mark.asyncio
+async def test_get_all_elements_udas_empty(model_objects):
+    """
+    Tests the `get_all_elements_udas` MCP tool: empty UDAs.
+    """
+    elements_to_select = [
+        model_objects["test_sw1"],
+        model_objects["test_slab1"],
+    ]
+    TeklaModel.select_objects(elements_to_select)
+    async with Client(mcp) as client:
+        result = await client.call_tool("get_all_elements_udas")
+
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 2
+        assert result.data["processed_elements"] == 2
+
+        # Check assemblies
+        for assembly in result.data["assemblies"]:
+            assert not assembly["udas"]
+
+        # Check parts
+        for part in result.data["parts"]:
+            assert not part["udas"]
+
+
+@pytest.mark.asyncio
 async def test_get_elements_properties_basic_assembly_properties(model_objects):
     """
     Tests the `get_elements_properties` MCP tool: basic assembly properties.

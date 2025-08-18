@@ -14,7 +14,7 @@ from models import StringMatchType, ReportProperty
 
 # Tekla OpenAPI imports
 load_dlls()
-from System.Collections import ArrayList
+from System.Collections import ArrayList, Hashtable
 from Tekla.Structures import PositionTypeEnum, DetailTypeEnum, AutoDirectionTypeEnum
 from Tekla.Structures.Geometry3d import Point, Vector
 
@@ -327,6 +327,14 @@ class TeklaModelObject:
         """
         self._validate_property_type(type(property_value))
         return self.model_object.SetUserProperty(property_name, property_value)
+
+    def get_all_user_properties(self) -> dict[str, str | int | float]:
+        """
+        Gets all user properties for a given Tekla model object.
+        """
+        hash_table = Hashtable()
+        self.model_object.GetAllUserProperties(hash_table)
+        return {key: hash_table[key] for key in hash_table.Keys}
 
     @staticmethod
     def _validate_property_type(property_type: type):
