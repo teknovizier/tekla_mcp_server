@@ -15,13 +15,9 @@ if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
 from models import ReportProperty
-from tekla_utils import TeklaModelObject, parse_template_attribute, get_wall_pairs
-from init import load_dlls
 
-# Tekla OpenAPI imports
-load_dlls()
-from Tekla.Structures.Model import Beam, Position
-from Tekla.Structures.Geometry3d import Point
+from tekla_loader import Beam, Position, Point
+from tekla_utils import TeklaModelObject, parse_template_attribute, get_wall_pairs
 
 
 created_elements = []

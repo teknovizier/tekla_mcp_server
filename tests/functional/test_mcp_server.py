@@ -21,17 +21,11 @@ if os.getenv("CI") == "true":
 
 from fastmcp import Client
 
+from mcp_server import mcp
 from models import LiftingAnchors
 
-from init import load_dlls
-from mcp_server import mcp
+from tekla_loader import Point, Beam, Position, ViewHandler
 from tekla_utils import TeklaModel, TeklaModelObject
-
-# Tekla OpenAPI imports
-load_dlls()
-from Tekla.Structures.Geometry3d import Point
-from Tekla.Structures.Model import Beam, Position
-from Tekla.Structures.Model.UI import ViewHandler
 
 
 def create_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):

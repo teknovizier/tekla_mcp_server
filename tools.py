@@ -8,7 +8,7 @@ from collections.abc import Callable
 import json
 import re
 
-from init import load_dlls, logger
+from init import logger
 from models import (
     ELEMENT_TYPE_MAPPING,
     SelectionMode,
@@ -23,6 +23,36 @@ from models import (
     ElementProperties,
 )
 
+from tekla_loader import (
+    ArrayList,
+    Identifier,
+    TeklaStructuresDatabaseTypeEnum,
+    AABB,
+    Point,
+    Model,
+    ModelObject,
+    ModelObjectEnumerator,
+    Beam,
+    BooleanPart,
+    Position,
+    Solid,
+    TransformationPlane,
+    Operation,
+    Color,
+    GraphicsDrawer,
+    ModelObjectSelectorUI,
+    ViewHandler,
+    BinaryFilterOperatorType,
+    BinaryFilterExpressionCollection,
+    BinaryFilterExpressionItem,
+    NumericOperatorType,
+    NumericConstantFilterExpression,
+    StringConstantFilterExpression,
+    BinaryFilterExpression,
+    PartFilterExpressions,
+    ObjectFilterExpressions,
+)
+
 from tekla_utils import (
     STRING_MATCH_TYPE_MAPPING,
     TeklaModel,
@@ -35,36 +65,6 @@ from tekla_utils import (
     insert_detail,
     insert_seam,
 )
-
-# Tekla OpenAPI imports
-load_dlls()
-from System.Collections import ArrayList
-from Tekla.Structures import Identifier, TeklaStructuresDatabaseTypeEnum
-from Tekla.Structures.Geometry3d import AABB, Point
-from Tekla.Structures.Model import (
-    Model,
-    ModelObject,
-    ModelObjectEnumerator,
-    Assembly,
-    Beam,
-    BooleanPart,
-    Part,
-    Position,
-    Solid,
-    TransformationPlane,
-)
-from Tekla.Structures.Model.Operations import Operation
-from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector, ViewHandler
-from Tekla.Structures.Filtering import (
-    BinaryFilterOperatorType,
-    BinaryFilterExpressionCollection,
-    BinaryFilterExpressionItem,
-    NumericOperatorType,
-    NumericConstantFilterExpression,
-    StringConstantFilterExpression,
-    BinaryFilterExpression,
-)
-from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions
 
 
 # Helper functions
@@ -369,7 +369,7 @@ def select_elements_by_guid(guids: list[str]) -> dict:
         if obj is not None:
             objects_to_select.Add(obj)
 
-    selector = ModelObjectSelector()
+    selector = ModelObjectSelectorUI()
     selector.Select(objects_to_select)
 
     return {
@@ -399,7 +399,7 @@ def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mod
             selected_object_types = "selected_main_parts"
         processed_elements += 1
 
-    selector = ModelObjectSelector()
+    selector = ModelObjectSelectorUI()
     selector.Select(filtered_parts)
 
     return {

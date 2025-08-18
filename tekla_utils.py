@@ -9,34 +9,34 @@ from functools import wraps
 from typing import Any
 from collections.abc import Callable, Iterable
 
-from init import load_dlls, read_config, logger
+from init import read_config, logger
 from models import StringMatchType, ReportProperty
 
-# Tekla OpenAPI imports
-load_dlls()
-from System.Collections import ArrayList, Hashtable
-from Tekla.Structures import PositionTypeEnum, DetailTypeEnum, AutoDirectionTypeEnum
-from Tekla.Structures.Geometry3d import Point, Vector
-
-from Tekla.Structures.Model import (
+from tekla_loader import (
+    ArrayList,
+    Hashtable,
+    PositionTypeEnum,
+    DetailTypeEnum,
+    AutoDirectionTypeEnum,
+    Point,
+    Vector,
     Model,
     ModelObject,
     ModelObjectEnumerator,
     ModelObjectSelector,
     Assembly,
-    BooleanPart,
     Beam,
     Part,
-    PolyBeam,
-    Position,
     TransformationPlane,
     ComponentInput,
     Component,
     Detail,
     Seam,
+    ModelObjectSelectorUI,
+    StringOperatorType,
+    FilterExpression,
 )
-from Tekla.Structures.Model.UI import ModelObjectSelector as ModelObjectSelectorUI
-from Tekla.Structures.Filtering import StringOperatorType, FilterExpression
+
 
 # Mappings
 # String match types
