@@ -27,6 +27,7 @@ from tekla_utils import (
     STRING_MATCH_TYPE_MAPPING,
     TeklaModel,
     TeklaModelObject,
+    wrap_model_objects,
     parse_template_attribute,
     get_wall_pairs,
     ensure_transformation_plane,
@@ -384,9 +385,8 @@ def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mod
     selected_object_types = ""
     # Process filtered parts
     filtered_parts = ArrayList()
-    for selected_object in selected_objects:
+    for selected_object in wrap_model_objects(selected_objects):
         try:
-            selected_object = TeklaModelObject(selected_object)
             assembly = selected_object.get_top_level_assembly()
         except TypeError:
             continue
@@ -416,8 +416,7 @@ def draw_labels_on_elements(selected_objects: ModelObjectEnumerator, label: Elem
     drawer = GraphicsDrawer()
     processed_elements = 0
     drawn_labels = 0
-    for selected_object in selected_objects:
-        selected_object = TeklaModelObject(selected_object)
+    for selected_object in wrap_model_objects(selected_objects):
         labels = {
             ElementLabel.POSITION: selected_object.position,
             ElementLabel.GUID: selected_object.guid,
@@ -514,8 +513,7 @@ def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str
     processed_elements = 0
     updated_attributes = 0
     skipped_attributes = 0
-    for selected_object in selected_objects:
-        selected_object = TeklaModelObject(selected_object)
+    for selected_object in wrap_model_objects(selected_objects):
         for key, value in udas.items():
             try:
                 _ = selected_object.get_user_property(key, type(value))
@@ -551,8 +549,7 @@ def get_all_udas_for_elements(selected_objects: ModelObjectEnumerator) -> dict:
     def extract_metadata(selected_object: TeklaModelObject) -> dict:
         return {"guid": selected_object.guid, "position": selected_object.position, "udas": selected_object.get_all_user_properties()}
 
-    for selected_object in selected_objects:
-        selected_object = TeklaModelObject(selected_object)
+    for selected_object in wrap_model_objects(selected_objects):
         metadata = extract_metadata(selected_object)
         if selected_object.is_assembly:
             assemblies.append(metadata)
@@ -602,8 +599,7 @@ def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_def
             custom_properties=custom_properties,
         )
 
-    for selected_object in selected_objects:
-        selected_object = TeklaModelObject(selected_object)
+    for selected_object in wrap_model_objects(selected_objects):
         metadata = get_single_element_properties(selected_object).model_copy(deep=True)
         if selected_object.is_assembly:
             assemblies.append(metadata)

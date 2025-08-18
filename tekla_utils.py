@@ -235,15 +235,13 @@ class TeklaModelObject:
         weight_main_part = self.main_part.get_report_property("WEIGHT", float)
 
         # Rebars on main part
-        for rebar in self.main_part.model_object.GetReinforcements():
-            rebar = TeklaModelObject(rebar)
+        for rebar in wrap_model_objects(self.main_part.model_object.GetReinforcements()):
             weight_rebar = rebar.get_report_property("WEIGHT_TOTAL", float)
             weight_rebars += weight_rebar
 
         if self.is_assembly:
             # Secondary parts and their rebars
-            for secondary in self.model_object.GetSecondaries():
-                secondary = TeklaModelObject(secondary)
+            for secondary in wrap_model_objects(self.model_object.GetSecondaries()):
                 weight_secondary = secondary.get_report_property("WEIGHT", float)
                 weight_secondaries += weight_secondary
 
@@ -252,8 +250,7 @@ class TeklaModelObject:
                     weight_rebars += weight_rebar
 
             # Subassemblies
-            for subassembly in self.model_object.GetSubAssemblies():
-                subassembly = TeklaModelObject(subassembly)
+            for subassembly in wrap_model_objects(self.model_object.GetSubAssemblies()):
                 weight_sub = subassembly.get_report_property("WEIGHT", float)
                 try:
                     rebar_type = subassembly.get_report_property("REBAR_ASSEMBLY_TYPE", str)
@@ -346,6 +343,14 @@ class TeklaModelObject:
         """
         if property_type not in (str, int, float):
             raise TypeError("Property type must be one of: str, int, float.")
+
+
+def wrap_model_objects(model_objects):
+    """
+    Wraps each Tekla ModelObject in a TeklaModelObject.
+    """
+    for model_object in model_objects:
+        yield TeklaModelObject(model_object)
 
 
 def parse_template_attribute(attribute_name: str) -> ReportProperty:
