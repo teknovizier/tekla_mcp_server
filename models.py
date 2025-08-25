@@ -100,6 +100,8 @@ class ElementLabel(Enum):
     MATERIAL = "Material"
     FINISH = "Finish"
     CLASS = "Class"
+    WEIGHT = "Weight"
+    CUSTOM = "Custom"
 
 
 # Mappings

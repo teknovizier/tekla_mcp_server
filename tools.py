@@ -410,7 +410,7 @@ def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mod
     }
 
 
-def draw_labels_on_elements(selected_objects: ModelObjectEnumerator, label: ElementLabel) -> dict:
+def draw_labels_on_elements(selected_objects: ModelObjectEnumerator, label: ElementLabel, custom_label: str = None) -> dict:
     """
     Draws labels for the given Tekla model objects using the GraphicsDrawer.
     """
@@ -418,16 +418,25 @@ def draw_labels_on_elements(selected_objects: ModelObjectEnumerator, label: Elem
     processed_elements = 0
     drawn_labels = 0
     for selected_object in wrap_model_objects(selected_objects):
-        labels = {
-            ElementLabel.POSITION: selected_object.position,
-            ElementLabel.GUID: selected_object.guid,
-            ElementLabel.NAME: selected_object.name,
-            ElementLabel.PROFILE: selected_object.profile,
-            ElementLabel.MATERIAL: selected_object.material,
-            ElementLabel.FINISH: selected_object.finish,
-            ElementLabel.CLASS: selected_object.tekla_class,
-        }
-        text = labels.get(label, ElementLabel.NAME)
+        if label == ElementLabel.CUSTOM:
+            if not custom_label:
+                raise ValueError("Custom label parameter has to be set.")
+            custom_property = parse_template_attribute(custom_label)
+            value = selected_object.get_report_property(custom_property.name, custom_property.data_type)
+            unit = f" {custom_property.unit}" if custom_property.unit else ""
+            text = f"{custom_label} = {value}{unit}"
+        else:
+            labels = {
+                ElementLabel.POSITION: selected_object.position,
+                ElementLabel.GUID: selected_object.guid,
+                ElementLabel.NAME: selected_object.name,
+                ElementLabel.PROFILE: selected_object.profile,
+                ElementLabel.MATERIAL: selected_object.material,
+                ElementLabel.FINISH: selected_object.finish,
+                ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",  # Ignore reinforcement weight
+                ElementLabel.CLASS: selected_object.tekla_class,
+            }
+            text = labels.get(label, ElementLabel.NAME)
         if drawer.DrawText(selected_object.cog, text, Color(0.0, 0.0, 0.0)):
             drawn_labels += 1
         processed_elements += 1

@@ -215,7 +215,7 @@ def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
 
 @mcp.tool()
 @log_mcp_tool_call
-def draw_elements_labels(label: str = None) -> dict[str, Any]:
+def draw_elements_labels(label: str = None, custom_label: str = None) -> dict[str, Any]:
     """
     Draws temporary labels in the Tekla model.
 
@@ -227,12 +227,14 @@ def draw_elements_labels(label: str = None) -> dict[str, Any]:
     - `Material`
     - `Finish`
     - `Class`
+    - `Weight`
+    - `Custom` (requires `custom_label` to be set)
     """
 
     selected_objects = TeklaModel().get_selected_objects()
     label = label or "Name"
     label_enum = ElementLabelModel(value=label).to_enum()
-    return draw_labels_on_elements(selected_objects, label_enum)
+    return draw_labels_on_elements(selected_objects, label_enum, custom_label)
 
 
 @mcp.tool()

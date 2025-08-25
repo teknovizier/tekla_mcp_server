@@ -337,6 +337,50 @@ async def test_draw_elements_labels_with_label(model_objects):
 
 
 @pytest.mark.asyncio
+async def test_draw_elements_labels_with_valid_custom_label(model_objects):
+    """
+    Tests that `draw_elements_labels` function can be run with a specific custom label value (`AREA_NET`).
+
+    Steps:
+    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Calls drawing method with `custom_label` argument.
+    - Verifies success and redraws views.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("draw_elements_labels", {"label": "Custom", "custom_label": "AREA_NET"})
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 2
+
+        view_enum = ViewHandler.GetAllViews()
+        while view_enum.MoveNext():
+            ViewHandler.RedrawView(view_enum.Current)
+
+
+@pytest.mark.asyncio
+async def test_draw_elements_labels_with_invalid_custom_label(model_objects):
+    """
+    Tests that `draw_elements_labels` handles an invalid custom label (`InvalidProperty`).
+
+    Steps:
+    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Calls drawing method with invalid `custom_label` argument.
+    - Asserts that the response status is `error` and that two elements were selected.
+    - Redraws views.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("draw_elements_labels", {"label": "Custom", "custom_label": "InvalidProperty"})
+        assert result.data["status"] == "error"
+
+        view_enum = ViewHandler.GetAllViews()
+        while view_enum.MoveNext():
+            ViewHandler.RedrawView(view_enum.Current)
+
+
+@pytest.mark.asyncio
 async def test_zoom_to_selection(model_objects):
     """
     Tests that `zoom_to_selection` function can be run.
