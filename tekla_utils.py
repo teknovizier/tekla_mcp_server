@@ -125,9 +125,6 @@ class TeklaModelObject:
     """
 
     def __init__(self, model_object: ModelObject):
-        if not isinstance(model_object, (Assembly, Part)):
-            raise TypeError(f"{self.__class__.__name__} requires an object of type Assembly or Part, " f"but got {type(model_object).__name__}")
-
         self.model_object = model_object
         self._is_assembly = isinstance(model_object, Assembly)
         self._is_part = isinstance(model_object, Part)
