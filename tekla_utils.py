@@ -18,6 +18,7 @@ from tekla_loader import (
     PositionTypeEnum,
     DetailTypeEnum,
     AutoDirectionTypeEnum,
+    TeklaStructuresDatabaseTypeEnum,
     Point,
     Vector,
     Model,
@@ -27,6 +28,7 @@ from tekla_loader import (
     Assembly,
     Beam,
     Part,
+    BooleanPart,
     TransformationPlane,
     ComponentInput,
     Component,
@@ -35,6 +37,14 @@ from tekla_loader import (
     ModelObjectSelectorUI,
     StringOperatorType,
     FilterExpression,
+    BinaryFilterOperatorType,
+    BinaryFilterExpressionCollection,
+    BinaryFilterExpressionItem,
+    NumericOperatorType,
+    NumericConstantFilterExpression,
+    BinaryFilterExpression,
+    PartFilterExpressions,
+    ObjectFilterExpressions,
 )
 
 
@@ -105,6 +115,24 @@ class TeklaModel:
             raise ValueError("No objects match the provided filter expression.")
 
         return objects_to_select
+
+    def get_objects_by_class(self, tekla_class: int) -> ModelObjectEnumerator:
+        """
+        Returns objects in the model selected by the given Tekla class.
+        """
+        filter_collection = BinaryFilterExpressionCollection()
+
+        # Filter on parts
+        filter_parts = BinaryFilterExpression(ObjectFilterExpressions.Type(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(TeklaStructuresDatabaseTypeEnum.PART))
+        filter_collection.Add(BinaryFilterExpressionItem(filter_parts, BinaryFilterOperatorType.BOOLEAN_AND))
+
+        # FIlter on class
+        filter_collection_class = BinaryFilterExpressionCollection()
+        filter_class = BinaryFilterExpression(PartFilterExpressions.Class(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(tekla_class))
+        filter_collection_class.Add(BinaryFilterExpressionItem(filter_class, BinaryFilterOperatorType.BOOLEAN_OR))
+        filter_collection.Add(BinaryFilterExpressionItem(filter_collection_class))
+
+        return self.get_objects_by_filter(filter_collection)
 
     @staticmethod
     def select_objects(model_objects: Iterable) -> bool:
@@ -284,6 +312,65 @@ class TeklaModelObject:
             raise TypeError(f"Expected Assembly object, got {type(assembly).__name__}.")
 
         return TeklaModelObject(assembly)
+
+    def has_spatial_overlap(self, other: TeklaModelObject) -> bool:
+        """
+        Checks whether the bounding boxes of this Tekla model object and another TeklaModelObject intersect.
+        """
+        solid_self = self.model_object.GetSolid()
+        solid_other = other.model_object.GetSolid()
+
+        if not (solid_self and solid_other):
+            return False
+
+        min_self, max_self = solid_self.MinimumPoint, solid_self.MaximumPoint
+        min_other, max_other = solid_other.MinimumPoint, solid_other.MaximumPoint
+
+        return min_self.X <= max_other.X and max_self.X >= min_other.X and min_self.Y <= max_other.Y and max_self.Y >= min_other.Y and min_self.Z <= max_other.Z and max_self.Z >= min_other.Z
+
+    def add_cut(self, cutting_part: TeklaModelObject, delete_cutting_part: bool = False) -> bool:
+        """
+        Attempts to perform a boolean cut operation on this Tekla model object using another TeklaModelObject as the cutting part.
+
+        The method first checks for self-cutting and spatial overlap between the objects. If valid, it sets the cutting part
+        as a Boolean operator and performs the cut. It then compares the volume before and after the operation to verify
+        that the cut had an effect. Optionally deletes the cutting part from the model if the cut was successful.
+        """
+        # Only proceed if both objects are valid parts
+        if not (self.is_part and cutting_part.is_part):
+            return False
+
+        # Skip if either object is missing
+        if self.model_object is None or cutting_part.model_object is None:
+            return False
+
+        # Skip self-cuts
+        if self.model_object is cutting_part.model_object:
+            return False
+
+        # Skip if bounding boxes don't intersect
+        if not self.has_spatial_overlap(cutting_part):
+            return False
+
+        # Get the volume before the cut
+        volume_before = self.get_report_property("VOLUME", float)
+
+        cutting_part.model_object.Class = BooleanPart.BooleanOperativeClassName  # Set as a boolean operator
+
+        boolean_cut = BooleanPart()
+        boolean_cut.Father = self.model_object
+        boolean_cut.SetOperativePart(cutting_part.model_object)
+        boolean_cut.Type = BooleanPart.BooleanTypeEnum.BOOLEAN_CUT
+
+        # Attempt to insert the cut and check if the volume decreased
+        if boolean_cut.Insert():
+            volume_after = self.get_report_property("VOLUME", float)
+            if volume_after < volume_before:
+                if delete_cutting_part:
+                    cutting_part.model_object.Delete()
+                return True
+
+        return False
 
     def get_report_property(self, property_name: str, property_type: type) -> str | int | float:
         """

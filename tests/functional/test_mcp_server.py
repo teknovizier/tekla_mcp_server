@@ -57,11 +57,25 @@ def model_objects():
     test_sw1 = create_test_beam("TEST_SW1", Point(4000, 0, 0), Point(6000, 0, 0), "3000*200", class_type="8")
     test_slab1 = create_test_beam("TEST_SLAB1", Point(1000, 0, 3020), Point(1000, 6000, 3020), "P20(200X1200)", class_type="3")
 
+    void1 = create_test_beam("VOID_TEST_WALL3", Point(3000, 0, 1000), Point(3000, 200, 1000), "D400", class_type="0")
+    void2 = create_test_beam("VOID_FLOATING", Point(3000, 0, 10000), Point(3000, 200, 10000), "D400", class_type="0")
+
     model.CommitChanges()
 
-    yield {"model": model, "walls": [test_wall1, test_wall2, test_wall3, test_wall4], "test_wall1": test_wall1, "test_wall2": test_wall2, "test_sw1": test_sw1, "test_slab1": test_slab1}
+    yield {
+        "model": model,
+        "walls": [test_wall1, test_wall2, test_wall3, test_wall4],
+        "test_wall1": test_wall1,
+        "test_wall2": test_wall2,
+        "test_wall3": test_wall3,
+        "test_wall4": test_wall4,
+        "test_sw1": test_sw1,
+        "test_slab1": test_slab1,
+        "void1": void1,
+        "void2": void2,
+    }
 
-    for obj in [test_wall1, test_wall2, test_wall3, test_wall4, test_sw1, test_slab1]:
+    for obj in [test_wall1, test_wall2, test_wall3, test_wall4, test_sw1, test_slab1, void1, void2]:
         if obj.Identifier.IsValid():
             obj.Delete()
     model.CommitChanges()
@@ -420,6 +434,56 @@ async def test_show_only_selected(model_objects):
         view_enum = ViewHandler.GetAllViews()
         while view_enum.MoveNext():
             ViewHandler.RedrawView(view_enum.Current)
+
+
+@pytest.mark.asyncio
+async def test_cut_elements_with_zero_class_parts(model_objects):
+    """
+    Tests the `cut_elements_with_zero_class_parts` tool.
+
+    Steps:
+    1. Selects `TEST_WALL3` and `TEST_WALL4`.
+    2. Run the cut tool.
+    3. Verifies success.
+    """
+    TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("cut_elements_with_zero_class_parts", {"delete_cutting_parts": False})
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 2
+        assert result.data["processed_elements"] == 1  # Only `TEST_WALL1` should be cut
+        assert result.data["performed_cuts"] >= 1  # At least one cut should be applied
+
+
+@pytest.mark.asyncio
+async def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):
+    """
+    Tests the `convert_cut_parts_to_real_parts` function when no cuts are present.
+
+    Steps:
+    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Verifies that the tool returns "error" because no cuts exist.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("convert_cut_parts_to_real_parts")
+        assert result.data["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_convert_cut_parts_to_real_parts_with_cut(model_objects):
+    """
+    Tests the `convert_cut_parts_to_real_parts` function when a valid cut part exists.
+
+    Steps:
+    - Selects `TEST_WALL3`, which is intersected by `VOID_CUT_WALL3`.
+    - Verifies that the conversion tool returns "success" after the cut is applied.
+    """
+    TeklaModel.select_objects([model_objects["test_wall3"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("convert_cut_parts_to_real_parts")
+        assert result.data["status"] == "success"
+        assert result.data["processed_elements"] >= 1
 
 
 @pytest.mark.asyncio

@@ -221,7 +221,7 @@ def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_obj
 
         # Create the boolean cutting part as a rectangular beam
         cutting_part = Beam()
-        cutting_part.Class = BooleanPart.BooleanOperativeClassName  # Set as a boolean operator
+        cutting_part.Class = "0"
         cutting_part.Material.MaterialString = "ZERO WEIGHT"
         cutting_part.Name = "LIFTING_ANCHOR_RECESS"  # Name for identification
         cutting_part.Profile.ProfileString = f"{cut_length}*{cut_height}"
@@ -235,14 +235,9 @@ def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_obj
 
         # Insert the boolean part into the model
         if cutting_part.Insert():
-            boolean_cut = BooleanPart()
-            boolean_cut.Father = selected_object
-            boolean_cut.SetOperativePart(cutting_part)
-            boolean_cut.Type = BooleanPart.BooleanTypeEnum.BOOLEAN_CUT
-            boolean_cut.Insert()
-
-            cutting_part.Delete()  # Delete the temporary cutting object
-            return True
+            target_object = TeklaModelObject(selected_object)
+            cutter_object = TeklaModelObject(cutting_part)
+            return target_object.add_cut(cutter_object, True)
 
         return False
 
@@ -500,6 +495,33 @@ def show_only_selected_elements(selected_objects: ModelObjectEnumerator) -> dict
         "status": "success",
         "selected_elements": selected_objects.GetSize(),
     }
+
+
+def cut_elements_with_cut_parts(model: Model, selected_objects: ModelObjectEnumerator, delete_cutting_parts: bool = False, tekla_class: int = 0) -> dict:
+    """
+    Applies boolean cuts to selected elements in the Tekla model using parts of a specified class as cutting objects.
+    """
+
+    processed_elements = 0
+    performed_cuts = 0
+
+    objects_to_select = TeklaModel().get_objects_by_class(tekla_class)
+    cutters = list(wrap_model_objects(objects_to_select))  # Keep same instances
+    if cutters:
+        for selected_object in wrap_model_objects(selected_objects):
+            element_had_cut = False
+            for cutter in cutters:
+                if selected_object.add_cut(cutter, delete_cutting_parts):
+                    performed_cuts += 1
+                    element_had_cut = True
+
+            if element_had_cut:
+                processed_elements += 1
+
+        if performed_cuts:
+            model.CommitChanges()
+
+    return {"status": "success" if performed_cuts else "error", "selected_elements": selected_objects.GetSize(), "processed_elements": processed_elements, "performed_cuts": performed_cuts}
 
 
 def insert_boolean_parts_as_real_parts(model: Model, selected_objects: ModelObjectEnumerator) -> dict:

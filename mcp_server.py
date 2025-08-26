@@ -37,6 +37,7 @@ from tools import (
     draw_labels_on_elements,
     zoom_to_selected_elements,
     show_only_selected_elements,
+    cut_elements_with_cut_parts,
     insert_boolean_parts_as_real_parts,
     set_udas_on_elements,
     get_all_udas_for_elements,
@@ -259,6 +260,19 @@ def show_only_selected() -> dict[str, Any]:
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
     return show_only_selected_elements(selected_objects)
+
+
+@mcp.tool()
+@log_mcp_tool_call
+def cut_elements_with_zero_class_parts(delete_cutting_parts: bool = False) -> dict[str, Any]:
+    """
+    Performs boolean cuts on selected model objects using parts in class 0, with optional deletion of cutting parts.
+    If `delete_cutting_parts` is set to True, the cutting parts used in the operation will be removed from the model after the cuts are applied.
+    """
+
+    tekla_model = TeklaModel()
+    selected_objects = tekla_model.get_selected_objects()
+    return cut_elements_with_cut_parts(tekla_model.model, selected_objects, delete_cutting_parts)
 
 
 @mcp.tool()
