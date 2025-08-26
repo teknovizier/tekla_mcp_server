@@ -86,9 +86,9 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
     selected_objects = tekla_model.get_selected_objects()
     result = {}
     if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
-        result = process_detail_or_component(selected_objects, callback, tekla_model.model, component, *args, **kwargs)
+        result = process_detail_or_component(selected_objects, callback, tekla_model, component, *args, **kwargs)
     elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
-        result = process_seam_or_connection(selected_objects, callback, tekla_model.model, component, *args, **kwargs)
+        result = process_seam_or_connection(selected_objects, callback, tekla_model, component, *args, **kwargs)
     else:
         pass  # For other types do nothing
     return result
@@ -171,12 +171,14 @@ def select_elements_using_filter(
     - `NOT_ENDS_WITH`: Checks if a string does not end with a specified substring.
     """
 
+    tekla_model = TeklaModel()
+
     if isinstance(element_type, str):
         element_type = ElementTypeModel(value=element_type).to_enum()
 
     name_match_type_enum = StringMatchTypeModel(value=name_match_type).to_enum()
     profile_match_type_enum = StringMatchTypeModel(value=profile_match_type).to_enum()
-    return select_elements_by_filter(element_type, name, name_match_type_enum, profile, profile_match_type_enum)
+    return select_elements_by_filter(tekla_model, element_type, name, name_match_type_enum, profile, profile_match_type_enum)
 
 
 @mcp.tool()
@@ -185,7 +187,9 @@ def select_elements_using_filter_name(filter_name: str) -> dict[str, Any]:
     """
     Selects elements applying an existing Tekla filter.
     """
-    return select_elements_by_filter_name(filter_name)
+
+    tekla_model = TeklaModel()
+    return select_elements_by_filter_name(tekla_model, filter_name)
 
 
 @mcp.tool()
@@ -195,7 +199,8 @@ def select_elements_using_guid(guids: list[str]) -> dict[str, Any]:
     Selects elements by their GUID.
     """
 
-    return select_elements_by_guid(guids)
+    tekla_model = TeklaModel()
+    return select_elements_by_guid(tekla_model, guids)
 
 
 @mcp.tool()
@@ -272,7 +277,7 @@ def cut_elements_with_zero_class_parts(delete_cutting_parts: bool = False) -> di
 
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
-    return cut_elements_with_cut_parts(tekla_model.model, selected_objects, delete_cutting_parts)
+    return cut_elements_with_cut_parts(tekla_model, selected_objects, delete_cutting_parts)
 
 
 @mcp.tool()
@@ -284,7 +289,7 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
 
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
-    return insert_boolean_parts_as_real_parts(tekla_model.model, selected_objects)
+    return insert_boolean_parts_as_real_parts(tekla_model, selected_objects)
 
 
 @mcp.tool()

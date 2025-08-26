@@ -13,6 +13,7 @@ from init import read_config, logger
 from models import StringMatchType, ReportProperty
 
 from tekla_loader import (
+    Identifier,
     ArrayList,
     Hashtable,
     PositionTypeEnum,
@@ -73,6 +74,12 @@ class TeklaModel:
         if not self.model.GetConnectionStatus():
             raise ConnectionError("Cannot connect to Tekla model. Please check that Tekla Structures is running and the model is opened.")
 
+    def commit_changes(self) -> bool:
+        """
+        Commits the changes made to the model.
+        """
+        return self.model.CommitChanges()
+
     def get_all_objects(self) -> ModelObjectEnumerator:
         """
         Returns all objects in the model.
@@ -95,6 +102,36 @@ class TeklaModel:
 
         return selected_objects
 
+    def get_objects_by_class(self, tekla_class: int) -> ModelObjectEnumerator:
+        """
+        Returns objects in the model selected by the given Tekla class.
+        """
+        filter_collection = BinaryFilterExpressionCollection()
+
+        # Filter on parts
+        filter_parts = BinaryFilterExpression(ObjectFilterExpressions.Type(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(TeklaStructuresDatabaseTypeEnum.PART))
+        filter_collection.Add(BinaryFilterExpressionItem(filter_parts, BinaryFilterOperatorType.BOOLEAN_AND))
+
+        # FIlter on class
+        filter_collection_class = BinaryFilterExpressionCollection()
+        filter_class = BinaryFilterExpression(PartFilterExpressions.Class(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(tekla_class))
+        filter_collection_class.Add(BinaryFilterExpressionItem(filter_class, BinaryFilterOperatorType.BOOLEAN_OR))
+        filter_collection.Add(BinaryFilterExpressionItem(filter_collection_class))
+
+        return self.get_objects_by_filter(filter_collection)
+
+    def get_objects_by_guid(self, guids: list[str]) -> ArrayList:
+        """
+        Returns model objects by their GUIDs and returns them in an ArrayList.
+        """
+        objects_to_select = ArrayList()
+        for guid in guids:
+            obj = self.model.SelectModelObject(Identifier(guid))
+            if obj is not None:
+                objects_to_select.Add(obj)
+
+        return objects_to_select
+
     def get_objects_by_filter(self, model_filter: FilterExpression | str) -> ModelObjectEnumerator:
         """
         Returns objects in the model selected by the given selection filter definition.
@@ -116,30 +153,16 @@ class TeklaModel:
 
         return objects_to_select
 
-    def get_objects_by_class(self, tekla_class: int) -> ModelObjectEnumerator:
-        """
-        Returns objects in the model selected by the given Tekla class.
-        """
-        filter_collection = BinaryFilterExpressionCollection()
-
-        # Filter on parts
-        filter_parts = BinaryFilterExpression(ObjectFilterExpressions.Type(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(TeklaStructuresDatabaseTypeEnum.PART))
-        filter_collection.Add(BinaryFilterExpressionItem(filter_parts, BinaryFilterOperatorType.BOOLEAN_AND))
-
-        # FIlter on class
-        filter_collection_class = BinaryFilterExpressionCollection()
-        filter_class = BinaryFilterExpression(PartFilterExpressions.Class(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(tekla_class))
-        filter_collection_class.Add(BinaryFilterExpressionItem(filter_class, BinaryFilterOperatorType.BOOLEAN_OR))
-        filter_collection.Add(BinaryFilterExpressionItem(filter_collection_class))
-
-        return self.get_objects_by_filter(filter_collection)
-
     @staticmethod
     def select_objects(model_objects: Iterable) -> bool:
         """
         Selects the given model objects in the model.
         """
         selector = ModelObjectSelectorUI()
+
+        if isinstance(model_objects, ArrayList):
+            return selector.Select(model_objects)
+
         array_list = ArrayList()
         for model_object in model_objects:
             array_list.Add(model_object)
@@ -492,20 +515,20 @@ def ensure_transformation_plane(func: Callable[..., Any]) -> Any:
     """
 
     @wraps(func)
-    def wrapper(model: Model, component: Any, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(model: TeklaModel, component: Any, *args: Any, **kwargs: Any) -> Any:
         # Determine the number of objects in args
-        selected_object = args[0]  # Supports only the first elements
+        selected_object = args[0]  # Supports only the first element
 
-        current_plane = model.GetWorkPlaneHandler().GetCurrentTransformationPlane()
+        current_plane = model.model.GetWorkPlaneHandler().GetCurrentTransformationPlane()
         local_plane = TransformationPlane(selected_object.GetCoordinateSystem())
 
         try:
-            model.GetWorkPlaneHandler().SetCurrentTransformationPlane(local_plane)
+            model.model.GetWorkPlaneHandler().SetCurrentTransformationPlane(local_plane)
             # Call the actual function
             result = func(model, component, *args, **kwargs)
         finally:
             # Reset transformation plane after execution
-            model.GetWorkPlaneHandler().SetCurrentTransformationPlane(current_plane)
+            model.model.GetWorkPlaneHandler().SetCurrentTransformationPlane(current_plane)
 
         return result
 

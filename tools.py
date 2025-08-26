@@ -25,11 +25,9 @@ from models import (
 
 from tekla_loader import (
     ArrayList,
-    Identifier,
     TeklaStructuresDatabaseTypeEnum,
     AABB,
     Point,
-    Model,
     ModelObject,
     ModelObjectEnumerator,
     Beam,
@@ -40,7 +38,6 @@ from tekla_loader import (
     Operation,
     Color,
     GraphicsDrawer,
-    ModelObjectSelectorUI,
     ViewHandler,
     BinaryFilterOperatorType,
     BinaryFilterExpressionCollection,
@@ -68,7 +65,7 @@ from tekla_utils import (
 
 
 # Helper functions
-def process_detail_or_component(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: Model, component: Any, *args: Any, **kwargs: Any) -> dict:
+def process_detail_or_component(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, *args: Any, **kwargs: Any) -> dict:
     """
     Processes a list of selected objects, applying a callback to each object that is an instance of Beam.
     Used for components that require only one primary object.
@@ -81,7 +78,7 @@ def process_detail_or_component(selected_objects: ModelObjectEnumerator, callbac
             if success:
                 processed_components += success
             processed_elements += 1
-    model.CommitChanges()
+    model.commit_changes()
 
     return {
         "status": "success" if processed_components else "error",
@@ -91,7 +88,7 @@ def process_detail_or_component(selected_objects: ModelObjectEnumerator, callbac
     }
 
 
-def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: Model, component: Any, *args: Any, **kwargs: Any) -> dict:
+def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, *args: Any, **kwargs: Any) -> dict:
     """
     Processes seams or connections between selected objects in the model.
     This function is intended for use with components that require two objects, such as wall joints.
@@ -111,7 +108,7 @@ def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback
         success = callback(model, component, pair[1], pair[0], *args, **kwargs)
         if success:
             processed_components += success
-    model.CommitChanges()
+    model.commit_changes()
 
     return {
         "status": "success" if processed_components else "error",
@@ -122,7 +119,7 @@ def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback
 
 
 # Tools functions
-def remove_components(model: Model, component: LiftingAnchors | CustomDetailComponent, *selected_objects: ModelObject) -> int:
+def remove_components(model: TeklaModel, component: LiftingAnchors | CustomDetailComponent, *selected_objects: ModelObject) -> int:
     """
     Removes components with the specified number and name from the specified object in the Tekla model.
     """
@@ -135,7 +132,7 @@ def remove_components(model: Model, component: LiftingAnchors | CustomDetailComp
     return counter
 
 
-def remove_lifting_anchors(model: Model, component: LiftingAnchors, *selected_objects: ModelObject) -> int:
+def remove_lifting_anchors(model: TeklaModel, component: LiftingAnchors, *selected_objects: ModelObject) -> int:
     """
     Removes lifting anchors components.
     """
@@ -153,7 +150,7 @@ def remove_lifting_anchors(model: Model, component: LiftingAnchors, *selected_ob
 
 
 @ensure_transformation_plane
-def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_object: ModelObject) -> int:
+def insert_lifting_anchors(model: TeklaModel, component: LiftingAnchors, selected_object: ModelObject) -> int:
     """
     Inserts lifting anchors to the specified object in the Tekla model.
     """
@@ -270,7 +267,7 @@ def insert_lifting_anchors(model: Model, component: LiftingAnchors, selected_obj
 
 
 @ensure_transformation_plane
-def insert_custom_detail_component(model: Model, component: CustomDetailComponent, selected_object: ModelObject) -> int:
+def insert_custom_detail_component(model: TeklaModel, component: CustomDetailComponent, selected_object: ModelObject) -> int:
     """
     Inserts a custom detail component to the specified object in the Tekla model.
     """
@@ -279,6 +276,7 @@ def insert_custom_detail_component(model: Model, component: CustomDetailComponen
 
 
 def select_elements_by_filter(
+    model: TeklaModel,
     element_type: int | list[int] | ElementType = None,
     name: str = None,
     name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
@@ -330,7 +328,7 @@ def select_elements_by_filter(
         filter_profile = BinaryFilterExpression(PartFilterExpressions.Profile(), match_type, StringConstantFilterExpression(profile))
         filter_collection.Add(BinaryFilterExpressionItem(filter_profile, BinaryFilterOperatorType.BOOLEAN_AND))
 
-    objects_to_select = TeklaModel().get_objects_by_filter(filter_collection)
+    objects_to_select = model.get_objects_by_filter(filter_collection)
     TeklaModel.select_objects(objects_to_select)
 
     return {
@@ -339,11 +337,11 @@ def select_elements_by_filter(
     }
 
 
-def select_elements_by_filter_name(filter_name: str) -> dict:
+def select_elements_by_filter_name(model: TeklaModel, filter_name: str) -> dict:
     """
     Selects elements in the Tekla model based on the existing filter.
     """
-    objects_to_select = TeklaModel().get_objects_by_filter(filter_name)
+    objects_to_select = model.get_objects_by_filter(filter_name)
     TeklaModel.select_objects(objects_to_select)
 
     return {
@@ -352,20 +350,13 @@ def select_elements_by_filter_name(filter_name: str) -> dict:
     }
 
 
-def select_elements_by_guid(guids: list[str]) -> dict:
+def select_elements_by_guid(model: TeklaModel, guids: list[str]) -> dict:
     """
     Selects elements in the Tekla model by their GUID.
     """
-    model = TeklaModel().model
 
-    objects_to_select = ArrayList()
-    for guid in guids:
-        obj = model.SelectModelObject(Identifier(guid))
-        if obj is not None:
-            objects_to_select.Add(obj)
-
-    selector = ModelObjectSelectorUI()
-    selector.Select(objects_to_select)
+    objects_to_select = model.get_objects_by_guid(guids)
+    TeklaModel.select_objects(objects_to_select)
 
     return {
         "status": "success" if objects_to_select.Count else "error",
@@ -394,8 +385,7 @@ def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mod
             selected_object_types = "selected_main_parts"
         processed_elements += 1
 
-    selector = ModelObjectSelectorUI()
-    selector.Select(filtered_parts)
+    TeklaModel.select_objects(filtered_parts)
 
     return {
         "status": "success" if filtered_parts.Count else "error",
@@ -497,7 +487,7 @@ def show_only_selected_elements(selected_objects: ModelObjectEnumerator) -> dict
     }
 
 
-def cut_elements_with_cut_parts(model: Model, selected_objects: ModelObjectEnumerator, delete_cutting_parts: bool = False, tekla_class: int = 0) -> dict:
+def cut_elements_with_cut_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator, delete_cutting_parts: bool = False, tekla_class: int = 0) -> dict:
     """
     Applies boolean cuts to selected elements in the Tekla model using parts of a specified class as cutting objects.
     """
@@ -505,7 +495,7 @@ def cut_elements_with_cut_parts(model: Model, selected_objects: ModelObjectEnume
     processed_elements = 0
     performed_cuts = 0
 
-    objects_to_select = TeklaModel().get_objects_by_class(tekla_class)
+    objects_to_select = model.get_objects_by_class(tekla_class)
     cutters = list(wrap_model_objects(objects_to_select))  # Keep same instances
     if cutters:
         for selected_object in wrap_model_objects(selected_objects):
@@ -519,12 +509,12 @@ def cut_elements_with_cut_parts(model: Model, selected_objects: ModelObjectEnume
                 processed_elements += 1
 
         if performed_cuts:
-            model.CommitChanges()
+            model.commit_changes()
 
     return {"status": "success" if performed_cuts else "error", "selected_elements": selected_objects.GetSize(), "processed_elements": processed_elements, "performed_cuts": performed_cuts}
 
 
-def insert_boolean_parts_as_real_parts(model: Model, selected_objects: ModelObjectEnumerator) -> dict:
+def insert_boolean_parts_as_real_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator) -> dict:
     """
     Inserts operative parts from boolean parts as real model objects.
     """
@@ -540,7 +530,7 @@ def insert_boolean_parts_as_real_parts(model: Model, selected_objects: ModelObje
                     inserted_booleans += 1
         processed_elements += 1
     if inserted_booleans > 0:
-        model.CommitChanges()
+        model.commit_changes()
 
     return {
         "status": "success" if inserted_booleans else "error",

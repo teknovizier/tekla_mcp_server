@@ -49,7 +49,7 @@ def model_objects():
     """
     Fixture: Test setup and teardown.
     """
-    model = TeklaModel().model
+    model = TeklaModel()
     test_wall1 = create_test_beam("TEST_WALL1", Point(0, 0, 0), Point(2000, 0, 0), "3000*200")
     test_wall2 = create_test_beam("TEST_WALL2", Point(0, 0, 3020), Point(2000, 0, 3020), "3000*200")
     test_wall3 = create_test_beam("TEST_WALL3", Point(2000, 0, 0), Point(4000, 0, 0), "3000*200")
@@ -60,7 +60,7 @@ def model_objects():
     void1 = create_test_beam("VOID_TEST_WALL3", Point(3000, 0, 1000), Point(3000, 200, 1000), "D400", class_type="0")
     void2 = create_test_beam("VOID_FLOATING", Point(3000, 0, 10000), Point(3000, 200, 10000), "D400", class_type="0")
 
-    model.CommitChanges()
+    model.commit_changes()
 
     yield {
         "model": model,
@@ -78,7 +78,7 @@ def model_objects():
     for obj in [test_wall1, test_wall2, test_wall3, test_wall4, test_sw1, test_slab1, void1, void2]:
         if obj.Identifier.IsValid():
             obj.Delete()
-    model.CommitChanges()
+    model.commit_changes()
 
 
 @pytest.mark.asyncio
