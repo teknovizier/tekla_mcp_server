@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field, PrivateAttr, conint, confloat, field_vali
 from pydantic_core import PydanticCustomError
 from typing import ClassVar
 
+from init import logger
+from utils import log_function_call
+
 
 # Enums
 class SelectionMode(Enum):
@@ -208,20 +211,17 @@ class ElementTypeModel(EnumWrapper):
         return ElementType(self.value)
 
     @staticmethod
-    def get_element_type_by_class(class_number: str) -> tuple[str, str] | None:
+    def get_element_type_by_class(class_number: str) -> tuple[str, str]:
         """
         Returns (material, element type name) for a given class number using the mapping.
         """
-        try:
-            class_number = int(class_number)
-        except (ValueError, TypeError):
-            return None
-
+        class_number = int(class_number)
         for material, types in ELEMENT_TYPE_MAPPING.items():
             for element_type, class_numbers in types.items():
                 if class_number in class_numbers:
                     return material, element_type
-        return None
+
+        raise ValueError(f"Class number {class_number} not found in the list of allowed classes.")
 
 
 class ComponentTypeModel(EnumWrapper):
@@ -292,6 +292,7 @@ class LiftingAnchors(BaseModel):
         return self._component_type
 
     @staticmethod
+    @log_function_call
     def get_required_anchors(element_type: str, element_weight: float, safety_margin: int, anchor_types: dict = LIFTING_ANCHOR_TYPES) -> tuple[int, dict]:
         """
         Determines the required number of lifting anchors for an element based on its weight and safety margin.
@@ -312,6 +313,7 @@ class LiftingAnchors(BaseModel):
             valid_anchors = {key: value for key, value in anchor_types.items() if value["capacity"] >= required_capacity and element_type in value["element_type"] and value["active"]}
 
             if valid_anchors:
+                logger.debug("Found valid anchors for n=%s: %s", n, list(valid_anchors.keys()))
                 break  # Stop if valid anchors are found
 
             n += 2  # Try with 4 anchors next
@@ -323,6 +325,7 @@ class LiftingAnchors(BaseModel):
         return n, valid_anchors
 
     @staticmethod
+    @log_function_call
     def calculate_anchor_placement(min_edge_distance: float, element_length: float, cog_x: float, number_of_anchors: int) -> tuple[float, float, float]:
         """
         Calculates the placement of lifting anchors while ensuring minimum edge distance constraints.
@@ -360,6 +363,7 @@ class LiftingAnchors(BaseModel):
             required_length = distance_from_start + double_anchor_spacing * 3 + distance_from_end
 
         if required_length > element_length:
+            logger.debug("Required anchor distances exceed element length: element_length=%s, required_length=%s. Adjusting distances.", element_length, required_length)
             # Reduce the distance from COG, but do not allow the distance between anchors be smaller than min_edge_distance
             while distance_from_start < min_edge_distance and distance_from_end < min_edge_distance:
                 # Recalculate distances

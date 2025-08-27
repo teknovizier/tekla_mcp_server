@@ -5,7 +5,6 @@ This server facilitates interaction with Tekla Structures, allowing users to
 speed-up modeling processes.
 """
 
-from functools import wraps
 from typing import Any
 from collections.abc import Callable
 
@@ -44,38 +43,13 @@ from tools import (
     get_elements_props,
 )
 from tekla_utils import TeklaModel
+from utils import log_mcp_tool_call
 
 
 mcp = FastMCP("Tekla MCP Server")
 
 
 # Helper functions
-def log_mcp_tool_call(func):
-    """
-    Decorator for MCP tools that logs function calls and handles exceptions.
-
-    Logs:
-    - Function name
-    - Positional and keyword arguments
-    - Exceptions with traceback
-
-    Returns:
-    - Original function result if successful
-    - Standardized error dictionary if an exception occurs
-    """
-
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        logger.info("[%s] called with args=%s, kwargs=%s", func.__name__, args, kwargs)
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            logger.exception("[%s] failed: %s", func.__name__, str(e))
-            return {"status": "error", "message": str(e)}
-
-    return wrapper
-
-
 @log_mcp_tool_call
 def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """

@@ -48,6 +48,8 @@ from tekla_loader import (
     ObjectFilterExpressions,
 )
 
+from utils import log_function_call
+
 
 # Mappings
 # String match types
@@ -73,6 +75,7 @@ class TeklaModel:
         self._model = Model()
         if not self._model.GetConnectionStatus():
             raise ConnectionError("Cannot connect to Tekla model. Please check that Tekla Structures is running and the model is opened.")
+        logger.debug("Connected to Tekla model")
 
     @property
     def model(self) -> Model:
@@ -81,12 +84,14 @@ class TeklaModel:
         """
         return self._model
 
+    @log_function_call
     def commit_changes(self) -> bool:
         """
         Commits the changes made to the model.
         """
         return self.model.CommitChanges()
 
+    @log_function_call
     def get_all_objects(self) -> ModelObjectEnumerator:
         """
         Returns all objects in the model.
@@ -94,6 +99,7 @@ class TeklaModel:
         selector = ModelObjectSelector()
         return selector.GetAllObjects()
 
+    @log_function_call
     def get_selected_objects(self) -> ModelObjectEnumerator:
         """
         Returns currently selected objects in the model.
@@ -109,6 +115,7 @@ class TeklaModel:
 
         return selected_objects
 
+    @log_function_call
     def get_objects_by_class(self, tekla_class: int) -> ModelObjectEnumerator:
         """
         Returns objects in the model selected by the given Tekla class.
@@ -127,6 +134,7 @@ class TeklaModel:
 
         return self.get_objects_by_filter(filter_collection)
 
+    @log_function_call
     def get_objects_by_guid(self, guids: list[str]) -> ArrayList:
         """
         Returns model objects by their GUIDs and returns them in an ArrayList.
@@ -139,6 +147,7 @@ class TeklaModel:
 
         return objects_to_select
 
+    @log_function_call
     def get_objects_by_filter(self, model_filter: FilterExpression | str) -> ModelObjectEnumerator:
         """
         Returns objects in the model selected by the given selection filter definition.
@@ -328,6 +337,22 @@ class TeklaModelObject:
 
         return total_parts_weight, weight_rebars
 
+    def _has_spatial_overlap(self, other: TeklaModelObject) -> bool:
+        """
+        Checks whether the bounding boxes of this Tekla model object and another TeklaModelObject intersect.
+        """
+        solid_self = self.model_object.GetSolid()
+        solid_other = other.model_object.GetSolid()
+
+        if not (solid_self and solid_other):
+            return False
+
+        min_self, max_self = solid_self.MinimumPoint, solid_self.MaximumPoint
+        min_other, max_other = solid_other.MinimumPoint, solid_other.MaximumPoint
+
+        return min_self.X <= max_other.X and max_self.X >= min_other.X and min_self.Y <= max_other.Y and max_self.Y >= min_other.Y and min_self.Z <= max_other.Z and max_self.Z >= min_other.Z
+
+    @log_function_call
     def get_top_level_assembly(self) -> TeklaModelObject | None:
         """
         Finds and returns the top-level assembly of this Tekla model object.
@@ -343,6 +368,7 @@ class TeklaModelObject:
             assembly = assembly.GetAssembly()
 
         if assembly is None:
+            logger.warning("No assembly found for the object %s.", self.guid)
             return None
 
         if not isinstance(assembly, Assembly):
@@ -350,21 +376,7 @@ class TeklaModelObject:
 
         return TeklaModelObject(assembly)
 
-    def has_spatial_overlap(self, other: TeklaModelObject) -> bool:
-        """
-        Checks whether the bounding boxes of this Tekla model object and another TeklaModelObject intersect.
-        """
-        solid_self = self.model_object.GetSolid()
-        solid_other = other.model_object.GetSolid()
-
-        if not (solid_self and solid_other):
-            return False
-
-        min_self, max_self = solid_self.MinimumPoint, solid_self.MaximumPoint
-        min_other, max_other = solid_other.MinimumPoint, solid_other.MaximumPoint
-
-        return min_self.X <= max_other.X and max_self.X >= min_other.X and min_self.Y <= max_other.Y and max_self.Y >= min_other.Y and min_self.Z <= max_other.Z and max_self.Z >= min_other.Z
-
+    @log_function_call
     def add_cut(self, cutting_part: TeklaModelObject, delete_cutting_part: bool = False) -> bool:
         """
         Attempts to perform a boolean cut operation on this Tekla model object using another TeklaModelObject as the cutting part.
@@ -375,18 +387,22 @@ class TeklaModelObject:
         """
         # Only proceed if both objects are valid parts
         if not (self.is_part and cutting_part.is_part):
+            logger.warning("Boolean cut skipped: one or both objects are not parts")
             return False
 
         # Skip if either object is missing
         if self.model_object is None or cutting_part.model_object is None:
+            logger.warning("Boolean cut skipped: one or both model objects are None")
             return False
 
         # Skip self-cuts
         if self.model_object is cutting_part.model_object:
+            logger.warning("Boolean cut skipped: self-cutting detected")
             return False
 
         # Skip if bounding boxes don't intersect
-        if not self.has_spatial_overlap(cutting_part):
+        if not self._has_spatial_overlap(cutting_part):
+            logger.warning("Boolean cut skipped: no spatial overlap")
             return False
 
         # Get the volume before the cut
@@ -404,8 +420,14 @@ class TeklaModelObject:
             volume_after = self.get_report_property("VOLUME", float)
             if volume_after < volume_before:
                 if delete_cutting_part:
-                    cutting_part.model_object.Delete()
+                    guid = cutting_part.guid
+                    if cutting_part.model_object.Delete():
+                        logger.debug("Cutting part %s deleted after boolean cut", guid)
+
+                logger.debug("Boolean cut successful. Volume before: %s, after: %s", volume_before, volume_after)
                 return True
+        else:
+            logger.debug("Boolean cut insertion failed")
 
         return False
 
@@ -477,6 +499,7 @@ def wrap_model_objects(model_objects):
         yield TeklaModelObject(model_object)
 
 
+@log_function_call
 def parse_template_attribute(attribute_name: str) -> ReportProperty:
     """
     Lazily loads and parses Tekla attribute definitions from the template file.
@@ -492,6 +515,7 @@ def parse_template_attribute(attribute_name: str) -> ReportProperty:
     # Load file only once
     if not parse_template_attribute._loaded:
         config = read_config()
+        logger.debug("Loading Tekla attribute definitions from file '%s'", config["content_attributes_file_path"])
         with open(config["content_attributes_file_path"], "r", encoding="utf-8") as f:
             for line in f:
                 stripped = line.strip()
@@ -514,9 +538,11 @@ def parse_template_attribute(attribute_name: str) -> ReportProperty:
                 parse_template_attribute._cache[name] = ReportProperty(name=name, data_type=dtype, unit=unit)
 
         parse_template_attribute._loaded = True
+        logger.info("Tekla attribute definitions loaded and cached")
 
     # Return from cache
     if attribute_name in parse_template_attribute._cache:
+        logger.debug("Attribute '%s' found in cache", attribute_name)
         return parse_template_attribute._cache[attribute_name]
 
     raise ValueError(f"Attribute '{attribute_name}' not found.")
@@ -609,6 +635,7 @@ def insert_component(selected_object: ModelObject, number: int, name: str, attri
     return c.Insert()
 
 
+@log_function_call
 def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelObject, ModelObject]]:
     """
     Identifies and pairs walls based on their (X, Y) coordinates and Z-levels within a specified tolerance.
@@ -691,4 +718,5 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
         else:
             wall_dict[xy_key] = wall  # Store as potential bottom wall
 
+    logger.debug("Wall pairs identified: %s", wall_pairs)
     return wall_pairs

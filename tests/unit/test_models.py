@@ -42,22 +42,37 @@ def element_type():
         ("1", ("Concrete", "CONCRETE_WALL")),
         ("100", ("Steel", "STEEL_BEAM")),
         ("101", ("Steel", "STEEL_COLUMN")),
-        ("999999", None),
-        ("not_a_number", None),
-        (None, None),
         (1, ("Concrete", "CONCRETE_WALL")),
-        ("-1", None),
     ],
 )
-def test_get_element_type_by_class_cases(input_val, expected):
+def test_get_element_type_by_class_valid(input_val, expected):
     """
     Unit tests for `get_element_type_by_class` utility function.
 
     Covers:
     - Valid class strings and integers
-    - Invalid, non-integer, None, and edge cases
     """
     assert ElementTypeModel.get_element_type_by_class(input_val) == expected
+
+
+@pytest.mark.parametrize(
+    "input_val, expected_exception",
+    [
+        ("999999", ValueError),
+        ("not_a_number", ValueError),
+        (None, TypeError),
+        ("-1", ValueError),
+    ],
+)
+def test_get_element_type_by_class_raises(input_val, expected_exception):
+    """
+    Unit tests for `get_element_type_by_class` utility function.
+
+    Covers:
+    - Invalid, non-integer, None, and edge cases
+    """
+    with pytest.raises(expected_exception):
+        ElementTypeModel.get_element_type_by_class(input_val)
 
 
 def test_get_required_anchors_valid(anchor_types, element_type):
