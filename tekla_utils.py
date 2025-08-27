@@ -70,9 +70,16 @@ class TeklaModel:
     """
 
     def __init__(self):
-        self.model = Model()
-        if not self.model.GetConnectionStatus():
+        self._model = Model()
+        if not self._model.GetConnectionStatus():
             raise ConnectionError("Cannot connect to Tekla model. Please check that Tekla Structures is running and the model is opened.")
+
+    @property
+    def model(self) -> Model:
+        """
+        Returns the underlying Model instance.
+        """
+        return self._model
 
     def commit_changes(self) -> bool:
         """
@@ -176,9 +183,16 @@ class TeklaModelObject:
     """
 
     def __init__(self, model_object: ModelObject):
-        self.model_object = model_object
+        self._model_object = model_object
         self._is_assembly = isinstance(model_object, Assembly)
         self._is_part = isinstance(model_object, Part)
+
+    @property
+    def model_object(self) -> ModelObject:
+        """
+        Returns the underlying ModelObject instance.
+        """
+        return self._model_object
 
     @property
     def is_assembly(self) -> bool:
