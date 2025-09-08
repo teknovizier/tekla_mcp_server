@@ -65,6 +65,8 @@ Python 3.11 or newer, along with some libraries, is required. You can install al
 * Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model
 * Configure `mcp_server.py` as a custom MCP server in your MCP client
 
+ ⚠️ *Note:* For the detailed steps, please see the [setup guide](https://www.notion.so/teknovizier/Tekla-MCP-Server-A-Tool-to-Improve-Your-Modeling-Workflows-264250689e1380f38a1be0b60477786b).
+
 ## Distribution
 
 A standalone binary file can be created using [PyInstaller](https://pyinstaller.org) for easier distribution. To do this, install PyInstaller:
