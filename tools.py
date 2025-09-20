@@ -15,10 +15,10 @@ from models import (
     UDASetMode,
     StringMatchType,
     ElementType,
-    ComponentType,
     ElementLabel,
+    ComponentType,
+    BaseComponent,
     LiftingAnchors,
-    CustomDetailComponent,
     ElementTypeModel,
     ElementProperties,
 )
@@ -124,7 +124,7 @@ def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback
 
 # Tools functions
 @log_function_call
-def remove_components(model: TeklaModel, component: LiftingAnchors | CustomDetailComponent, *selected_objects: ModelObject) -> int:
+def remove_components(model: TeklaModel, component: BaseComponent, *selected_objects: ModelObject) -> int:
     """
     Removes components with the specified number and name from the specified object in the Tekla model.
     """
@@ -212,14 +212,14 @@ def insert_lifting_anchors(model: TeklaModel, component: LiftingAnchors, selecte
         "up_direction": 1,
         **first_anchor_attributes,
     }
-    counter = int(insert_component(selected_object, component.number, component.name, attributes))
+    counter = int(insert_component(selected_object, component, attributes))
     logger.debug("Inserted lifting anchor components: %s", counter)
 
     if number_of_anchors == 4:
         # Add more anchors at distance_between_anchors from the first ones
         attributes["DistFromPartStart"] = distance_from_start + double_anchor_spacing
         attributes["DistFromPartFinish"] = distance_from_end + double_anchor_spacing
-        counter += insert_component(selected_object, component.number, component.name, attributes)  # Add one more component
+        counter += insert_component(selected_object, component, attributes)  # Add one more component
         logger.debug("Inserted additional anchors for 4-anchor configuration. Total number of anchor components: %s", counter)
 
     # Add recesses where necessary
@@ -285,12 +285,17 @@ def insert_lifting_anchors(model: TeklaModel, component: LiftingAnchors, selecte
 
 @ensure_transformation_plane
 @log_function_call
-def insert_custom_detail_component(model: TeklaModel, component: CustomDetailComponent, selected_object: ModelObject) -> int:
+def insert_components(model: TeklaModel, component: BaseComponent, selected_object: ModelObject) -> int:
     """
-    Inserts a custom detail component to the specified object in the Tekla model.
+    Inserts a component to the specified object in the Tekla model.
     """
-    counter = insert_detail(selected_object, component.number, component.name, selected_object.GetCoordinateSystem().Origin)
-    logger.debug("Inserted %s custom detail components", counter)
+    if component.number == -1:
+        counter = insert_detail(selected_object, component, selected_object.GetCoordinateSystem().Origin)
+        logger.debug("Inserted %s custom detail components", counter)
+    else:
+        counter = insert_component(selected_object, component)
+        logger.debug("Inserted %s components", counter)
+
     return counter
 
 

@@ -123,6 +123,11 @@ with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", e
 with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"), "r", encoding="utf-8") as file:
     LIFTING_ANCHOR_TYPES = json.load(file)
 
+# Tekla components
+BASE_COMPONENTS = {
+    "Lifting Anchor": 30000080,
+}
+
 
 # Classes
 class EnumWrapper(BaseModel):
@@ -254,16 +259,14 @@ class ElementLabelModel(EnumWrapper):
         return ElementLabel(self.value)
 
 
-class LiftingAnchors(BaseModel):
+class BaseComponent(BaseModel):
     """
-    Represents the configuration for Lifting Anchor components in the model.
+    Base class for Tekla components.
     """
 
-    remove_old_components: bool = Field(default=False, description="Set to true to remove existing components before placing new ones. False if they have to be kept intact.")
-    safety_margin: conint(ge=0, le=50) = Field(default=5, description="Bearing capacity reserve in %. Must be between 0 and 50.")
+    name: str = Field(description="The name of the Tekla component.")
 
     # Private attributes
-    _name: str = PrivateAttr()
     _number: int = PrivateAttr()
     _component_type: ComponentType = PrivateAttr()
 
@@ -271,16 +274,10 @@ class LiftingAnchors(BaseModel):
         """
         Initializes private attributes after model creation.
         """
-        self._name = "Lifting Anchor"
-        self._number = 30000080
-        self._component_type = ComponentType.COMPONENT
+        self._number = BASE_COMPONENTS.get(self.name, -1)
+        self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT  # Default to custom detail component
 
     # Getter methods
-    @property
-    def name(self) -> str:
-        """Returns `_name`"""
-        return self._name
-
     @property
     def number(self) -> int:
         """Returns `_number`"""
@@ -290,6 +287,20 @@ class LiftingAnchors(BaseModel):
     def component_type(self) -> str:
         """Returns `_component_type`"""
         return self._component_type
+
+
+class LiftingAnchors(BaseComponent):
+    """
+    Represents the configuration for Lifting Anchor components in the model.
+    """
+
+    name: str = Field(default="Lifting Anchor", init=False, description="The name of the Tekla component. Always `Lifting Anchor`.")
+    remove_old_components: bool = Field(default=False, description="Set to true to remove existing components before placing new ones. False if they have to be kept intact.")
+    safety_margin: conint(ge=0, le=50) = Field(default=5, description="Bearing capacity reserve in %. Must be between 0 and 50.")
+
+    def __init__(self, **data):
+        data["name"] = "Lifting Anchor"
+        super().__init__(**data)
 
     @staticmethod
     @log_function_call
@@ -378,36 +389,6 @@ class LiftingAnchors(BaseModel):
                     raise ValueError("Cannot place the anchors in the wall while keeping all the required distances. The element is too short.")
 
         return distance_from_start, distance_from_end, double_anchor_spacing
-
-
-class CustomDetailComponent(BaseModel):
-    """
-    Base class for custom detail components.
-    """
-
-    name: str = Field(description="The name of the custom detail component.")
-
-    # Private attributes
-    _number: int = PrivateAttr()
-    _component_type: ComponentType = PrivateAttr()
-
-    def model_post_init(self, __context) -> None:
-        """
-        Initializes private attributes after model creation.
-        """
-        self._number = -1
-        self._component_type = ComponentType.DETAIL
-
-    # Getter methods
-    @property
-    def number(self) -> int:
-        """Returns `_number`"""
-        return self._number
-
-    @property
-    def component_type(self) -> str:
-        """Returns `_component_type`"""
-        return self._component_type
 
 
 class ReportProperty(BaseModel):

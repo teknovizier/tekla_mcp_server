@@ -10,7 +10,7 @@ from typing import Any
 from collections.abc import Callable, Iterable
 
 from init import read_config, logger
-from models import StringMatchType, ReportProperty
+from models import StringMatchType, BaseComponent, ReportProperty
 
 from tekla_loader import (
     Identifier,
@@ -575,13 +575,13 @@ def ensure_transformation_plane(func: Callable[..., Any]) -> Any:
     return wrapper
 
 
-def insert_detail(selected_object: ModelObject, number: int, name: str, point: Point, attributes: dict[str, Any] | None = None, reverse: bool = False) -> bool:
+def insert_detail(selected_object: ModelObject, component: BaseComponent, point: Point, attributes: dict[str, Any] | None = None, reverse: bool = False) -> bool:
     """
     Inserts a custom detail component into a Tekla model at a specified point.
     """
     d = Detail()
-    d.Name = name
-    d.Number = number
+    d.Name = component.name
+    d.Number = component.number
     d.LoadAttributesFromFile("standard")
     d.UpVector = Vector(0, 0, 0)
     d.PositionType = PositionTypeEnum.MIDDLE_PLANE
@@ -596,13 +596,13 @@ def insert_detail(selected_object: ModelObject, number: int, name: str, point: P
     return d.Insert()
 
 
-def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, number: int, name: str, point1: Point, point2: Point, attributes: dict[str, Any] | None = None) -> bool:
+def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, component: BaseComponent, point1: Point, point2: Point, attributes: dict[str, Any] | None = None) -> bool:
     """
     Inserts a custom seam component into a Tekla model at a specified point.
     """
     s = Seam()
-    s.Name = name
-    s.Number = number
+    s.Name = component.name
+    s.Number = component.number
     s.LoadAttributesFromFile("standard")
     s.UpVector = Vector(0, 0, 0)
     s.AutoDirectionType = AutoDirectionTypeEnum.AUTODIR_DETAIL
@@ -618,13 +618,13 @@ def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, numb
     return s.Insert()
 
 
-def insert_component(selected_object: ModelObject, number: int, name: str, attributes: dict[str, Any] | None = None) -> bool:
+def insert_component(selected_object: ModelObject, component: BaseComponent, attributes: dict[str, Any] | None = None) -> bool:
     """
     Inserts a component into a Tekla model to the specified object.
     """
     c = Component()
-    c.Name = name
-    c.Number = number
+    c.Name = component.name
+    c.Number = component.number
     c.LoadAttributesFromFile("standard")
     if attributes:
         for key, value in attributes.items():

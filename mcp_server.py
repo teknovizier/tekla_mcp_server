@@ -18,8 +18,8 @@ from models import (
     ElementTypeModel,
     ElementLabelModel,
     ComponentType,
+    BaseComponent,
     LiftingAnchors,
-    CustomDetailComponent,
 )
 
 from tools import (
@@ -27,8 +27,8 @@ from tools import (
     process_seam_or_connection,
     insert_lifting_anchors,
     remove_lifting_anchors,
+    insert_components,
     remove_components,
-    insert_custom_detail_component,
     select_elements_by_filter,
     select_elements_by_filter_name,
     select_elements_by_guid,
@@ -91,13 +91,13 @@ def remove_wall_lifting_anchors() -> dict[str, Any]:
 
 
 @mcp.tool()
-def put_custom_detail_components(component_name: str) -> dict[str, Any]:
+def put_components(component_name: str) -> dict[str, Any]:
     """
-    Inserts custom wall components into selected objects.
+    Inserts Tekla components into selected objects.
     """
 
-    component = CustomDetailComponent(name=component_name)
-    return manage_components_on_selected_objects(insert_custom_detail_component, component)
+    component = BaseComponent(name=component_name)
+    return manage_components_on_selected_objects(insert_components, component)
 
 
 @mcp.tool()

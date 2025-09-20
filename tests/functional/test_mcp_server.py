@@ -138,9 +138,9 @@ async def test_remove_wall_lifting_anchors(model_objects):
 
 
 @pytest.mark.asyncio
-async def test_put_custom_detail_components(model_objects):
+async def test_put_components(model_objects):
     """
-    Tests the `put_custom_detail_components` function.
+    Tests the `put_components` function.
 
     Steps:
     - Selects `self.test_wall1` and `self.test_wall2`.
@@ -149,7 +149,7 @@ async def test_put_custom_detail_components(model_objects):
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("put_custom_detail_components", {"component_name": "DIR_ARR"})
+        result = await client.call_tool("put_components", {"component_name": "DIR_ARR"})
         assert result.data["status"] == "success"
 
 
