@@ -146,14 +146,14 @@ def select_elements_by_filter(
     - `Steel Brace`
 
     Valid match types:
-    - `IS_EQUAL`: Checks for exact match.
-    - `IS_NOT_EQUAL`: Checks for exact mismatch.
-    - `CONTAINS`: Checks if one string is a substring of another.
-    - `NOT_CONTAINS`: Checks if one string is not a substring of another.
-    - `STARTS_WITH`: Checks if a string starts with a specified substring.
-    - `NOT_STARTS_WITH`: Checks if a string does not start with a specified substring.
-    - `ENDS_WITH`: Checks if a string ends with a specified substring.
-    - `NOT_ENDS_WITH`: Checks if a string does not end with a specified substring.
+    - `Is Equal`: Checks for exact match.
+    - `Is Not Equal`: Checks for exact mismatch.
+    - `Contains`: Checks if one string is a substring of another.
+    - `Not Contains`: Checks if one string is not a substring of another.
+    - `Starts With`: Checks if a string starts with a specified substring.
+    - `Not Starts With`: Checks if a string does not start with a specified substring.
+    - `Ends With`: Checks if a string ends with a specified substring.
+    - `Not Ends With`: Checks if a string does not end with a specified substring.
     """
 
     tekla_model = TeklaModel()

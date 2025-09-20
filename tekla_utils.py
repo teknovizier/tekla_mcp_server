@@ -154,7 +154,6 @@ class TeklaModel:
 
         Raises:
             TypeError: If the provided filter type is not FilterExpression or str.
-            ValueError: If no objects can be selected.
         """
         selector = ModelObjectSelector()
         if isinstance(model_filter, FilterExpression):
@@ -165,7 +164,7 @@ class TeklaModel:
             raise TypeError(f"Invalid filter type: {type(model_filter)}. Expected FilterExpression or str.")
 
         if not objects_to_select.GetSize():
-            raise ValueError("No objects match the provided filter expression.")
+            return ModelObjectEnumerator()  # Empty
 
         return objects_to_select
 
