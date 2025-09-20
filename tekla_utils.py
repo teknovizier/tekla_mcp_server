@@ -493,9 +493,12 @@ class TeklaModelObject:
 def wrap_model_objects(model_objects):
     """
     Wraps each Tekla ModelObject in a TeklaModelObject.
+
+    Currently only `Part` and `Assembly` objects are supported. Any other object types will be ignored.
     """
     for model_object in model_objects:
-        yield TeklaModelObject(model_object)
+        if isinstance(model_object, Part) or isinstance(model_object, Assembly):
+            yield TeklaModelObject(model_object)
 
 
 @log_function_call
