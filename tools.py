@@ -304,7 +304,7 @@ def tool_remove_wall_lifting_anchors(model: TeklaModel, component: LiftingAnchor
 
 
 @log_function_call
-def select_elements_by_filter(
+def tool_select_elements_by_filter(
     model: TeklaModel,
     element_type: int | list[int] | ElementType = None,
     name: str = None,
@@ -370,7 +370,7 @@ def select_elements_by_filter(
 
 
 @log_function_call
-def select_elements_by_filter_name(model: TeklaModel, filter_name: str) -> dict:
+def tool_select_elements_by_filter_name(model: TeklaModel, filter_name: str) -> dict:
     """
     Selects elements in the Tekla model based on the existing filter.
     """
@@ -384,7 +384,7 @@ def select_elements_by_filter_name(model: TeklaModel, filter_name: str) -> dict:
 
 
 @log_function_call
-def select_elements_by_guid(model: TeklaModel, guids: list[str]) -> dict:
+def tool_select_elements_by_guid(model: TeklaModel, guids: list[str]) -> dict:
     """
     Selects elements in the Tekla model by their GUID.
     """
@@ -399,7 +399,7 @@ def select_elements_by_guid(model: TeklaModel, guids: list[str]) -> dict:
 
 
 @log_function_call
-def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mode: SelectionMode) -> dict:
+def tool_select_elements_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mode: SelectionMode) -> dict:
     """
     Returns assemblies or main parts for the given selected objects.
     """
@@ -433,7 +433,7 @@ def select_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mod
 
 
 @log_function_call
-def draw_labels_on_elements(selected_objects: ModelObjectEnumerator, label: ElementLabel, custom_label: str = None) -> dict:
+def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: ElementLabel, custom_label: str = None) -> dict:
     """
     Draws labels for the given Tekla model objects using the GraphicsDrawer.
     """
@@ -473,7 +473,7 @@ def draw_labels_on_elements(selected_objects: ModelObjectEnumerator, label: Elem
 
 
 @log_function_call
-def zoom_to_selected_elements(selected_objects: ModelObjectEnumerator) -> dict:
+def tool_zoom_to_selection(selected_objects: ModelObjectEnumerator) -> dict:
     """
     Zooms the Tekla view to the provided model objects.
     """
@@ -515,7 +515,7 @@ def zoom_to_selected_elements(selected_objects: ModelObjectEnumerator) -> dict:
 
 
 @log_function_call
-def show_only_selected_elements(selected_objects: ModelObjectEnumerator) -> dict:
+def tool_show_only_selected(selected_objects: ModelObjectEnumerator) -> dict:
     """
     Updates the Tekla view to show only the currently selected model objects.
     """
@@ -528,7 +528,7 @@ def show_only_selected_elements(selected_objects: ModelObjectEnumerator) -> dict
 
 
 @log_function_call
-def cut_elements_with_cut_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator, delete_cutting_parts: bool = False, tekla_class: int = 0) -> dict:
+def tool_cut_elements_with_zero_class_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator, delete_cutting_parts: bool = False, tekla_class: int = 0) -> dict:
     """
     Applies boolean cuts to selected elements in the Tekla model using parts of a specified class as cutting objects.
     """
@@ -560,7 +560,7 @@ def cut_elements_with_cut_parts(model: TeklaModel, selected_objects: ModelObject
 
 
 @log_function_call
-def insert_boolean_parts_as_real_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator) -> dict:
+def tool_convert_cut_parts_to_real_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator) -> dict:
     """
     Inserts operative parts from boolean parts as real model objects.
     """
@@ -587,7 +587,7 @@ def insert_boolean_parts_as_real_parts(model: TeklaModel, selected_objects: Mode
 
 
 @log_function_call
-def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str, Any], mode: UDASetMode) -> dict:
+def tool_set_elements_udas(selected_objects: ModelObjectEnumerator, udas: dict[str, Any], mode: UDASetMode) -> dict:
     """
     Applies UDAs to a collection of Tekla model objects.
     """
@@ -620,7 +620,7 @@ def set_udas_on_elements(selected_objects: ModelObjectEnumerator, udas: dict[str
 
 
 @log_function_call
-def get_all_udas_for_elements(selected_objects: ModelObjectEnumerator) -> dict:
+def tool_get_all_elements_udas(selected_objects: ModelObjectEnumerator) -> dict:
     """
     Retrieves GUID, position, and all UDAs for a collection of model objects.
     """
@@ -649,7 +649,7 @@ def get_all_udas_for_elements(selected_objects: ModelObjectEnumerator) -> dict:
 
 
 @log_function_call
-def get_elements_props(selected_objects: ModelObjectEnumerator, custom_props_definitions: list[str]):
+def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom_props_definitions: list[str]):
     """
     Extracts and serializes key element properties from a collection of model objects.
     """

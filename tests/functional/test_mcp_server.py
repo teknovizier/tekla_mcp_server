@@ -185,7 +185,7 @@ async def test_remove_components(model_objects):
 @pytest.mark.asyncio
 async def test_select_elements_filter_basic(kwargs, expected):
     """
-    Tests the `select_elements_using_filter` function, ensuring it correctly selects elements based on various parameters.
+    Tests the `select_elements_by_filter` function, ensuring it correctly selects elements based on various parameters.
 
     Steps:
     - Validates behavior when no elements are provided (should return "error").
@@ -193,7 +193,7 @@ async def test_select_elements_filter_basic(kwargs, expected):
     - Checks selection of specific element types (`WALL`, `TRIBUNE`, etc.).
     """
     async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_using_filter", kwargs)
+        result = await client.call_tool("select_elements_by_filter", kwargs)
         assert result.data["status"] == expected
 
 
@@ -216,7 +216,7 @@ async def test_select_elements_by_name(kwargs, expected):
     - Validates selection by type and name, ensuring correct matching methods (`STARTS_WITH`, `ENDS_WITH`, `CONTAINS`).
     """
     async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_using_filter", kwargs)
+        result = await client.call_tool("select_elements_by_filter", kwargs)
         assert result.data["status"] == ("success" if expected else "error")
         if expected:
             assert result.data["selected_elements"] == expected
@@ -229,7 +229,7 @@ async def test_select_elements_by_profile():
     - Validates selection by profile, ensuring correct matching methods.
     """
     async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_using_filter", {"element_type": "Wall", "profile": "3000*200", "profile_match_type": "Is Equal"})
+        result = await client.call_tool("select_elements_by_filter", {"element_type": "Wall", "profile": "3000*200", "profile_match_type": "Is Equal"})
         assert result.data["status"] == "success"
         assert result.data["selected_elements"] == 4
 
@@ -250,33 +250,33 @@ async def test_select_elements_name_matching(name, match_type, expected):
     - Validates selection by name, ensuring correct matching methods.
     """
     async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_using_filter", {"name": name, "name_match_type": match_type})
+        result = await client.call_tool("select_elements_by_filter", {"name": name, "name_match_type": match_type})
         assert result.data["status"] == expected
 
 
 @pytest.mark.asyncio
-async def test_select_elements_using_filter_name(model_objects):
+async def test_select_elements_by_filter_name(model_objects):
     """
-    Tests the `select_elements_using_filter_name` function, ensuring it correctly selects elements based on the existing filter settings.
+    Tests the `select_elements_by_filter_name` function, ensuring it correctly selects elements based on the existing filter settings.
 
     Steps:
     - Checks selection of specific elements.
     """
     async with Client(mcp) as client:
         # Invalid filter
-        result = await client.call_tool("select_elements_using_filter_name", {"filter_name": "non_standard"})
+        result = await client.call_tool("select_elements_by_filter_name", {"filter_name": "non_standard"})
         assert result.data["status"] == "error"
 
         # Valid filter
-        result = await client.call_tool("select_elements_using_filter_name", {"filter_name": "standard"})
+        result = await client.call_tool("select_elements_by_filter_name", {"filter_name": "standard"})
         assert result.data["status"] == "success"
         assert result.data["selected_elements"]
 
 
 @pytest.mark.asyncio
-async def test_select_elements_using_guid(model_objects):
+async def test_select_elements_by_guid(model_objects):
     """
-    Tests the `select_elements_using_guid` function, ensuring it correctly selects elements based on their GUID.
+    Tests the `select_elements_by_guid` function, ensuring it correctly selects elements based on their GUID.
 
     Steps:
     - Tests invalid inputs like a single integer or string instead of a list.
@@ -284,24 +284,24 @@ async def test_select_elements_using_guid(model_objects):
     """
     async with Client(mcp) as client:
         # Invalid inputs
-        result = await client.call_tool("select_elements_using_guid", {"guids": []})
+        result = await client.call_tool("select_elements_by_guid", {"guids": []})
         assert result.data["status"] == "error"
 
-        result = await client.call_tool("select_elements_using_guid", {"guids": [""]})
+        result = await client.call_tool("select_elements_by_guid", {"guids": [""]})
         assert result.data["status"] == "error"
 
-        result = await client.call_tool("select_elements_using_guid", {"guids": ["TEST_WALL2"]})
+        result = await client.call_tool("select_elements_by_guid", {"guids": ["TEST_WALL2"]})
         assert result.data["status"] == "error"
 
         # Valid single GUID
         wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
-        result = await client.call_tool("select_elements_using_guid", {"guids": [wall2_guid]})
+        result = await client.call_tool("select_elements_by_guid", {"guids": [wall2_guid]})
         assert result.data["status"] == "success"
         assert result.data["selected_elements"] == 1
 
         # Valid multiple GUIDs
         wall1_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
-        result = await client.call_tool("select_elements_using_guid", {"guids": [wall1_guid, wall2_guid]})
+        result = await client.call_tool("select_elements_by_guid", {"guids": [wall1_guid, wall2_guid]})
         assert result.data["status"] == "success"
         assert result.data["selected_elements"] == 2
 

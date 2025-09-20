@@ -24,9 +24,9 @@ The server provides the following tools:
 | `remove_components`   | Remove Tekla components with specified name from the selected elements |
 | `put_wall_lifting_anchors`       | Insert `Lifting Anchor (80)` Tekla components in the selected elements      |
 | `remove_wall_lifting_anchors`    | Remove `Lifting Anchor (80)` Tekla components from the selected elements    |
-| `select_elements_using_filter`   | Select elements in Tekla model based on their type or Tekla class and name or profile |
-| `select_elements_using_filter_name`   | Select elements in Tekla model based on the predefined filter |
-| `select_elements_using_guid`     | Select elements in Tekla model by their GUID                                |
+| `select_elements_by_filter`   | Select elements in Tekla model based on their type or Tekla class and name or profile |
+| `select_elements_by_filter_name`   | Select elements in Tekla model based on the predefined filter |
+| `select_elements_by_guid`     | Select elements in Tekla model by their GUID                                |
 | `select_elements_assemblies_or_main_parts` | Get assemblies or main parts for the elements selected in Tekla model and select them |
 | `draw_elements_labels`            | Draw the temporary labels (position, GUID, name, profile, material, finish, Tekla class, weight or any defined report property) for the selected elements in Tekla in the currently active rendered view  |
 | `zoom_to_selection`            | Zooms the currently active rendered view to fit the currently selected elements |

@@ -29,18 +29,18 @@ from tools import (
     tool_remove_components,
     tool_put_wall_lifting_anchors,
     tool_remove_wall_lifting_anchors,
-    select_elements_by_filter,
-    select_elements_by_filter_name,
-    select_elements_by_guid,
-    select_assemblies_or_main_parts,
-    draw_labels_on_elements,
-    zoom_to_selected_elements,
-    show_only_selected_elements,
-    cut_elements_with_cut_parts,
-    insert_boolean_parts_as_real_parts,
-    set_udas_on_elements,
-    get_all_udas_for_elements,
-    get_elements_props,
+    tool_select_elements_by_filter,
+    tool_select_elements_by_filter_name,
+    tool_select_elements_by_guid,
+    tool_select_elements_assemblies_or_main_parts,
+    tool_draw_elements_labels,
+    tool_zoom_to_selection,
+    tool_show_only_selected,
+    tool_cut_elements_with_zero_class_parts,
+    tool_convert_cut_parts_to_real_parts,
+    tool_set_elements_udas,
+    tool_get_all_elements_udas,
+    tool_get_elements_properties,
 )
 from tekla_utils import TeklaModel
 from utils import log_mcp_tool_call
@@ -112,7 +112,7 @@ def remove_wall_lifting_anchors() -> dict[str, Any]:
 
 @mcp.tool()
 @log_mcp_tool_call
-def select_elements_using_filter(
+def select_elements_by_filter(
     element_type: int | list[int] | str = None,
     name: str = None,
     name_match_type: str = "Is Equal",
@@ -162,29 +162,29 @@ def select_elements_using_filter(
 
     name_match_type_enum = StringMatchTypeModel(value=name_match_type).to_enum()
     profile_match_type_enum = StringMatchTypeModel(value=profile_match_type).to_enum()
-    return select_elements_by_filter(tekla_model, element_type, name, name_match_type_enum, profile, profile_match_type_enum)
+    return tool_select_elements_by_filter(tekla_model, element_type, name, name_match_type_enum, profile, profile_match_type_enum)
 
 
 @mcp.tool()
 @log_mcp_tool_call
-def select_elements_using_filter_name(filter_name: str) -> dict[str, Any]:
+def select_elements_by_filter_name(filter_name: str) -> dict[str, Any]:
     """
     Selects elements applying an existing Tekla filter.
     """
 
     tekla_model = TeklaModel()
-    return select_elements_by_filter_name(tekla_model, filter_name)
+    return tool_select_elements_by_filter_name(tekla_model, filter_name)
 
 
 @mcp.tool()
 @log_mcp_tool_call
-def select_elements_using_guid(guids: list[str]) -> dict[str, Any]:
+def select_elements_by_guid(guids: list[str]) -> dict[str, Any]:
     """
     Selects elements by their GUID.
     """
 
     tekla_model = TeklaModel()
-    return select_elements_by_guid(tekla_model, guids)
+    return tool_select_elements_by_guid(tekla_model, guids)
 
 
 @mcp.tool()
@@ -200,7 +200,7 @@ def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
 
     selected_objects = TeklaModel().get_selected_objects()
     mode_enum = SelectionModeModel(value=mode).to_enum()
-    return select_assemblies_or_main_parts(selected_objects, mode_enum)
+    return tool_select_elements_assemblies_or_main_parts(selected_objects, mode_enum)
 
 
 @mcp.tool()
@@ -224,7 +224,7 @@ def draw_elements_labels(label: str = None, custom_label: str = None) -> dict[st
     selected_objects = TeklaModel().get_selected_objects()
     label = label or "Name"
     label_enum = ElementLabelModel(value=label).to_enum()
-    return draw_labels_on_elements(selected_objects, label_enum, custom_label)
+    return tool_draw_elements_labels(selected_objects, label_enum, custom_label)
 
 
 @mcp.tool()
@@ -236,7 +236,7 @@ def zoom_to_selection() -> dict[str, Any]:
 
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
-    return zoom_to_selected_elements(selected_objects)
+    return tool_zoom_to_selection(selected_objects)
 
 
 @mcp.tool()
@@ -248,7 +248,7 @@ def show_only_selected() -> dict[str, Any]:
 
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
-    return show_only_selected_elements(selected_objects)
+    return tool_show_only_selected(selected_objects)
 
 
 @mcp.tool()
@@ -261,7 +261,7 @@ def cut_elements_with_zero_class_parts(delete_cutting_parts: bool = False) -> di
 
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
-    return cut_elements_with_cut_parts(tekla_model, selected_objects, delete_cutting_parts)
+    return tool_cut_elements_with_zero_class_parts(tekla_model, selected_objects, delete_cutting_parts)
 
 
 @mcp.tool()
@@ -273,7 +273,7 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
 
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
-    return insert_boolean_parts_as_real_parts(tekla_model, selected_objects)
+    return tool_convert_cut_parts_to_real_parts(tekla_model, selected_objects)
 
 
 @mcp.tool()
@@ -289,7 +289,7 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
 
     selected_objects = TeklaModel().get_selected_objects()
     mode_enum = UDASetModeModel(value=mode).to_enum()
-    return set_udas_on_elements(selected_objects, udas, mode_enum)
+    return tool_set_elements_udas(selected_objects, udas, mode_enum)
 
 
 @mcp.tool()
@@ -308,7 +308,7 @@ def get_all_elements_udas() -> dict[str, Any]:
     """
 
     selected_objects = TeklaModel().get_selected_objects()
-    return get_all_udas_for_elements(selected_objects)
+    return tool_get_all_elements_udas(selected_objects)
 
 
 @mcp.tool()
@@ -341,7 +341,7 @@ def get_elements_properties(custom_props_definitions: list[str] = None):
     """
 
     selected_objects = TeklaModel().get_selected_objects()
-    return get_elements_props(selected_objects, custom_props_definitions)
+    return tool_get_elements_properties(selected_objects, custom_props_definitions)
 
 
 # Run the MCP server locally
