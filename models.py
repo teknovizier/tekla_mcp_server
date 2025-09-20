@@ -264,6 +264,7 @@ class BaseComponent(BaseModel):
     """
 
     name: str = Field(description="The name of the Tekla component.")
+    properties: str = Field(default="standard", description="The name of the Tekla component properties set to use (`standard` by default).")
 
     # Private attributes
     _number: int = PrivateAttr()

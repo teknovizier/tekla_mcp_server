@@ -582,7 +582,7 @@ def insert_detail(selected_object: ModelObject, component: BaseComponent, point:
     d = Detail()
     d.Name = component.name
     d.Number = component.number
-    d.LoadAttributesFromFile("standard")
+    d.LoadAttributesFromFile(component.properties)
     d.UpVector = Vector(0, 0, 0)
     d.PositionType = PositionTypeEnum.MIDDLE_PLANE
     d.AutoDirectionType = AutoDirectionTypeEnum.AUTODIR_DETAIL
@@ -603,7 +603,7 @@ def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, comp
     s = Seam()
     s.Name = component.name
     s.Number = component.number
-    s.LoadAttributesFromFile("standard")
+    s.LoadAttributesFromFile(component.properties)
     s.UpVector = Vector(0, 0, 0)
     s.AutoDirectionType = AutoDirectionTypeEnum.AUTODIR_DETAIL
     s.AutoPosition = True
@@ -625,7 +625,7 @@ def insert_component(selected_object: ModelObject, component: BaseComponent) -> 
     c = Component()
     c.Name = component.name
     c.Number = component.number
-    c.LoadAttributesFromFile("standard")
+    c.LoadAttributesFromFile(component.properties)
     if component.attributes:
         for key, value in component.attributes.items():
             c.SetAttribute(key, value)

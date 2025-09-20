@@ -70,12 +70,13 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
 
 # MCP tools
 @mcp.tool()
-def put_components(component_name: str) -> dict[str, Any]:
+def put_components(component_name: str, component_properties: str | None) -> dict[str, Any]:
     """
-    Inserts Tekla components into selected objects.
+    Inserts Tekla components into the selected objects, using the given
+    component name and an optional custom set of properties.
     """
 
-    component = BaseComponent(name=component_name)
+    component = BaseComponent(name=component_name, properties=component_properties)
     return manage_components_on_selected_objects(tool_put_components, component)
 
 
