@@ -264,7 +264,7 @@ class BaseComponent(BaseModel):
     """
 
     name: str = Field(description="The name of the Tekla component.")
-    properties: str = Field(default="standard", description="The name of the Tekla component properties set to use (`standard` by default).")
+    properties: str | None = Field(default="standard", description="The name of the Tekla component properties set to use (`standard` by default).")
 
     # Private attributes
     _number: int = PrivateAttr()
@@ -277,6 +277,8 @@ class BaseComponent(BaseModel):
         """
         self._number = BASE_COMPONENTS.get(self.name, -1)
         self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT  # Default to custom detail component
+        if self.properties is None:
+            self.properties = "standard"
 
     # Getters
     @property
@@ -317,12 +319,16 @@ class LiftingAnchors(BaseComponent):
     """
 
     name: str = Field(default="Lifting Anchor", init=False, description="The name of the Tekla component. Always `Lifting Anchor`.")
-    remove_old_components: bool = Field(default=False, description="Set to true to remove existing components before placing new ones. False if they have to be kept intact.")
-    safety_margin: conint(ge=0, le=50) = Field(default=5, description="Bearing capacity reserve in %. Must be between 0 and 50.")
+    safety_margin: conint(ge=0, le=50) | None = Field(default=5, description="Bearing capacity reserve in %. Must be between 0 and 50.")
 
     def __init__(self, **data):
         data["name"] = "Lifting Anchor"
         super().__init__(**data)
+
+    def model_post_init(self, __context):
+        if self.safety_margin is None:
+            self.safety_margin = 5
+        super().model_post_init(__context)
 
     @staticmethod
     @log_function_call

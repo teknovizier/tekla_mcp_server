@@ -96,11 +96,11 @@ async def test_put_wall_lifting_anchors_walls(model_objects):
 
     async with Client(mcp) as client:
         # Default parameters
-        result1 = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors()})
+        result1 = await client.call_tool("put_wall_lifting_anchors")
         assert result1.data["status"] == "success"
 
         # Custom safety margin
-        result2 = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors(safety_margin=10)})
+        result2 = await client.call_tool("put_wall_lifting_anchors", {"safety_margin": 10})
         assert result2.data["status"] == "success"
 
 
@@ -116,7 +116,7 @@ async def test_put_wall_lifting_anchors_sandwich(model_objects):
     """
     TeklaModel.select_objects([model_objects["test_sw1"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors()})
+        result = await client.call_tool("put_wall_lifting_anchors")
         assert result.data["status"] == "success"
 
 
@@ -132,7 +132,7 @@ async def test_remove_wall_lifting_anchors(model_objects):
     """
     TeklaModel.select_objects([model_objects["test_wall1"]])
     async with Client(mcp) as client:
-        _ = await client.call_tool("put_wall_lifting_anchors", {"component": LiftingAnchors()})
+        _ = await client.call_tool("put_wall_lifting_anchors")
         result2 = await client.call_tool("remove_wall_lifting_anchors")
         assert result2.data["status"] == "success"
 

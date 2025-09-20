@@ -70,7 +70,7 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
 
 # MCP tools
 @mcp.tool()
-def put_components(component_name: str, component_properties: str | None) -> dict[str, Any]:
+def put_components(component_name: str, component_properties: str = None) -> dict[str, Any]:
     """
     Inserts Tekla components into the selected objects, using the given
     component name and an optional custom set of properties.
@@ -91,13 +91,13 @@ def remove_components(component_name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def put_wall_lifting_anchors(component: LiftingAnchors = LiftingAnchors()) -> dict[str, Any]:
+def put_wall_lifting_anchors(component_properties: str = None, safety_margin: int = None) -> dict[str, Any]:
     """
-    Inserts wall lifting anchors into selected objects, optionally removing old anchors.
+    Inserts wall lifting anchors into selected objects, using the given
+    an optional custom set of properties and an optional safety margin (5% by default).
     """
 
-    if component.remove_old_components:
-        remove_wall_lifting_anchors()
+    component = LiftingAnchors(properties=component_properties, safety_margin=safety_margin)
     return manage_components_on_selected_objects(tool_put_wall_lifting_anchors, component)
 
 
