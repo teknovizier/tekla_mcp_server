@@ -7,6 +7,7 @@ __pycache__
 config/settings.json
 config/lifting_anchor_types.json
 config/element_types.json
+config/base_components.json
 
 # Log
 app.log

@@ -123,10 +123,9 @@ with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", e
 with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"), "r", encoding="utf-8") as file:
     LIFTING_ANCHOR_TYPES = json.load(file)
 
-# Tekla components
-BASE_COMPONENTS = {
-    "Lifting Anchor": 30000080,
-}
+# Components
+with open(Path(__file__).parent.joinpath("config", "base_components.json"), "r", encoding="utf-8") as file:
+    BASE_COMPONENTS = json.load(file)
 
 
 # Classes
