@@ -212,14 +212,18 @@ def insert_lifting_anchors(model: TeklaModel, component: LiftingAnchors, selecte
         "up_direction": 1,
         **first_anchor_attributes,
     }
-    counter = int(insert_component(selected_object, component, attributes))
+    component.set_attributes(attributes)
+    counter = int(insert_component(selected_object, component))
     logger.debug("Inserted lifting anchor components: %s", counter)
 
     if number_of_anchors == 4:
         # Add more anchors at distance_between_anchors from the first ones
-        attributes["DistFromPartStart"] = distance_from_start + double_anchor_spacing
-        attributes["DistFromPartFinish"] = distance_from_end + double_anchor_spacing
-        counter += insert_component(selected_object, component, attributes)  # Add one more component
+        updated_attributes = {
+            "DistFromPartStart": distance_from_start + double_anchor_spacing,
+            "DistFromPartFinish": distance_from_end + double_anchor_spacing,
+        }
+        component.update_attributes(updated_attributes)
+        counter += insert_component(selected_object, component)  # Add one more component
         logger.debug("Inserted additional anchors for 4-anchor configuration. Total number of anchor components: %s", counter)
 
     # Add recesses where necessary

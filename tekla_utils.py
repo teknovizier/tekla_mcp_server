@@ -575,7 +575,7 @@ def ensure_transformation_plane(func: Callable[..., Any]) -> Any:
     return wrapper
 
 
-def insert_detail(selected_object: ModelObject, component: BaseComponent, point: Point, attributes: dict[str, Any] | None = None, reverse: bool = False) -> bool:
+def insert_detail(selected_object: ModelObject, component: BaseComponent, point: Point, reverse: bool = False) -> bool:
     """
     Inserts a custom detail component into a Tekla model at a specified point.
     """
@@ -588,15 +588,15 @@ def insert_detail(selected_object: ModelObject, component: BaseComponent, point:
     d.AutoDirectionType = AutoDirectionTypeEnum.AUTODIR_DETAIL
     d.DetailType = DetailTypeEnum.INTERMEDIATE_REVERSE if reverse else DetailTypeEnum.INTERMEDIATE
     d.SetPrimaryObject(selected_object)
-    if attributes:
-        for key, value in attributes.items():
+    if component.attributes:
+        for key, value in component.attributes.items():
             d.SetAttribute(key, value)
     d.SetReferencePoint(point)
 
     return d.Insert()
 
 
-def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, component: BaseComponent, point1: Point, point2: Point, attributes: dict[str, Any] | None = None) -> bool:
+def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, component: BaseComponent, point1: Point, point2: Point) -> bool:
     """
     Inserts a custom seam component into a Tekla model at a specified point.
     """
@@ -610,15 +610,15 @@ def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, comp
 
     s.SetPrimaryObject(primary_object)
     s.SetSecondaryObject(secondary_object)
-    if attributes:
-        for key, value in attributes.items():
+    if component.attributes:
+        for key, value in component.attributes.items():
             s.SetAttribute(key, value)
     s.SetInputPositions(point1, point2)
 
     return s.Insert()
 
 
-def insert_component(selected_object: ModelObject, component: BaseComponent, attributes: dict[str, Any] | None = None) -> bool:
+def insert_component(selected_object: ModelObject, component: BaseComponent) -> bool:
     """
     Inserts a component into a Tekla model to the specified object.
     """
@@ -626,8 +626,8 @@ def insert_component(selected_object: ModelObject, component: BaseComponent, att
     c.Name = component.name
     c.Number = component.number
     c.LoadAttributesFromFile("standard")
-    if attributes:
-        for key, value in attributes.items():
+    if component.attributes:
+        for key, value in component.attributes.items():
             c.SetAttribute(key, value)
     ci = ComponentInput()
     ci.AddInputObject(selected_object)

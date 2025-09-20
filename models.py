@@ -11,7 +11,7 @@ from enum import Enum
 from pathlib import Path
 from pydantic import BaseModel, Field, PrivateAttr, conint, confloat, field_validator, field_serializer
 from pydantic_core import PydanticCustomError
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from init import logger
 from utils import log_function_call
@@ -268,6 +268,7 @@ class BaseComponent(BaseModel):
     # Private attributes
     _number: int = PrivateAttr()
     _component_type: ComponentType = PrivateAttr()
+    _attributes: dict[str, Any] | None = PrivateAttr(default=None)
 
     def model_post_init(self, __context) -> None:
         """
@@ -276,7 +277,7 @@ class BaseComponent(BaseModel):
         self._number = BASE_COMPONENTS.get(self.name, -1)
         self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT  # Default to custom detail component
 
-    # Getter methods
+    # Getters
     @property
     def number(self) -> int:
         """Returns `_number`"""
@@ -286,6 +287,27 @@ class BaseComponent(BaseModel):
     def component_type(self) -> str:
         """Returns `_component_type`"""
         return self._component_type
+
+    @property
+    def attributes(self) -> dict[str, Any] | None:
+        """Returns `_attributes`"""
+        return self._attributes
+
+    # Setters
+    def set_attributes(self, attributes: dict[str, Any]) -> None:
+        """
+        Replaces the entire attributes dictionary.
+        """
+        self._attributes = attributes
+
+    def update_attributes(self, updates: dict[str, Any]) -> None:
+        """
+        Adds or updates multiple attributes at once.
+        Creates the dictionary if ther dictionary doesn't exist yet.
+        """
+        if self._attributes is None:
+            self._attributes = {}
+        self._attributes.update(updates)
 
 
 class LiftingAnchors(BaseComponent):
