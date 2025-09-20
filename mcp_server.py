@@ -25,10 +25,10 @@ from models import (
 from tools import (
     process_detail_or_component,
     process_seam_or_connection,
-    insert_lifting_anchors,
-    remove_lifting_anchors,
-    insert_components,
-    remove_components,
+    tool_put_components,
+    tool_remove_components,
+    tool_put_wall_lifting_anchors,
+    tool_remove_wall_lifting_anchors,
     select_elements_by_filter,
     select_elements_by_filter_name,
     select_elements_by_guid,
@@ -70,6 +70,26 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
 
 # MCP tools
 @mcp.tool()
+def put_components(component_name: str) -> dict[str, Any]:
+    """
+    Inserts Tekla components into selected objects.
+    """
+
+    component = BaseComponent(name=component_name)
+    return manage_components_on_selected_objects(tool_put_components, component)
+
+
+@mcp.tool()
+def remove_components(component_name: str) -> dict[str, Any]:
+    """
+    Removes Tekla components from selected objects.
+    """
+
+    component = BaseComponent(name=component_name)
+    return manage_components_on_selected_objects(tool_remove_components, component)
+
+
+@mcp.tool()
 def put_wall_lifting_anchors(component: LiftingAnchors = LiftingAnchors()) -> dict[str, Any]:
     """
     Inserts wall lifting anchors into selected objects, optionally removing old anchors.
@@ -77,7 +97,7 @@ def put_wall_lifting_anchors(component: LiftingAnchors = LiftingAnchors()) -> di
 
     if component.remove_old_components:
         remove_wall_lifting_anchors()
-    return manage_components_on_selected_objects(insert_lifting_anchors, component)
+    return manage_components_on_selected_objects(tool_put_wall_lifting_anchors, component)
 
 
 @mcp.tool()
@@ -87,17 +107,7 @@ def remove_wall_lifting_anchors() -> dict[str, Any]:
     """
 
     component = LiftingAnchors()
-    return manage_components_on_selected_objects(remove_lifting_anchors, component)
-
-
-@mcp.tool()
-def put_components(component_name: str) -> dict[str, Any]:
-    """
-    Inserts Tekla components into selected objects.
-    """
-
-    component = BaseComponent(name=component_name)
-    return manage_components_on_selected_objects(insert_components, component)
+    return manage_components_on_selected_objects(tool_remove_wall_lifting_anchors, component)
 
 
 @mcp.tool()

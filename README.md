@@ -21,6 +21,7 @@ The server provides the following tools:
 | Tool                             | Description                                                                 |
 |----------------------------------|-----------------------------------------------------------------------------|
 | `put_components`   | Insert Tekla components with specified name in the selected elements |
+| `remove_components`   | Remove Tekla components with specified name from the selected elements |
 | `put_wall_lifting_anchors`       | Insert `Lifting Anchor (80)` Tekla components in the selected elements      |
 | `remove_wall_lifting_anchors`    | Remove `Lifting Anchor (80)` Tekla components from the selected elements    |
 | `select_elements_using_filter`   | Select elements in Tekla model based on their type or Tekla class and name or profile |

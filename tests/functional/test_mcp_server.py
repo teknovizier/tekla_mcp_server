@@ -153,6 +153,23 @@ async def test_put_components(model_objects):
         assert result.data["status"] == "success"
 
 
+@pytest.mark.asyncio
+async def test_remove_components(model_objects):
+    """
+    Tests the removal of components using `remove_components`.
+
+    Steps:
+    - Places `DIR_ARR` components on `self.test_wall1`.
+    - Calls `remove_components()`.
+    - Ensures that the function successfully removes the components.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    async with Client(mcp) as client:
+        _ = await client.call_tool("put_components", {"component_name": "DIR_ARR"})
+        result2 = await client.call_tool("remove_components", {"component_name": "DIR_ARR"})
+        assert result2.data["status"] == "success"
+
+
 @pytest.mark.parametrize(
     "kwargs,expected",
     [

@@ -123,8 +123,24 @@ def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback
 
 
 # Tools functions
+@ensure_transformation_plane
 @log_function_call
-def remove_components(model: TeklaModel, component: BaseComponent, *selected_objects: ModelObject) -> int:
+def tool_put_components(model: TeklaModel, component: BaseComponent, selected_object: ModelObject) -> int:
+    """
+    Inserts a component to the specified object in the Tekla model.
+    """
+    if component.number == -1:
+        counter = insert_detail(selected_object, component, selected_object.GetCoordinateSystem().Origin)
+        logger.debug("Inserted %s custom detail components", counter)
+    else:
+        counter = insert_component(selected_object, component)
+        logger.debug("Inserted %s components", counter)
+
+    return counter
+
+
+@log_function_call
+def tool_remove_components(model: TeklaModel, component: BaseComponent, *selected_objects: ModelObject) -> int:
     """
     Removes components with the specified number and name from the specified object in the Tekla model.
     """
@@ -137,32 +153,9 @@ def remove_components(model: TeklaModel, component: BaseComponent, *selected_obj
     return counter
 
 
-@log_function_call
-def remove_lifting_anchors(model: TeklaModel, component: LiftingAnchors, *selected_objects: ModelObject) -> int:
-    """
-    Removes lifting anchors components.
-    """
-    # First remove all additional cuts
-    counter = 0
-    for selected_object in selected_objects:
-        boolean_part_enum = selected_object.GetBooleans()
-        while boolean_part_enum.MoveNext():
-            boolean_part = boolean_part_enum.Current
-            if isinstance(boolean_part, BooleanPart):
-                operative_part = boolean_part.OperativePart
-                if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Name == "LIFTING_ANCHOR_RECESS":
-                    if boolean_part.Delete():
-                        counter += 1
-
-    logger.debug("Total lifting anchor recess boolean cuts removed: %s", counter)
-
-    # Then remove components
-    return remove_components(model, component, *selected_objects)
-
-
 @ensure_transformation_plane
 @log_function_call
-def insert_lifting_anchors(model: TeklaModel, component: LiftingAnchors, selected_object: ModelObject) -> int:
+def tool_put_wall_lifting_anchors(model: TeklaModel, component: LiftingAnchors, selected_object: ModelObject) -> int:
     """
     Inserts lifting anchors to the specified object in the Tekla model.
     """
@@ -287,20 +280,27 @@ def insert_lifting_anchors(model: TeklaModel, component: LiftingAnchors, selecte
     return counter
 
 
-@ensure_transformation_plane
 @log_function_call
-def insert_components(model: TeklaModel, component: BaseComponent, selected_object: ModelObject) -> int:
+def tool_remove_wall_lifting_anchors(model: TeklaModel, component: LiftingAnchors, *selected_objects: ModelObject) -> int:
     """
-    Inserts a component to the specified object in the Tekla model.
+    Removes lifting anchors components.
     """
-    if component.number == -1:
-        counter = insert_detail(selected_object, component, selected_object.GetCoordinateSystem().Origin)
-        logger.debug("Inserted %s custom detail components", counter)
-    else:
-        counter = insert_component(selected_object, component)
-        logger.debug("Inserted %s components", counter)
+    # First remove all additional cuts
+    counter = 0
+    for selected_object in selected_objects:
+        boolean_part_enum = selected_object.GetBooleans()
+        while boolean_part_enum.MoveNext():
+            boolean_part = boolean_part_enum.Current
+            if isinstance(boolean_part, BooleanPart):
+                operative_part = boolean_part.OperativePart
+                if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Name == "LIFTING_ANCHOR_RECESS":
+                    if boolean_part.Delete():
+                        counter += 1
 
-    return counter
+    logger.debug("Total lifting anchor recess boolean cuts removed: %s", counter)
+
+    # Then remove components
+    return tool_remove_components(model, component, *selected_objects)
 
 
 @log_function_call
