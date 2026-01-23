@@ -49,7 +49,9 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 
 Python 3.11 or newer, along with some libraries, is required. You can install all the necessary libraries by running:
 
-    $ uv pip install -r requirements.txt
+```bash
+uv pip install -r requirements.txt
+```
 
 ⚠️ *Note:* You may experience a naming conflict with the `clr` string styling package. A solution is to rename or delete the folder `C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\site-packages\clr`.
 
@@ -69,15 +71,49 @@ Python 3.11 or newer, along with some libraries, is required. You can install al
 
  ⚠️ *Note:* For the detailed steps, please see the [setup guide](https://www.notion.so/teknovizier/Tekla-MCP-Server-A-Tool-to-Improve-Your-Modeling-Workflows-264250689e1380f38a1be0b60477786b).
 
+## Testing
+
+The project includes a comprehensive test suite:
+
+### Unit Tests (`tests/unit/`)
+- `test_init.py`: Configuration loading, DLL initialization and error handling
+- `test_models.py`: Data model validation
+- `test_tekla_utils.py`: Tekla API wrapper tests
+
+### Functional Tests (`tests/functional/`)
+- `test_mcp_server.py`: End-to-end MCP tool integration tests
+
+### Running Tests
+
+```bash
+# Run all tests (functional tests will be skipped if Tekla is not running)
+pytest tests/
+
+# Run only unit tests
+pytest tests/unit/
+
+# Run specific test file
+pytest tests/unit/test_models.py
+
+# Run specific test function
+pytest tests/unit/test_models.py::test_get_element_type_by_class_valid
+```
+
+⚠️ *Note:* Functional tests modify actual Tekla model. Run them only in test/development environment.
+
 ## Distribution
 
 A standalone binary file can be created using [PyInstaller](https://pyinstaller.org) for easier distribution. To do this, install PyInstaller:
 
-    $ uv pip install pyinstaller
+```bash
+uv pip install pyinstaller
+```
 
 Then, generate an executable with:
 
-    $ pyinstaller mcp_server.py
+```bash
+pyinstaller mcp_server.py
+```
 
 This will produce a binary file inside the `dist/mcp_server/` directory, which can be distributed without requiring Python installation. Ensure the `_internals` directory is included alongside the binary. 
 
