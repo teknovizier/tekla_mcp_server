@@ -48,6 +48,7 @@ from tekla_loader import (
     BinaryFilterExpression,
     PartFilterExpressions,
     ObjectFilterExpressions,
+    TemplateFilterExpressions,
 )
 
 from tekla_utils import (
@@ -311,12 +312,14 @@ def tool_select_elements_by_filter(
     name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
     profile: str = None,
     profile_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+    phase: str = None,
+    phase_match_type: StringMatchType = StringMatchType.IS_EQUAL,
 ) -> dict:
     """
-    Selects elements in the Tekla model based on type, class, and name filters.
+    Selects elements in the Tekla model based on type, class, name, profile, and phase filters.
     """
-    if not element_type and not name:
-        raise ValueError("At least one argument (element type or Tekla class or name) must be provided.")
+    if not element_type and not name and not profile and not phase:
+        raise ValueError("At least one argument (element type, Tekla class, name, profile, or phase) must be provided.")
 
     filter_collection = BinaryFilterExpressionCollection()
 
@@ -359,6 +362,14 @@ def tool_select_elements_by_filter(
         filter_profile = BinaryFilterExpression(PartFilterExpressions.Profile(), match_type, StringConstantFilterExpression(profile))
         filter_collection.Add(BinaryFilterExpressionItem(filter_profile, BinaryFilterOperatorType.BOOLEAN_AND))
         logger.debug("Filtering by profile: %s with match type: %s", profile, profile_match_type)
+
+    # Filter on phase
+    if phase:
+        assembly_phase = TemplateFilterExpressions.CustomString("ASSEMBLY.PHASE")
+        match_type = STRING_MATCH_TYPE_MAPPING.get(phase_match_type)
+        filter_phase = BinaryFilterExpression(assembly_phase, match_type, StringConstantFilterExpression(phase))
+        filter_collection.Add(BinaryFilterExpressionItem(filter_phase, BinaryFilterOperatorType.BOOLEAN_AND))
+        logger.debug("Filtering by phase: %s with match type: %s", profile, profile_match_type)
 
     objects_to_select = model.get_objects_by_filter(filter_collection)
     TeklaModel.select_objects(objects_to_select)

@@ -42,7 +42,7 @@ from Tekla.Structures.Filtering import (
     StringOperatorType,
     FilterExpression,
 )
-from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions
+from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
 
 
 # Export everything

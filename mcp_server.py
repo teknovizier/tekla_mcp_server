@@ -119,9 +119,11 @@ def select_elements_by_filter(
     name_match_type: str = "Is Equal",
     profile: str = None,
     profile_match_type: str = "Is Equal",
+    phase: str = None,
+    phase_match_type: str = "Is Equal",
 ) -> dict[str, Any]:
     """
-    Selects elements based on their type or Tekla class, name, and matching criteria.
+    Selects elements based on their type or Tekla class, name, profile, phase, and matching criteria.
 
     Valid concrete element types:
     - `Wall`
@@ -163,7 +165,17 @@ def select_elements_by_filter(
 
     name_match_type_enum = StringMatchTypeModel(value=name_match_type).to_enum()
     profile_match_type_enum = StringMatchTypeModel(value=profile_match_type).to_enum()
-    return tool_select_elements_by_filter(tekla_model, element_type, name, name_match_type_enum, profile, profile_match_type_enum)
+    phase_match_type_enum = StringMatchTypeModel(value=phase_match_type).to_enum()
+    return tool_select_elements_by_filter(
+        tekla_model,
+        element_type,
+        name,
+        name_match_type_enum,
+        profile,
+        profile_match_type_enum,
+        phase,
+        phase_match_type_enum,
+)
 
 
 @mcp.tool()
