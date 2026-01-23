@@ -312,14 +312,27 @@ def tool_select_elements_by_filter(
     name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
     profile: str = None,
     profile_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+    material: str = None,
+    material_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+    finish: str = None,
+    finish_match_type: StringMatchType = StringMatchType.IS_EQUAL,
     phase: str = None,
     phase_match_type: StringMatchType = StringMatchType.IS_EQUAL,
 ) -> dict:
     """
-    Selects elements in the Tekla model based on type, class, name, profile, and phase filters.
+    Selects elements in the Tekla model based on type, class, name, profile, material, finish and phase filters.
     """
-    if not element_type and not name and not profile and not phase:
-        raise ValueError("At least one argument (element type, Tekla class, name, profile, or phase) must be provided.")
+    if (
+        not element_type
+        and not name
+        and not profile
+        and not phase
+        and not material
+        and not finish
+    ):
+        raise ValueError(
+            "At least one argument (element type, Tekla class, name, profile, material, finish or phase) must be provided."
+        )
 
     filter_collection = BinaryFilterExpressionCollection()
 
@@ -362,6 +375,20 @@ def tool_select_elements_by_filter(
         filter_profile = BinaryFilterExpression(PartFilterExpressions.Profile(), match_type, StringConstantFilterExpression(profile))
         filter_collection.Add(BinaryFilterExpressionItem(filter_profile, BinaryFilterOperatorType.BOOLEAN_AND))
         logger.debug("Filtering by profile: %s with match type: %s", profile, profile_match_type)
+
+    # Filter on material
+    if material:
+        match_type = STRING_MATCH_TYPE_MAPPING.get(material_match_type)
+        filter_material = BinaryFilterExpression(PartFilterExpressions.Material(), match_type, StringConstantFilterExpression(material))
+        filter_collection.Add(BinaryFilterExpressionItem(filter_material, BinaryFilterOperatorType.BOOLEAN_AND))
+        logger.debug("Filtering by material: %s with match type: %s", material, material_match_type)
+
+    # Filter on finish
+    if finish:
+        match_type = STRING_MATCH_TYPE_MAPPING.get(finish_match_type)
+        filter_finish = BinaryFilterExpression(PartFilterExpressions.Finish(), match_type, StringConstantFilterExpression(finish))
+        filter_collection.Add(BinaryFilterExpressionItem(filter_finish, BinaryFilterOperatorType.BOOLEAN_AND))
+        logger.debug("Filtering by finish: %s with match type: %s", finish, finish_match_type)
 
     # Filter on phase
     if phase:
