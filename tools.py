@@ -69,6 +69,35 @@ from utils import log_function_call
 
 # Helper functions
 @log_function_call
+def add_filter(
+    filter_collection: BinaryFilterExpressionCollection,
+    filter_expression: Any,
+    value: str | int,
+    match_type: StringMatchType | NumericOperatorType = None,
+    operator: BinaryFilterOperatorType = BinaryFilterOperatorType.BOOLEAN_AND,
+) -> None:
+    """
+    Adds a filter expression to the filter collection.
+
+    For string filters: provide match_type as StringMatchType
+    For numeric filters: provide match_type as NumericOperatorType (defaults to IS_EQUAL if None)
+    """
+    if isinstance(value, str):
+        # String filter - use provided match_type or default to IS_EQUAL
+        if match_type is None:
+            match_type = StringMatchType.IS_EQUAL
+        op = STRING_MATCH_TYPE_MAPPING.get(match_type)
+        expr = BinaryFilterExpression(filter_expression, op, StringConstantFilterExpression(value))
+    else:
+        # Numeric filter - use provided match_type or default to IS_EQUAL
+        if match_type is None:
+            match_type = NumericOperatorType.IS_EQUAL
+        expr = BinaryFilterExpression(filter_expression, match_type, NumericConstantFilterExpression(value))
+
+    filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
+
+
+@log_function_call
 def process_detail_or_component(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, *args: Any, **kwargs: Any) -> dict:
     """
     Processes a list of selected objects, applying a callback to each object that is an instance of Beam.
@@ -322,23 +351,13 @@ def tool_select_elements_by_filter(
     """
     Selects elements in the Tekla model based on type, class, name, profile, material, finish and phase filters.
     """
-    if (
-        not element_type
-        and not name
-        and not profile
-        and not phase
-        and not material
-        and not finish
-    ):
-        raise ValueError(
-            "At least one argument (element type, Tekla class, name, profile, material, finish or phase) must be provided."
-        )
+    if not element_type and not name and not profile and not phase and not material and not finish:
+        raise ValueError("At least one argument (element type, Tekla class, name, profile, material, finish or phase) must be provided.")
 
     filter_collection = BinaryFilterExpressionCollection()
 
     # Filter on parts
-    filter_parts = BinaryFilterExpression(ObjectFilterExpressions.Type(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(TeklaStructuresDatabaseTypeEnum.PART))
-    filter_collection.Add(BinaryFilterExpressionItem(filter_parts, BinaryFilterOperatorType.BOOLEAN_AND))
+    add_filter(filter_collection, ObjectFilterExpressions.Type(), TeklaStructuresDatabaseTypeEnum.PART)
 
     # Filter on element types = Tekla classes
     if element_type:
@@ -357,46 +376,35 @@ def tool_select_elements_by_filter(
 
         filter_collection_class = BinaryFilterExpressionCollection()
         for tekla_class in tekla_classes:
-            filter_class = BinaryFilterExpression(PartFilterExpressions.Class(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(tekla_class))
-            filter_collection_class.Add(BinaryFilterExpressionItem(filter_class, BinaryFilterOperatorType.BOOLEAN_OR))
+            add_filter(filter_collection_class, PartFilterExpressions.Class(), tekla_class, operator=BinaryFilterOperatorType.BOOLEAN_OR)
         filter_collection.Add(BinaryFilterExpressionItem(filter_collection_class))
         logger.debug("Filtering by Tekla classes: %s", tekla_classes)
 
     # Filter on name
     if name:
-        match_type = STRING_MATCH_TYPE_MAPPING.get(name_match_type)
-        filter_name = BinaryFilterExpression(PartFilterExpressions.Name(), match_type, StringConstantFilterExpression(name))
-        filter_collection.Add(BinaryFilterExpressionItem(filter_name, BinaryFilterOperatorType.BOOLEAN_AND))
+        add_filter(filter_collection, PartFilterExpressions.Name(), name, name_match_type)
         logger.debug("Filtering by name: %s with match type: %s", name, name_match_type)
 
     # Filter on profile
     if profile:
-        match_type = STRING_MATCH_TYPE_MAPPING.get(profile_match_type)
-        filter_profile = BinaryFilterExpression(PartFilterExpressions.Profile(), match_type, StringConstantFilterExpression(profile))
-        filter_collection.Add(BinaryFilterExpressionItem(filter_profile, BinaryFilterOperatorType.BOOLEAN_AND))
+        add_filter(filter_collection, PartFilterExpressions.Profile(), profile, profile_match_type)
         logger.debug("Filtering by profile: %s with match type: %s", profile, profile_match_type)
 
     # Filter on material
     if material:
-        match_type = STRING_MATCH_TYPE_MAPPING.get(material_match_type)
-        filter_material = BinaryFilterExpression(PartFilterExpressions.Material(), match_type, StringConstantFilterExpression(material))
-        filter_collection.Add(BinaryFilterExpressionItem(filter_material, BinaryFilterOperatorType.BOOLEAN_AND))
+        add_filter(filter_collection, PartFilterExpressions.Material(), material, material_match_type)
         logger.debug("Filtering by material: %s with match type: %s", material, material_match_type)
 
     # Filter on finish
     if finish:
-        match_type = STRING_MATCH_TYPE_MAPPING.get(finish_match_type)
-        filter_finish = BinaryFilterExpression(PartFilterExpressions.Finish(), match_type, StringConstantFilterExpression(finish))
-        filter_collection.Add(BinaryFilterExpressionItem(filter_finish, BinaryFilterOperatorType.BOOLEAN_AND))
+        add_filter(filter_collection, PartFilterExpressions.Finish(), finish, finish_match_type)
         logger.debug("Filtering by finish: %s with match type: %s", finish, finish_match_type)
 
     # Filter on phase
     if phase:
         assembly_phase = TemplateFilterExpressions.CustomString("ASSEMBLY.PHASE")
-        match_type = STRING_MATCH_TYPE_MAPPING.get(phase_match_type)
-        filter_phase = BinaryFilterExpression(assembly_phase, match_type, StringConstantFilterExpression(phase))
-        filter_collection.Add(BinaryFilterExpressionItem(filter_phase, BinaryFilterOperatorType.BOOLEAN_AND))
-        logger.debug("Filtering by phase: %s with match type: %s", profile, profile_match_type)
+        add_filter(filter_collection, assembly_phase, phase, phase_match_type)
+        logger.debug("Filtering by phase: %s with match type: %s", phase, phase_match_type)
 
     objects_to_select = model.get_objects_by_filter(filter_collection)
     TeklaModel.select_objects(objects_to_select)
@@ -687,7 +695,7 @@ def tool_get_all_elements_udas(selected_objects: ModelObjectEnumerator) -> dict:
 
 
 @log_function_call
-def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom_props_definitions: list[str]):
+def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom_props_definitions: list[str]) -> dict:
     """
     Extracts and serializes key element properties from a collection of model objects.
     """

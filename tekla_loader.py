@@ -88,4 +88,5 @@ __all__ = [
     "FilterExpression",
     "PartFilterExpressions",
     "ObjectFilterExpressions",
+    "TemplateFilterExpressions",
 ]
