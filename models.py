@@ -335,22 +335,29 @@ class BaseComponent(BaseModel):
         self._attributes.update(updates)
 
 
-class LiftingAnchors(BaseComponent):
+class LiftingAnchorsComponent(BaseComponent):
     """
-    Represents the configuration for Lifting Anchor components in the model.
+    Specialized component for Lifting Anchor with intelligent behavior.
     """
 
     name: str = Field(default="Lifting Anchor", init=False, description="The name of the Tekla component. Always `Lifting Anchor`.")
-    safety_margin: conint(ge=0, le=50) | None = Field(default=5, description="Bearing capacity reserve in %. Must be between 0 and 50.")
+
+    # Private attributes
+    _safety_margin: conint(ge=0, le=50) = PrivateAttr()
 
     def __init__(self, **data):
         data["name"] = "Lifting Anchor"
         super().__init__(**data)
 
     def model_post_init(self, __context):
-        if self.safety_margin is None:
-            self.safety_margin = 5
+        self._safety_margin = BASE_COMPONENTS.get(self.name, {}).get("safety_margin", 5)
         super().model_post_init(__context)
+
+    # Getters
+    @property
+    def safety_margin(self) -> int:
+        """Returns `_safety_margin`"""
+        return self._safety_margin
 
     @staticmethod
     @log_function_call

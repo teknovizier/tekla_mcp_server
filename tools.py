@@ -18,7 +18,7 @@ from models import (
     ElementLabel,
     ComponentType,
     BaseComponent,
-    LiftingAnchors,
+    LiftingAnchorsComponent,
     ElementTypeModel,
     ElementProperties,
 )
@@ -158,13 +158,150 @@ def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback
 def tool_put_components(model: TeklaModel, component: BaseComponent, selected_object: ModelObject) -> int:
     """
     Inserts a component to the specified object in the Tekla model.
+    Handles specialized components like lifting anchors with intelligent behavior.
     """
+
+    # Check if this is a lifting anchor component
+    is_lifting_anchor = True if isinstance(component, LiftingAnchorsComponent) else False
+
+    # Handle lifting anchor specific logic
+    if is_lifting_anchor:
+        # Get element type by class
+        material, element_type = ElementTypeModel.get_element_type_by_class(selected_object.Class)
+        if material != "Concrete":
+            raise ValueError(f"Unsupported material type: {material}. Only concrete elements are supported.")
+
+        assembly = TeklaModelObject(selected_object.GetAssembly())
+        solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
+        length = abs(solid.MaximumPoint.X - solid.MinimumPoint.X)
+        width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
+
+        # Get cast unit total weight
+        weight = assembly.get_report_property("WEIGHT", float)
+
+        # Assume the total element weight is increased by 5% to account for the weight of subassemblies and rebars
+        total_weight = weight * 1.05
+        logger.debug("Assuming total weight: %s kg", total_weight)
+
+        # Calculate the necessary number of anchors and get their type
+        number_of_anchors, valid_anchors = LiftingAnchorsComponent.get_required_anchors(element_type, total_weight, component.safety_margin if hasattr(component, "safety_margin") else 5)
+
+        # Get the first anchor's attributes
+        first_anchor_key = next(iter(valid_anchors))
+        first_anchor_attributes = valid_anchors[first_anchor_key]["attributes"]
+        logger.info("Number of anchors required: %s. Selected anchor type: %s", number_of_anchors, first_anchor_key)
+
+        # Get initial COG X-coordinate
+        local_plane = TransformationPlane(selected_object.GetCoordinateSystem())
+        local_cog = local_plane.TransformationMatrixToLocal.Transform(assembly.cog)
+
+        min_edge_distance = valid_anchors[first_anchor_key]["min_edge_distance"]
+
+        # Calculate the placement of lifting anchors
+        distance_from_start, distance_from_end, double_anchor_spacing = LiftingAnchorsComponent.calculate_anchor_placement(min_edge_distance, length, local_cog.X, number_of_anchors)
+        logger.info("Anchor placement calculated: start=%s, end=%s, spacing=%s", distance_from_start, distance_from_end, double_anchor_spacing)
+
+        attributes = {
+            "DistanceFrom": 1,
+            "DistFromPartStart": distance_from_start,
+            "DistFromPartFinish": distance_from_end,
+            "custom": 1,
+            "custom_name": first_anchor_key,
+            "AnchorRecess": 2,
+            "RecessWidth": width + 100.0,
+            "CustomCRotation": 1,
+            "up_direction": 1,
+            **first_anchor_attributes,
+        }
+        component.set_attributes(attributes)
+
+    # Insert the component
     if component.number == -1:
         counter = insert_detail(selected_object, component, selected_object.GetCoordinateSystem().Origin)
         logger.debug("Inserted %s custom detail components", counter)
     else:
         counter = insert_component(selected_object, component)
         logger.debug("Inserted %s components", counter)
+
+    # Handle additional logic for lifting anchors
+    if is_lifting_anchor:
+        # Handle additional anchors for 4-anchor configuration
+        if number_of_anchors == 4:
+            updated_attributes = {
+                "DistFromPartStart": distance_from_start + double_anchor_spacing,
+                "DistFromPartFinish": distance_from_end + double_anchor_spacing,
+            }
+            component.update_attributes(updated_attributes)
+            counter += insert_component(selected_object, component)
+            logger.debug("Inserted additional anchors for 4-anchor configuration. Total number of anchor components: %s", counter)
+
+        # Add recesses where necessary
+        def create_boolean_cut(x_position: float, y_position: float, cut_height: float, depth_offset: float, cut_length: float) -> bool:
+            """
+            Creates a boolean cut and applies it to the selected element.
+            """
+            logger.debug("Creating boolean cut at X=%s, Y=%s, height=%s, length=%s", x_position, y_position, cut_height, cut_length)
+            # Define start and end points for the boolean cut
+            solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
+            cut_start = Point(x_position, y_position, solid.MinimumPoint.Z - 25.0)
+            cut_end = Point(x_position, y_position, solid.MaximumPoint.Z + 25.0)
+
+            # Create the boolean cutting part as a rectangular beam
+            cutting_part = Beam()
+            cutting_part.Class = "0"
+            cutting_part.Material.MaterialString = "ZERO WEIGHT"
+            cutting_part.Name = "LIFTING_ANCHOR_RECESS"  # Name for identification
+            cutting_part.Profile.ProfileString = f"{cut_length}*{cut_height}"
+
+            # Set positioning attributes
+            cutting_part.StartPoint = cut_start
+            cutting_part.EndPoint = cut_end
+            cutting_part.Position.Depth = Position.DepthEnum.MIDDLE
+            cutting_part.Position.Plane = Position.PlaneEnum.LEFT
+            cutting_part.Position.DepthOffset = depth_offset
+
+            # Insert the boolean part into the model
+            if cutting_part.Insert():
+                target_object = TeklaModelObject(selected_object)
+                cutter_object = TeklaModelObject(cutting_part)
+                return target_object.add_cut(cutter_object, True)
+            logger.warning("Failed to insert boolean cut part")
+            return False
+
+        # Iterate through all boolean parts within the element, identify the recesses for lifting anchors, and create additional cuts where needed
+        import re
+
+        boolean_part_enum = selected_object.GetBooleans()
+        while boolean_part_enum.MoveNext():
+            boolean_part = boolean_part_enum.Current
+            if isinstance(boolean_part, BooleanPart):
+                operative_part = boolean_part.OperativePart
+
+                # Rely on these properties for proper identification:
+                # - The type is BOOLEAN_CUT
+                # - The Tekla class is 0
+                # - The name is empty
+                # - The profile starts with "PRMD"
+                if (
+                    boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT
+                    and operative_part.Class == "0"
+                    and operative_part.Name == ""
+                    and operative_part.Profile.ProfileString.startswith("PRMD")
+                ):
+                    # Create the boolean part only if the recess is positioned below the highest Y coordinate of the element solid
+                    solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
+                    DEFAULT_OFFSET = 0.0  # Assume zero offset, should probably be offset = 25.0 if local_cog.X < operative_part.StartPoint.X else -25.0
+                    DEFAULT_CUT_LENGTH = 300.0
+                    MIN_LEDGE_HEIGHT = 100.0
+                    ledge_height = solid.MaximumPoint.Y - operative_part.StartPoint.Y
+                    if ledge_height > MIN_LEDGE_HEIGHT:
+                        create_boolean_cut(operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, DEFAULT_CUT_LENGTH)
+                    elif ledge_height:
+                        match = re.search(r"PRMD(\d+)", operative_part.Profile.ProfileString)
+                        if match:
+                            cut_length = float(match.group(1)) + 0.99  # Add 0.99 mm to avoid Tekla bug
+                            create_boolean_cut(operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, cut_length)
+        logger.info("Total lifting anchor components inserted: %s", counter)
 
     return counter
 
@@ -173,164 +310,31 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
 def tool_remove_components(model: TeklaModel, component: BaseComponent, *selected_objects: ModelObject) -> int:
     """
     Removes components with the specified number and name from the specified object in the Tekla model.
+    Handles special cleanup for intelligent components like lifting anchors.
     """
     counter = 0
+
+    # Special handling for lifting anchors - remove recess cuts first
+    is_lifting_anchor = True if isinstance(component, LiftingAnchorsComponent) else False
+    if is_lifting_anchor:
+        for selected_object in selected_objects:
+            boolean_part_enum = selected_object.GetBooleans()
+            while boolean_part_enum.MoveNext():
+                boolean_part = boolean_part_enum.Current
+                if isinstance(boolean_part, BooleanPart):
+                    operative_part = boolean_part.OperativePart
+                    if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Name == "LIFTING_ANCHOR_RECESS":
+                        if boolean_part.Delete():
+                            counter += 1
+        logger.debug("Total lifting anchor recess boolean cuts removed: %s", counter)
+
+    # Remove components
     for comp in selected_objects[0].GetComponents():  # Process only the first object
         if comp.Number == component.number and comp.Name == component.name:
             if comp.Delete():
                 counter += 1
     logger.info("Total components removed: %s", counter)
     return counter
-
-
-@ensure_transformation_plane
-@log_function_call
-def tool_put_wall_lifting_anchors(model: TeklaModel, component: LiftingAnchors, selected_object: ModelObject) -> int:
-    """
-    Inserts lifting anchors to the specified object in the Tekla model.
-    """
-    # Get element type by class
-    material, element_type = ElementTypeModel.get_element_type_by_class(selected_object.Class)
-    if material != "Concrete":
-        raise ValueError(f"Unsupported material type: {material}. Only concrete elements are supported.")
-
-    assembly = TeklaModelObject(selected_object.GetAssembly())
-    solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
-    length = abs(solid.MaximumPoint.X - solid.MinimumPoint.X)
-    width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
-
-    # Get cast unit total weight
-    weight = assembly.get_report_property("WEIGHT", float)
-
-    # Assume the total element weight is increased by 5% to account for the weight of subassemblies and rebars
-    total_weight = weight * 1.05
-    logger.debug("Assuming total weight: %s kg", total_weight)
-
-    # Calculate the necessary number of anchors and get their type
-    number_of_anchors, valid_anchors = LiftingAnchors.get_required_anchors(element_type, total_weight, component.safety_margin)
-
-    # Get the first anchor's attributes
-    first_anchor_key = next(iter(valid_anchors))
-    first_anchor_attributes = valid_anchors[first_anchor_key]["attributes"]
-    logger.info("Number of anchors required: %s. Selected anchor type: %s", number_of_anchors, first_anchor_key)
-
-    # Get initial COG X-coordinate
-    local_plane = TransformationPlane(selected_object.GetCoordinateSystem())
-    local_cog = local_plane.TransformationMatrixToLocal.Transform(assembly.cog)
-
-    min_edge_distance = valid_anchors[first_anchor_key]["min_edge_distance"]
-
-    # Calculate the placement of lifting anchors
-    distance_from_start, distance_from_end, double_anchor_spacing = LiftingAnchors.calculate_anchor_placement(min_edge_distance, length, local_cog.X, number_of_anchors)
-    logger.info("Anchor placement calculated: start=%s, end=%s, spacing=%s", distance_from_start, distance_from_end, double_anchor_spacing)
-    attributes = {
-        "DistanceFrom": 1,
-        "DistFromPartStart": distance_from_start,
-        "DistFromPartFinish": distance_from_end,
-        "custom": 1,
-        "custom_name": first_anchor_key,
-        "AnchorRecess": 2,
-        "RecessWidth": width + 100.0,
-        "CustomCRotation": 1,
-        "up_direction": 1,
-        **first_anchor_attributes,
-    }
-    component.set_attributes(attributes)
-    counter = int(insert_component(selected_object, component))
-    logger.debug("Inserted lifting anchor components: %s", counter)
-
-    if number_of_anchors == 4:
-        # Add more anchors at distance_between_anchors from the first ones
-        updated_attributes = {
-            "DistFromPartStart": distance_from_start + double_anchor_spacing,
-            "DistFromPartFinish": distance_from_end + double_anchor_spacing,
-        }
-        component.update_attributes(updated_attributes)
-        counter += insert_component(selected_object, component)  # Add one more component
-        logger.debug("Inserted additional anchors for 4-anchor configuration. Total number of anchor components: %s", counter)
-
-    # Add recesses where necessary
-    def create_boolean_cut(x_position: float, y_position: float, cut_height: float, depth_offset: float, cut_length: float) -> bool:
-        """
-        Creates a boolean cut and applies it to the selected element.
-        """
-        logger.debug("Creating boolean cut at X=%s, Y=%s, height=%s, length=%s", x_position, y_position, cut_height, cut_length)
-        # Define start and end points for the boolean cut
-        cut_start = Point(x_position, y_position, solid.MinimumPoint.Z - 25.0)
-        cut_end = Point(x_position, y_position, solid.MaximumPoint.Z + 25.0)
-
-        # Create the boolean cutting part as a rectangular beam
-        cutting_part = Beam()
-        cutting_part.Class = "0"
-        cutting_part.Material.MaterialString = "ZERO WEIGHT"
-        cutting_part.Name = "LIFTING_ANCHOR_RECESS"  # Name for identification
-        cutting_part.Profile.ProfileString = f"{cut_length}*{cut_height}"
-
-        # Set positioning attributes
-        cutting_part.StartPoint = cut_start
-        cutting_part.EndPoint = cut_end
-        cutting_part.Position.Depth = Position.DepthEnum.MIDDLE
-        cutting_part.Position.Plane = Position.PlaneEnum.LEFT
-        cutting_part.Position.DepthOffset = depth_offset
-
-        # Insert the boolean part into the model
-        if cutting_part.Insert():
-            target_object = TeklaModelObject(selected_object)
-            cutter_object = TeklaModelObject(cutting_part)
-            return target_object.add_cut(cutter_object, True)
-        logger.warning("Failed to insert boolean cut part")
-        return False
-
-    # Iterate through all boolean parts within the element, identify the recesses for lifting anchors, and create additional cuts where needed
-    boolean_part_enum = selected_object.GetBooleans()
-    while boolean_part_enum.MoveNext():
-        boolean_part = boolean_part_enum.Current
-        if isinstance(boolean_part, BooleanPart):
-            operative_part = boolean_part.OperativePart
-
-            # Rely on these properties for proper identification:
-            # - The type is BOOLEAN_CUT
-            # - The Tekla class is 0
-            # - The name is empty
-            # - The profile starts with "PRMD"
-            if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Class == "0" and operative_part.Name == "" and operative_part.Profile.ProfileString.startswith("PRMD"):
-                # Create the boolean part only if the recess is positioned below the highest Y coordinate of the element solid
-                DEFAULT_OFFSET = 0.0  # Assume zero offset, should probbaly be offset = 25.0 if local_cog.X < operative_part.StartPoint.X else -25.0
-                DEFAULT_CUT_LENGTH = 300.0
-                MIN_LEDGE_HEIGHT = 100.0
-                ledge_height = solid.MaximumPoint.Y - operative_part.StartPoint.Y
-                if ledge_height > MIN_LEDGE_HEIGHT:
-                    create_boolean_cut(operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, DEFAULT_CUT_LENGTH)
-                elif ledge_height:
-                    match = re.search(r"PRMD(\d+)", operative_part.Profile.ProfileString)
-                    if match:
-                        cut_length = float(match.group(1)) + 0.99  # Add 0.99 mm to avoid Tekla bug
-                        create_boolean_cut(operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, cut_length)
-    logger.info("Total lifting anchor components inserted: %s", counter)
-    return counter
-
-
-@log_function_call
-def tool_remove_wall_lifting_anchors(model: TeklaModel, component: LiftingAnchors, *selected_objects: ModelObject) -> int:
-    """
-    Removes lifting anchors components.
-    """
-    # First remove all additional cuts
-    counter = 0
-    for selected_object in selected_objects:
-        boolean_part_enum = selected_object.GetBooleans()
-        while boolean_part_enum.MoveNext():
-            boolean_part = boolean_part_enum.Current
-            if isinstance(boolean_part, BooleanPart):
-                operative_part = boolean_part.OperativePart
-                if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Name == "LIFTING_ANCHOR_RECESS":
-                    if boolean_part.Delete():
-                        counter += 1
-
-    logger.debug("Total lifting anchor recess boolean cuts removed: %s", counter)
-
-    # Then remove components
-    return tool_remove_components(model, component, *selected_objects)
 
 
 @log_function_call

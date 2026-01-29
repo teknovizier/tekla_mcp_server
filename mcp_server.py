@@ -19,7 +19,7 @@ from models import (
     ElementLabelModel,
     ComponentType,
     BaseComponent,
-    LiftingAnchors,
+    LiftingAnchorsComponent,
 )
 
 from tools import (
@@ -27,8 +27,6 @@ from tools import (
     process_seam_or_connection,
     tool_put_components,
     tool_remove_components,
-    tool_put_wall_lifting_anchors,
-    tool_remove_wall_lifting_anchors,
     tool_select_elements_by_filter,
     tool_select_elements_by_filter_name,
     tool_select_elements_by_guid,
@@ -75,17 +73,20 @@ def put_components(component_name: str, attributes_set: str | None = None, custo
     Inserts Tekla components into the selected objects, using the given
     component name and an optional custom attributes.
 
+    Supported standard components:
+    - `Lifting Anchor`
+
     Args:
         component_name: The name of the Tekla component
         attributes_set: The name of the Tekla component attributes set to use
         custom_attributes: Custom attributes to apply to the component (dict or JSON string)
     """
 
-    component = BaseComponent(
-        name=component_name,
-        attributes_set=attributes_set,
-        custom_attributes=custom_attributes
-    )
+    # Create appropriate component type based on name
+    if component_name == "Lifting Anchor":
+        component = LiftingAnchorsComponent(attributes_set=attributes_set, custom_attributes=custom_attributes)
+    else:
+        component = BaseComponent(name=component_name, attributes_set=attributes_set, custom_attributes=custom_attributes)
     return manage_components_on_selected_objects(tool_put_components, component)
 
 
@@ -93,40 +94,20 @@ def put_components(component_name: str, attributes_set: str | None = None, custo
 def remove_components(component_name: str) -> dict[str, Any]:
     """
     Removes Tekla components from selected objects.
-    """
 
-    component = BaseComponent(name=component_name)
-    return manage_components_on_selected_objects(tool_remove_components, component)
-
-
-@mcp.tool()
-def put_wall_lifting_anchors(
-    attributes_set: str | None = None, custom_attributes: dict[str, Any] | str | None = None
-) -> dict[str, Any]:
-    """
-    Inserts wall lifting anchors into selected objects, using the given
-    an optional custom attributes.
+    Supported standard components:
+    - `Lifting Anchor`
 
     Args:
-        attributes_set: The name of the Tekla component attributes set to use
-        custom_attributes: Custom attributes to apply to the component (dict or JSON string)
+        component_name: The name of the Tekla component
     """
 
-    component = LiftingAnchors(
-        attributes_set=attributes_set,
-        custom_attributes=custom_attributes
-    )
-    return manage_components_on_selected_objects(tool_put_wall_lifting_anchors, component)
-
-
-@mcp.tool()
-def remove_wall_lifting_anchors() -> dict[str, Any]:
-    """
-    Removes wall lifting anchors from selected objects.
-    """
-
-    component = LiftingAnchors()
-    return manage_components_on_selected_objects(tool_remove_wall_lifting_anchors, component)
+    # Create appropriate component type based on name
+    if component_name == "Lifting Anchor":
+        component = LiftingAnchorsComponent()
+    else:
+        component = BaseComponent(name=component_name)
+    return manage_components_on_selected_objects(tool_remove_components, component)
 
 
 @mcp.tool()

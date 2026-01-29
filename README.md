@@ -20,10 +20,8 @@ To use this server, users must first install and configure an MCP client.
 The server provides the following tools:
 | Tool                             | Description                                                                 |
 |----------------------------------|-----------------------------------------------------------------------------|
-| `put_components`   | Insert Tekla components into the selected elements, using the given name and an optional custom property set |
+| `put_components`   | Insert Tekla components into the selected elements, using the given name and an optional custom property set. Supports intelligent components like `Lifting Anchor` with automatic placement calculations |
 | `remove_components`   | Remove Tekla components with specified name from the selected elements |
-| `put_wall_lifting_anchors`       | Insert `Lifting Anchor (80)` Tekla components in the selected elements      |
-| `remove_wall_lifting_anchors`    | Remove `Lifting Anchor (80)` Tekla components from the selected elements    |
 | `select_elements_by_filter`   | Select elements in Tekla model based on type/Tekla class, name, profile, material, finish and phase |
 | `select_elements_by_filter_name`   | Select elements in Tekla model based on the predefined filter |
 | `select_elements_by_guid`     | Select elements in Tekla model by their GUID                                |

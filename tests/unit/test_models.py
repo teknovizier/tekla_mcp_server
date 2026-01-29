@@ -13,7 +13,7 @@ import pytest
 
 from pydantic_core import ValidationError
 
-from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, ElementTypeModel, ComponentTypeModel, ElementLabelModel, ElementType, LiftingAnchors, ReportProperty, ElementProperties
+from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, ElementTypeModel, ComponentTypeModel, ElementLabelModel, ElementType, LiftingAnchorsComponent, ReportProperty, ElementProperties
 
 
 @pytest.fixture
@@ -83,7 +83,7 @@ def test_get_required_anchors_valid(anchor_types, element_type):
     - Calls `get_required_anchors()` with weight and thickness parameters.
     - Ensures at least two valid anchors are selected.
     """
-    n, valid = LiftingAnchors.get_required_anchors(element_type.name, 2000, 10, anchor_types)
+    n, valid = LiftingAnchorsComponent.get_required_anchors(element_type.name, 2000, 10, anchor_types)
     assert "A" in valid
     assert n == 2
 
@@ -98,7 +98,7 @@ def test_get_required_anchors_try_four(element_type):
     - Ensures the system correctly assigns four anchors.
     """
     anchor_types = {"A": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 1.0}}
-    n, valid = LiftingAnchors.get_required_anchors(element_type.name, 3600, 10, anchor_types)
+    n, valid = LiftingAnchorsComponent.get_required_anchors(element_type.name, 3600, 10, anchor_types)
     assert n == 4
     assert "A" in valid
 
@@ -114,7 +114,7 @@ def test_get_required_anchors_not_valid(element_type):
     """
     anchor_types = {"A": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 0.1}}
     with pytest.raises(ValueError):
-        LiftingAnchors.get_required_anchors(element_type.name, 10000, 10, anchor_types)
+        LiftingAnchorsComponent.get_required_anchors(element_type.name, 10000, 10, anchor_types)
 
 
 def test_calculate_anchor_placement_valid():
@@ -126,7 +126,7 @@ def test_calculate_anchor_placement_valid():
     - Validates correct distance from start and end.
     - Ensures anchors are placed symmetrically.
     """
-    res = LiftingAnchors.calculate_anchor_placement(
+    res = LiftingAnchorsComponent.calculate_anchor_placement(
         min_edge_distance=50,
         element_length=2000,
         cog_x=1000,
@@ -147,7 +147,7 @@ def test_calculate_anchor_placement_too_short():
     - Ensures a `ValueError` is raised due to insufficient space for anchors.
     """
     with pytest.raises(ValueError):
-        LiftingAnchors.calculate_anchor_placement(
+        LiftingAnchorsComponent.calculate_anchor_placement(
             min_edge_distance=900,
             element_length=1000,
             cog_x=500,
@@ -163,7 +163,7 @@ def test_calculate_anchor_placement_four_anchors_requested():
     - Calls the function with **element_length=6000** and **cog_x=3000**.
     - Validates correct anchor spacing and positioning.
     """
-    res = LiftingAnchors.calculate_anchor_placement(
+    res = LiftingAnchorsComponent.calculate_anchor_placement(
         min_edge_distance=50,
         element_length=6000,
         cog_x=3000,
@@ -183,7 +183,7 @@ def test_calculate_anchor_placement_distances_are_multiples_of_5():
     - Calls the function with **element_length=4012**, **cog_x=2006**, **min_edge_distance=50** and **two anchors**.
     - Validates that both `distance_from_start` and `distance_from_end` are multiples of 5.
     """
-    res = LiftingAnchors.calculate_anchor_placement(
+    res = LiftingAnchorsComponent.calculate_anchor_placement(
         min_edge_distance=50,
         element_length=4012,
         cog_x=2006,

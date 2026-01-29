@@ -22,7 +22,7 @@ if os.getenv("CI") == "true":
 from fastmcp import Client
 
 from mcp_server import mcp
-from models import LiftingAnchors
+from models import LiftingAnchorsComponent
 
 from tekla_loader import Point, Beam, Position, ViewHandler
 from tekla_utils import TeklaModel, TeklaModelObject
@@ -82,9 +82,9 @@ def model_objects():
 
 
 @pytest.mark.asyncio
-async def test_put_wall_lifting_anchors_walls(model_objects):
+async def test_put_lifting_anchors_walls(model_objects):
     """
-    Validates the `put_wall_lifting_anchors` function for standard walls.
+    Validates the `put_components` function for lifting anchors on standard walls.
 
     Steps:
     - Selects a test wall (`self.test_wall1`).
@@ -94,15 +94,15 @@ async def test_put_wall_lifting_anchors_walls(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
 
     async with Client(mcp) as client:
-        # Default parameters
-        result1 = await client.call_tool("put_wall_lifting_anchors")
+        # Use put_components with Lifting Anchor name
+        result1 = await client.call_tool("put_components", {"component_name": "Lifting Anchor"})
         assert result1.data["status"] == "success"
 
 
 @pytest.mark.asyncio
-async def test_put_wall_lifting_anchors_sandwich(model_objects):
+async def test_put_lifting_anchors_sandwich(model_objects):
     """
-    Validates the `put_wall_lifting_anchors` function for sandwich walls.
+    Validates the `put_components` function for lifting anchors on sandwich walls.
 
     Steps:
     - Selects a test sandwich wall (`self.test_sw1`).
@@ -111,24 +111,24 @@ async def test_put_wall_lifting_anchors_sandwich(model_objects):
     """
     TeklaModel.select_objects([model_objects["test_sw1"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("put_wall_lifting_anchors")
+        result = await client.call_tool("put_components", {"component_name": "Lifting Anchor"})
         assert result.data["status"] == "success"
 
 
 @pytest.mark.asyncio
-async def test_remove_wall_lifting_anchors(model_objects):
+async def test_remove_lifting_anchors(model_objects):
     """
-    Tests the removal of wall lifting anchors using `remove_wall_lifting_anchors`.
+    Tests the removal of lifting anchors using `remove_components`.
 
     Steps:
     - Places lifting anchors on `self.test_wall1`.
-    - Calls `remove_wall_lifting_anchors()`.
+    - Calls `remove_components()` with Lifting Anchor name.
     - Ensures that the function successfully removes the anchors.
     """
     TeklaModel.select_objects([model_objects["test_wall1"]])
     async with Client(mcp) as client:
-        _ = await client.call_tool("put_wall_lifting_anchors")
-        result2 = await client.call_tool("remove_wall_lifting_anchors")
+        _ = await client.call_tool("put_components", {"component_name": "Lifting Anchor"})
+        result2 = await client.call_tool("remove_components", {"component_name": "Lifting Anchor"})
         assert result2.data["status"] == "success"
 
 
