@@ -17,9 +17,5 @@ build/
 dist/
 mcp_server.spec
 
-# Markdown files except README
-*.md
-!README.md
-
 # uv
 uv.lock
