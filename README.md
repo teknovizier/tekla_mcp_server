@@ -87,16 +87,16 @@ The project includes a comprehensive test suite:
 
 ```bash
 # Run all tests (functional tests will be skipped if Tekla is not running)
-pytest tests/
+uv run pytest tests/
 
 # Run only unit tests
-pytest tests/unit/
+uv run pytest tests/unit/
 
 # Run specific test file
-pytest tests/unit/test_models.py
+uv run pytest tests/unit/test_models.py
 
 # Run specific test function
-pytest tests/unit/test_models.py::test_get_element_type_by_class_valid
+uv run pytest tests/unit/test_models.py::test_get_element_type_by_class_valid
 ```
 
 ⚠️ *Note:* Functional tests modify actual Tekla model. Run them only in test/development environment.
@@ -112,7 +112,7 @@ uv pip install pyinstaller
 Then, generate an executable with:
 
 ```bash
-pyinstaller mcp_server.py
+uv run pyinstaller mcp_server.py
 ```
 
 This will produce a binary file inside the `dist/mcp_server/` directory, which can be distributed without requiring Python installation. Ensure the `_internals` directory is included alongside the binary. 
