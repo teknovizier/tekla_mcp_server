@@ -14,13 +14,15 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
+from typing import Any
+
 from models import ReportProperty
 
 from tekla_loader import Beam, Position, Point
-from tekla_utils import TeklaModelObject, parse_template_attribute, get_wall_pairs
+from tekla_utils import TeklaModelObject, TemplateAttributeParser, get_wall_pairs
 
 
-created_elements = []
+created_elements: Any = []
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -152,14 +154,14 @@ def test_get_all_user_properties_test_property(wall1):
     assert wall1.get_all_user_properties()["TestProperty"] == "TestValue"
 
 
-# Tests for `parse_template_attribute`
+# Tests for TemplateAttributeParser
 @pytest.mark.parametrize(
     "attr_name,expected_type,expected_unit",
     [("ASSEMBLY_TOP_LEVEL", str, None), ("AREA", float, "m2"), ("ASSEMBLY_TOP_LEVEL_UNFORMATTED_BASEPOINT", float, "mm"), ("SHIPMENT_NUMBER", str, None)],
 )
 def test_parse_template_attribute(attr_name, expected_type, expected_unit):
-    """Checks that `parse_template_attribute` returns correct template attributes properties."""
-    rp = parse_template_attribute(attr_name)
+    """Checks that `TemplateAttributeParser.parse` returns correct template attributes properties."""
+    rp = TemplateAttributeParser.parse(attr_name)
 
     assert isinstance(rp, ReportProperty)
     assert rp.name == attr_name

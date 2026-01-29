@@ -222,7 +222,7 @@ class TeklaModelObject:
         Returns the position number of the Tekla model object.
         """
         key = "ASSEMBLY_POS" if self.is_assembly else "PART_POS"
-        return self.get_report_property(key, str)
+        return str(self.get_report_property(key, str))
 
     @property
     def guid(self) -> str:
@@ -305,22 +305,22 @@ class TeklaModelObject:
         weight_rebars = 0.0
 
         # Get the main part
-        weight_main_part = self.main_part.get_report_property("WEIGHT", float)
+        weight_main_part = float(self.main_part.get_report_property("WEIGHT", float))
 
         # Rebars on main part
         for rebar in wrap_model_objects(self.main_part.model_object.GetReinforcements()):
             weight_rebar = rebar.get_report_property("WEIGHT_TOTAL", float)
-            weight_rebars += weight_rebar
+            weight_rebars += float(weight_rebar)
 
         if self.is_assembly:
             # Secondary parts and their rebars
             for secondary in wrap_model_objects(self.model_object.GetSecondaries()):
                 weight_secondary = secondary.get_report_property("WEIGHT", float)
-                weight_secondaries += weight_secondary
+                weight_secondaries += float(weight_secondary)
 
                 for rebar in wrap_model_objects(secondary.model_object.GetReinforcements()):
                     weight_rebar = rebar.get_report_property("WEIGHT_TOTAL", float)
-                    weight_rebars += weight_rebar
+                    weight_rebars += float(weight_rebar)
 
             # Subassemblies
             for subassembly in wrap_model_objects(self.model_object.GetSubAssemblies()):
@@ -328,9 +328,9 @@ class TeklaModelObject:
                 try:
                     rebar_type = subassembly.get_report_property("REBAR_ASSEMBLY_TYPE", str)
                     assert rebar_type  # Must be truthy for rebar assemblies
-                    weight_rebars += weight_sub
+                    weight_rebars += float(weight_sub)
                 except AttributeError:
-                    weight_subassemblies += weight_sub
+                    weight_subassemblies += float(weight_sub)
 
         total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
 
@@ -405,7 +405,7 @@ class TeklaModelObject:
             return False
 
         # Get the volume before the cut
-        volume_before = self.get_report_property("VOLUME", float)
+        volume_before = float(self.get_report_property("VOLUME", float))
 
         cutting_part.model_object.Class = BooleanPart.BooleanOperativeClassName  # Set as a boolean operator
 
@@ -416,7 +416,7 @@ class TeklaModelObject:
 
         # Attempt to insert the cut and check if the volume decreased
         if boolean_cut.Insert():
-            volume_after = self.get_report_property("VOLUME", float)
+            volume_after = float(self.get_report_property("VOLUME", float))
             if volume_after < volume_before:
                 if delete_cutting_part:
                     guid = cutting_part.guid
@@ -490,6 +490,56 @@ class TeklaModelObject:
             raise TypeError("Property type must be one of: str, int, float.")
 
 
+class TemplateAttributeParser:
+    """
+    Lazily loads and parses Tekla attribute definitions from the template file.
+    """
+
+    _cache: dict[str, ReportProperty] = {}
+    _loaded: bool = False
+
+    @classmethod
+    @log_function_call
+    def parse(cls, attribute_name: str) -> ReportProperty:
+        """
+        On first call, this function reads the Tekla template attributes file once,
+        parses all attribute definitions, and caches them in memory. Subsequent calls
+        return cached results instantly without re-reading the file.
+        """
+        if not cls._loaded:
+            config = read_config()
+            logger.debug("Loading Tekla attribute definitions from file '%s'", config["content_attributes_file_path"])
+            with open(config["content_attributes_file_path"], "r", encoding="utf-8") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("//") or stripped.startswith("[") or stripped.lower().startswith("name"):
+                        continue
+
+                    first_split = re.split(r"\s", stripped, maxsplit=1)
+                    if len(first_split) < 2:
+                        continue
+
+                    name = first_split[0].strip()
+                    remainder = first_split[1].strip()
+                    rest_parts = re.split(r"\s{2,}", remainder)
+                    while len(rest_parts) < 8:
+                        rest_parts.append(None)
+
+                    dtype = rest_parts[0]
+                    unit = rest_parts[6] if rest_parts[6] != "*" else None
+
+                    cls._cache[name] = ReportProperty(name=name, data_type=ReportProperty.map_string_to_type(dtype), unit=unit)
+
+            cls._loaded = True
+            logger.info("Tekla attribute definitions loaded and cached")
+
+        if attribute_name in cls._cache:
+            logger.debug("Attribute '%s' found in cache", attribute_name)
+            return cls._cache[attribute_name]
+
+        raise ValueError(f"Attribute '{attribute_name}' not found.")
+
+
 def wrap_model_objects(model_objects):
     """
     Wraps each Tekla ModelObject in a TeklaModelObject.
@@ -499,55 +549,6 @@ def wrap_model_objects(model_objects):
     for model_object in model_objects:
         if isinstance(model_object, Part) or isinstance(model_object, Assembly):
             yield TeklaModelObject(model_object)
-
-
-@log_function_call
-def parse_template_attribute(attribute_name: str) -> ReportProperty:
-    """
-    Lazily loads and parses Tekla attribute definitions from the template file.
-
-    On first call, this function reads the Tekla template attributes file once,
-    parses all attribute definitions, and caches them in memory. Subsequent calls
-    return cached results instantly without re-reading the file.
-    """
-    if not hasattr(parse_template_attribute, "_cache"):
-        parse_template_attribute._cache = {}
-        parse_template_attribute._loaded = False
-
-    # Load file only once
-    if not parse_template_attribute._loaded:
-        config = read_config()
-        logger.debug("Loading Tekla attribute definitions from file '%s'", config["content_attributes_file_path"])
-        with open(config["content_attributes_file_path"], "r", encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if not stripped or stripped.startswith("//") or stripped.startswith("[") or stripped.lower().startswith("name"):
-                    continue
-
-                first_split = re.split(r"\s", stripped, maxsplit=1)
-                if len(first_split) < 2:
-                    continue
-
-                name = first_split[0].strip()
-                remainder = first_split[1].strip()
-                rest_parts = re.split(r"\s{2,}", remainder)
-                while len(rest_parts) < 8:
-                    rest_parts.append(None)
-
-                dtype = rest_parts[0]
-                unit = rest_parts[6] if rest_parts[6] != "*" else None
-
-                parse_template_attribute._cache[name] = ReportProperty(name=name, data_type=dtype, unit=unit)
-
-        parse_template_attribute._loaded = True
-        logger.info("Tekla attribute definitions loaded and cached")
-
-    # Return from cache
-    if attribute_name in parse_template_attribute._cache:
-        logger.debug("Attribute '%s' found in cache", attribute_name)
-        return parse_template_attribute._cache[attribute_name]
-
-    raise ValueError(f"Attribute '{attribute_name}' not found.")
 
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Any:
@@ -666,7 +667,7 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
         raise ValueError("Less than two elements selected. Please select two elements.")
 
     # Step 1. Validate number of floors
-    floor_set = set()
+    floor_set: set[float] = set()
     for wall in selected_walls:
         if round(wall.StartPoint.Z, 2) != round(wall.EndPoint.Z, 2):
             raise ValueError(f"Z-coordinate mismatch for the start point and end point in the wall {wall.Name}.")
@@ -690,8 +691,8 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
     selected_walls.sort(key=lambda w: (w.StartPoint.X, w.StartPoint.Y, w.StartPoint.Z))
 
     # Step 3. Pair bottom_wall with top_wall
-    wall_pairs = []
-    wall_dict = {}
+    wall_pairs: Any = []
+    wall_dict: Any = {}
 
     for wall in selected_walls:
         xy_key = ((round(wall.StartPoint.X, 2), round(wall.StartPoint.Y, 2)), (round(wall.EndPoint.X, 2), round(wall.EndPoint.Y, 2)))

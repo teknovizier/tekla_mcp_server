@@ -17,7 +17,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, mock_open
 
-import clr
+import clr  # noqa: F401
 import System
 
 from init import CONFIG_FILE_PATH, read_config, load_dlls
@@ -83,7 +83,7 @@ def test_read_config_wrong_type(monkeypatch):
     invalid_json = '{"tekla_path": 123}'
     mocked_open = mock_open(read_data=invalid_json)
     monkeypatch.setattr(type(CONFIG_FILE_PATH), "open", mocked_open)
-    with patch("init.logger.exception") as mock_exception, patch("init.sys.exit") as mock_exit:
+    with patch("init.logger.exception") as mock_exception, patch("init.sys.exit") as mock_exit:  # noqa: F841
         read_config()
 
 
@@ -104,9 +104,12 @@ def test_load_dlls_file_not_found_triggers_exception_and_exit():
     Checks error handling when DLL is missing.
     """
     fake_config = {"tekla_path": "C:\\Tekla"}
-    with patch("init.read_config", return_value=fake_config), patch("init.clr.AddReference", side_effect=System.IO.FileNotFoundException), patch("init.logger.exception") as mock_exception, patch(
-        "init.sys.exit"
-    ) as mock_exit:
+    with (
+        patch("init.read_config", return_value=fake_config),
+        patch("init.clr.AddReference", side_effect=System.IO.FileNotFoundException),
+        patch("init.logger.exception") as mock_exception,
+        patch("init.sys.exit") as mock_exit,
+    ):
         load_dlls()
         mock_exception.assert_called_once()
         mock_exit.assert_called_once_with(1)

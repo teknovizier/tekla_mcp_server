@@ -1,2 +1,7 @@
 [tool.ruff]
 line-length = 200
+ignore = ["E402"]
+
+[tool.mypy]
+explicit_package_bases = true
+ignore_missing_imports = true

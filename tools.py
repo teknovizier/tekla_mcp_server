@@ -16,7 +16,6 @@ from models import (
     StringMatchType,
     ElementType,
     ElementLabel,
-    ComponentType,
     BaseComponent,
     LiftingAnchorsComponent,
     ElementTypeModel,
@@ -55,13 +54,13 @@ from tekla_utils import (
     STRING_MATCH_TYPE_MAPPING,
     TeklaModel,
     TeklaModelObject,
+    TemplateAttributeParser,
     wrap_model_objects,
-    parse_template_attribute,
     get_wall_pairs,
     ensure_transformation_plane,
     insert_component,
     insert_detail,
-    insert_seam,
+    insert_seam,  # noqa: F401
 )
 
 from utils import log_function_call
@@ -177,10 +176,9 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
         width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
 
         # Get cast unit total weight
-        weight = assembly.get_report_property("WEIGHT", float)
-
         # Assume the total element weight is increased by 5% to account for the weight of subassemblies and rebars
-        total_weight = weight * 1.05
+        total_weight = float(assembly.get_report_property("WEIGHT", float)) * 1.05
+
         logger.debug("Assuming total weight: %s kg", total_weight)
 
         # Calculate the necessary number of anchors and get their type
@@ -217,10 +215,10 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
 
     # Insert the component
     if component.number == -1:
-        counter = insert_detail(selected_object, component, selected_object.GetCoordinateSystem().Origin)
+        counter = int(insert_detail(selected_object, component, selected_object.GetCoordinateSystem().Origin))
         logger.debug("Inserted %s custom detail components", counter)
     else:
-        counter = insert_component(selected_object, component)
+        counter = int(insert_component(selected_object, component))
         logger.debug("Inserted %s components", counter)
 
     # Handle additional logic for lifting anchors
@@ -232,7 +230,7 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
                 "DistFromPartFinish": distance_from_end + double_anchor_spacing,
             }
             component.update_attributes(updated_attributes)
-            counter += insert_component(selected_object, component)
+            counter += int(insert_component(selected_object, component))
             logger.debug("Inserted additional anchors for 4-anchor configuration. Total number of anchor components: %s", counter)
 
         # Add recesses where necessary
@@ -269,8 +267,6 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
             return False
 
         # Iterate through all boolean parts within the element, identify the recesses for lifting anchors, and create additional cuts where needed
-        import re
-
         boolean_part_enum = selected_object.GetBooleans()
         while boolean_part_enum.MoveNext():
             boolean_part = boolean_part_enum.Current
@@ -340,16 +336,16 @@ def tool_remove_components(model: TeklaModel, component: BaseComponent, *selecte
 @log_function_call
 def tool_select_elements_by_filter(
     model: TeklaModel,
-    element_type: int | list[int] | ElementType = None,
-    name: str = None,
+    element_type: int | list[int] | ElementType | None = None,
+    name: str | None = None,
     name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
-    profile: str = None,
+    profile: str | None = None,
     profile_match_type: StringMatchType = StringMatchType.IS_EQUAL,
-    material: str = None,
+    material: str | None = None,
     material_match_type: StringMatchType = StringMatchType.IS_EQUAL,
-    finish: str = None,
+    finish: str | None = None,
     finish_match_type: StringMatchType = StringMatchType.IS_EQUAL,
-    phase: str = None,
+    phase: str | None = None,
     phase_match_type: StringMatchType = StringMatchType.IS_EQUAL,
 ) -> dict:
     """
@@ -483,7 +479,7 @@ def tool_select_elements_assemblies_or_main_parts(selected_objects: ModelObjectE
 
 
 @log_function_call
-def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: ElementLabel, custom_label: str = None) -> dict:
+def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: ElementLabel, custom_label: str | None = None) -> dict:
     """
     Draws labels for the given Tekla model objects using the GraphicsDrawer.
     """
@@ -494,7 +490,7 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
         if label == ElementLabel.CUSTOM:
             if not custom_label:
                 raise ValueError("Custom label parameter has to be set.")
-            custom_property = parse_template_attribute(custom_label)
+            custom_property = TemplateAttributeParser.parse(custom_label)
             value = selected_object.get_report_property(custom_property.name, custom_property.data_type)
             unit = f" {custom_property.unit}" if custom_property.unit else ""
             text = f"{custom_label} = {value}{unit}"
@@ -706,7 +702,7 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
     processed_elements = 0
     assemblies: list[ElementProperties] = []
     parts: list[ElementProperties] = []
-    custom_props_errors = defaultdict(dict)
+    custom_props_errors: dict[str, dict[str, str]] = defaultdict(dict)
 
     def get_single_element_properties(selected_object: TeklaModelObject) -> ElementProperties:
         weight, _ = selected_object.weight
@@ -714,7 +710,7 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
         if custom_props_definitions:
             for custom_prop_definition in custom_props_definitions:
                 try:
-                    custom_property = parse_template_attribute(custom_prop_definition)
+                    custom_property = TemplateAttributeParser.parse(custom_prop_definition)
                     custom_property.value = selected_object.get_report_property(custom_property.name, custom_property.data_type)
                     custom_properties.append(custom_property)
                 except Exception as e:

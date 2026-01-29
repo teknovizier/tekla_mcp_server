@@ -9,7 +9,7 @@ import math
 
 from enum import Enum
 from pathlib import Path
-from pydantic import BaseModel, Field, PrivateAttr, conint, confloat, field_validator, field_serializer
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
 from pydantic_core import PydanticCustomError
 from typing import Any, ClassVar
 
@@ -343,7 +343,7 @@ class LiftingAnchorsComponent(BaseComponent):
     name: str = Field(default="Lifting Anchor", init=False, description="The name of the Tekla component. Always `Lifting Anchor`.")
 
     # Private attributes
-    _safety_margin: conint(ge=0, le=50) = PrivateAttr()
+    _safety_margin: int = PrivateAttr()
 
     def __init__(self, **data):
         data["name"] = "Lifting Anchor"
@@ -408,8 +408,8 @@ class LiftingAnchorsComponent(BaseComponent):
 
         # By default, place anchors at L/4 from COG
         distance_from_cog = element_length / 4
-        distance_from_start = math.floor((cog_x - distance_from_cog) / 5) * 5
-        distance_from_end = math.floor((element_length - cog_x - distance_from_cog) / 5) * 5
+        distance_from_start: float = math.floor((cog_x - distance_from_cog) / 5) * 5
+        distance_from_end: float = math.floor((element_length - cog_x - distance_from_cog) / 5) * 5
 
         required_length = distance_from_start + 2 * distance_from_cog + distance_from_end
         double_anchor_spacing = min_edge_distance  # Assume the distance between anchors to be equal to the minimum edge distance
@@ -468,8 +468,12 @@ class ReportProperty(BaseModel):
         """
         Converts a string like `FLOAT` to the corresponding Python type.
         """
-        type_map = {"FLOAT": float, "CHARACTER": str, "INTEGER": int}
-        return type_map.get(v.upper(), str)  # .upper() for safety
+        if isinstance(v, type):
+            return v  # already a Python type
+        if isinstance(v, str):
+            type_map = {"FLOAT": float, "CHARACTER": str, "INTEGER": int}
+            return type_map.get(v.upper(), str)  # .upper() for safety
+        raise TypeError(f"Cannot convert {v!r} to a Python type")
 
     @field_serializer("data_type")
     def serialize_type(self, v: type, _info):

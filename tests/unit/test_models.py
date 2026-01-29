@@ -13,7 +13,18 @@ import pytest
 
 from pydantic_core import ValidationError
 
-from models import SelectionModeModel, UDASetModeModel, StringMatchTypeModel, ElementTypeModel, ComponentTypeModel, ElementLabelModel, ElementType, LiftingAnchorsComponent, ReportProperty, ElementProperties
+from models import (
+    SelectionModeModel,
+    UDASetModeModel,
+    StringMatchTypeModel,
+    ElementTypeModel,
+    ComponentTypeModel,
+    ElementLabelModel,
+    ElementType,
+    LiftingAnchorsComponent,
+    ReportProperty,
+    ElementProperties,
+)
 
 
 @pytest.fixture

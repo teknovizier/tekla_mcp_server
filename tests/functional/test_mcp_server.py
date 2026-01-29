@@ -22,7 +22,6 @@ if os.getenv("CI") == "true":
 from fastmcp import Client
 
 from mcp_server import mcp
-from models import LiftingAnchorsComponent
 
 from tekla_loader import Point, Beam, Position, ViewHandler
 from tekla_utils import TeklaModel, TeklaModelObject

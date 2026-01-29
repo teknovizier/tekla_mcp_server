@@ -39,7 +39,7 @@ def read_config() -> dict[str, Any]:
     Missing or invalid keys result in an exception, and the application exits.
     """
 
-    def validate_config(config) -> dict[str, Any]:
+    def validate_config(config) -> None:
         """
         Validates the structure of the configuration data.
 

@@ -10,13 +10,13 @@ from collections.abc import Callable
 
 from fastmcp import FastMCP
 
-from init import logger
 from models import (
     SelectionModeModel,
     UDASetModeModel,
     StringMatchTypeModel,
     ElementTypeModel,
     ElementLabelModel,
+    ElementType,
     ComponentType,
     BaseComponent,
     LiftingAnchorsComponent,
@@ -84,7 +84,7 @@ def put_components(component_name: str, attributes_set: str | None = None, custo
 
     # Create appropriate component type based on name
     if component_name == "Lifting Anchor":
-        component = LiftingAnchorsComponent(attributes_set=attributes_set, custom_attributes=custom_attributes)
+        component: BaseComponent = LiftingAnchorsComponent(attributes_set=attributes_set, custom_attributes=custom_attributes)
     else:
         component = BaseComponent(name=component_name, attributes_set=attributes_set, custom_attributes=custom_attributes)
     return manage_components_on_selected_objects(tool_put_components, component)
@@ -104,7 +104,7 @@ def remove_components(component_name: str) -> dict[str, Any]:
 
     # Create appropriate component type based on name
     if component_name == "Lifting Anchor":
-        component = LiftingAnchorsComponent()
+        component: BaseComponent = LiftingAnchorsComponent()
     else:
         component = BaseComponent(name=component_name)
     return manage_components_on_selected_objects(tool_remove_components, component)
@@ -113,16 +113,16 @@ def remove_components(component_name: str) -> dict[str, Any]:
 @mcp.tool()
 @log_mcp_tool_call
 def select_elements_by_filter(
-    element_type: int | list[int] | str = None,
-    name: str = None,
+    element_type: str | int | list[int] | ElementType | None = None,
+    name: str | None = None,
     name_match_type: str = "Is Equal",
-    profile: str = None,
+    profile: str | None = None,
     profile_match_type: str = "Is Equal",
-    material: str = None,
+    material: str | None = None,
     material_match_type: str = "Is Equal",
-    finish: str = None,
+    finish: str | None = None,
     finish_match_type: str = "Is Equal",
-    phase: str = None,
+    phase: str | None = None,
     phase_match_type: str = "Is Equal",
 ) -> dict[str, Any]:
     """
@@ -227,7 +227,7 @@ def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
 
 @mcp.tool()
 @log_mcp_tool_call
-def draw_elements_labels(label: str = None, custom_label: str = None) -> dict[str, Any]:
+def draw_elements_labels(label: str | None = None, custom_label: str | None = None) -> dict[str, Any]:
     """
     Draws temporary labels in the Tekla model.
 
@@ -335,7 +335,7 @@ def get_all_elements_udas() -> dict[str, Any]:
 
 @mcp.tool()
 @log_mcp_tool_call
-def get_elements_properties(custom_props_definitions: list[str] = None):
+def get_elements_properties(custom_props_definitions: list[str] | None = None):
     """
     Retrieves key properties for the selected elements (assemblies or parts) in the Tekla model.
 
