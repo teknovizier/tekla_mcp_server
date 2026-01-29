@@ -70,13 +70,22 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
 
 # MCP tools
 @mcp.tool()
-def put_components(component_name: str, component_properties: str = None) -> dict[str, Any]:
+def put_components(component_name: str, attributes_set: str | None = None, custom_attributes: dict[str, Any] | str | None = None) -> dict[str, Any]:
     """
     Inserts Tekla components into the selected objects, using the given
-    component name and an optional custom set of properties.
+    component name and an optional custom attributes.
+
+    Args:
+        component_name: The name of the Tekla component
+        attributes_set: The name of the Tekla component attributes set to use
+        custom_attributes: Custom attributes to apply to the component (dict or JSON string)
     """
 
-    component = BaseComponent(name=component_name, properties=component_properties)
+    component = BaseComponent(
+        name=component_name,
+        attributes_set=attributes_set,
+        custom_attributes=custom_attributes
+    )
     return manage_components_on_selected_objects(tool_put_components, component)
 
 
@@ -91,13 +100,22 @@ def remove_components(component_name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def put_wall_lifting_anchors(component_properties: str = None, safety_margin: int = None) -> dict[str, Any]:
+def put_wall_lifting_anchors(
+    attributes_set: str | None = None, custom_attributes: dict[str, Any] | str | None = None
+) -> dict[str, Any]:
     """
     Inserts wall lifting anchors into selected objects, using the given
-    an optional custom set of properties and an optional safety margin (5% by default).
+    an optional custom attributes.
+
+    Args:
+        attributes_set: The name of the Tekla component attributes set to use
+        custom_attributes: Custom attributes to apply to the component (dict or JSON string)
     """
 
-    component = LiftingAnchors(properties=component_properties, safety_margin=safety_margin)
+    component = LiftingAnchors(
+        attributes_set=attributes_set,
+        custom_attributes=custom_attributes
+    )
     return manage_components_on_selected_objects(tool_put_wall_lifting_anchors, component)
 
 

@@ -1,3 +1,6 @@
 {
-    "Lifting Anchor": 30000080
+    "Lifting Anchor": {
+      "number": 30000080,
+      "safety_margin": 5
+    }
 }

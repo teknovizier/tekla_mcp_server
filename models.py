@@ -215,11 +215,12 @@ class ElementTypeModel(EnumWrapper):
         return ElementType(self.value)
 
     @staticmethod
-    def get_element_type_by_class(class_number: str) -> tuple[str, str]:
+    def get_element_type_by_class(class_number: str | int) -> tuple[str, str]:
         """
         Returns (material, element type name) for a given class number using the mapping.
         """
-        class_number = int(class_number)
+        if isinstance(class_number, str):
+            class_number = int(class_number)
         for material, types in ELEMENT_TYPE_MAPPING.items():
             for element_type, class_numbers in types.items():
                 if class_number in class_numbers:
@@ -264,7 +265,8 @@ class BaseComponent(BaseModel):
     """
 
     name: str = Field(description="The name of the Tekla component.")
-    properties: str | None = Field(default="standard", description="The name of the Tekla component properties set to use (`standard` by default).")
+    attributes_set: str | None = Field(default="standard", description="The name of the Tekla component attributes set to use (`standard` by default).")
+    custom_attributes: dict[str, Any] | str | None = Field(default=None, description="Custom attributes to apply to the component. Can be a dictionary or JSON string.")
 
     # Private attributes
     _number: int = PrivateAttr()
@@ -275,10 +277,30 @@ class BaseComponent(BaseModel):
         """
         Initializes private attributes after model creation.
         """
-        self._number = BASE_COMPONENTS.get(self.name, -1)
+        self._number = BASE_COMPONENTS.get(self.name, {}).get("number", -1)
         self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT  # Default to custom detail component
-        if self.properties is None:
-            self.properties = "standard"
+
+        if self.attributes_set is None:
+            self.attributes_set = "standard"
+
+        # Initialize attributes from custom_attributes if provided
+        if self.custom_attributes:
+            if isinstance(self.custom_attributes, str):
+                try:
+                    custom_attrs = json.loads(self.custom_attributes)
+                    if not isinstance(custom_attrs, dict):
+                        raise ValueError("custom_attributes JSON must parse to a dictionary")
+                    if self._attributes is None:
+                        self._attributes = {}
+                    self._attributes.update(custom_attrs)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON in custom_attributes: {e}")
+            elif isinstance(self.custom_attributes, dict):
+                if self._attributes is None:
+                    self._attributes = {}
+                self._attributes.update(self.custom_attributes)
+            else:
+                raise TypeError("custom_attributes must be a dictionary or JSON string")
 
     # Getters
     @property
@@ -287,7 +309,7 @@ class BaseComponent(BaseModel):
         return self._number
 
     @property
-    def component_type(self) -> str:
+    def component_type(self) -> ComponentType:
         """Returns `_component_type`"""
         return self._component_type
 

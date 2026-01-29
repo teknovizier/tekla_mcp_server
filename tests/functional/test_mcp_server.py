@@ -89,7 +89,6 @@ async def test_put_wall_lifting_anchors_walls(model_objects):
     Steps:
     - Selects a test wall (`self.test_wall1`).
     - Applies default lifting anchor placement.
-    - Tests with a 10% safety margin.
     - Ensures that the operation returns a "success" status.
     """
     TeklaModel.select_objects([model_objects["test_wall1"]])
@@ -98,10 +97,6 @@ async def test_put_wall_lifting_anchors_walls(model_objects):
         # Default parameters
         result1 = await client.call_tool("put_wall_lifting_anchors")
         assert result1.data["status"] == "success"
-
-        # Custom safety margin
-        result2 = await client.call_tool("put_wall_lifting_anchors", {"safety_margin": 10})
-        assert result2.data["status"] == "success"
 
 
 @pytest.mark.asyncio

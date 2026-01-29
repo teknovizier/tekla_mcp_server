@@ -60,7 +60,7 @@ def test_get_element_type_by_class_valid(input_val, expected):
     [
         ("999999", ValueError),
         ("not_a_number", ValueError),
-        (None, TypeError),
+        (None, ValueError),
         ("-1", ValueError),
     ],
 )
