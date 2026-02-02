@@ -42,6 +42,7 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 - GPT-4o
 - DeepSeek
 - Gemini 2.0 Flash
+- Qwen3
 
 ## Requirements
 
