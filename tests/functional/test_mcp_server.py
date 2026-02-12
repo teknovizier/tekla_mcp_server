@@ -23,11 +23,19 @@ from fastmcp import Client
 
 from mcp_server import mcp
 
+from models import StringMatchType
 from tekla_loader import Point, Beam, Position, ViewHandler
+from tekla_loader import (
+    BinaryFilterExpressionCollection,
+    PartFilterExpressions,
+    ObjectFilterExpressions,
+    TeklaStructuresDatabaseTypeEnum
+)
 from tekla_utils import TeklaModel, TeklaModelObject
+from tools import add_filter
 
 
-def create_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):
+def create_mcp_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):
     """
     Utility function to create a beam.
     """
@@ -43,21 +51,41 @@ def create_test_beam(name, start_point, end_point, profile, material="Concrete_U
     return beam
 
 
+def cleanup_mcp_test_objects():
+    """
+    Utility function to clean up all MCP test objects by name pattern.
+    Handles cases where objects were converted or modified during tests.
+    """
+    model = TeklaModel()
+
+    filter_collection = BinaryFilterExpressionCollection()
+    add_filter(filter_collection, ObjectFilterExpressions.Type(), TeklaStructuresDatabaseTypeEnum.PART)
+    add_filter(filter_collection, PartFilterExpressions.Name(), "MCP_TEST_", StringMatchType.STARTS_WITH)
+
+    test_objects = model.get_objects_by_filter(filter_collection)
+
+    if test_objects:
+        for test_obj in test_objects:
+            test_obj.Delete()
+
+        model.commit_changes()
+
+
 @pytest.fixture(scope="module")
 def model_objects():
     """
     Fixture: Test setup and teardown.
     """
     model = TeklaModel()
-    test_wall1 = create_test_beam("TEST_WALL1", Point(0, 0, 0), Point(2000, 0, 0), "3000*200")
-    test_wall2 = create_test_beam("TEST_WALL2", Point(0, 0, 3020), Point(2000, 0, 3020), "3000*200")
-    test_wall3 = create_test_beam("TEST_WALL3", Point(2000, 0, 0), Point(4000, 0, 0), "3000*200")
-    test_wall4 = create_test_beam("TEST_WALL4", Point(2000, 0, 3020), Point(4000, 0, 3020), "3000*200")
-    test_sw1 = create_test_beam("TEST_SW1", Point(4000, 0, 0), Point(6000, 0, 0), "3000*200", class_type="8")
-    test_slab1 = create_test_beam("TEST_SLAB1", Point(1000, 0, 3020), Point(1000, 6000, 3020), "P20(200X1200)", class_type="3")
+    test_wall1 = create_mcp_test_beam("MCP_TEST_WALL1", Point(0, 0, 0), Point(2000, 0, 0), "3000*200")
+    test_wall2 = create_mcp_test_beam("MCP_TEST_WALL2", Point(0, 0, 3020), Point(2000, 0, 3020), "3000*200")
+    test_wall3 = create_mcp_test_beam("MCP_TEST_WALL3", Point(2000, 0, 0), Point(4000, 0, 0), "3000*200")
+    test_wall4 = create_mcp_test_beam("MCP_TEST_WALL4", Point(2000, 0, 3020), Point(4000, 0, 3020), "3000*200")
+    test_sw1 = create_mcp_test_beam("MCP_TEST_SW1", Point(4000, 0, 0), Point(6000, 0, 0), "3000*200", class_type="8")
+    test_slab1 = create_mcp_test_beam("MCP_TEST_SLAB1", Point(1000, 0, 3020), Point(1000, 6000, 3020), "P20(200X1200)", class_type="3")
 
-    void1 = create_test_beam("VOID_TEST_WALL3", Point(3000, 0, 1000), Point(3000, 200, 1000), "D400", class_type="0")
-    void2 = create_test_beam("VOID_FLOATING", Point(3000, 0, 10000), Point(3000, 200, 10000), "D400", class_type="0")
+    void1 = create_mcp_test_beam("MCP_TEST_VOID_WALL3", Point(3000, 0, 1000), Point(3000, 200, 1000), "D400", class_type="0")
+    void2 = create_mcp_test_beam("MCP_TEST_VOID_FLOATING", Point(3000, 0, 10000), Point(3000, 200, 10000), "D400", class_type="0")
 
     model.commit_changes()
 
@@ -74,9 +102,7 @@ def model_objects():
         "void2": void2,
     }
 
-    for obj in [test_wall1, test_wall2, test_wall3, test_wall4, test_sw1, test_slab1, void1, void2]:
-        if obj.Identifier.IsValid():
-            obj.Delete()
+    cleanup_mcp_test_objects()
     model.commit_changes()
 
 
@@ -194,13 +220,13 @@ async def test_select_elements_filter_basic(kwargs, expected):
 @pytest.mark.parametrize(
     "kwargs,expected",
     [
-        ({"element_type": "Wall", "name": "TEST_WALL2"}, 1),
-        ({"element_type": [8], "name": "TEST_WALL2"}, None),
-        ({"element_type": 8, "name": "TEST_WALL2"}, None),
-        ({"element_type": [1], "name": "TEST_WALL2"}, 1),
-        ({"name": "TEST_WALL2"}, 1),
+        ({"element_type": "Wall", "name": "MCP_TEST_WALL2"}, 1),
+        ({"element_type": [8], "name": "MCP_TEST_WALL2"}, None),
+        ({"element_type": 8, "name": "MCP_TEST_WALL2"}, None),
+        ({"element_type": [1], "name": "MCP_TEST_WALL2"}, 1),
+        ({"name": "MCP_TEST_WALL2"}, 1),
         ({"name": "EST_WALL2", "name_match_type": "Ends With"}, 1),
-        ({"name": "TEST_WALL2", "name_match_type": "Contains"}, 1),
+        ({"name": "MCP_TEST_WALL2", "name_match_type": "Contains"}, 1),
     ],
 )
 @pytest.mark.asyncio
@@ -231,10 +257,10 @@ async def test_select_elements_by_profile():
 @pytest.mark.parametrize(
     "name,match_type,expected",
     [
-        ("TEST_WALL", "Contains", "success"),
-        ("TEST_WALL8585", "Starts With", "error"),
-        ("TEST_WALL8585", "Ends With", "error"),
-        ("TEST_WALL", "Is Equal", "error"),
+        ("MCP_TEST_WALL", "Contains", "success"),
+        ("MCP_TEST_WALL8585", "Starts With", "error"),
+        ("MCP_TEST_WALL8585", "Ends With", "error"),
+        ("MCP_TEST_WALL", "Is Equal", "error"),
     ],
 )
 @pytest.mark.asyncio
@@ -284,7 +310,7 @@ async def test_select_elements_by_guid(model_objects):
         result = await client.call_tool("select_elements_by_guid", {"guids": [""]})
         assert result.data["status"] == "error"
 
-        result = await client.call_tool("select_elements_by_guid", {"guids": ["TEST_WALL2"]})
+        result = await client.call_tool("select_elements_by_guid", {"guids": ["MCP_TEST_WALL2"]})
         assert result.data["status"] == "error"
 
         # Valid single GUID
@@ -307,7 +333,7 @@ async def test_select_elements_assemblies(model_objects, mode, expected_count):
     Tests the `select_elements_assemblies_or_main_parts` function to ensure correct assembly selection.
 
     Steps:
-    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
     - Verifies selection behavior under different modes.
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
@@ -324,7 +350,7 @@ async def test_draw_elements_labels(model_objects):
     Tests that `draw_elements_labels` function can be run.
 
     Steps:
-    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
     - Calls drawing method without arguments.
     - Verifies success and redraws views.
     """
@@ -345,7 +371,7 @@ async def test_draw_elements_labels_with_label(model_objects):
     Tests that `draw_elements_labels` function can be run with a specific label value (`Profile`).
 
     Steps:
-    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
     - Calls drawing method with label argument.
     - Verifies success and redraws views.
     """
@@ -367,7 +393,7 @@ async def test_draw_elements_labels_with_valid_custom_label(model_objects):
     Tests that `draw_elements_labels` function can be run with a specific custom label value (`AREA_NET`).
 
     Steps:
-    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
     - Calls drawing method with `custom_label` argument.
     - Verifies success and redraws views.
     """
@@ -389,7 +415,7 @@ async def test_draw_elements_labels_with_invalid_custom_label(model_objects):
     Tests that `draw_elements_labels` handles an invalid custom label (`InvalidProperty`).
 
     Steps:
-    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
     - Calls drawing method with invalid `custom_label` argument.
     - Asserts that the response status is `error` and that two elements were selected.
     - Redraws views.
@@ -411,7 +437,7 @@ async def test_zoom_to_selection(model_objects):
     Tests that `zoom_to_selection` function can be run.
 
     Steps:
-    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
     - Calls a method.
     - Verifies success and redraws views.
     """
@@ -432,7 +458,7 @@ async def test_show_only_selected(model_objects):
     Tests that `show_only_selected` function can be run.
 
     Steps:
-    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
     - Calls a drawing method.
     - Verifies success and redraws views.
     """
@@ -453,7 +479,7 @@ async def test_cut_elements_with_zero_class_parts(model_objects):
     Tests the `cut_elements_with_zero_class_parts` tool.
 
     Steps:
-    1. Selects `TEST_WALL3` and `TEST_WALL4`.
+    1. Selects `MCP_TEST_WALL3` and `MCP_TEST_WALL4`.
     2. Run the cut tool.
     3. Verifies success.
     """
@@ -462,7 +488,7 @@ async def test_cut_elements_with_zero_class_parts(model_objects):
         result = await client.call_tool("cut_elements_with_zero_class_parts", {"delete_cutting_parts": False})
         assert result.data["status"] == "success"
         assert result.data["selected_elements"] == 2
-        assert result.data["processed_elements"] == 1  # Only `TEST_WALL1` should be cut
+        assert result.data["processed_elements"] == 1  # Only `MCP_TEST_WALL1` should be cut
         assert result.data["performed_cuts"] >= 1  # At least one cut should be applied
 
 
@@ -472,7 +498,7 @@ async def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):
     Tests the `convert_cut_parts_to_real_parts` function when no cuts are present.
 
     Steps:
-    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
     - Verifies that the tool returns "error" because no cuts exist.
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
@@ -487,7 +513,7 @@ async def test_convert_cut_parts_to_real_parts_with_cut(model_objects):
     Tests the `convert_cut_parts_to_real_parts` function when a valid cut part exists.
 
     Steps:
-    - Selects `TEST_WALL3`, which is intersected by `VOID_CUT_WALL3`.
+    - Selects `MCP_TEST_WALL3`, which is intersected by `MCP_TEST_VOID_WALL3`.
     - Verifies that the conversion tool returns "success" after the cut is applied.
     """
     TeklaModel.select_objects([model_objects["test_wall3"]])
@@ -503,7 +529,7 @@ async def test_convert_cut_parts_to_real_parts(model_objects):
     Tests the `convert_cut_parts_to_real_parts` function.
 
     Steps:
-    - Selects `TEST_WALL1` and `TEST_WALL2`.
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
     - Verifies it returns "error" when no cut parts are present.
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
@@ -527,40 +553,45 @@ async def test_set_elements_udas(model_objects):
 
     async with Client(mcp) as client:
         # Initial UDA assignment using OVERWRITE mod
-        initial_udas = {"TEST_UDA1": "TEST_VALUE_1", "TEST_UDA2": "TEST_VALUE_2"}
+        initial_udas = {"MCP_TEST_UDA1": "MCP_TEST_VALUE_1", "MCP_TEST_UDA2": "MCP_TEST_VALUE_2"}
         result = await client.call_tool("set_elements_udas", {"udas": initial_udas, "mode": "Overwrite Existing Values"})
         assert result.data["status"] == "success"
         assert result.data["processed_elements"] == 1
         assert result.data["updated_attributes"] == 2
 
         wall = TeklaModelObject(wall)
-        value = wall.get_user_property("TEST_UDA1", str)
-        assert value == "TEST_VALUE_1"
-        value = wall.get_user_property("TEST_UDA2", str)
-        assert value == "TEST_VALUE_2"
+        value = wall.get_user_property("MCP_TEST_UDA1", str)
+        assert value == "MCP_TEST_VALUE_1"
+        value = wall.get_user_property("MCP_TEST_UDA2", str)
+        assert value == "MCP_TEST_VALUE_2"
 
         # KEEP mode: should not overwrite
-        update_attempt = {"TEST_UDA1": "TEST_VALUE_1_UPD", "TEST_UDA2": "TEST_VALUE_2_UPD"}
+        update_attempt = {"MCP_TEST_UDA1": "MCP_TEST_VALUE_1_UPD", "MCP_TEST_UDA2": "MCP_TEST_VALUE_2_UPD"}
         result = await client.call_tool("set_elements_udas", {"udas": update_attempt, "mode": "Keep Existing Values"})
 
-        value = wall.get_user_property("TEST_UDA1", str)
-        assert value == "TEST_VALUE_1"
-        value = wall.get_user_property("TEST_UDA2", str)
-        assert value == "TEST_VALUE_2"
+        value = wall.get_user_property("MCP_TEST_UDA1", str)
+        assert value == "MCP_TEST_VALUE_1"
+        value = wall.get_user_property("MCP_TEST_UDA2", str)
+        assert value == "MCP_TEST_VALUE_2"
 
         # OVERWRITE mode: now it should update
         result = await client.call_tool("set_elements_udas", {"udas": update_attempt, "mode": "Overwrite Existing Values"})
 
-        value = wall.get_user_property("TEST_UDA1", str)
-        assert value == "TEST_VALUE_1_UPD"
-        value = wall.get_user_property("TEST_UDA2", str)
-        assert value == "TEST_VALUE_2_UPD"
+        value = wall.get_user_property("MCP_TEST_UDA1", str)
+        assert value == "MCP_TEST_VALUE_1_UPD"
+        value = wall.get_user_property("MCP_TEST_UDA2", str)
+        assert value == "MCP_TEST_VALUE_2_UPD"
 
 
 @pytest.mark.asyncio
 async def test_get_all_elements_udas_empty(model_objects):
     """
     Tests the `get_all_elements_udas` MCP tool: empty UDAs.
+
+    Steps:
+    - Selects `MCP_TEST_SW1` and `MCP_TEST_SLAB1`.
+    - Calls `get_all_elements_udas`.
+    - Verifies that no UDAs are returned.
     """
     elements_to_select = [
         model_objects["test_sw1"],
@@ -587,6 +618,12 @@ async def test_get_all_elements_udas_empty(model_objects):
 async def test_get_elements_properties_basic_assembly_properties(model_objects):
     """
     Tests the `get_elements_properties` MCP tool: basic assembly properties.
+
+    Steps:
+    - Selects `MCP_TEST_WALL1`, `MCP_TEST_WALL2`, `MCP_TEST_SW1`, and `MCP_TEST_SLAB1`.
+    - Calls `select_elements_assemblies_or_main_parts` with "Assembly" mode.
+    - Calls `get_elements_properties`.
+    - Verifies the response contains expected assembly data.
     """
     elements_to_select = [
         model_objects["test_wall1"],
@@ -621,6 +658,12 @@ async def test_get_elements_properties_basic_assembly_properties(model_objects):
 async def test_get_elements_properties_known_values_for_assemblies(model_objects):
     """
     Tests the `get_elements_properties` MCP tool: known values for assemblies.
+
+    Steps:
+    - Selects `MCP_TEST_WALL1`, `MCP_TEST_WALL2`, `MCP_TEST_SW1`, and `MCP_TEST_SLAB1`.
+    - Calls `select_elements_assemblies_or_main_parts` with "Assembly" mode.
+    - Calls `get_elements_properties`.
+    - Verifies the returned values match expected profiles, classes, and weights.
     """
     elements_to_select = [
         model_objects["test_wall1"],
@@ -639,31 +682,37 @@ async def test_get_elements_properties_known_values_for_assemblies(model_objects
         classes = {a["name"]: a["tekla_class"] for a in assemblies}
         weights = {a["name"]: a["weight"] for a in assemblies}
 
-        assert "TEST_WALL1" in names
-        assert "TEST_WALL2" in names
-        assert "TEST_SW1" in names
-        assert "TEST_SLAB1" in names
+        assert "MCP_TEST_WALL1" in names
+        assert "MCP_TEST_WALL2" in names
+        assert "MCP_TEST_SW1" in names
+        assert "MCP_TEST_SLAB1" in names
 
-        assert profiles["TEST_WALL1"] == "3000*200"
-        assert profiles["TEST_WALL2"] == "3000*200"
-        assert profiles["TEST_SW1"] == "3000*200"
-        assert profiles["TEST_SLAB1"] == "P20(200X1200)"
+        assert profiles["MCP_TEST_WALL1"] == "3000*200"
+        assert profiles["MCP_TEST_WALL2"] == "3000*200"
+        assert profiles["MCP_TEST_SW1"] == "3000*200"
+        assert profiles["MCP_TEST_SLAB1"] == "P20(200X1200)"
 
-        assert classes["TEST_WALL1"] == "1"
-        assert classes["TEST_WALL2"] == "1"
-        assert classes["TEST_SW1"] == "8"
-        assert classes["TEST_SLAB1"] == "3"
+        assert classes["MCP_TEST_WALL1"] == "1"
+        assert classes["MCP_TEST_WALL2"] == "1"
+        assert classes["MCP_TEST_SW1"] == "8"
+        assert classes["MCP_TEST_SLAB1"] == "3"
 
-        assert weights["TEST_WALL1"] == pytest.approx(2880.0, abs=0.1)
-        assert weights["TEST_WALL2"] == pytest.approx(2880.0, abs=0.1)
-        assert weights["TEST_SW1"] == pytest.approx(2880.0, abs=50.0)
-        assert weights["TEST_SLAB1"] == pytest.approx(1761.8, abs=0.1)
+        assert weights["MCP_TEST_WALL1"] == pytest.approx(2880.0, abs=0.1)
+        assert weights["MCP_TEST_WALL2"] == pytest.approx(2880.0, abs=0.1)
+        assert weights["MCP_TEST_SW1"] == pytest.approx(2880.0, abs=50.0)
+        assert weights["MCP_TEST_SLAB1"] == pytest.approx(1761.8, abs=0.1)
 
 
 @pytest.mark.asyncio
 async def test_get_elements_properties_valid_custom_properties(model_objects):
     """
     Tests the `get_elements_properties` MCP tool: valid custom properties.
+
+    Steps:
+    - Selects `MCP_TEST_WALL1`, `MCP_TEST_WALL2`, `MCP_TEST_SW1`, and `MCP_TEST_SLAB1`.
+    - Calls `select_elements_assemblies_or_main_parts` with "Assembly" mode.
+    - Calls `get_elements_properties` with custom property definition "ASSEMBLY_TOP_LEVEL".
+    - Verifies the custom property values are correctly retrieved.
     """
     elements_to_select = [
         model_objects["test_wall1"],
@@ -678,16 +727,22 @@ async def test_get_elements_properties_valid_custom_properties(model_objects):
 
         assemblies = json.loads(result.data["assemblies_list"])
         top_levels = {a["name"]: prop["value"] for a in assemblies for prop in a["custom_properties"] if prop["name"] == "ASSEMBLY_TOP_LEVEL"}
-        assert top_levels["TEST_WALL1"] == " +3.000"
-        assert top_levels["TEST_WALL2"] == " +6.020"
-        assert top_levels["TEST_SW1"] == " +3.000"
-        assert top_levels["TEST_SLAB1"] == " +3.220"
+        assert top_levels["MCP_TEST_WALL1"] == " +3.000"
+        assert top_levels["MCP_TEST_WALL2"] == " +6.020"
+        assert top_levels["MCP_TEST_SW1"] == " +3.000"
+        assert top_levels["MCP_TEST_SLAB1"] == " +3.220"
 
 
 @pytest.mark.asyncio
 async def test_get_elements_properties_invalid_and_missing_custom_properties(model_objects):
     """
     Tests the `get_elements_properties` MCP tool: invalid and missing custom properties.
+
+    Steps:
+    - Selects `MCP_TEST_WALL1`, `MCP_TEST_WALL2`, `MCP_TEST_SW1`, and `MCP_TEST_SLAB1`.
+    - Calls `select_elements_assemblies_or_main_parts` with "Assembly" mode.
+    - Calls `get_elements_properties` with a mix of valid, invalid, and non-existent custom properties.
+    - Verifies that invalid properties return "N/A" and errors are captured.
     """
     elements_to_select = [
         model_objects["test_wall1"],
