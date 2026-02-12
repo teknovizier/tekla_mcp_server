@@ -3,7 +3,7 @@ Module for tools used for Tekla model operations.
 """
 
 from typing import Any
-from collections import defaultdict
+from collections import defaultdict, Counter
 from collections.abc import Callable
 import json
 import re
@@ -749,4 +749,39 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
         "assemblies_list": serialized_assemblies,
         "parts_list": serialized_parts,
         "custom_properties_errors": custom_props_errors,
+    }
+
+
+@log_function_call
+def tool_get_elements_cut_parts(selected_objects: ModelObjectEnumerator) -> dict:
+    """
+    Extracts cut parts from selected elements and groups them by profile.
+    """
+    processed_elements = 0
+    cut_parts_by_profile: Counter[str] = Counter()
+
+    for selected_object in selected_objects:
+        boolean_part_enum = selected_object.GetBooleans()
+        while boolean_part_enum.MoveNext():
+            boolean_part = boolean_part_enum.Current
+            if isinstance(boolean_part, BooleanPart):
+                operative_part = boolean_part.OperativePart
+                if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT:
+                    profile = operative_part.Profile.ProfileString
+                    cut_parts_by_profile[profile] += 1
+        processed_elements += 1
+
+    sorted_profiles = sorted(cut_parts_by_profile.items(), key=lambda x: x[0])
+
+    cut_parts_list = [{"profile": profile, "count": count} for profile, count in sorted_profiles]
+    serialized_cut_parts = json.dumps(cut_parts_list, ensure_ascii=False, indent=2)
+
+    total_cut_parts = sum(cut_parts_by_profile.values())
+    logger.info("Found %s cut parts across %s profiles in %s elements", total_cut_parts, len(sorted_profiles), processed_elements)
+    return {
+        "status": "success" if cut_parts_list else "warning",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "total_cut_parts": total_cut_parts,
+        "cut_parts_list": serialized_cut_parts,
     }

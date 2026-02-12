@@ -39,6 +39,7 @@ from tools import (
     tool_set_elements_udas,
     tool_get_all_elements_udas,
     tool_get_elements_properties,
+    tool_get_elements_cut_parts,
 )
 from tekla_utils import TeklaModel
 from utils import log_mcp_tool_call
@@ -364,6 +365,23 @@ def get_elements_properties(custom_props_definitions: list[str] | None = None):
 
     selected_objects = TeklaModel().get_selected_objects()
     return tool_get_elements_properties(selected_objects, custom_props_definitions)
+
+
+@mcp.tool()
+@log_mcp_tool_call
+def get_elements_cut_parts():
+    """
+    Finds all cut parts in the selected elements and returns a summary grouped by profile.
+
+    The returned data to be presented in a Markdown table format, with columns for:
+    - Profile: The profile string of the cut part
+    - Count: The number of cut parts with that profile
+
+    Also, show total number of cut parts found across all profiles and total number of elements that were processed.
+    """
+
+    selected_objects = TeklaModel().get_selected_objects()
+    return tool_get_elements_cut_parts(selected_objects)
 
 
 # Run the MCP server locally

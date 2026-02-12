@@ -721,3 +721,82 @@ async def test_get_elements_properties_invalid_and_missing_custom_properties(mod
             for key, msg in prop_errors.items():
                 assert isinstance(key, str)
                 assert isinstance(msg, str)
+
+
+@pytest.mark.asyncio
+async def test_get_elements_cut_parts_with_cuts(model_objects):
+    """
+    Tests the `get_elements_cut_parts` MCP tool: elements with cut parts.
+
+    Steps:
+    1. Selects `test_wall3` which has a boolean cut from `void1`.
+    2. Calls `get_elements_cut_parts`.
+    3. Verifies the response contains the expected cut parts data.
+    """
+    TeklaModel.select_objects([model_objects["test_wall3"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("get_elements_cut_parts")
+
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 1
+        assert result.data["processed_elements"] == 1
+        assert result.data["total_cut_parts"] >= 1
+
+        cut_parts = json.loads(result.data["cut_parts_list"])
+        assert isinstance(cut_parts, list)
+        assert len(cut_parts) >= 1
+
+        # Verify the structure of cut parts
+        for cut_part in cut_parts:
+            assert "profile" in cut_part
+            assert "count" in cut_part
+            assert isinstance(cut_part["profile"], str)
+            assert isinstance(cut_part["count"], int)
+
+
+@pytest.mark.asyncio
+async def test_get_elements_cut_parts_without_cuts(model_objects):
+    """
+    Tests the `get_elements_cut_parts` MCP tool: elements without cut parts.
+
+    Steps:
+    1. Selects `test_wall1` which has no boolean cuts.
+    2. Calls `get_elements_cut_parts`.
+    3. Verifies the response indicates no cut parts were found.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("get_elements_cut_parts")
+
+        assert result.data["status"] == "warning"
+        assert result.data["selected_elements"] == 1
+        assert result.data["processed_elements"] == 1
+        assert result.data["total_cut_parts"] == 0
+
+        cut_parts = json.loads(result.data["cut_parts_list"])
+        assert isinstance(cut_parts, list)
+        assert len(cut_parts) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_elements_cut_parts_multiple_elements(model_objects):
+    """
+    Tests the `get_elements_cut_parts` MCP tool: multiple elements with cuts.
+
+    Steps:
+    1. Selects `test_wall3` and `test_wall4` where only `test_wall3` has a cut.
+    2. Calls `get_elements_cut_parts`.
+    3. Verifies the response correctly counts cuts across all selected elements.
+    """
+    TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("get_elements_cut_parts")
+
+        assert result.data["status"] == "success"
+        assert result.data["selected_elements"] == 2
+        assert result.data["processed_elements"] == 2
+        assert result.data["total_cut_parts"] >= 1
+
+        cut_parts = json.loads(result.data["cut_parts_list"])
+        assert isinstance(cut_parts, list)
+        assert len(cut_parts) >= 1
