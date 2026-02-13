@@ -347,6 +347,10 @@ def get_elements_properties(custom_props_definitions: list[str] | None = None):
     """
     Retrieves key properties for the selected elements (assemblies or parts) in the Tekla model.
 
+    ### Input:
+    - `custom_props_definitions`: A list of custom property names that should be retrieved for the elements.
+
+    ### Output:
     The returned data to be presented in a Markdown table format, each row represents one element, with columns for:
     - Position
     - GUID
@@ -363,10 +367,10 @@ def get_elements_properties(custom_props_definitions: list[str] | None = None):
         - Finish
         - Class
     - Weight (kg), rounded to one decimal place
-    - Any available custom properties defined in `custom_props_definitions`
+    - Any available custom properties defined in `custom_props_definitions`.
 
-    Each custom property column header must include its unit in parentheses, if available. For example, if the property is "Area" and its unit is "m²", the column header should be "Area (m²)".
-    If no unit is available, use just the property name.
+    ### Notes:
+    Each custom property column header must include its unit in parentheses, if available. For example, if the property is "AREA" and its unit is "m²", the column header should be "AREA (m²)". If no unit is available, use just the property name. Property names must be displayed exactly as they are in the source data, without any formatting or transformation applied.
     If a property fails to retrieve, display "N/A" in the corresponding cell.
     """
 

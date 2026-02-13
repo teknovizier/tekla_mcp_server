@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable
 
 from init import read_config, logger
 from models import StringMatchType, BaseComponent, ReportProperty
+from attribute_mapper import get_attribute_mapper, AttributeMapper
 
 from tekla_loader import (
     Identifier,
@@ -493,10 +494,77 @@ class TeklaModelObject:
 class TemplateAttributeParser:
     """
     Lazily loads and parses Tekla attribute definitions from the template file.
+    Supports semantic matching - tries exact match first, then falls back to semantic similarity.
     """
 
     _cache: dict[str, ReportProperty] = {}
     _loaded: bool = False
+    _embeddings_cache: dict[str, list[float]] = {}
+    _semantic_loaded: bool = False
+    _model = None
+    _mapper: Any = None
+
+    @classmethod
+    def _get_mapper(cls):
+        if cls._mapper is None:
+            cls._mapper = get_attribute_mapper()
+            if cls._mapper:
+                cls._mapper._ensure_model_loaded()
+        return cls._mapper
+
+    @classmethod
+    def _get_model(cls):
+        mapper = cls._get_mapper()
+        if cls._model is None and mapper:
+            cls._model = mapper._model
+        return cls._model
+
+    @classmethod
+    def _ensure_semantic_loaded(cls) -> None:
+        if cls._semantic_loaded or not cls._get_model():
+            return
+
+        model = cls._get_model()
+        if not model:
+            return
+
+        attribute_names = list(cls._cache.keys())
+        if not attribute_names:
+            return
+
+        embeddings = model.encode(attribute_names)
+        cls._embeddings_cache = {name: emb.tolist() for name, emb in zip(attribute_names, embeddings)}
+        cls._semantic_loaded = True
+        logger.info("Generated embeddings for %d template attributes", len(attribute_names))
+
+    @classmethod
+    def _semantic_match(cls, user_input: str) -> str | None:
+        cls._ensure_semantic_loaded()
+        if not cls._embeddings_cache:
+            return None
+
+        mapper = cls._get_mapper()
+        if not mapper:
+            return None
+
+        model = cls._get_model()
+        if not model:
+            return None
+
+        user_embedding = model.encode(user_input)
+        best_match = None
+        best_score = 0.0
+        threshold = mapper.threshold
+
+        for attr_name, attr_embedding in cls._embeddings_cache.items():
+            score = AttributeMapper._cosine_similarity(user_embedding, attr_embedding)
+            if score >= threshold and score > best_score:
+                best_score = score
+                best_match = attr_name
+
+        if best_match:
+            logger.debug("Semantic match: '%s' -> '%s' (score: %.2f)", user_input, best_match, best_score)
+        return best_match
 
     @classmethod
     @log_function_call
@@ -505,6 +573,8 @@ class TemplateAttributeParser:
         On first call, this function reads the Tekla template attributes file once,
         parses all attribute definitions, and caches them in memory. Subsequent calls
         return cached results instantly without re-reading the file.
+
+        Tries exact match first, then falls back to semantic matching if exact fails.
         """
         if not cls._loaded:
             config = read_config()
@@ -536,6 +606,11 @@ class TemplateAttributeParser:
         if attribute_name in cls._cache:
             logger.debug("Attribute '%s' found in cache", attribute_name)
             return cls._cache[attribute_name]
+
+        matched_name = cls._semantic_match(attribute_name)
+        if matched_name:
+            logger.debug("Semantic match found: '%s' -> '%s'", attribute_name, matched_name)
+            return cls._cache[matched_name]
 
         raise ValueError(f"Attribute '{attribute_name}' not found.")
 

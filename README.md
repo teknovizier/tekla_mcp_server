@@ -45,7 +45,9 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 - Gemini 2.0 Flash
 - Qwen3
 
-The server uses **sentence-transformers** to enable semantic attribute mapping, converting user-friendly names to Tekla config attributes based on embedding similarity. The default model is `all-MiniLM-L6-v2` from Huggingface. This lets you use natural terms like "rebar size" and automatically map them to the correct config key, such as "SBSize_list", so you don't have to remember the exact attribute names.
+The server uses **sentence-transformers** to enable semantic attribute mapping, converting user-friendly names to Tekla attributes based on embedding similarity. The default model is `all-MiniLM-L6-v2` from Huggingface. This works for both:
+- Component attributes: use natural terms like "rebar size" and automatically map them to the correct attribute (e.g., "SBSize_list")
+- Template attributes: use natural terms like "area netto" or "assembly bottom level" and automatically map them to the correct Tekla attribute (e.g., "AREA_NET", "ASSEMBLY_BOTTOM_LEVEL")
 
 ## Requirements
 
