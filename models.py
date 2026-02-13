@@ -125,7 +125,23 @@ with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"),
 
 # Components
 with open(Path(__file__).parent.joinpath("config", "base_components.json"), "r", encoding="utf-8") as file:
-    BASE_COMPONENTS = json.load(file)
+    BASE_COMPONENTS: dict[str, dict[str, Any]] = json.load(file)
+
+
+def get_custom_attributes_schema(component_name: str) -> dict[str, dict[str, str]] | None:
+    """
+    Returns the custom_attributes schema for a given component name.
+
+    Args:
+        component_name: The name of the component
+
+    Returns:
+        Dictionary of custom attributes with their descriptions and types, or None if not defined
+    """
+    component = BASE_COMPONENTS.get(component_name)
+    if component:
+        return component.get("custom_attributes")
+    return None
 
 
 # Classes

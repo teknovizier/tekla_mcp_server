@@ -1,6 +1,31 @@
 {
-    "Lifting Anchor": {
-      "number": 30000080,
-      "safety_margin": 5
+  "Lifting Anchor": {
+    "number": 30000080,
+    "safety_margin": 5
+  },
+  "Border Rebar": {
+    "number": 150000092,
+    "custom_attributes": {
+      "SBSize_list": {
+        "description": "rebar size",
+        "type": "str"
+      },
+      "SBGrade_list": {
+        "description": "rebar grade",
+        "type": "str"
+      },
+      "SBRadius_list": {
+        "description": "rebar bending radius",
+        "type": "float"
+      },
+      "SBEndCondLeft": {
+        "description": "end conditions left",
+        "type": "int"
+      },
+      "SBEndCondRight": {
+        "description": "end conditions right",
+        "type": "int"
+      }
     }
+  }
 }

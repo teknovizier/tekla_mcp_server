@@ -43,6 +43,7 @@ from tools import (
 )
 from tekla_utils import TeklaModel
 from utils import log_mcp_tool_call
+from attribute_mapper import map_attributes
 
 
 mcp = FastMCP("Tekla MCP Server")
@@ -69,25 +70,31 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
 
 # MCP tools
 @mcp.tool()
-def put_components(component_name: str, attributes_set: str | None = None, custom_attributes: dict[str, Any] | str | None = None) -> dict[str, Any]:
+def put_components(
+    component_name: str,
+    attributes_set: str | None = None,
+    custom_attributes: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Inserts Tekla components into the selected objects, using the given
     component name and an optional custom attributes.
 
-    Supported standard components:
-    - `Lifting Anchor`
-
     Args:
         component_name: The name of the Tekla component
         attributes_set: The name of the Tekla component attributes set to use
-        custom_attributes: Custom attributes to apply to the component (dict or JSON string)
+        custom_attributes: Custom attributes to apply to the component (dict)
     """
 
-    # Create appropriate component type based on name
+    resolved_custom_attributes = custom_attributes
+    if custom_attributes:
+        mapped = map_attributes(custom_attributes, component_name)
+        if mapped:
+            resolved_custom_attributes = mapped
+
     if component_name == "Lifting Anchor":
-        component: BaseComponent = LiftingAnchorsComponent(attributes_set=attributes_set, custom_attributes=custom_attributes)
+        component: BaseComponent = LiftingAnchorsComponent(attributes_set=attributes_set, custom_attributes=resolved_custom_attributes)
     else:
-        component = BaseComponent(name=component_name, attributes_set=attributes_set, custom_attributes=custom_attributes)
+        component = BaseComponent(name=component_name, attributes_set=attributes_set, custom_attributes=resolved_custom_attributes)
     return manage_components_on_selected_objects(tool_put_components, component)
 
 

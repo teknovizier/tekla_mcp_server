@@ -25,12 +25,7 @@ from mcp_server import mcp
 
 from models import StringMatchType
 from tekla_loader import Point, Beam, Position, ViewHandler
-from tekla_loader import (
-    BinaryFilterExpressionCollection,
-    PartFilterExpressions,
-    ObjectFilterExpressions,
-    TeklaStructuresDatabaseTypeEnum
-)
+from tekla_loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
 from tekla_utils import TeklaModel, TeklaModelObject
 from tools import add_filter
 
@@ -155,6 +150,70 @@ async def test_remove_lifting_anchors(model_objects):
         _ = await client.call_tool("put_components", {"component_name": "Lifting Anchor"})
         result2 = await client.call_tool("remove_components", {"component_name": "Lifting Anchor"})
         assert result2.data["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_put_components_invalid_component(model_objects):
+    """
+    Tests `put_components` with an invalid component name.
+
+    Steps:
+    - Selects `self.test_wall1`.
+    - Calls `put_components` with non-existent component name.
+    - Verifies that it returns an error status.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("put_components", {"component_name": "NonExistentComponent"})
+        assert result.data["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_put_components_with_mapped_attributes(model_objects):
+    """
+    Tests attribute mapping in `put_components` for Border Rebar.
+
+    Steps:
+    - Selects `self.test_wall1`.
+    - Calls `put_components` with "Border Rebar" and custom_attributes using user-friendly names.
+    - Verifies successful placement.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_attributes": {"rebar size": "10", "rebar grade": "B500B"}})
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_put_components_without_attribute_mapping(model_objects):
+    """
+    Tests `put_components` with explicit config attribute names (no mapping needed).
+
+    Steps:
+    - Selects `self.test_wall1`.
+    - Calls `put_components` with direct config attribute names.
+    - Verifies successful placement.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_attributes": {"SBSize_list": "12", "SBGrade_list": "B500B"}})
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_put_components_partial_attribute_mapping(model_objects):
+    """
+    Tests attribute mapping when some keys map and some don't.
+
+    Steps:
+    - Selects `self.test_wall1`.
+    - Provides mix of mappable and non-mappable keys.
+    - Verifies successful placement.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_attributes": {"rebar size": "10", "unknown attribute": "value"}})
+        assert result.data["status"] == "success"
 
 
 @pytest.mark.asyncio
