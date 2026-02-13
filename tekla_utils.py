@@ -70,13 +70,26 @@ STRING_MATCH_TYPE_MAPPING = {
 class TeklaModel:
     """
     A wrapper class around the Tekla Structures Model object.
+    Uses singleton pattern to reuse the connection.
     """
 
+    _instance: "TeklaModel | None" = None
+
+    def __new__(cls) -> "TeklaModel":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self):
+        if self._initialized:
+            logger.debug("Reusing existing Tekla model connection")
+            return
         self._model = Model()
         if not self._model.GetConnectionStatus():
             raise ConnectionError("Cannot connect to Tekla model. Please check that Tekla Structures is running and the model is opened.")
         logger.debug("Connected to Tekla model")
+        self._initialized = True
 
     @property
     def model(self) -> Model:
