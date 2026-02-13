@@ -43,7 +43,9 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 - GPT-4o
 - DeepSeek
 - Gemini 2.0 Flash
+- Gemini 2.5 Flash
 - Qwen3
+- gpt-oss
 
 The server uses **sentence-transformers** to enable semantic attribute mapping, converting user-friendly names to Tekla attributes based on embedding similarity. The default model is `all-MiniLM-L6-v2` from Huggingface. This works for both:
 - Component attributes: use natural terms like "rebar size" and automatically map them to the correct attribute (e.g., "SBSize_list")
