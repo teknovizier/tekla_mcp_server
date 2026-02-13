@@ -119,6 +119,13 @@ ELEMENT_LABELS = {e.value for e in ElementLabel}
 with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", encoding="utf-8") as file:
     ELEMENT_TYPE_MAPPING: dict[str, dict[str, list[int]]] = json.load(file)
 
+# Pre-built lookup: class_number -> (material, element_type)
+CLASS_TO_ELEMENT: dict[int, tuple[str, str]] = {}
+for material, types in ELEMENT_TYPE_MAPPING.items():
+    for element_type, class_numbers in types.items():
+        for cn in class_numbers:
+            CLASS_TO_ELEMENT[cn] = (material, element_type)
+
 # Lifting anchor types
 with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"), "r", encoding="utf-8") as file:
     LIFTING_ANCHOR_TYPES = json.load(file)
@@ -237,12 +244,10 @@ class ElementTypeModel(EnumWrapper):
         """
         if isinstance(class_number, str):
             class_number = int(class_number)
-        for material, types in ELEMENT_TYPE_MAPPING.items():
-            for element_type, class_numbers in types.items():
-                if class_number in class_numbers:
-                    return material, element_type
-
-        raise ValueError(f"Class number {class_number} not found in the list of allowed classes.")
+        result = CLASS_TO_ELEMENT.get(class_number)
+        if result is None:
+            raise ValueError(f"Class number {class_number} not found in the list of allowed classes.")
+        return result
 
 
 class ComponentTypeModel(EnumWrapper):
