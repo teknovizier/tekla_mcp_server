@@ -20,7 +20,7 @@ To use this server, users must first install and configure an MCP client.
 The server provides the following tools:
 | Tool                             | Description                                                                 |
 |----------------------------------|-----------------------------------------------------------------------------|
-| `put_components`   | Insert Tekla components into the selected elements, using the given name and an optional custom property set. Supports intelligent components like `Lifting Anchor` with automatic placement calculations |
+| `put_components`   | Insert Tekla components with optional semantic attribute mapping that converts user-friendly names (e.g., "rebar size") to config keys (e.g., "SBSize_list"). Supports intelligent components like `Lifting Anchor` with automatic placement calculations |
 | `remove_components`   | Remove Tekla components with specified name from the selected elements |
 | `select_elements_by_filter`   | Select elements in Tekla model based on type/Tekla class, name, profile, material, finish and phase |
 | `select_elements_by_filter_name`   | Select elements in Tekla model based on the predefined filter |
@@ -45,6 +45,8 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 - Gemini 2.0 Flash
 - Qwen3
 
+The server uses **sentence-transformers** to enable semantic attribute mapping, converting user-friendly names to Tekla config attributes based on embedding similarity. The default model is `all-MiniLM-L6-v2` from Huggingface. This lets you use natural terms like "rebar size" and automatically map them to the correct config key, such as "SBSize_list", so you don't have to remember the exact attribute names.
+
 ## Requirements
 
 Python 3.11 or newer, along with some libraries, is required. You can install all the necessary libraries by running:
@@ -63,10 +65,12 @@ uv pip install -r requirements.txt
 |-----------------------|----------------------------------------------------|---------------------------------------------------------------------------------|
 | `tekla_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin" | The path to the directory where Tekla Structures is located                      |
 | `content_attributes_file_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin\\applications\\Tekla\\Tools\\TplEd\\settings\\contentattributes_global.lst" | The path to the `contentattributes_global.lst` file                      |
+| `attribute_mapper.embedding_model`          | "all-MiniLM-L6-v2" | Sentence-transformers model for semantic attribute matching                      |
+| `attribute_mapper.embedding_threshold`          | 0.3 | Minimum similarity score (0-1) for attribute mapping                     |
 
 * Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
 * Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model
-* Rename `config/base_components.sample.json` to `config/base_components.json`, and specify the names and component numbers you'd like to make available to the MCP server
+* Rename `config/base_components.sample.json` to `config/base_components.json`, and specify the names and component numbers you'd like to make available to the MCP server. Components can optionally include `custom_attributes` with descriptions for semantic mapping
 * Configure `mcp_server.py` as a custom MCP server in your MCP client
 
  ⚠️ *Note:* For the detailed steps, please see the [setup guide](https://www.notion.so/teknovizier/Tekla-MCP-Server-A-Tool-to-Improve-Your-Modeling-Workflows-264250689e1380f38a1be0b60477786b).
@@ -79,6 +83,7 @@ The project includes a comprehensive test suite:
 - `test_init.py`: Configuration loading, DLL initialization and error handling
 - `test_models.py`: Data model validation
 - `test_tekla_utils.py`: Tekla API wrapper tests
+- `test_attribute_mapper.py`: Semantic attribute mapping with cosine similarity
 
 ### Functional Tests (`tests/functional/`)
 - `test_mcp_server.py`: End-to-end MCP tool integration tests
