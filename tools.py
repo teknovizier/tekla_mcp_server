@@ -5,7 +5,6 @@ Module for tools used for Tekla model operations.
 from typing import Any
 from collections import defaultdict, Counter
 from collections.abc import Callable
-import json
 import re
 
 from init import logger
@@ -20,6 +19,7 @@ from models import (
     LiftingAnchorsComponent,
     ElementTypeModel,
     ElementProperties,
+    ComponentType,
 )
 
 from tekla_loader import (
@@ -63,10 +63,26 @@ from tekla_utils import (
     insert_seam,  # noqa: F401
 )
 
-from utils import log_function_call
+from utils import serialize_to_json, log_function_call
 
 
 # Helper functions
+@log_function_call
+def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    """
+    Applies a component operation to selected objects in the Tekla model using a specified callback function.
+    """
+
+    tekla_model = TeklaModel()
+    selected_objects = tekla_model.get_selected_objects()
+    if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
+        return process_detail_or_component(selected_objects, callback, tekla_model, component, *args, **kwargs)
+    elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
+        return process_seam_or_connection(selected_objects, callback, tekla_model, component, *args, **kwargs)
+    logger.warning("Unsupported component type: %s", component.component_type)
+    return {"status": "error", "message": f"Unsupported component type: {component.component_type}"}
+
+
 @log_function_call
 def add_filter(
     filter_collection: BinaryFilterExpressionCollection,
@@ -128,6 +144,8 @@ def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback
     It validates the number of selected objects, ensuring that exactly two are selected.
     """
     total_selected = selected_objects.GetSize()
+    if total_selected == 0:
+        raise ValueError("No elements selected. Please select two elements.")
     if total_selected == 1:
         raise ValueError("Only one element selected. Please select two elements.")
     if total_selected > 2:
@@ -161,7 +179,7 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
     """
 
     # Check if this is a lifting anchor component
-    is_lifting_anchor = True if isinstance(component, LiftingAnchorsComponent) else False
+    is_lifting_anchor = isinstance(component, LiftingAnchorsComponent)
 
     # Handle lifting anchor specific logic
     if is_lifting_anchor:
@@ -308,10 +326,13 @@ def tool_remove_components(model: TeklaModel, component: BaseComponent, *selecte
     Removes components with the specified number and name from the specified object in the Tekla model.
     Handles special cleanup for intelligent components like lifting anchors.
     """
+    if not selected_objects:
+        raise ValueError("No elements selected. Please select at least one element.")
+
     counter = 0
 
     # Special handling for lifting anchors - remove recess cuts first
-    is_lifting_anchor = True if isinstance(component, LiftingAnchorsComponent) else False
+    is_lifting_anchor = isinstance(component, LiftingAnchorsComponent)
     if is_lifting_anchor:
         for selected_object in selected_objects:
             boolean_part_enum = selected_object.GetBooleans()
@@ -737,9 +758,8 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
             parts.append(metadata)
         processed_elements += 1
 
-    # JSON serialization
-    serialized_assemblies = json.dumps([a.model_dump() for a in assemblies], ensure_ascii=False, indent=2)
-    serialized_parts = json.dumps([a.model_dump() for a in parts], ensure_ascii=False, indent=2)
+    serialized_assemblies = serialize_to_json([a.model_dump() for a in assemblies])
+    serialized_parts = serialize_to_json([a.model_dump() for a in parts])
 
     logger.info("Retrieved properties for %s elements", processed_elements)
     return {
@@ -774,7 +794,7 @@ def tool_get_elements_cut_parts(selected_objects: ModelObjectEnumerator) -> dict
     sorted_profiles = sorted(cut_parts_by_profile.items(), key=lambda x: x[0])
 
     cut_parts_list = [{"profile": profile, "count": count} for profile, count in sorted_profiles]
-    serialized_cut_parts = json.dumps(cut_parts_list, ensure_ascii=False, indent=2)
+    serialized_cut_parts = serialize_to_json(cut_parts_list)
 
     total_cut_parts = sum(cut_parts_by_profile.values())
     logger.info("Found %s cut parts across %s profiles in %s elements", total_cut_parts, len(sorted_profiles), processed_elements)

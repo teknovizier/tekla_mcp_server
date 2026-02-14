@@ -6,7 +6,16 @@ from functools import wraps
 from collections.abc import Callable
 from typing import Any
 
+import json
+
 from init import logger
+
+
+def serialize_to_json(data: Any) -> str:
+    """
+    Serializes data to a JSON string with consistent formatting.
+    """
+    return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def log_function_call(func: Callable) -> Callable:
@@ -45,7 +54,7 @@ def log_mcp_tool_call(func: Callable) -> Callable:
         logger.info("[%s] called with args=%s, kwargs=%s", func.__name__, args, kwargs)
         try:
             return func(*args, **kwargs)
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError, KeyError) as e:
             logger.exception("[%s] failed:", func.__name__)
             return {"status": "error", "message": str(e)}
 

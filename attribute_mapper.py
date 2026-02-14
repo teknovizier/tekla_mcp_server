@@ -8,6 +8,8 @@ This module provides functionality to:
 4. Convert values to expected types from config
 """
 
+import threading
+
 from typing import Any
 
 from init import logger, read_config
@@ -143,16 +145,19 @@ class AttributeMapper:
 
 
 _attribute_mapper_instance: AttributeMapper | None = None
+_lock = threading.Lock()
 
 
 def get_attribute_mapper() -> AttributeMapper | None:
     global _attribute_mapper_instance
     if _attribute_mapper_instance is None:
-        try:
-            _attribute_mapper_instance = AttributeMapper()
-        except ImportError as e:
-            logger.warning("Attribute mapper unavailable: %s", e)
-            return None
+        with _lock:
+            if _attribute_mapper_instance is None:
+                try:
+                    _attribute_mapper_instance = AttributeMapper()
+                except ImportError as e:
+                    logger.warning("Attribute mapper unavailable: %s", e)
+                    return None
     return _attribute_mapper_instance
 
 

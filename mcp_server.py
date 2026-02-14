@@ -6,7 +6,6 @@ speed-up modeling processes.
 """
 
 from typing import Any
-from collections.abc import Callable
 
 from fastmcp import FastMCP
 
@@ -17,14 +16,12 @@ from models import (
     ElementTypeModel,
     ElementLabelModel,
     ElementType,
-    ComponentType,
     BaseComponent,
     LiftingAnchorsComponent,
 )
 
 from tools import (
-    process_detail_or_component,
-    process_seam_or_connection,
+    manage_components_on_selected_objects,
     tool_put_components,
     tool_remove_components,
     tool_select_elements_by_filter,
@@ -47,25 +44,6 @@ from attribute_mapper import map_attributes
 
 
 mcp = FastMCP("Tekla MCP Server")
-
-
-# Helper functions
-@log_mcp_tool_call
-def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
-    """
-    Applies a component operation to selected objects in the Tekla model using a specified callback function.
-    """
-
-    tekla_model = TeklaModel()
-    selected_objects = tekla_model.get_selected_objects()
-    result = {}
-    if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
-        result = process_detail_or_component(selected_objects, callback, tekla_model, component, *args, **kwargs)
-    elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
-        result = process_seam_or_connection(selected_objects, callback, tekla_model, component, *args, **kwargs)
-    else:
-        pass  # For other types do nothing
-    return result
 
 
 # MCP tools
@@ -102,9 +80,6 @@ def put_components(
 def remove_components(component_name: str) -> dict[str, Any]:
     """
     Removes Tekla components from selected objects.
-
-    Supported standard components:
-    - `Lifting Anchor`
 
     Args:
         component_name: The name of the Tekla component
@@ -252,8 +227,8 @@ def draw_elements_labels(label: str | None = None, custom_label: str | None = No
     """
 
     selected_objects = TeklaModel().get_selected_objects()
-    label = label or "Name"
-    label_enum = ElementLabelModel(value=label).to_enum()
+    label_value = "Name" if label is None else label
+    label_enum = ElementLabelModel(value=label_value).to_enum()
     return tool_draw_elements_labels(selected_objects, label_enum, custom_label)
 
 
@@ -310,7 +285,7 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
 @log_mcp_tool_call
 def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
     """
-    Finds boolean parts and inserts them as real model objects.
+    Sets user-defined attributes (UDAs) on selected elements.
 
     Valid modes:
     - `Keep Existing Values`
@@ -343,7 +318,7 @@ def get_all_elements_udas() -> dict[str, Any]:
 
 @mcp.tool()
 @log_mcp_tool_call
-def get_elements_properties(custom_props_definitions: list[str] | None = None):
+def get_elements_properties(custom_props_definitions: list[str] | None = None) -> dict[str, Any]:
     """
     Retrieves key properties for the selected elements (assemblies or parts) in the Tekla model.
 
@@ -380,7 +355,7 @@ def get_elements_properties(custom_props_definitions: list[str] | None = None):
 
 @mcp.tool()
 @log_mcp_tool_call
-def get_elements_cut_parts():
+def get_elements_cut_parts() -> dict[str, Any]:
     """
     Finds all cut parts in the selected elements and returns a summary grouped by profile.
 

@@ -28,6 +28,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set logging level to DEBUG for detailed output
 
+# Config cache
+_config_cache: dict[str, Any] | None = None
+
 
 # Functions
 def read_config() -> dict[str, Any]:
@@ -37,29 +40,47 @@ def read_config() -> dict[str, Any]:
     The configuration file is expected to be located in the same directory as the script.
     This function ensures that all required keys are present and have the correct data types.
     Missing or invalid keys result in an exception, and the application exits.
+    Results are cached for subsequent calls.
     """
+    global _config_cache
+
+    if _config_cache is not None:
+        return _config_cache
 
     def validate_config(config) -> None:
         """
         Validates the structure of the configuration data.
 
-        Checks that all required keys are present and have the correct types.
+        Checks that all required keys are present, have correct types, and paths exist.
         """
+        required_keys = {
+            "tekla_path": str,
+            "content_attributes_file_path": str,
+        }
 
-        required_keys = {"tekla_path": str, "content_attributes_file_path": str}
-
-        # Check for required keys and types at the top level
         for key, expected_type in required_keys.items():
             if key not in config:
-                raise ValueError(f"Missing required key: '{key}'")
-            elif not isinstance(config[key], expected_type):
-                raise ValueError(f"Key `{key}` must be of type {expected_type.__name__}, but got {type(config[key]).__name__}")
+                raise ValueError(f"Missing required key: '{key}'. Please add '{key}' to settings.json")
+            if not isinstance(config[key], expected_type):
+                raise ValueError(f"Invalid type for '{key}': expected {expected_type.__name__}, got {type(config[key]).__name__}. Please check settings.json")
+
+        # Validate paths exist
+        tekla_path = Path(config["tekla_path"])
+        if not tekla_path.exists():
+            raise ValueError(f"tekla_path does not exist: {tekla_path}. Please verify the path in settings.json")
+        if not tekla_path.is_dir():
+            raise ValueError(f"tekla_path must be a directory: {tekla_path}. Please verify the path in settings.json")
+
+        attr_path = Path(config["content_attributes_file_path"])
+        if not attr_path.exists():
+            raise ValueError(f"content_attributes_file_path does not exist: {attr_path}. Please verify the path in settings.json")
 
     try:
         with CONFIG_FILE_PATH.open("r", encoding="utf-8") as f:
             config = json.load(f)
             validate_config(config)
             logger.info("Successfully read config file")
+            _config_cache = config
             return config
     except FileNotFoundError as e:
         logger.exception("Configuration file not found: %s", e)
@@ -70,6 +91,30 @@ def read_config() -> dict[str, Any]:
     except ValueError as e:
         logger.exception("Invalid configuration file structure: %s", e)
         sys.exit(1)
+
+
+def read_json_config(filename: str) -> dict[str, Any]:
+    """
+    Read and parse a JSON configuration file.
+
+    Args:
+        filename: Name of the config file (e.g., "element_types.json")
+
+    Returns:
+        Parsed JSON data
+
+    Raises:
+        FileNotFoundError: If the config file doesn't exist
+        json.JSONDecodeError: If the file contains invalid JSON
+    """
+    file_path = Path(__file__).parent.joinpath("config", filename)
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Configuration file not found: {file_path}")
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(f"Invalid JSON in {filename}: {e}", e.doc, e.pos)
 
 
 def load_dlls() -> bool:

@@ -8,12 +8,11 @@ import json
 import math
 
 from enum import Enum
-from pathlib import Path
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
 from pydantic_core import PydanticCustomError
 from typing import Any, ClassVar
 
-from init import logger
+from init import logger, read_json_config
 from utils import log_function_call
 
 
@@ -116,8 +115,7 @@ COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
 
 # Element types by material (supports both "Steel" and "Concrete")
-with open(Path(__file__).parent.joinpath("config", "element_types.json"), "r", encoding="utf-8") as file:
-    ELEMENT_TYPE_MAPPING: dict[str, dict[str, list[int]]] = json.load(file)
+ELEMENT_TYPE_MAPPING: dict[str, dict[str, list[int]]] = read_json_config("element_types.json")
 
 # Pre-built lookup: class_number -> (material, element_type)
 CLASS_TO_ELEMENT: dict[int, tuple[str, str]] = {}
@@ -127,12 +125,10 @@ for material, types in ELEMENT_TYPE_MAPPING.items():
             CLASS_TO_ELEMENT[cn] = (material, element_type)
 
 # Lifting anchor types
-with open(Path(__file__).parent.joinpath("config", "lifting_anchor_types.json"), "r", encoding="utf-8") as file:
-    LIFTING_ANCHOR_TYPES = json.load(file)
+LIFTING_ANCHOR_TYPES: dict[str, Any] = read_json_config("lifting_anchor_types.json")
 
 # Components
-with open(Path(__file__).parent.joinpath("config", "base_components.json"), "r", encoding="utf-8") as file:
-    BASE_COMPONENTS: dict[str, dict[str, Any]] = json.load(file)
+BASE_COMPONENTS: dict[str, dict[str, Any]] = read_json_config("base_components.json")
 
 
 def get_custom_attributes_schema(component_name: str) -> dict[str, dict[str, str]] | None:
