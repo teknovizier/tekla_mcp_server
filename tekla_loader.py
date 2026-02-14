@@ -10,6 +10,7 @@ from init import load_dlls
 
 load_dlls()
 from System.Collections import ArrayList, Hashtable
+from System.Collections.Generic import List
 from Tekla.Structures import Identifier, TeklaStructuresDatabaseTypeEnum, PositionTypeEnum, DetailTypeEnum, AutoDirectionTypeEnum
 from Tekla.Structures.Geometry3d import AABB, Point, Vector
 from Tekla.Structures.Model import (
@@ -30,7 +31,7 @@ from Tekla.Structures.Model import (
     Seam,
 )
 from Tekla.Structures.Model.Operations import Operation
-from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector as ModelObjectSelectorUI, ViewHandler
+from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector as ModelObjectSelectorUI, ViewHandler, ModelObjectVisualization, TemporaryTransparency
 from Tekla.Structures.Filtering import (
     BinaryFilterOperatorType,
     BinaryFilterExpressionCollection,
@@ -49,6 +50,7 @@ from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectF
 __all__ = [
     "ArrayList",
     "Hashtable",
+    "List",
     "Identifier",
     "TeklaStructuresDatabaseTypeEnum",
     "PositionTypeEnum",
@@ -77,6 +79,8 @@ __all__ = [
     "GraphicsDrawer",
     "ModelObjectSelectorUI",
     "ViewHandler",
+    "ModelObjectVisualization",
+    "TemporaryTransparency",
     "BinaryFilterOperatorType",
     "BinaryFilterExpressionCollection",
     "BinaryFilterExpressionItem",

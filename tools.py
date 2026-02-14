@@ -48,6 +48,11 @@ from tekla_loader import (
     PartFilterExpressions,
     ObjectFilterExpressions,
     TemplateFilterExpressions,
+    List,
+    Assembly,
+    Part,
+    ModelObjectVisualization,
+    TemporaryTransparency,
 )
 
 from tekla_utils import (
@@ -592,6 +597,58 @@ def tool_show_only_selected(selected_objects: ModelObjectEnumerator) -> dict:
         "status": "success",
         "selected_elements": selected_objects.GetSize(),
     }
+
+
+@log_function_call
+def tool_hide_selected(selected_objects: ModelObjectEnumerator) -> dict:
+    """
+    Hides selected elements in the Tekla view using ModelObjectVisualization.
+    Works with both parts and assemblies.
+    """
+
+    objects_to_hide = List[ModelObject]()
+    stack = list(selected_objects)
+
+    Add = objects_to_hide.Add  # Cache Add method for speed
+
+    while stack:
+        obj = stack.pop()
+
+        # Process Assembly
+        if isinstance(obj, Assembly):
+            main = obj.GetMainPart()
+            if main:
+                Add(main)
+                welds = main.GetWelds()
+                while welds.MoveNext():
+                    Add(welds.Current)
+                reinfs = main.GetReinforcements()
+                while reinfs.MoveNext():
+                    Add(reinfs.Current)
+
+            # Secondaries
+            secondaries = obj.GetSecondaries()
+            for sec in secondaries:
+                Add(sec)
+                welds = sec.GetWelds()
+                while welds.MoveNext():
+                    Add(welds.Current)
+                reinfs = sec.GetReinforcements()
+                while reinfs.MoveNext():
+                    Add(reinfs.Current)
+
+            # Subassemblies
+            subs = obj.GetSubAssemblies()
+            for sub in subs:
+                stack.append(sub)
+
+        # Process Part directly
+        elif isinstance(obj, Part):
+            Add(obj)
+
+    ModelObjectVisualization.SetTransparency(objects_to_hide, TemporaryTransparency.HIDDEN)
+
+    return {"status": "success", "hidden_elements": objects_to_hide.Count}
 
 
 @log_function_call

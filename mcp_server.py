@@ -31,6 +31,7 @@ from tools import (
     tool_draw_elements_labels,
     tool_zoom_to_selection,
     tool_show_only_selected,
+    tool_hide_selected,
     tool_cut_elements_with_zero_class_parts,
     tool_convert_cut_parts_to_real_parts,
     tool_set_elements_udas,
@@ -254,6 +255,17 @@ def show_only_selected() -> dict[str, Any]:
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
     return tool_show_only_selected(selected_objects)
+
+
+@mcp.tool()
+@log_mcp_tool_call
+def hide_selected() -> dict[str, Any]:
+    """
+    Hides the selected elements in the Tekla view.
+    Works with both parts and assemblies.
+    """
+    selected_objects = TeklaModel().get_selected_objects()
+    return tool_hide_selected(selected_objects)
 
 
 @mcp.tool()

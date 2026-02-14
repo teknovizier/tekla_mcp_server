@@ -29,6 +29,7 @@ The server provides the following tools:
 | `draw_elements_labels`            | Draw the temporary labels (position, GUID, name, profile, material, finish, Tekla class, weight or any defined report property) for the selected elements in Tekla in the currently active rendered view  |
 | `zoom_to_selection`            | Zooms the currently active rendered view to fit the currently selected elements |
 | `show_only_selected`            | Show only the currently selected elements in the currently active rendered view  |
+| `hide_selected`            | Hide the currently selected elements in the currently active rendered view  |
 | `cut_elements_with_zero_class_parts` | Performs boolean cuts on selected elements using elements in class 0, with optional deletion of cutting parts       |
 | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts       |
 | `set_elements_udas`              | Set custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones |

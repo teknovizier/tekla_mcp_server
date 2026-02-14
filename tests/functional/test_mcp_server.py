@@ -497,7 +497,7 @@ async def test_zoom_to_selection(model_objects):
 
     Steps:
     - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls a method.
+    - Calls a tool.
     - Verifies success and redraws views.
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
@@ -518,7 +518,7 @@ async def test_show_only_selected(model_objects):
 
     Steps:
     - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls a drawing method.
+    - Calls a tool.
     - Verifies success and redraws views.
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
@@ -526,6 +526,27 @@ async def test_show_only_selected(model_objects):
         result = await client.call_tool("show_only_selected")
         assert result.data["status"] == "success"
         assert result.data["selected_elements"] == 2
+
+        view_enum = ViewHandler.GetAllViews()
+        while view_enum.MoveNext():
+            ViewHandler.RedrawView(view_enum.Current)
+
+
+@pytest.mark.asyncio
+async def test_hide_selected_parts(model_objects):
+    """
+    Tests that `hide_selected` function can hide selected parts.
+
+    Steps:
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
+    - Calls `hide_selected` tool.
+    - Verifies success and redraws views.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("hide_selected")
+        assert result.data["status"] == "success"
+        assert result.data["hidden_elements"] == 2
 
         view_enum = ViewHandler.GetAllViews()
         while view_enum.MoveNext():
