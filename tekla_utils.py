@@ -576,7 +576,7 @@ class TemplateAttributeParser:
                 best_match = attr_name
 
         if best_match:
-            logger.debug("Semantic match: '%s' -> '%s' (score: %.2f)", user_input, best_match, best_score)
+            logger.debug("Semantic match found: '%s' -> '%s' (score: %.2f)", user_input, best_match, best_score)
         return best_match
 
     @classmethod
@@ -616,13 +616,16 @@ class TemplateAttributeParser:
             cls._loaded = True
             logger.info("Tekla attribute definitions loaded and cached")
 
-        if attribute_name in cls._cache:
-            logger.debug("Attribute '%s' found in cache", attribute_name)
-            return cls._cache[attribute_name]
+        # Try normalized exact match
+        attribute_name_normalized = re.sub(r"[_\W]+", "_", attribute_name.upper()).strip("_")
+        for attr_name in cls._cache.keys():
+            attr_normalized = re.sub(r"[_\W]+", "_", attr_name.upper()).strip("_")
+            if attribute_name_normalized == attr_normalized:
+                logger.debug("Normalized exact match for '%s': %s", attribute_name, attr_name)
+                return cls._cache[attr_name]
 
         matched_name = cls._semantic_match(attribute_name)
         if matched_name:
-            logger.debug("Semantic match found: '%s' -> '%s'", attribute_name, matched_name)
             return cls._cache[matched_name]
 
         raise ValueError(f"Attribute '{attribute_name}' not found.")

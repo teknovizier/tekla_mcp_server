@@ -355,33 +355,31 @@ def get_all_elements_udas() -> dict[str, Any]:
 @log_mcp_tool_call
 def get_elements_properties(custom_props_definitions: list[str] | None = None) -> dict[str, Any]:
     """
-    Retrieves key properties for the selected elements (assemblies or parts) in the Tekla model.
+    Retrieve key properties for selected Tekla elements (assemblies or parts).
 
-    ### Input:
-    - `custom_props_definitions`: A list of custom property names that should be retrieved for the elements.
+    ## INPUT
+    - `custom_properties` [Optional]: List of user-friendly property names.
 
-    ### Output:
-    The returned data to be presented in a Markdown table format, each row represents one element, with columns for:
-    - Position
-    - GUID
-    - For assemblies in `assemblies_list`: values are taken from the main part and labeled as:
-        - Main Part Name
-        - Main Part Profile
-        - Main Part Material
-        - Main Part Finish
-        - Main Part Class
-    - For parts in `parts_list`: values are labeled as:
-        - Name
-        - Profile
-        - Material
-        - Finish
-        - Class
-    - Weight (kg), rounded to one decimal place
-    - Any available custom properties defined in `custom_props_definitions`.
+    ### BEHAVIOR
+    - Extract properties not in default columns; split multi-property phrases into separate items.
+    - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
+    - Only resolved custom properties appear in the table; unresolved ones are mentioned after the table.
 
-    ### Notes:
-    Each custom property column header must include its unit in parentheses, if available. For example, if the property is "AREA" and its unit is "m²", the column header should be "AREA (m²)". If no unit is available, use just the property name. Property names must be displayed exactly as they are in the source data, without any formatting or transformation applied.
-    If a property fails to retrieve, display "N/A" in the corresponding cell.
+    ## OUTPUT
+    - Table format only; first row = headers, no JSON or extra text.
+    - Leftmost "No" column with sequential row numbers starting from 1.
+
+    ### DEFAULT COLUMNS
+    - Position, GUID
+    - Assemblies: Main Part Name, Profile, Material, Finish, Class
+    - Parts: Name, Profile, Material, Finish, Class
+    - Weight (kg), rounded to 3 decimals
+
+    ### CUSTOM PROPERTIES
+    - Use backend-resolved names exactly; append units if provided.
+    - Float values should be rounded to 3 decimals.
+    - Missing values = "N/A".
+    - Example: ASSEMBLY_TOP_LEVEL, ASSEMBLY_BOTTOM_LEVEL_UNFORMATTED, WEIGHT_GROSS (kg)
     """
 
     selected_objects = TeklaModel().get_selected_objects()

@@ -49,7 +49,7 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 - Qwen3
 - gpt-oss
 
-The server uses **sentence-transformers** to enable semantic attribute mapping, converting user-friendly names to Tekla attributes based on embedding similarity. The default model is `all-MiniLM-L6-v2` from Huggingface. This works for both:
+The server uses **sentence-transformers** to enable semantic attribute mapping, converting user-friendly names to Tekla attributes based on embedding similarity. The default model is `all-MiniLM-L6-v2` from HuggingFace. This works for both:
 - Component attributes: use natural terms like "rebar size" and automatically map them to the correct attribute (e.g., "SBSize_list")
 - Template attributes: use natural terms like "area netto" or "assembly bottom level" and automatically map them to the correct Tekla attribute (e.g., "AREA_NET", "ASSEMBLY_BOTTOM_LEVEL")
 
@@ -72,7 +72,7 @@ uv pip install -r requirements.txt
 | `tekla_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin" | The path to the directory where Tekla Structures is located                      |
 | `content_attributes_file_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin\\applications\\Tekla\\Tools\\TplEd\\settings\\contentattributes_global.lst" | The path to the `contentattributes_global.lst` file                      |
 | `attribute_mapper.embedding_model`          | "all-MiniLM-L6-v2" | Sentence-transformers model for semantic attribute matching                      |
-| `attribute_mapper.embedding_threshold`          | 0.3 | Minimum similarity score (0-1) for attribute mapping                     |
+| `attribute_mapper.embedding_threshold`          | 0.6 | Minimum similarity score (0-1) for attribute mapping                     |
 
 * Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
 * Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model

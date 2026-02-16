@@ -8,6 +8,7 @@ This module provides functionality to:
 4. Convert values to expected types from config
 """
 
+import re
 import threading
 
 from typing import Any
@@ -101,8 +102,17 @@ class AttributeMapper:
 
             self._ensure_model_loaded()
             assert self._model is not None
-            user_embedding = self._model.encode(user_key)
 
+            # Try normalized exact match
+            user_key_normalized = re.sub(r"[_\W]+", "_", user_key.upper()).strip("_")
+            for attr_name in schema.keys():
+                attr_normalized = re.sub(r"[_\W]+", "_", attr_name.upper()).strip("_")
+                if user_key_normalized == attr_normalized:
+                    logger.debug("Normalized exact match for '%s': %s", user_key, attr_name)
+                    best_match = attr_name
+                    break
+
+            user_embedding = self._model.encode(user_key)
             for config_key, config_embedding in embeddings_dict.items():
                 score = self._cosine_similarity(user_embedding, config_embedding)
                 if score >= self.threshold and score > best_score:
