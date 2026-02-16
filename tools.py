@@ -59,7 +59,6 @@ from tekla_utils import (
     STRING_MATCH_TYPE_MAPPING,
     TeklaModel,
     TeklaModelObject,
-    TemplateAttributeParser,
     wrap_model_objects,
     get_wall_pairs,
     ensure_transformation_plane,
@@ -67,13 +66,14 @@ from tekla_utils import (
     insert_detail,
     insert_seam,  # noqa: F401
 )
+from template_attrs_parser import TemplateAttributeParser
 
 from utils import serialize_to_json, log_function_call
 
 
 # Helper functions
 @log_function_call
-def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, *args: Any, **kwargs: Any) -> dict[str, Any]:
+def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """
     Applies a component operation to selected objects in the Tekla model using a specified callback function.
     """
@@ -81,9 +81,9 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
     if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
-        return process_detail_or_component(selected_objects, callback, tekla_model, component, *args, **kwargs)
+        return process_detail_or_component(selected_objects, callback, tekla_model, component, custom_properties_errors=custom_properties_errors, *args, **kwargs)
     elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
-        return process_seam_or_connection(selected_objects, callback, tekla_model, component, *args, **kwargs)
+        return process_seam_or_connection(selected_objects, callback, tekla_model, component, custom_properties_errors=custom_properties_errors, *args, **kwargs)
     logger.warning("Unsupported component type: %s", component.component_type)
     return {"status": "error", "message": f"Unsupported component type: {component.component_type}"}
 
@@ -118,7 +118,9 @@ def add_filter(
 
 
 @log_function_call
-def process_detail_or_component(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, *args: Any, **kwargs: Any) -> dict:
+def process_detail_or_component(
+    selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any
+) -> dict:
     """
     Processes a list of selected objects, applying a callback to each object that is an instance of Beam.
     Used for components that require only one primary object.
@@ -133,16 +135,23 @@ def process_detail_or_component(selected_objects: ModelObjectEnumerator, callbac
             processed_elements += 1
     model.commit_changes()
     logger.info("Processed %s elements, %s components", processed_elements, processed_components)
+    errors = custom_properties_errors or []
+    status = "success" if processed_components else "error"
+    if errors:
+        status = "warning"
     return {
-        "status": "success" if processed_components else "error",
+        "status": status,
         "total_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
         "processed_components": processed_components,
+        "custom_properties_errors": errors,
     }
 
 
 @log_function_call
-def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, *args: Any, **kwargs: Any) -> dict:
+def process_seam_or_connection(
+    selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any
+) -> dict:
     """
     Processes seams or connections between selected objects in the model.
     This function is intended for use with components that require two objects, such as wall joints.
@@ -166,11 +175,16 @@ def process_seam_or_connection(selected_objects: ModelObjectEnumerator, callback
             processed_components += success
     model.commit_changes()
     logger.info("Processed %s elements, %s components", processed_elements, processed_components)
+    errors = custom_properties_errors or []
+    status = "success" if processed_components else "error"
+    if errors:
+        status = "warning"
     return {
-        "status": "success" if processed_components else "error",
+        "status": status,
         "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
         "inserted_components": processed_components,
+        "custom_properties_errors": errors,
     }
 
 
@@ -222,7 +236,7 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
         distance_from_start, distance_from_end, double_anchor_spacing = LiftingAnchorsComponent.calculate_anchor_placement(min_edge_distance, length, local_cog.X, number_of_anchors)
         logger.info("Anchor placement calculated: start=%s, end=%s, spacing=%s", distance_from_start, distance_from_end, double_anchor_spacing)
 
-        attributes = {
+        properties = {
             "DistanceFrom": 1,
             "DistFromPartStart": distance_from_start,
             "DistFromPartFinish": distance_from_end,
@@ -234,7 +248,7 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
             "up_direction": 1,
             **first_anchor_attributes,
         }
-        component.set_attributes(attributes)
+        component.set_properties(properties)
 
     # Insert the component
     if component.number == -1:
@@ -248,11 +262,11 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
     if is_lifting_anchor:
         # Handle additional anchors for 4-anchor configuration
         if number_of_anchors == 4:
-            updated_attributes = {
+            updated_properties = {
                 "DistFromPartStart": distance_from_start + double_anchor_spacing,
                 "DistFromPartFinish": distance_from_end + double_anchor_spacing,
             }
-            component.update_attributes(updated_attributes)
+            component.update_properties(updated_properties)
             counter += int(insert_component(selected_object, component))
             logger.debug("Inserted additional anchors for 4-anchor configuration. Total number of anchor components: %s", counter)
 

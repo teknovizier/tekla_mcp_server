@@ -131,19 +131,19 @@ LIFTING_ANCHOR_TYPES: dict[str, Any] = read_json_config("lifting_anchor_types.js
 BASE_COMPONENTS: dict[str, dict[str, Any]] = read_json_config("base_components.json")
 
 
-def get_custom_attributes_schema(component_name: str) -> dict[str, dict[str, str]] | None:
+def get_custom_properties_schema(component_name: str) -> dict[str, dict[str, str]] | None:
     """
-    Returns the custom_attributes schema for a given component name.
+    Returns the custom_properties schema for a given component name.
 
     Args:
         component_name: The name of the component
 
     Returns:
-        Dictionary of custom attributes with their descriptions and types, or None if not defined
+        Dictionary of custom properties with their descriptions and types, or None if not defined
     """
     component = BASE_COMPONENTS.get(component_name)
     if component:
-        return component.get("custom_attributes")
+        return component.get("custom_properties")
     return None
 
 
@@ -282,13 +282,13 @@ class BaseComponent(BaseModel):
     """
 
     name: str = Field(description="The name of the Tekla component.")
-    attributes_set: str | None = Field(default="standard", description="The name of the Tekla component attributes set to use (`standard` by default).")
-    custom_attributes: dict[str, Any] | str | None = Field(default=None, description="Custom attributes to apply to the component. Can be a dictionary or JSON string.")
+    properties_set: str | None = Field(default="standard", description="The name of the Tekla component properties set to use (`standard` by default).")
+    custom_properties: dict[str, Any] | str | None = Field(default=None, description="Custom properties to apply to the component. Can be a dictionary or JSON string.")
 
-    # Private attributes
+    # Private properties
     _number: int = PrivateAttr()
     _component_type: ComponentType = PrivateAttr()
-    _attributes: dict[str, Any] | None = PrivateAttr(default=None)
+    _properties: dict[str, Any] | None = PrivateAttr(default=None)
 
     def model_post_init(self, __context) -> None:
         """
@@ -297,27 +297,27 @@ class BaseComponent(BaseModel):
         self._number = BASE_COMPONENTS.get(self.name, {}).get("number", -1)
         self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT  # Default to custom detail component
 
-        if self.attributes_set is None:
-            self.attributes_set = "standard"
+        if self.properties_set is None:
+            self.properties_set = "standard"
 
-        # Initialize attributes from custom_attributes if provided
-        if self.custom_attributes:
-            if isinstance(self.custom_attributes, str):
+        # Initialize properties from custom_properties if provided
+        if self.custom_properties:
+            if isinstance(self.custom_properties, str):
                 try:
-                    custom_attrs = json.loads(self.custom_attributes)
-                    if not isinstance(custom_attrs, dict):
-                        raise ValueError("custom_attributes JSON must parse to a dictionary")
-                    if self._attributes is None:
-                        self._attributes = {}
-                    self._attributes.update(custom_attrs)
+                    custom_props = json.loads(self.custom_properties)
+                    if not isinstance(custom_props, dict):
+                        raise ValueError("custom_properties JSON must parse to a dictionary")
+                    if self._properties is None:
+                        self._properties = {}
+                    self._properties.update(custom_props)
                 except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON in custom_attributes: {e}")
-            elif isinstance(self.custom_attributes, dict):
-                if self._attributes is None:
-                    self._attributes = {}
-                self._attributes.update(self.custom_attributes)
+                    raise ValueError(f"Invalid JSON in custom_properties: {e}")
+            elif isinstance(self.custom_properties, dict):
+                if self._properties is None:
+                    self._properties = {}
+                self._properties.update(self.custom_properties)
             else:
-                raise TypeError("custom_attributes must be a dictionary or JSON string")
+                raise TypeError("custom_properties must be a dictionary or JSON string")
 
     # Getters
     @property
@@ -331,25 +331,25 @@ class BaseComponent(BaseModel):
         return self._component_type
 
     @property
-    def attributes(self) -> dict[str, Any] | None:
-        """Returns `_attributes`"""
-        return self._attributes
+    def properties(self) -> dict[str, Any] | None:
+        """Returns `_properties`"""
+        return self._properties
 
     # Setters
-    def set_attributes(self, attributes: dict[str, Any]) -> None:
+    def set_properties(self, properties: dict[str, Any]) -> None:
         """
-        Replaces the entire attributes dictionary.
+        Replaces the entire properties dictionary.
         """
-        self._attributes = attributes
+        self._properties = properties
 
-    def update_attributes(self, updates: dict[str, Any]) -> None:
+    def update_properties(self, updates: dict[str, Any]) -> None:
         """
-        Adds or updates multiple attributes at once.
-        Creates the dictionary if ther dictionary doesn't exist yet.
+        Adds or updates multiple properties at once.
+        Creates the dictionary if the dictionary doesn't exist yet.
         """
-        if self._attributes is None:
-            self._attributes = {}
-        self._attributes.update(updates)
+        if self._properties is None:
+            self._properties = {}
+        self._properties.update(updates)
 
 
 class LiftingAnchorsComponent(BaseComponent):

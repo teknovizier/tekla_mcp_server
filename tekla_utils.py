@@ -3,15 +3,13 @@ Module for utility classes and functions used for geometry manipulations.
 """
 
 from __future__ import annotations
-import re
 
 from functools import wraps
 from typing import Any
 from collections.abc import Callable, Iterable
 
-from init import read_config, logger
-from models import StringMatchType, BaseComponent, ReportProperty
-from attribute_mapper import get_attribute_mapper, AttributeMapper
+from init import logger
+from models import StringMatchType, BaseComponent
 
 from tekla_loader import (
     Identifier,
@@ -504,133 +502,6 @@ class TeklaModelObject:
             raise TypeError("Property type must be one of: str, int, float.")
 
 
-class TemplateAttributeParser:
-    """
-    Lazily loads and parses Tekla attribute definitions from the template file.
-    Supports semantic matching - tries exact match first, then falls back to semantic similarity.
-    """
-
-    _cache: dict[str, ReportProperty] = {}
-    _loaded: bool = False
-    _embeddings_cache: dict[str, list[float]] = {}
-    _semantic_loaded: bool = False
-    _model = None
-    _mapper: Any = None
-
-    @classmethod
-    def _get_mapper(cls):
-        if cls._mapper is None:
-            cls._mapper = get_attribute_mapper()
-            if cls._mapper:
-                cls._mapper._ensure_model_loaded()
-        return cls._mapper
-
-    @classmethod
-    def _get_model(cls):
-        mapper = cls._get_mapper()
-        if cls._model is None and mapper:
-            cls._model = mapper._model
-        return cls._model
-
-    @classmethod
-    def _ensure_semantic_loaded(cls) -> None:
-        if cls._semantic_loaded or not cls._get_model():
-            return
-
-        model = cls._get_model()
-        if not model:
-            return
-
-        attribute_names = list(cls._cache.keys())
-        if not attribute_names:
-            return
-
-        embeddings = model.encode(attribute_names)
-        cls._embeddings_cache = {name: emb.tolist() for name, emb in zip(attribute_names, embeddings)}
-        cls._semantic_loaded = True
-        logger.info("Generated embeddings for %d template attributes", len(attribute_names))
-
-    @classmethod
-    def _semantic_match(cls, user_input: str) -> str | None:
-        cls._ensure_semantic_loaded()
-        if not cls._embeddings_cache:
-            return None
-
-        mapper = cls._get_mapper()
-        if not mapper:
-            return None
-
-        model = cls._get_model()
-        if not model:
-            return None
-
-        user_embedding = model.encode(user_input)
-        best_match = None
-        best_score = 0.0
-        threshold = mapper.threshold
-
-        for attr_name, attr_embedding in cls._embeddings_cache.items():
-            score = AttributeMapper._cosine_similarity(user_embedding, attr_embedding)
-            if score >= threshold and score > best_score:
-                best_score = score
-                best_match = attr_name
-
-        if best_match:
-            logger.debug("Semantic match found: '%s' -> '%s' (score: %.2f)", user_input, best_match, best_score)
-        return best_match
-
-    @classmethod
-    @log_function_call
-    def parse(cls, attribute_name: str) -> ReportProperty:
-        """
-        On first call, this function reads the Tekla template attributes file once,
-        parses all attribute definitions, and caches them in memory. Subsequent calls
-        return cached results instantly without re-reading the file.
-
-        Tries exact match first, then falls back to semantic matching if exact fails.
-        """
-        if not cls._loaded:
-            config = read_config()
-            logger.debug("Loading Tekla attribute definitions from file '%s'", config["content_attributes_file_path"])
-            with open(config["content_attributes_file_path"], "r", encoding="utf-8") as f:
-                for line in f:
-                    stripped = line.strip()
-                    if not stripped or stripped.startswith("//") or stripped.startswith("[") or stripped.lower().startswith("name"):
-                        continue
-
-                    first_split = re.split(r"\s", stripped, maxsplit=1)
-                    if len(first_split) < 2:
-                        continue
-
-                    name = first_split[0].strip()
-                    remainder = first_split[1].strip()
-                    rest_parts = re.split(r"\s{2,}", remainder)
-                    while len(rest_parts) < 8:
-                        rest_parts.append(None)
-
-                    dtype = rest_parts[0]
-                    unit = rest_parts[6] if rest_parts[6] != "*" else None
-
-                    cls._cache[name] = ReportProperty(name=name, data_type=ReportProperty.map_string_to_type(dtype), unit=unit)
-
-            cls._loaded = True
-            logger.info("Tekla attribute definitions loaded and cached")
-
-        # Try normalized exact match
-        attribute_name_normalized = re.sub(r"[_\W]+", "_", attribute_name.upper()).strip("_")
-        for attr_name in cls._cache.keys():
-            attr_normalized = re.sub(r"[_\W]+", "_", attr_name.upper()).strip("_")
-            if attribute_name_normalized == attr_normalized:
-                logger.debug("Normalized exact match for '%s': %s", attribute_name, attr_name)
-                return cls._cache[attr_name]
-
-        matched_name = cls._semantic_match(attribute_name)
-        if matched_name:
-            return cls._cache[matched_name]
-
-        raise ValueError(f"Attribute '{attribute_name}' not found.")
-
-
 def wrap_model_objects(model_objects):
     """
     Wraps each Tekla ModelObject in a TeklaModelObject.
@@ -676,14 +547,14 @@ def insert_detail(selected_object: ModelObject, component: BaseComponent, point:
     d = Detail()
     d.Name = component.name
     d.Number = component.number
-    d.LoadAttributesFromFile(component.attributes_set)
+    d.LoadAttributesFromFile(component.properties_set)
     d.UpVector = Vector(0, 0, 0)
     d.PositionType = PositionTypeEnum.MIDDLE_PLANE
     d.AutoDirectionType = AutoDirectionTypeEnum.AUTODIR_DETAIL
     d.DetailType = DetailTypeEnum.INTERMEDIATE_REVERSE if reverse else DetailTypeEnum.INTERMEDIATE
     d.SetPrimaryObject(selected_object)
-    if component.attributes:
-        for key, value in component.attributes.items():
+    if component.properties:
+        for key, value in component.properties.items():
             d.SetAttribute(key, value)
     d.SetReferencePoint(point)
 
@@ -697,15 +568,15 @@ def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, comp
     s = Seam()
     s.Name = component.name
     s.Number = component.number
-    s.LoadAttributesFromFile(component.attributes_set)
+    s.LoadAttributesFromFile(component.properties_set)
     s.UpVector = Vector(0, 0, 0)
     s.AutoDirectionType = AutoDirectionTypeEnum.AUTODIR_DETAIL
     s.AutoPosition = True
 
     s.SetPrimaryObject(primary_object)
     s.SetSecondaryObject(secondary_object)
-    if component.attributes:
-        for key, value in component.attributes.items():
+    if component.properties:
+        for key, value in component.properties.items():
             s.SetAttribute(key, value)
     s.SetInputPositions(point1, point2)
 
@@ -719,9 +590,9 @@ def insert_component(selected_object: ModelObject, component: BaseComponent) -> 
     c = Component()
     c.Name = component.name
     c.Number = component.number
-    c.LoadAttributesFromFile(component.attributes_set)
-    if component.attributes:
-        for key, value in component.attributes.items():
+    c.LoadAttributesFromFile(component.properties_set)
+    if component.properties:
+        for key, value in component.properties.items():
             c.SetAttribute(key, value)
     ci = ComponentInput()
     ci.AddInputObject(selected_object)

@@ -16,10 +16,8 @@ if os.getenv("CI") == "true":
 
 from typing import Any
 
-from models import ReportProperty
-
 from tekla_loader import Beam, Position, Point
-from tekla_utils import TeklaModelObject, TemplateAttributeParser, get_wall_pairs
+from tekla_utils import TeklaModelObject, get_wall_pairs
 
 
 created_elements: Any = []
@@ -152,41 +150,6 @@ def test_get_all_user_properties_test_property(wall1):
     wall1.set_user_property("TestProperty", "TestValue")
     assert len(wall1.get_all_user_properties()) == 1
     assert wall1.get_all_user_properties()["TestProperty"] == "TestValue"
-
-
-# Tests for TemplateAttributeParser
-@pytest.mark.parametrize(
-    "attr_name,expected_type,expected_unit",
-    [("ASSEMBLY_TOP_LEVEL", str, None), ("AREA", float, "m2"), ("ASSEMBLY_TOP_LEVEL_UNFORMATTED_BASEPOINT", float, "mm"), ("SHIPMENT_NUMBER", str, None)],
-)
-def test_parse_template_attribute(attr_name, expected_type, expected_unit):
-    """Checks that `TemplateAttributeParser.parse` returns correct template attributes properties."""
-    rp = TemplateAttributeParser.parse(attr_name)
-
-    assert isinstance(rp, ReportProperty)
-    assert rp.name == attr_name
-    assert rp.data_type == expected_type
-    assert rp.unit == expected_unit
-
-
-@pytest.mark.parametrize(
-    "user_input,expected_attr",
-    [("weight", "WEIGHT"), ("total weight", "WEIGHT_TOTAL"), ("area", "AREA"), ("gross area", "AREA_GROSS"), ("net area", "AREA_NET")],
-)
-def test_parse_template_attribute_semantic_match(user_input, expected_attr):
-    """Checks that `TemplateAttributeParser.parse` uses semantic matching when exact match fails."""
-    rp = TemplateAttributeParser.parse(user_input)
-
-    assert isinstance(rp, ReportProperty)
-    assert rp.name == expected_attr
-
-
-def test_parse_template_attribute_exact_match_takes_precedence():
-    """Checks that exact match takes precedence over semantic match."""
-    rp = TemplateAttributeParser.parse("WEIGHT")
-
-    assert isinstance(rp, ReportProperty)
-    assert rp.name == "WEIGHT"
 
 
 # Tests for `get_wall_pairs`

@@ -1,0 +1,134 @@
+"""
+Embedding utilities for semantic search and similarity matching.
+"""
+
+import re
+import threading
+from typing import Any
+
+from init import logger, read_config
+from sentence_transformers import SentenceTransformer, util
+
+_embedding_model: SentenceTransformer | None = None
+_embedding_threshold: float | None = None
+_lock = threading.Lock()
+
+
+def normalize_attribute_name(name: str) -> str:
+    """
+    Normalize attribute name for comparison.
+
+    Converts to uppercase, replaces spaces/hyphens with underscores,
+    removes non-alphanumeric characters.
+
+    Args:
+        name: Attribute name to normalize
+
+    Returns:
+        Normalized attribute name (e.g., "assembly-top-level" -> "ASSEMBLY_TOP_LEVEL")
+    """
+    return re.sub(r"[_\W]+", "_", name.upper()).strip("_")
+
+
+def find_normalized_match(input_name: str, candidates: dict[str, Any]) -> str | None:
+    """
+    Find a normalized exact match for input_name in candidates.
+
+    Args:
+        input_name: User-provided attribute name
+        candidates: Dict of candidate attribute names to match against
+
+    Returns:
+        Matched key from candidates, or None if no match
+    """
+    input_normalized = normalize_attribute_name(input_name)
+    for attr_name in candidates.keys():
+        attr_normalized = normalize_attribute_name(attr_name)
+        if input_normalized == attr_normalized:
+            logger.debug("Normalized exact match for '%s': %s", input_name, attr_name)
+            return attr_name
+    return None
+
+
+def semantic_match(
+    user_input: str,
+    candidates_embeddings: dict[str, list[float]],
+    threshold: float,
+    model: SentenceTransformer,
+) -> tuple[str | None, float]:
+    """
+    Perform semantic similarity search to find best matching key.
+
+    Args:
+        user_input: User-provided input string
+        candidates_embeddings: Dict of candidate names to their embeddings
+        threshold: Minimum similarity score threshold
+        model: Sentence transformer model for encoding
+
+    Returns:
+        Tuple of (best_match_key, best_score) or (None, 0.0) if no match
+    """
+    user_embedding = model.encode(user_input)
+
+    # Collect all scores
+    all_scores = []
+    for key, embedding in candidates_embeddings.items():
+        score = util.cos_sim(user_embedding, embedding).item()
+        all_scores.append((key, score))
+
+    # Sort by score descending
+    all_scores.sort(key=lambda x: x[1], reverse=True)
+
+    # Log top 5 for debugging
+    top5 = all_scores[:5]
+    top5_str = ", ".join(f"{k} ({s:.2f})" for k, s in top5)
+    logger.debug("Semantic match for '%s': top 5 = [%s]", user_input, top5_str)
+
+    # Find best match above threshold
+    best_match = None
+    best_score = 0.0
+    for key, score in all_scores:
+        if score >= threshold and score > best_score:
+            best_score = score
+            best_match = key
+
+    return best_match, best_score
+
+
+def get_embedding_model_and_threshold() -> tuple[SentenceTransformer, float | None]:
+    """
+    Returns cached embedding model and threshold.
+
+    Returns:
+        Tuple of (model, threshold)
+    """
+    global _embedding_model, _embedding_threshold
+    if _embedding_model is None:
+        with _lock:
+            if _embedding_model is None:
+                config = read_config()
+                settings = config.get("attribute_mapper", {})
+                model_name = settings.get("embedding_model")
+                threshold = settings.get("embedding_threshold")
+                if not model_name or not threshold:
+                    raise ImportError("Attribute mapper configuration missing. Add 'attribute_mapper' section to config with 'embedding_model' and 'embedding_threshold'.")
+                logger.info("Loading embedding model: %s", model_name)
+                _embedding_model = SentenceTransformer(model_name)
+                _embedding_threshold = threshold
+                assert _embedding_threshold is not None
+                logger.info("Embedding model loaded")
+    return _embedding_model, _embedding_threshold
+
+
+def get_embedding_model() -> SentenceTransformer:
+    """Returns cached embedding model."""
+    model, _ = get_embedding_model_and_threshold()
+    return model
+
+
+def get_embedding_threshold() -> float:
+    """Returns embedding threshold."""
+    _, threshold = get_embedding_model_and_threshold()
+    if threshold is None:
+        raise RuntimeError("Embedding threshold not initialized")
+    return threshold

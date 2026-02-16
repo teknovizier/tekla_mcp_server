@@ -41,7 +41,7 @@ from tools import (
 )
 from tekla_utils import TeklaModel
 from utils import log_mcp_tool_call
-from attribute_mapper import map_attributes
+from component_props_mapper import map_properties
 
 
 mcp = FastMCP("Tekla MCP Server")
@@ -74,30 +74,32 @@ def check_tekla_connection() -> dict[str, Any]:
 @mcp.tool()
 def put_components(
     component_name: str,
-    attributes_set: str | None = None,
-    custom_attributes: dict[str, Any] | None = None,
+    properties_set: str | None = None,
+    custom_properties: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Inserts Tekla components into the selected objects, using the given
-    component name and an optional custom attributes.
+    component name and an optional custom properties.
 
     Args:
         component_name: The name of the Tekla component
-        attributes_set: The name of the Tekla component attributes set to use
-        custom_attributes: Custom attributes to apply to the component (dict)
+        properties_set: The name of the Tekla component properties set to use
+        custom_properties: Custom properties to apply to the component (dict)
     """
 
-    resolved_custom_attributes = custom_attributes
-    if custom_attributes:
-        mapped = map_attributes(custom_attributes, component_name)
+    resolved_custom_properties = custom_properties
+    unmapped_keys = []
+    if custom_properties:
+        mapped = map_properties(custom_properties, component_name)
         if mapped:
-            resolved_custom_attributes = mapped
+            unmapped_keys = mapped.pop("unmapped_keys", [])
+            resolved_custom_properties = mapped
 
     if component_name == "Lifting Anchor":
-        component: BaseComponent = LiftingAnchorsComponent(attributes_set=attributes_set, custom_attributes=resolved_custom_attributes)
+        component: BaseComponent = LiftingAnchorsComponent(properties_set=properties_set, custom_properties=resolved_custom_properties)
     else:
-        component = BaseComponent(name=component_name, attributes_set=attributes_set, custom_attributes=resolved_custom_attributes)
-    return manage_components_on_selected_objects(tool_put_components, component)
+        component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=resolved_custom_properties)
+    return manage_components_on_selected_objects(tool_put_components, component, unmapped_keys)
 
 
 @mcp.tool()

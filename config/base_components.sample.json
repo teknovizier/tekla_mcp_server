@@ -5,7 +5,7 @@
   },
   "Border Rebar": {
     "number": 150000092,
-    "custom_attributes": {
+    "custom_properties": {
       "SBSize_list": {
         "description": "rebar size",
         "type": "str"

@@ -169,18 +169,18 @@ async def test_put_components_invalid_component(model_objects):
 
 
 @pytest.mark.asyncio
-async def test_put_components_with_mapped_attributes(model_objects):
+async def test_put_components_with_mapped_properties(model_objects):
     """
     Tests attribute mapping in `put_components` for Border Rebar.
 
     Steps:
     - Selects `self.test_wall1`.
-    - Calls `put_components` with "Border Rebar" and custom_attributes using user-friendly names.
+    - Calls `put_components` with "Border Rebar" and custom_properties using user-friendly names.
     - Verifies successful placement.
     """
     TeklaModel.select_objects([model_objects["test_wall1"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_attributes": {"rebar size": "10", "rebar grade": "B500B"}})
+        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_properties": {"rebar size": "10", "rebar grade": "B500B"}})
         assert result.data["status"] == "success"
 
 
@@ -196,7 +196,7 @@ async def test_put_components_without_attribute_mapping(model_objects):
     """
     TeklaModel.select_objects([model_objects["test_wall1"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_attributes": {"SBSize_list": "12", "SBGrade_list": "B500B"}})
+        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_properties": {"SBSize_list": "12", "SBGrade_list": "B500B"}})
         assert result.data["status"] == "success"
 
 
@@ -208,12 +208,12 @@ async def test_put_components_partial_attribute_mapping(model_objects):
     Steps:
     - Selects `self.test_wall1`.
     - Provides mix of mappable and non-mappable keys.
-    - Verifies successful placement.
+    - Verifies placement.
     """
     TeklaModel.select_objects([model_objects["test_wall1"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_attributes": {"rebar size": "10", "unknown attribute": "value"}})
-        assert result.data["status"] == "success"
+        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_properties": {"rebar size": "10", "unknown attribute": "value"}})
+        assert result.data["status"] == "warning"
 
 
 @pytest.mark.asyncio

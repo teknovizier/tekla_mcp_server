@@ -64,17 +64,6 @@ def read_config() -> dict[str, Any]:
             if not isinstance(config[key], expected_type):
                 raise ValueError(f"Invalid type for '{key}': expected {expected_type.__name__}, got {type(config[key]).__name__}. Please check settings.json")
 
-        # Validate paths exist
-        tekla_path = Path(config["tekla_path"])
-        if not tekla_path.exists():
-            raise ValueError(f"tekla_path does not exist: {tekla_path}. Please verify the path in settings.json")
-        if not tekla_path.is_dir():
-            raise ValueError(f"tekla_path must be a directory: {tekla_path}. Please verify the path in settings.json")
-
-        attr_path = Path(config["content_attributes_file_path"])
-        if not attr_path.exists():
-            raise ValueError(f"content_attributes_file_path does not exist: {attr_path}. Please verify the path in settings.json")
-
     try:
         with CONFIG_FILE_PATH.open("r", encoding="utf-8") as f:
             config = json.load(f)

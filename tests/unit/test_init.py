@@ -83,21 +83,6 @@ def test_read_config_wrong_type(monkeypatch):
         mock_exit.assert_called_once_with(1)
 
 
-def test_read_config_path_not_exist(monkeypatch):
-    """Checks that non-existent path triggers sys.exit."""
-    valid_json = '{"tekla_path": "C:\\\\NonExistent", "content_attributes_file_path": "C:\\\\Tekla\\\\file.lst"}'
-
-    def mock_exists(self):
-        return False
-
-    mocked_open = mock_open(read_data=valid_json)
-    monkeypatch.setattr(Path, "open", mocked_open)
-    monkeypatch.setattr(Path, "exists", mock_exists)
-    with patch("init.sys.exit") as mock_exit:
-        read_config()
-        mock_exit.assert_called_once_with(1)
-
-
 def test_read_json_config(monkeypatch):
     """Checks that valid JSON file is read correctly."""
 

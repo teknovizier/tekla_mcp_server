@@ -20,7 +20,8 @@ This file defines basic rules for AI agents and human contributors working on th
 - All tests: `uv run pytest tests/`
 - Unit only: `uv run pytest tests/unit/`
 - Functional only: `uv run pytest tests/functional/`
-- Single test: `uv run pytest tests/unit/test_models.py::test_get_element_type_by_class_valid`
+- Single test: `uv run pytest tests/unit/test_embeddings.py::TestNormalizeAttributeName::test_normalize -xvs`
+- Single test class: `uv run pytest tests/unit/test_embeddings.py::TestNormalizeAttributeName -xvs`
 - Verbose: `uv run pytest -xvs tests/`
 
 ⚠️ Functional tests modify Tekla models - run only in test environments.
@@ -45,17 +46,25 @@ This file defines basic rules for AI agents and human contributors working on th
 
 ### Imports (Order Matters)
 ```python
+# Standard library
 import json
 import math
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar
+from collections.abc import Callable
 
+# Third-party
 from pydantic import BaseModel, Field, PrivateAttr
 from pydantic_core import PydanticCustomError
+from sentence_transformers import SentenceTransformer, util
 
-from init import logger
-from utils import log_function_call
+# Local application
+from init import logger, read_config
+from models import ReportProperty
+from utils import log_function_call, log_mcp_tool_call
+from embeddings import get_embedding_model, get_embedding_threshold, find_normalized_match
 ```
 
 ### Type Hints & Formatting
@@ -112,11 +121,21 @@ def tool_function(...):
 - `tools.py` - Tekla operations
 - `tekla_utils.py` - Tekla API wrappers
 - `tekla_loader.py` - Tekla DLL loading
-- `utils.py` - Decorators
+- `embeddings.py` - Embedding model loading and text normalization
+- `component_props_mapper.py` - Component property mapping with semantic search
+- `template_attrs_parser.py` - Template attribute parsing with semantic search
+- `utils.py` - Decorators and utilities
 - `init.py` - Logging
 - `config/` - JSON configs
 - `tests/unit/` - Unit tests
 - `tests/functional/` - Functional tests
+
+## Unit Test Guidelines
+- Never mock Tekla API - use pure functions when possible
+- Use `unittest.mock.MagicMock` for external dependencies
+- Test files mirror module structure: `test_<module_name>.py`
+- Use `@pytest.mark.parametrize` for multiple test cases
+- Avoid Tekla imports in unit tests - use mocks
 
 ## Before Committing
 1. Check: `uv run ruff check .`
