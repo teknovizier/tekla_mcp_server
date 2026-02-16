@@ -49,6 +49,29 @@ mcp = FastMCP("Tekla MCP Server")
 
 # MCP tools
 @mcp.tool()
+def check_tekla_connection() -> dict[str, Any]:
+    """
+    Check Tekla connection status.
+
+    Returns:
+        - connected: boolean - whether Tekla is connected
+        - model_path: str - path to opened model (if any)
+        - message: str - status message
+    """
+    try:
+        tekla_model = TeklaModel()
+        return {
+            "connected": True,
+            "model_path": tekla_model.model.GetInfo().ModelPath,
+            "message": "Connected to Tekla",
+        }
+    except ConnectionError as e:
+        return {"connected": False, "model_path": None, "message": str(e)}
+    except Exception as e:
+        return {"connected": False, "model_path": None, "message": f"Error: {e}"}
+
+
+@mcp.tool()
 def put_components(
     component_name: str,
     attributes_set: str | None = None,

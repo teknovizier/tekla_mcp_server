@@ -20,6 +20,7 @@ To use this server, users must first install and configure an MCP client.
 The server provides the following tools:
 | Tool                             | Description                                                                 |
 |----------------------------------|-----------------------------------------------------------------------------|
+| `check_tekla_connection` | Check Tekla connection status. Returns whether Tekla is connected, the model path, and a status message |
 | `put_components`   | Insert Tekla components with optional semantic attribute mapping that converts user-friendly names (e.g., "rebar size") to config keys (e.g., "SBSize_list"). Supports intelligent components like `Lifting Anchor` with automatic placement calculations |
 | `remove_components`   | Remove Tekla components with specified name from the selected elements |
 | `select_elements_by_filter`   | Select elements in Tekla model based on type/Tekla class, name, profile, material, finish and phase |
