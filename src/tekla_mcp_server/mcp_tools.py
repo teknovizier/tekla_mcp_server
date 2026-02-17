@@ -22,7 +22,7 @@ from tekla_mcp_server.models import (
     ComponentType,
 )
 
-from tekla_mcp_server.tekla_loader import (
+from tekla_mcp_server.tekla.loader import (
     ArrayList,
     TeklaStructuresDatabaseTypeEnum,
     AABB,
@@ -55,7 +55,7 @@ from tekla_mcp_server.tekla_loader import (
     TemporaryTransparency,
 )
 
-from tekla_mcp_server.tekla_utils import (
+from tekla_mcp_server.tekla.utils import (
     STRING_MATCH_TYPE_MAPPING,
     TeklaModel,
     TeklaModelObject,
@@ -66,7 +66,7 @@ from tekla_mcp_server.tekla_utils import (
     insert_detail,
     insert_seam,  # noqa: F401
 )
-from tekla_mcp_server.template_attrs_parser import TemplateAttributeParser
+from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 
 from tekla_mcp_server.utils import serialize_to_json, log_function_call
 

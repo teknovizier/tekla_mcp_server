@@ -66,6 +66,8 @@ from tekla_mcp_server.models import ReportProperty
 from tekla_mcp_server.utils import log_function_call, log_mcp_tool_call
 from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, find_normalized_match
 from tekla_mcp_server.config import get_config
+from tekla_mcp_server.tekla.utils import TeklaModel, TeklaModelObject
+from tekla_mcp_server.tekla.loader import Point, Beam
 ```
 
 ### Type Hints & Formatting
@@ -101,12 +103,12 @@ def tool_function(...):
 
 ### Logging
 - Use `logger` from `init.py`
-- Levels: `debug()`, `info()`, `warning()`, `error()`, `exception()`
+- Levels: `debug()`, `info()`, `warning()`, `error()`
 - Decorators: `@log_function_call`, `@log_mcp_tool_call`
 - Configure via env vars: `TEKLA_MCP_LOG_LEVEL`, `TEKLA_MCP_LOG_FILE_PATH`
 
 ### Tekla API Patterns
-- Use `TeklaModel` wrapper from `tekla_utils.py`
+- Use `TeklaModel` wrapper from `tekla/utils.py`
 - Use `TeklaModelObject` for individual objects
 - Always `model.commit_changes()` after modifications
 - Use `wrap_model_objects()` for conversion
@@ -115,7 +117,7 @@ def tool_function(...):
 - Use `@mcp.tool()` decorator
 - Return dict with `status` key
 - Validate inputs in MCP tool layer
-- Use `tools.py` for actual operations
+- Use `mcp_tools.py` for actual operations
 
 ## Project Structure
 ```
@@ -124,15 +126,17 @@ tekla_mcp_server/
 │   ├── __init__.py
 │   ├── config.py              # Configuration management
 │   ├── embeddings.py          # Embedding model loading and text normalization
-│   ├── component_props_mapper.py  # Component property mapping with semantic search
 │   ├── init.py                # Logging, DLL loading
 │   ├── mcp_server.py          # Main server with MCP tools
+│   ├── mcp_tools.py           # MCP tool implementations
 │   ├── models.py              # Data models and enums
-│   ├── template_attrs_parser.py   # Template attribute parsing with semantic search
-│   ├── tekla_loader.py        # Tekla DLL loading
-│   ├── tekla_utils.py         # Tekla API wrappers
-│   ├── tools.py               # Tekla operations
-│   └── utils.py               # Decorators and utilities
+│   ├── utils.py               # Decorators and utilities
+│   └── tekla/                 # Tekla-specific modules
+│       ├── __init__.py
+│       ├── loader.py          # Tekla DLL loading
+│       ├── utils.py           # Tekla API wrappers
+│       ├── template_attrs_parser.py  # Template attribute parsing with semantic search
+│       └── component_props_mapper.py  # Component property mapping with semantic search
 ├── config/                    # Configuration JSON files
 │   ├── settings.json
 │   ├── element_types.json

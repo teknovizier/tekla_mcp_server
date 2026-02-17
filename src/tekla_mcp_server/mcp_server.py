@@ -20,7 +20,7 @@ from tekla_mcp_server.models import (
     LiftingAnchorsComponent,
 )
 
-from tekla_mcp_server.tools import (
+from tekla_mcp_server.mcp_tools import (
     manage_components_on_selected_objects,
     tool_put_components,
     tool_remove_components,
@@ -39,9 +39,9 @@ from tekla_mcp_server.tools import (
     tool_get_elements_properties,
     tool_get_elements_cut_parts,
 )
-from tekla_mcp_server.tekla_utils import TeklaModel
+from tekla_mcp_server.tekla.utils import TeklaModel
 from tekla_mcp_server.utils import log_mcp_tool_call
-from tekla_mcp_server.component_props_mapper import map_properties
+from tekla_mcp_server.tekla.component_props_mapper import map_properties
 
 
 mcp = FastMCP("Tekla MCP Server")

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tekla_mcp_server.component_props_mapper import ComponentPropsMapper, map_properties
+from tekla_mcp_server.tekla.component_props_mapper import ComponentPropsMapper, map_properties
 
 
 class TestConvertType:
@@ -135,14 +135,14 @@ class TestMapKeys:
 
 
 class TestMapAttributes:
-    @patch("tekla_mcp_server.component_props_mapper.ComponentPropsMapper")
+    @patch("tekla_mcp_server.tekla.component_props_mapper.ComponentPropsMapper")
     def test_mapper_unavailable(self, mock_mapper_class):
         mock_mapper_class.side_effect = Exception("Model not available")
         result = map_properties({"rebar size": 10}, "Border Rebar")
         assert result == {}
 
-    @patch("tekla_mcp_server.component_props_mapper.ComponentPropsMapper.map_keys")
-    @patch("tekla_mcp_server.component_props_mapper.ComponentPropsMapper")
+    @patch("tekla_mcp_server.tekla.component_props_mapper.ComponentPropsMapper.map_keys")
+    @patch("tekla_mcp_server.tekla.component_props_mapper.ComponentPropsMapper")
     def test_calls_mapper(self, mock_mapper_class, mock_map_keys):
         mock_mapper = MagicMock()
         mock_mapper_class.return_value = mock_mapper

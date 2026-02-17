@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterable
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringMatchType, BaseComponent
 
-from tekla_mcp_server.tekla_loader import (
+from tekla_mcp_server.tekla.loader import (
     Identifier,
     ArrayList,
     Hashtable,

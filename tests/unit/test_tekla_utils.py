@@ -16,8 +16,8 @@ if os.getenv("CI") == "true":
 
 from typing import Any
 
-from tekla_mcp_server.tekla_loader import Beam, Position, Point
-from tekla_mcp_server.tekla_utils import TeklaModelObject, get_wall_pairs
+from tekla_mcp_server.tekla.loader import Beam, Position, Point
+from tekla_mcp_server.tekla.utils import TeklaModelObject, get_wall_pairs
 
 
 created_elements: Any = []
