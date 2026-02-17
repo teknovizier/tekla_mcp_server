@@ -33,8 +33,8 @@ This file defines basic rules for AI agents and human contributors working on th
 - Type check: `uv run mypy .`
 
 ### Development
-- Run server: `uv run python mcp_server.py`
-- Build binary: `uv run pyinstaller mcp_server.py`
+- Run server: `uv run python src/tekla_mcp_server/mcp_server.py`
+- Build binary: `uv run pyinstaller src/tekla_mcp_server/mcp_server.py`
 
 ## Code Style
 
@@ -60,11 +60,12 @@ from pydantic import BaseModel, Field, PrivateAttr
 from pydantic_core import PydanticCustomError
 from sentence_transformers import SentenceTransformer, util
 
-# Local application
-from init import logger, read_config
-from models import ReportProperty
-from utils import log_function_call, log_mcp_tool_call
-from embeddings import get_embedding_model, get_embedding_threshold, find_normalized_match
+# Local application (use tekla_mcp_server prefix)
+from tekla_mcp_server.init import logger
+from tekla_mcp_server.models import ReportProperty
+from tekla_mcp_server.utils import log_function_call, log_mcp_tool_call
+from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, find_normalized_match
+from tekla_mcp_server.config import get_config
 ```
 
 ### Type Hints & Formatting
@@ -102,6 +103,7 @@ def tool_function(...):
 - Use `logger` from `init.py`
 - Levels: `debug()`, `info()`, `warning()`, `error()`, `exception()`
 - Decorators: `@log_function_call`, `@log_mcp_tool_call`
+- Configure via env vars: `TEKLA_MCP_LOG_LEVEL`, `TEKLA_MCP_LOG_FILE_PATH`
 
 ### Tekla API Patterns
 - Use `TeklaModel` wrapper from `tekla_utils.py`
@@ -116,19 +118,39 @@ def tool_function(...):
 - Use `tools.py` for actual operations
 
 ## Project Structure
-- `mcp_server.py` - Main server with MCP tools
-- `models.py` - Data models and enums
-- `tools.py` - Tekla operations
-- `tekla_utils.py` - Tekla API wrappers
-- `tekla_loader.py` - Tekla DLL loading
-- `embeddings.py` - Embedding model loading and text normalization
-- `component_props_mapper.py` - Component property mapping with semantic search
-- `template_attrs_parser.py` - Template attribute parsing with semantic search
-- `utils.py` - Decorators and utilities
-- `init.py` - Logging
-- `config/` - JSON configs
-- `tests/unit/` - Unit tests
-- `tests/functional/` - Functional tests
+```
+tekla_mcp_server/
+├── src/tekla_mcp_server/     # Source code (package)
+│   ├── __init__.py
+│   ├── config.py              # Configuration management
+│   ├── embeddings.py          # Embedding model loading and text normalization
+│   ├── component_props_mapper.py  # Component property mapping with semantic search
+│   ├── init.py                # Logging, DLL loading
+│   ├── mcp_server.py          # Main server with MCP tools
+│   ├── models.py              # Data models and enums
+│   ├── template_attrs_parser.py   # Template attribute parsing with semantic search
+│   ├── tekla_loader.py        # Tekla DLL loading
+│   ├── tekla_utils.py         # Tekla API wrappers
+│   ├── tools.py               # Tekla operations
+│   └── utils.py               # Decorators and utilities
+├── config/                    # Configuration JSON files
+│   ├── settings.json
+│   ├── element_types.json
+│   ├── lifting_anchor_types.json
+│   └── base_components.json
+├── tests/
+│   ├── unit/                  # Unit tests
+│   └── functional/            # Functional tests
+├── .env.example               # Environment variables template
+├── pyproject.toml
+└── requirements.txt
+└── requirements-dev.txt
+```
+
+## Configuration
+- Settings in `config/settings.json`
+- Use `get_config()` from `config.py` for centralized access
+- Environment variables: `TEKLA_MCP_LOG_LEVEL`, `TEKLA_MCP_LOG_FILE_PATH`, `TEKLA_MCP_CONFIG_DIR`
 
 ## Unit Test Guidelines
 - Never mock Tekla API - use pure functions when possible

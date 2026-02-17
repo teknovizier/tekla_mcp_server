@@ -7,8 +7,8 @@ from collections import defaultdict, Counter
 from collections.abc import Callable
 import re
 
-from init import logger
-from models import (
+from tekla_mcp_server.init import logger
+from tekla_mcp_server.models import (
     ELEMENT_TYPE_MAPPING,
     SelectionMode,
     UDASetMode,
@@ -22,7 +22,7 @@ from models import (
     ComponentType,
 )
 
-from tekla_loader import (
+from tekla_mcp_server.tekla_loader import (
     ArrayList,
     TeklaStructuresDatabaseTypeEnum,
     AABB,
@@ -55,7 +55,7 @@ from tekla_loader import (
     TemporaryTransparency,
 )
 
-from tekla_utils import (
+from tekla_mcp_server.tekla_utils import (
     STRING_MATCH_TYPE_MAPPING,
     TeklaModel,
     TeklaModelObject,
@@ -66,9 +66,9 @@ from tekla_utils import (
     insert_detail,
     insert_seam,  # noqa: F401
 )
-from template_attrs_parser import TemplateAttributeParser
+from tekla_mcp_server.template_attrs_parser import TemplateAttributeParser
 
-from utils import serialize_to_json, log_function_call
+from tekla_mcp_server.utils import serialize_to_json, log_function_call
 
 
 # Helper functions
@@ -401,7 +401,7 @@ def tool_select_elements_by_filter(
 
     # Filter on element types = Tekla classes
     if element_type:
-        tekla_classes = []
+        tekla_classes: list[int] = []
         if isinstance(element_type, int):
             element_type = [element_type]
         if isinstance(element_type, list):

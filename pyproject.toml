@@ -16,7 +16,7 @@ ignore_missing_imports = true
 [tool.pytest]
 minversion = "9.0"
 addopts = ["-ra"]
-pythonpath = ["."]
+pythonpath = ["src"]
 testpaths = [
     "tests",
 ]

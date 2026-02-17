@@ -6,16 +6,16 @@ __pycache__/
 !.github/**/
 .vscode/
 
-# Config files
-config/*.json
-
-# Logs
-*.log
+# Environment
+.env
 
 # Build
 build/
 dist/
 mcp_server.spec
+
+# Config files
+config/*.json
 
 # uv
 uv.lock

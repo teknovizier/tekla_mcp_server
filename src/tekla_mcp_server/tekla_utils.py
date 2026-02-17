@@ -8,10 +8,10 @@ from functools import wraps
 from typing import Any
 from collections.abc import Callable, Iterable
 
-from init import logger
-from models import StringMatchType, BaseComponent
+from tekla_mcp_server.init import logger
+from tekla_mcp_server.models import StringMatchType, BaseComponent
 
-from tekla_loader import (
+from tekla_mcp_server.tekla_loader import (
     Identifier,
     ArrayList,
     Hashtable,
@@ -47,7 +47,7 @@ from tekla_loader import (
     ObjectFilterExpressions,
 )
 
-from utils import log_function_call
+from tekla_mcp_server.utils import log_function_call
 
 
 # Mappings

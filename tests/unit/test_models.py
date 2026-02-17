@@ -13,7 +13,7 @@ import pytest
 
 from pydantic_core import ValidationError
 
-from models import (
+from tekla_mcp_server.models import (
     SelectionModeModel,
     UDASetModeModel,
     StringMatchTypeModel,

@@ -6,7 +6,8 @@ import re
 import threading
 from typing import Any
 
-from init import logger, read_config
+from tekla_mcp_server.init import logger
+from tekla_mcp_server.config import get_config
 from sentence_transformers import SentenceTransformer, util
 
 _embedding_model: SentenceTransformer | None = None
@@ -106,10 +107,9 @@ def get_embedding_model_and_threshold() -> tuple[SentenceTransformer, float | No
     if _embedding_model is None:
         with _lock:
             if _embedding_model is None:
-                config = read_config()
-                settings = config.get("attribute_mapper", {})
-                model_name = settings.get("embedding_model")
-                threshold = settings.get("embedding_threshold")
+                config = get_config()
+                model_name = config.embedding_model
+                threshold = config.embedding_threshold
                 if not model_name or not threshold:
                     raise ImportError("Attribute mapper configuration missing. Add 'attribute_mapper' section to config with 'embedding_model' and 'embedding_threshold'.")
                 logger.info("Loading embedding model: %s", model_name)

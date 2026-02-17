@@ -21,13 +21,13 @@ if os.getenv("CI") == "true":
 
 from fastmcp import Client
 
-from mcp_server import mcp
+from tekla_mcp_server.mcp_server import mcp
 
-from models import StringMatchType
-from tekla_loader import Point, Beam, Position, ViewHandler
-from tekla_loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
-from tekla_utils import TeklaModel, TeklaModelObject
-from tools import add_filter
+from tekla_mcp_server.models import StringMatchType
+from tekla_mcp_server.tekla_loader import Point, Beam, Position, ViewHandler
+from tekla_mcp_server.tekla_loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
+from tekla_mcp_server.tekla_utils import TeklaModel, TeklaModelObject
+from tekla_mcp_server.tools import add_filter
 
 
 def create_mcp_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):

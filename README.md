@@ -61,9 +61,17 @@ Python 3.11 or newer, along with some libraries, is required. You can install al
 uv pip install -r requirements.txt
 ```
 
+For development, you'll also need the additional libraries. You can install them with:
+
+```bash
+uv pip install -r requirements-dev.txt
+```
+
 ⚠️ *Note:* You may experience a naming conflict with the `clr` string styling package. A solution is to rename or delete the folder `C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\site-packages\clr`.
 
 ## Setting up
+
+### Configuration Files
 
 * Rename `config/settings.sample.json` to `config/settings.json` and adjust the values:
 
@@ -76,8 +84,47 @@ uv pip install -r requirements.txt
 
 * Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
 * Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model
-* Rename `config/base_components.sample.json` to `config/base_components.json`, and specify the names and component numbers you'd like to make available to the MCP server. Components can optionally include `custom_attributes` with descriptions for semantic mapping
-* Configure `mcp_server.py` as a custom MCP server in your MCP client
+* Rename `config/base_components.sample.json` to `config/base_components.json`, and specify the names and component numbers you'd like to make available to the MCP server. Components can optionally include `custom_properties` with descriptions for semantic mapping
+
+### Environment Variables
+
+Environment variables can be set in two ways:
+
+* For local development, place them in a `.env` file. You can copy `.env.example` to `.env` and adjust the values as needed. MCP server will load this file at startup.
+
+* For MCP clients, environment variables can be provided through the client's JSON configuration. These values are passed directly to the MCP server process when the client launches it.
+
+#### MCP Client Configuration
+
+In your MCP client JSON config, add environment variables under the `env` key:
+
+```json
+{
+  "mcpServers": {
+    "tekla": {
+      "command": "python",
+      "args": ["src/tekla_mcp_server/mcp_server.py"],
+      "env": {
+        "TEKLA_MCP_LOG_LEVEL": "INFO",
+        "TEKLA_MCP_LOG_FILE_PATH": "mcp_server.log",
+        "TEKLA_MCP_CONFIG_DIR": "config",
+      }
+    }
+  }
+}
+```
+
+Available environment variables:
+
+| **Variable**         | **Description**                                                                 |
+|-----------------------|---------------------------------------------------------------------------------|
+| `TEKLA_MCP_LOG_LEVEL` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). Default: `INFO`                    |
+| `TEKLA_MCP_LOG_FILE_PATH` | Path to log file. Default: `mcp_server.log`                                    |
+| `TEKLA_MCP_CONFIG_DIR` | Custom config directory path. Default: `config`                                                  |
+
+### Running the Server
+
+Configure `mcp_server.py` as a custom MCP server in your MCP client
 
  ⚠️ *Note:* For the detailed steps, please see the [setup guide](https://www.notion.so/teknovizier/Tekla-MCP-Server-A-Tool-to-Improve-Your-Modeling-Workflows-264250689e1380f38a1be0b60477786b).
 
@@ -86,10 +133,13 @@ uv pip install -r requirements.txt
 The project includes a comprehensive test suite:
 
 ### Unit Tests (`tests/unit/`)
-- `test_init.py`: Configuration loading, DLL initialization and error handling
+- `test_init.py`: DLL loading and error handling
+- `test_config.py`: Configuration management
 - `test_models.py`: Data model validation
 - `test_tekla_utils.py`: Tekla API wrapper tests
-- `test_attribute_mapper.py`: Semantic attribute mapping with cosine similarity
+- `test_embeddings.py`: Semantic embedding and attribute matching
+- `test_component_props_mapper.py`: Component property mapping
+- `test_template_attrs_parser.py`: Template attribute parsing
 
 ### Functional Tests (`tests/functional/`)
 - `test_mcp_server.py`: End-to-end MCP tool integration tests
@@ -123,10 +173,10 @@ uv pip install pyinstaller
 Then, generate an executable with:
 
 ```bash
-uv run pyinstaller mcp_server.py
+uv run pyinstaller src/tekla_mcp_server/mcp_server.py
 ```
 
-This will produce a binary file inside the `dist/mcp_server/` directory, which can be distributed without requiring Python installation. Ensure the `_internals` directory is included alongside the binary. 
+This will produce a binary file inside the `dist/mcp_server/` directory, which can be distributed without requiring Python installation. Ensure the `_internals` directory is included alongside the binary.
 
 Additionally, when using this option, configuration files should be copied to the `_internals/config` directory.
 

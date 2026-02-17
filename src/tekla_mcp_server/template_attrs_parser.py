@@ -9,10 +9,10 @@ This module provides functionality to:
 
 import re
 
-from init import read_config, logger
-from models import ReportProperty
-from embeddings import get_embedding_model, get_embedding_threshold, find_normalized_match, semantic_match
-from utils import log_function_call
+from tekla_mcp_server.init import logger
+from tekla_mcp_server.config import get_config
+from tekla_mcp_server.models import ReportProperty
+from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, find_normalized_match, semantic_match
 
 
 class TemplateAttributeParser:
@@ -64,7 +64,6 @@ class TemplateAttributeParser:
         return best_match
 
     @classmethod
-    @log_function_call
     def parse(cls, attribute_name: str) -> ReportProperty:
         """
         On first call, this function reads the Tekla template attributes file once,
@@ -74,9 +73,9 @@ class TemplateAttributeParser:
         Tries exact match first, then falls back to semantic matching if exact fails.
         """
         if not cls._loaded:
-            config = read_config()
-            logger.debug("Loading Tekla attribute definitions from file '%s'", config["content_attributes_file_path"])
-            with open(config["content_attributes_file_path"], "r", encoding="utf-8") as f:
+            config = get_config()
+            logger.debug("Loading Tekla attribute definitions from file '%s'", config.content_attributes_file_path)
+            with open(config.content_attributes_file_path, "r", encoding="utf-8") as f:
                 for line in f:
                     stripped = line.strip()
                     if not stripped or stripped.startswith("//") or stripped.startswith("[") or stripped.lower().startswith("name"):

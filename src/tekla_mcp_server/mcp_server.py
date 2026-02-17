@@ -9,7 +9,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from models import (
+from tekla_mcp_server.models import (
     SelectionModeModel,
     UDASetModeModel,
     StringMatchTypeModel,
@@ -20,7 +20,7 @@ from models import (
     LiftingAnchorsComponent,
 )
 
-from tools import (
+from tekla_mcp_server.tools import (
     manage_components_on_selected_objects,
     tool_put_components,
     tool_remove_components,
@@ -39,9 +39,9 @@ from tools import (
     tool_get_elements_properties,
     tool_get_elements_cut_parts,
 )
-from tekla_utils import TeklaModel
-from utils import log_mcp_tool_call
-from component_props_mapper import map_properties
+from tekla_mcp_server.tekla_utils import TeklaModel
+from tekla_mcp_server.utils import log_mcp_tool_call
+from tekla_mcp_server.component_props_mapper import map_properties
 
 
 mcp = FastMCP("Tekla MCP Server")

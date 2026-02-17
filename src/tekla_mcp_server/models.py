@@ -12,8 +12,9 @@ from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_seria
 from pydantic_core import PydanticCustomError
 from typing import Any, ClassVar
 
-from init import logger, read_json_config
-from utils import log_function_call
+from tekla_mcp_server.init import logger
+from tekla_mcp_server.utils import log_function_call
+from tekla_mcp_server.config import get_config
 
 
 # Enums
@@ -115,7 +116,7 @@ COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
 
 # Element types by material (supports both "Steel" and "Concrete")
-ELEMENT_TYPE_MAPPING: dict[str, dict[str, list[int]]] = read_json_config("element_types.json")
+ELEMENT_TYPE_MAPPING: dict[str, dict[str, list[int]]] = get_config().element_types
 
 # Pre-built lookup: class_number -> (material, element_type)
 CLASS_TO_ELEMENT: dict[int, tuple[str, str]] = {}
@@ -125,10 +126,10 @@ for material, types in ELEMENT_TYPE_MAPPING.items():
             CLASS_TO_ELEMENT[cn] = (material, element_type)
 
 # Lifting anchor types
-LIFTING_ANCHOR_TYPES: dict[str, Any] = read_json_config("lifting_anchor_types.json")
+LIFTING_ANCHOR_TYPES: dict[str, Any] = get_config().lifting_anchor_types
 
 # Components
-BASE_COMPONENTS: dict[str, dict[str, Any]] = read_json_config("base_components.json")
+BASE_COMPONENTS: dict[str, dict[str, Any]] = get_config().base_components
 
 
 def get_custom_properties_schema(component_name: str) -> dict[str, dict[str, str]] | None:

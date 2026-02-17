@@ -11,8 +11,8 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from models import ReportProperty
-from template_attrs_parser import TemplateAttributeParser
+from tekla_mcp_server.models import ReportProperty
+from tekla_mcp_server.template_attrs_parser import TemplateAttributeParser
 
 
 @pytest.mark.parametrize(

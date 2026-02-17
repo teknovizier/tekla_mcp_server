@@ -10,9 +10,9 @@ This module provides functionality to:
 
 from typing import Any
 
-from init import logger
-from embeddings import find_normalized_match, get_embedding_model, get_embedding_threshold, semantic_match
-from models import get_custom_properties_schema
+from tekla_mcp_server.init import logger
+from tekla_mcp_server.embeddings import find_normalized_match, get_embedding_model, get_embedding_threshold, semantic_match
+from tekla_mcp_server.models import get_custom_properties_schema
 
 
 class ComponentPropsMapper:

@@ -6,7 +6,7 @@ Tekla-related imports are accessed. It provides a centralized entry point for
 DLL loading and exposes commonly used classes for use throughout the application.
 """
 
-from init import load_dlls
+from tekla_mcp_server.init import load_dlls
 
 load_dlls()
 from System.Collections import ArrayList, Hashtable

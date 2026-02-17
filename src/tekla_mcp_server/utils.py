@@ -8,7 +8,7 @@ from typing import Any
 
 import json
 
-from init import logger
+from tekla_mcp_server.init import logger
 
 
 def serialize_to_json(data: Any) -> str:
