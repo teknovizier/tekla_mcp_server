@@ -7,7 +7,11 @@ This module provides functionality to:
 3. Match user input to attributes using exact, normalized, and semantic matching
 """
 
+from __future__ import annotations
+
 import re
+
+from sentence_transformers import SentenceTransformer
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.config import get_config
@@ -25,7 +29,7 @@ class TemplateAttributeParser:
     _loaded: bool = False
     _embeddings_cache: dict[str, list[float]] = {}
     _semantic_loaded: bool = False
-    _model = None
+    _model: SentenceTransformer | None = None
 
     @classmethod
     def _get_model(cls):

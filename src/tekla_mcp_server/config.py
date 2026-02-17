@@ -24,7 +24,14 @@ def _get_config_dir() -> Path:
 class Config:
     """Centralized configuration manager with lazy loading."""
 
+    _instance: "Config | None" = None
     _config_dir: Path = _get_config_dir()
+
+    @classmethod
+    def get_instance(cls) -> "Config":
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     @cached_property
     def _settings(self) -> dict[str, Any]:
@@ -106,12 +113,6 @@ class Config:
         return self._base_components
 
 
-_config: Config | None = None
-
-
 def get_config() -> Config:
     """Get the singleton Config instance."""
-    global _config
-    if _config is None:
-        _config = Config()
-    return _config
+    return Config.get_instance()

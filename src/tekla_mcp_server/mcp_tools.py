@@ -2,14 +2,14 @@
 Module for tools used for Tekla model operations.
 """
 
-from typing import Any
 from collections import defaultdict, Counter
 from collections.abc import Callable
+from typing import Any
 import re
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import (
-    ELEMENT_TYPE_MAPPING,
+    get_element_type_mapping,
     SelectionMode,
     UDASetMode,
     StringMatchType,
@@ -20,6 +20,7 @@ from tekla_mcp_server.models import (
     ElementTypeModel,
     ElementProperties,
     ComponentType,
+    ReportProperty,
 )
 
 from tekla_mcp_server.tekla.loader import (
@@ -196,8 +197,10 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
     Inserts a component to the specified object in the Tekla model.
     Handles specialized components like lifting anchors with intelligent behavior.
     """
+    WEIGHT_FACTOR = 1.05  # 5% to account for the weight of subassemblies and rebars
+    SAFETY_MARGIN = 5  # 5% safety margin
+    RECESS_WIDTH_OFFSET = 100.0
 
-    # Check if this is a lifting anchor component
     is_lifting_anchor = isinstance(component, LiftingAnchorsComponent)
 
     # Handle lifting anchor specific logic
@@ -213,13 +216,13 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
         width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
 
         # Get cast unit total weight
-        # Assume the total element weight is increased by 5% to account for the weight of subassemblies and rebars
-        total_weight = float(assembly.get_report_property("WEIGHT", float)) * 1.05
+        total_weight = float(assembly.get_report_property("WEIGHT", float)) * WEIGHT_FACTOR
 
         logger.debug("Assuming total weight: %s kg", total_weight)
 
         # Calculate the necessary number of anchors and get their type
-        number_of_anchors, valid_anchors = LiftingAnchorsComponent.get_required_anchors(element_type, total_weight, component.safety_margin if hasattr(component, "safety_margin") else 5)
+        safety_margin = getattr(component, "safety_margin", SAFETY_MARGIN)
+        number_of_anchors, valid_anchors = LiftingAnchorsComponent.get_required_anchors(element_type, total_weight, safety_margin)
 
         # Get the first anchor's attributes
         first_anchor_key = next(iter(valid_anchors))
@@ -243,7 +246,7 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
             "custom": 1,
             "custom_name": first_anchor_key,
             "AnchorRecess": 2,
-            "RecessWidth": width + 100.0,
+            "RecessWidth": width + RECESS_WIDTH_OFFSET,
             "CustomCRotation": 1,
             "up_direction": 1,
             **first_anchor_attributes,
@@ -270,73 +273,76 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
             counter += int(insert_component(selected_object, component))
             logger.debug("Inserted additional anchors for 4-anchor configuration. Total number of anchor components: %s", counter)
 
-        # Add recesses where necessary
-        def create_boolean_cut(x_position: float, y_position: float, cut_height: float, depth_offset: float, cut_length: float) -> bool:
-            """
-            Creates a boolean cut and applies it to the selected element.
-            """
-            logger.debug("Creating boolean cut at X=%s, Y=%s, height=%s, length=%s", x_position, y_position, cut_height, cut_length)
-            # Define start and end points for the boolean cut
-            solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
-            cut_start = Point(x_position, y_position, solid.MinimumPoint.Z - 25.0)
-            cut_end = Point(x_position, y_position, solid.MaximumPoint.Z + 25.0)
-
-            # Create the boolean cutting part as a rectangular beam
-            cutting_part = Beam()
-            cutting_part.Class = "0"
-            cutting_part.Material.MaterialString = "ZERO WEIGHT"
-            cutting_part.Name = "LIFTING_ANCHOR_RECESS"  # Name for identification
-            cutting_part.Profile.ProfileString = f"{cut_length}*{cut_height}"
-
-            # Set positioning attributes
-            cutting_part.StartPoint = cut_start
-            cutting_part.EndPoint = cut_end
-            cutting_part.Position.Depth = Position.DepthEnum.MIDDLE
-            cutting_part.Position.Plane = Position.PlaneEnum.LEFT
-            cutting_part.Position.DepthOffset = depth_offset
-
-            # Insert the boolean part into the model
-            if cutting_part.Insert():
-                target_object = TeklaModelObject(selected_object)
-                cutter_object = TeklaModelObject(cutting_part)
-                return target_object.add_cut(cutter_object, True)
-            logger.warning("Failed to insert boolean cut part")
-            return False
-
-        # Iterate through all boolean parts within the element, identify the recesses for lifting anchors, and create additional cuts where needed
-        boolean_part_enum = selected_object.GetBooleans()
-        while boolean_part_enum.MoveNext():
-            boolean_part = boolean_part_enum.Current
-            if isinstance(boolean_part, BooleanPart):
-                operative_part = boolean_part.OperativePart
-
-                # Rely on these properties for proper identification:
-                # - The type is BOOLEAN_CUT
-                # - The Tekla class is 0
-                # - The name is empty
-                # - The profile starts with "PRMD"
-                if (
-                    boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT
-                    and operative_part.Class == "0"
-                    and operative_part.Name == ""
-                    and operative_part.Profile.ProfileString.startswith("PRMD")
-                ):
-                    # Create the boolean part only if the recess is positioned below the highest Y coordinate of the element solid
-                    solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
-                    DEFAULT_OFFSET = 0.0  # Assume zero offset, should probably be offset = 25.0 if local_cog.X < operative_part.StartPoint.X else -25.0
-                    DEFAULT_CUT_LENGTH = 300.0
-                    MIN_LEDGE_HEIGHT = 100.0
-                    ledge_height = solid.MaximumPoint.Y - operative_part.StartPoint.Y
-                    if ledge_height > MIN_LEDGE_HEIGHT:
-                        create_boolean_cut(operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, DEFAULT_CUT_LENGTH)
-                    elif ledge_height:
-                        match = re.search(r"PRMD(\d+)", operative_part.Profile.ProfileString)
-                        if match:
-                            cut_length = float(match.group(1)) + 0.99  # Add 0.99 mm to avoid Tekla bug
-                            create_boolean_cut(operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, cut_length)
+        _process_lifting_anchor_recesses(selected_object, local_cog)
         logger.info("Total lifting anchor components inserted: %s", counter)
 
     return counter
+
+
+def _process_lifting_anchor_recesses(selected_object: ModelObject, local_cog: Any) -> None:
+    """
+    Iterates through all boolean parts within the element, identifies the recesses for lifting anchors,
+    and creates additional cuts where needed.
+    """
+    boolean_part_enum = selected_object.GetBooleans()
+    while boolean_part_enum.MoveNext():
+        boolean_part = boolean_part_enum.Current
+        if isinstance(boolean_part, BooleanPart):
+            operative_part = boolean_part.OperativePart
+
+            # Rely on these properties for proper identification:
+            # - The type is BOOLEAN_CUT
+            # - The Tekla class is 0
+            # - The name is empty
+            # - The profile starts with "PRMD"
+            if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Class == "0" and operative_part.Name == "" and operative_part.Profile.ProfileString.startswith("PRMD"):
+                # Create the boolean part only if the recess is positioned below the highest Y coordinate of the element solid
+                solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
+                DEFAULT_OFFSET = 0.0  # Assume zero offset, should probably be offset = 25.0 if local_cog.X < operative_part.StartPoint.X else -25.0
+                DEFAULT_CUT_LENGTH = 300.0
+                MIN_LEDGE_HEIGHT = 100.0
+                MAGIC_OFFSET = 0.99  # Add 0.99 mm to avoid Tekla bug
+                ledge_height = solid.MaximumPoint.Y - operative_part.StartPoint.Y
+                if ledge_height > MIN_LEDGE_HEIGHT:
+                    _create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, DEFAULT_CUT_LENGTH)
+                elif ledge_height:
+                    match = re.search(r"PRMD(\d+)", operative_part.Profile.ProfileString)
+                    if match:
+                        cut_length = float(match.group(1)) + MAGIC_OFFSET
+                        _create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, cut_length)
+
+
+def _create_boolean_cut(selected_object: ModelObject, x_position: float, y_position: float, cut_height: float, depth_offset: float, cut_length: float) -> bool:
+    """
+    Creates a boolean cut and applies it to the selected element.
+    """
+    Z_OFFSET = 25.0
+    logger.debug("Creating boolean cut at X=%s, Y=%s, height=%s, length=%s", x_position, y_position, cut_height, cut_length)
+    solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
+    cut_start = Point(x_position, y_position, solid.MinimumPoint.Z - Z_OFFSET)
+    cut_end = Point(x_position, y_position, solid.MaximumPoint.Z + Z_OFFSET)
+
+    # Create the boolean cutting part as a rectangular beam
+    cutting_part = Beam()
+    cutting_part.Class = "0"
+    cutting_part.Material.MaterialString = "ZERO WEIGHT"
+    cutting_part.Name = "LIFTING_ANCHOR_RECESS"  # Name for identification
+    cutting_part.Profile.ProfileString = f"{cut_length}*{cut_height}"
+
+    # Set positioning attributes
+    cutting_part.StartPoint = cut_start
+    cutting_part.EndPoint = cut_end
+    cutting_part.Position.Depth = Position.DepthEnum.MIDDLE
+    cutting_part.Position.Plane = Position.PlaneEnum.LEFT
+    cutting_part.Position.DepthOffset = depth_offset
+
+    # Insert the boolean part into the model
+    if cutting_part.Insert():
+        target_object = TeklaModelObject(selected_object)
+        cutter_object = TeklaModelObject(cutting_part)
+        return target_object.add_cut(cutter_object, True)
+    logger.warning("Failed to insert boolean cut part")
+    return False
 
 
 @log_function_call
@@ -408,7 +414,7 @@ def tool_select_elements_by_filter(
             tekla_classes = element_type
         elif isinstance(element_type, ElementType):
             tekla_classes = []
-            for material_types in ELEMENT_TYPE_MAPPING.values():
+            for material_types in get_element_type_mapping().values():
                 if element_type.name in material_types:
                     tekla_classes.extend(material_types[element_type.name])
         else:
@@ -523,6 +529,7 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
     """
     Draws labels for the given Tekla model objects using the GraphicsDrawer.
     """
+    COLOR_BLACK = (0.0, 0.0, 0.0)
     drawer = GraphicsDrawer()
     processed_elements = 0
     drawn_labels = 0
@@ -546,7 +553,7 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
                 ElementLabel.CLASS: selected_object.tekla_class,
             }
             text = labels.get(label, ElementLabel.NAME)
-        if drawer.DrawText(selected_object.cog, text, Color(0.0, 0.0, 0.0)):
+        if drawer.DrawText(selected_object.cog, text, Color(*COLOR_BLACK)):
             drawn_labels += 1
         processed_elements += 1
     logger.info("Drawn '%s' labels on %s elements", label.value, drawn_labels)
@@ -796,18 +803,33 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
     parts: list[ElementProperties] = []
     custom_props_errors: dict[str, dict[str, str]] = defaultdict(dict)
 
+    parsed_custom_props: list[ReportProperty] = []
+    failed_custom_prop_definitions: list[str] = []
+    if custom_props_definitions:
+        for custom_prop_definition in custom_props_definitions:
+            try:
+                parsed_prop = TemplateAttributeParser.parse(custom_prop_definition)
+                parsed_custom_props.append(parsed_prop)
+            except Exception as e:
+                failed_custom_prop_definitions.append(custom_prop_definition)
+                logger.warning("Error parsing custom property definition '%s': %s", custom_prop_definition, e)
+
     def get_single_element_properties(selected_object: TeklaModelObject) -> ElementProperties:
         weight, _ = selected_object.weight
         custom_properties = []
-        if custom_props_definitions:
-            for custom_prop_definition in custom_props_definitions:
-                try:
-                    custom_property = TemplateAttributeParser.parse(custom_prop_definition)
-                    custom_property.value = selected_object.get_report_property(custom_property.name, custom_property.data_type)
-                    custom_properties.append(custom_property)
-                except Exception as e:
-                    custom_props_errors[selected_object.guid][custom_prop_definition] = str(e)
-                    logger.warning("Error extracting custom property '%s' for the object %s: %s", custom_prop_definition, selected_object.guid, e)
+        for custom_property in parsed_custom_props:
+            try:
+                custom_property_copy = custom_property.model_copy(deep=False)
+                custom_property_copy.value = selected_object.get_report_property(custom_property_copy.name, custom_property_copy.data_type)
+                custom_properties.append(custom_property_copy)
+            except Exception as e:
+                custom_props_errors[selected_object.guid][custom_property.name] = str(e)
+                logger.warning(
+                    "Error extracting custom property '%s' for the object %s: %s",
+                    custom_property.name,
+                    selected_object.guid,
+                    e,
+                )
 
         return ElementProperties(
             position=selected_object.position,
@@ -839,7 +861,8 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
         "processed_elements": processed_elements,
         "assemblies_list": serialized_assemblies,
         "parts_list": serialized_parts,
-        "custom_properties_errors": custom_props_errors,
+        "invalid_custom_property_definitions": failed_custom_prop_definitions,
+        "custom_property_extraction_errors": custom_props_errors,
     }
 
 

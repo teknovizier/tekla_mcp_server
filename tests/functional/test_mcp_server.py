@@ -839,8 +839,6 @@ async def test_get_elements_properties_invalid_and_missing_custom_properties(mod
         )
 
         assemblies = json.loads(result.data["assemblies_list"])
-        errors = result.data["custom_properties_errors"]
-        assert errors
 
         for assembly in assemblies:
             props = assembly["custom_properties"]
@@ -852,11 +850,8 @@ async def test_get_elements_properties_invalid_and_missing_custom_properties(mod
             assert get_prop_value("NON_EXISTENT_PROPERTY") == "N/A"
             assert get_prop_value("ASSEMBLY_TOP_LEVEL") != "N/A"
 
-        for _, prop_errors in errors.items():
-            for key, msg in prop_errors.items():
-                assert isinstance(key, str)
-                assert isinstance(msg, str)
-
+        errors = result.data["invalid_custom_property_definitions"]
+        assert errors
 
 @pytest.mark.asyncio
 async def test_get_elements_cut_parts_with_cuts(model_objects):

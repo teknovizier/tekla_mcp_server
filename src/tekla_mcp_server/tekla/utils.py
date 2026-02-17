@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from functools import wraps
 from typing import Any
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Generator
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringMatchType, BaseComponent
@@ -311,13 +311,12 @@ class TeklaModelObject:
         - The total weight of the element, including its main part, secondary parts, and subassemblies.
         - The total weight of all reinforcement bars associated with the main part, secondary parts, and any rebar subassemblies.
         """
-        weight_main_part = 0.0
+        # Get the main part
+        weight_main_part = float(self.main_part.get_report_property("WEIGHT", float))
+
         weight_secondaries = 0.0
         weight_subassemblies = 0.0
         weight_rebars = 0.0
-
-        # Get the main part
-        weight_main_part = float(self.main_part.get_report_property("WEIGHT", float))
 
         # Rebars on main part
         for rebar in wrap_model_objects(self.main_part.model_object.GetReinforcements()):
@@ -502,7 +501,7 @@ class TeklaModelObject:
             raise TypeError("Property type must be one of: str, int, float.")
 
 
-def wrap_model_objects(model_objects):
+def wrap_model_objects(model_objects: Iterable) -> Generator[TeklaModelObject, None, None]:
     """
     Wraps each Tekla ModelObject in a TeklaModelObject.
 
@@ -513,7 +512,7 @@ def wrap_model_objects(model_objects):
             yield TeklaModelObject(model_object)
 
 
-def ensure_transformation_plane(func: Callable[..., Any]) -> Any:
+def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     Sets the transformation plane before execution and restores it after.
     Supports functions with either one or two selected objects.

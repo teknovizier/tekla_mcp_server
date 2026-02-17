@@ -115,21 +115,60 @@ ELEMENT_TYPES = {e.value for e in ElementType}
 COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
 
-# Element types by material (supports both "Steel" and "Concrete")
-ELEMENT_TYPE_MAPPING: dict[str, dict[str, list[int]]] = get_config().element_types
 
-# Pre-built lookup: class_number -> (material, element_type)
-CLASS_TO_ELEMENT: dict[int, tuple[str, str]] = {}
-for material, types in ELEMENT_TYPE_MAPPING.items():
-    for element_type, class_numbers in types.items():
-        for cn in class_numbers:
-            CLASS_TO_ELEMENT[cn] = (material, element_type)
+class _LazyConfigLoader:
+    """Lazy loader for config-dependent module-level variables."""
 
-# Lifting anchor types
-LIFTING_ANCHOR_TYPES: dict[str, Any] = get_config().lifting_anchor_types
+    _element_types: dict[str, dict[str, list[int]]] | None = None
+    _lifting_anchor_types: dict[str, Any] | None = None
+    _base_components: dict[str, Any] | None = None
 
-# Components
-BASE_COMPONENTS: dict[str, dict[str, Any]] = get_config().base_components
+    @property
+    def element_types(self) -> dict[str, dict[str, list[int]]]:
+        if self._element_types is None:
+            self._element_types = get_config().element_types
+        return self._element_types
+
+    @property
+    def lifting_anchor_types(self) -> dict[str, Any]:
+        if self._lifting_anchor_types is None:
+            self._lifting_anchor_types = get_config().lifting_anchor_types
+        return self._lifting_anchor_types
+
+    @property
+    def base_components(self) -> dict[str, Any]:
+        if self._base_components is None:
+            self._base_components = get_config().base_components
+        return self._base_components
+
+
+_config_loader = _LazyConfigLoader()
+_class_to_element: dict[int, tuple[str, str]] = {}
+
+
+def get_element_type_mapping() -> dict[str, dict[str, list[int]]]:
+    """Returns element type mapping from config (lazy loaded)."""
+    return _config_loader.element_types
+
+
+def get_lifting_anchor_types() -> dict[str, Any]:
+    """Returns lifting anchor types from config (lazy loaded)."""
+    return _config_loader.lifting_anchor_types
+
+
+def get_base_components() -> dict[str, Any]:
+    """Returns base components from config (lazy loaded)."""
+    return _config_loader.base_components
+
+
+def get_class_to_element() -> dict[int, tuple[str, str]]:
+    """Returns class to element mapping (lazy loaded)."""
+    if not _class_to_element:
+        for material, types in _config_loader.element_types.items():
+            for element_type, class_numbers in types.items():
+                for cn in class_numbers:
+                    _class_to_element[cn] = (material, element_type)
+    return _class_to_element
 
 
 def get_custom_properties_schema(component_name: str) -> dict[str, dict[str, str]] | None:
@@ -142,7 +181,7 @@ def get_custom_properties_schema(component_name: str) -> dict[str, dict[str, str
     Returns:
         Dictionary of custom properties with their descriptions and types, or None if not defined
     """
-    component = BASE_COMPONENTS.get(component_name)
+    component = get_base_components().get(component_name)
     if component:
         return component.get("custom_properties")
     return None
@@ -241,7 +280,7 @@ class ElementTypeModel(EnumWrapper):
         """
         if isinstance(class_number, str):
             class_number = int(class_number)
-        result = CLASS_TO_ELEMENT.get(class_number)
+        result = get_class_to_element().get(class_number)
         if result is None:
             raise ValueError(f"Class number {class_number} not found in the list of allowed classes.")
         return result
@@ -295,7 +334,7 @@ class BaseComponent(BaseModel):
         """
         Initializes private attributes after model creation.
         """
-        self._number = BASE_COMPONENTS.get(self.name, {}).get("number", -1)
+        self._number = get_base_components().get(self.name, {}).get("number", -1)
         self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT  # Default to custom detail component
 
         if self.properties_set is None:
@@ -368,7 +407,7 @@ class LiftingAnchorsComponent(BaseComponent):
         super().__init__(**data)
 
     def model_post_init(self, __context):
-        self._safety_margin = BASE_COMPONENTS.get(self.name, {}).get("safety_margin", 5)
+        self._safety_margin = get_base_components().get(self.name, {}).get("safety_margin", 5)
         super().model_post_init(__context)
 
     # Getters
@@ -379,7 +418,7 @@ class LiftingAnchorsComponent(BaseComponent):
 
     @staticmethod
     @log_function_call
-    def get_required_anchors(element_type: str, element_weight: float, safety_margin: int, anchor_types: dict = LIFTING_ANCHOR_TYPES) -> tuple[int, dict]:
+    def get_required_anchors(element_type: str, element_weight: float, safety_margin: int, anchor_types: dict | None = None) -> tuple[int, dict]:
         """
         Determines the required number of lifting anchors for an element based on its weight and safety margin.
 
@@ -387,13 +426,18 @@ class LiftingAnchorsComponent(BaseComponent):
         if necessary. It adjusts the required lifting capacity by applying the specified safety margin and
         selects anchors from the provided anchor types that meet the capacity requirement.
         """
+        KG_TO_TON = 1000
+        PERCENT = 100
+
+        if anchor_types is None:
+            anchor_types = get_lifting_anchor_types()
         valid_anchors = None
         n = 2  # Start with 2 anchors
         while n <= 4:
-            required_capacity = element_weight / n / 1000
+            required_capacity = element_weight / n / KG_TO_TON
 
             # Adjust the capacity to account for reserve margin
-            required_capacity += required_capacity * safety_margin / 100
+            required_capacity += required_capacity * safety_margin / PERCENT
 
             # Find anchors that meet the capacity requirement
             valid_anchors = {key: value for key, value in anchor_types.items() if value["capacity"] >= required_capacity and element_type in value["element_type"] and value["active"]}
@@ -421,13 +465,14 @@ class LiftingAnchorsComponent(BaseComponent):
         the minimum edge distance constraints. Additionally, it verifies that the required anchor distances
         do not exceed the total element length.
         """
-        DOUBLE_ANCHOR_SPACING_LONG_WALL = 1000.0  # Double anchor spacing for long walls
+        DOUBLE_ANCHOR_SPACING_LONG_WALL  = 1000.0  # Double anchor spacing for long walls
         DOUBLE_ANCHOR_SPACING_SHORTER_WALL = 500.0  # Double anchor spacing for shorter walls
+        ROUNDING_MULTIPLE = 5
 
         # By default, place anchors at L/4 from COG
         distance_from_cog = element_length / 4
-        distance_from_start: float = math.floor((cog_x - distance_from_cog) / 5) * 5
-        distance_from_end: float = math.floor((element_length - cog_x - distance_from_cog) / 5) * 5
+        distance_from_start: float = math.floor((cog_x - distance_from_cog) / ROUNDING_MULTIPLE) * ROUNDING_MULTIPLE
+        distance_from_end: float = math.floor((element_length - cog_x - distance_from_cog) / ROUNDING_MULTIPLE) * ROUNDING_MULTIPLE
 
         required_length = distance_from_start + 2 * distance_from_cog + distance_from_end
         double_anchor_spacing = min_edge_distance  # Assume the distance between anchors to be equal to the minimum edge distance
@@ -453,8 +498,8 @@ class LiftingAnchorsComponent(BaseComponent):
             # Reduce the distance from COG, but do not allow the distance between anchors be smaller than min_edge_distance
             while distance_from_start < min_edge_distance and distance_from_end < min_edge_distance:
                 # Recalculate distances
-                distance_from_start += 5
-                distance_from_end += 5
+                distance_from_start += ROUNDING_MULTIPLE
+                distance_from_end += ROUNDING_MULTIPLE
 
                 # Check the minimum distance between anchors
                 gap = element_length - distance_from_start - distance_from_end

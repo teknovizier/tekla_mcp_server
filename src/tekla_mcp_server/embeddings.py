@@ -3,16 +3,52 @@ Embedding utilities for semantic search and similarity matching.
 """
 
 import re
-import threading
 from typing import Any
 
-from tekla_mcp_server.init import logger
-from tekla_mcp_server.config import get_config
 from sentence_transformers import SentenceTransformer, util
+
+from tekla_mcp_server.config import get_config
+from tekla_mcp_server.init import logger
 
 _embedding_model: SentenceTransformer | None = None
 _embedding_threshold: float | None = None
-_lock = threading.Lock()
+
+
+def _ensure_loaded() -> None:
+    """Lazily load the embedding model and threshold."""
+    global _embedding_model, _embedding_threshold
+    if _embedding_model is None:
+        config = get_config()
+        model_name = config.embedding_model
+        threshold = config.embedding_threshold
+        if not model_name or threshold is None:
+            raise ImportError("Attribute mapper configuration missing. Add 'attribute_mapper' section to config with 'embedding_model' and 'embedding_threshold'.")
+        logger.info("Loading embedding model: %s", model_name)
+        _embedding_model = SentenceTransformer(model_name)
+        _embedding_threshold = threshold
+        logger.info("Embedding model loaded")
+
+
+def get_embedding_model_and_threshold() -> tuple[SentenceTransformer, float]:
+    """Returns cached embedding model and threshold."""
+    _ensure_loaded()
+    assert _embedding_model is not None
+    assert _embedding_threshold is not None
+    return _embedding_model, _embedding_threshold
+
+
+def get_embedding_model() -> SentenceTransformer:
+    """Returns cached embedding model."""
+    _ensure_loaded()
+    assert _embedding_model is not None
+    return _embedding_model
+
+
+def get_embedding_threshold() -> float:
+    """Returns embedding threshold."""
+    _ensure_loaded()
+    assert _embedding_threshold is not None
+    return _embedding_threshold
 
 
 def normalize_attribute_name(name: str) -> str:
@@ -94,41 +130,3 @@ def semantic_match(
             best_match = key
 
     return best_match, best_score
-
-
-def get_embedding_model_and_threshold() -> tuple[SentenceTransformer, float | None]:
-    """
-    Returns cached embedding model and threshold.
-
-    Returns:
-        Tuple of (model, threshold)
-    """
-    global _embedding_model, _embedding_threshold
-    if _embedding_model is None:
-        with _lock:
-            if _embedding_model is None:
-                config = get_config()
-                model_name = config.embedding_model
-                threshold = config.embedding_threshold
-                if not model_name or not threshold:
-                    raise ImportError("Attribute mapper configuration missing. Add 'attribute_mapper' section to config with 'embedding_model' and 'embedding_threshold'.")
-                logger.info("Loading embedding model: %s", model_name)
-                _embedding_model = SentenceTransformer(model_name)
-                _embedding_threshold = threshold
-                assert _embedding_threshold is not None
-                logger.info("Embedding model loaded")
-    return _embedding_model, _embedding_threshold
-
-
-def get_embedding_model() -> SentenceTransformer:
-    """Returns cached embedding model."""
-    model, _ = get_embedding_model_and_threshold()
-    return model
-
-
-def get_embedding_threshold() -> float:
-    """Returns embedding threshold."""
-    _, threshold = get_embedding_model_and_threshold()
-    if threshold is None:
-        raise RuntimeError("Embedding threshold not initialized")
-    return threshold

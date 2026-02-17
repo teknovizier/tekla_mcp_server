@@ -18,15 +18,13 @@ from tekla_mcp_server.models import get_custom_properties_schema
 class ComponentPropsMapper:
     def __init__(self, threshold: float | None = None):
         self._model = get_embedding_model()
-        self.threshold = threshold or get_embedding_threshold()
+        self.threshold = threshold if threshold is not None else get_embedding_threshold()
         self._schema_cache: dict[str, dict] = {}
 
     def _load_schema(self, component_name: str) -> bool:
         if component_name in self._schema_cache:
             logger.debug("Using cached schema for component: %s", component_name)
             return True
-
-        assert self._model is not None
 
         schema = get_custom_properties_schema(component_name)
         if not schema:

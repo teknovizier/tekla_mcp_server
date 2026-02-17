@@ -56,6 +56,6 @@ def log_mcp_tool_call(func: Callable) -> Callable:
             return func(*args, **kwargs)
         except (ValueError, TypeError, AttributeError, KeyError) as e:
             logger.exception("[%s] failed:", func.__name__)
-            return {"status": "error", "message": str(e)}
+            return {"status": "error", "error_type": type(e).__name__, "message": str(e)}
 
     return wrapper
