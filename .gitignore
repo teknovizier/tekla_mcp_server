@@ -1,9 +1,10 @@
 # Python cache
 __pycache__/
 
-# GitHub and VS Code
+# GitHub, OpenCode and VS Code
 .github/
 !.github/**/
+.opencode/
 .vscode/
 
 # Environment
