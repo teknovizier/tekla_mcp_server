@@ -765,7 +765,7 @@ def tool_set_elements_udas(selected_objects: ModelObjectEnumerator, udas: dict[s
 
 
 @log_function_call
-def tool_get_all_elements_udas(selected_objects: ModelObjectEnumerator) -> dict:
+def tool_get_elements_udas(selected_objects: ModelObjectEnumerator) -> dict:
     """
     Retrieves GUID, position, and all UDAs for a collection of model objects.
     """

@@ -34,7 +34,7 @@ The server provides the following tools:
 | `cut_elements_with_zero_class_parts` | Performs boolean cuts on selected elements using elements in class 0, with optional deletion of cutting parts       |
 | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts       |
 | `set_elements_udas`              | Set custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones |
-| `get_all_elements_udas`       | Retrieve structured data about all custom attributes for the selected Tekla elements |
+| `get_elements_udas`       | Retrieve structured data about all custom attributes for the selected Tekla elements |
 | `get_elements_properties`       | Retrieve structured data about selected elements in the Tekla model, including key properties (position, GUID, name, profile, material, finish, Tekla class), weight, and any defined report properties |
 | `get_elements_cut_parts`       | Find all cut parts in the selected elements and returns a summary grouped by profile |
 

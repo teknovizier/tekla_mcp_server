@@ -35,7 +35,7 @@ from tekla_mcp_server.mcp_tools import (
     tool_cut_elements_with_zero_class_parts,
     tool_convert_cut_parts_to_real_parts,
     tool_set_elements_udas,
-    tool_get_all_elements_udas,
+    tool_get_elements_udas,
     tool_get_elements_properties,
     tool_get_elements_cut_parts,
 )
@@ -336,7 +336,7 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
 
 @mcp.tool()
 @log_mcp_tool_call
-def get_all_elements_udas() -> dict[str, Any]:
+def get_elements_udas() -> dict[str, Any]:
     """
     Retrieves all UDAs for the selected elements (assemblies or parts) in the Tekla model.
 
@@ -350,7 +350,7 @@ def get_all_elements_udas() -> dict[str, Any]:
     """
 
     selected_objects = TeklaModel().get_selected_objects()
-    return tool_get_all_elements_udas(selected_objects)
+    return tool_get_elements_udas(selected_objects)
 
 
 @mcp.tool()
