@@ -338,15 +338,27 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
 @log_mcp_tool_call
 def get_elements_udas() -> dict[str, Any]:
     """
-    Retrieves all UDAs for the selected elements (assemblies or parts) in the Tekla model.
+    Retrieve all user-defined attributes (UDAs) for selected Tekla elements (assemblies or parts).
 
-    The returned data to be presented in a Markdown table format, each row represents one element, with columns for:
+    ## INPUT
+    - No additional parameters required.
+
+    ## BEHAVIOR
+    - Extract all available UDAs for each selected element.
+    - Each element is represented as one row in the output table.
+    - Only UDAs that exist for at least one selected element should appear as columns.
+
+    ## OUTPUT
+    - Table format only; first row = headers, no JSON or extra text.
+    - Leftmost "No" column with sequential row numbers starting from 1.
+
+    ### DEFAULT COLUMNS
     - Position
     - GUID
-    - Any available UDAs
 
-    Each UDA is returned using its property name as the column header.
-    If an attribute is missing, the corresponding cell to be left empty.
+    ### UDA COLUMNS
+    - Each UDA appears as a separate column using its exact property name.
+    - If a UDA value is missing for an element, the cell should be empty.
     """
 
     selected_objects = TeklaModel().get_selected_objects()
@@ -392,13 +404,22 @@ def get_elements_properties(custom_props_definitions: list[str] | None = None) -
 @log_mcp_tool_call
 def get_elements_cut_parts() -> dict[str, Any]:
     """
-    Finds all cut parts in the selected elements and returns a summary grouped by profile.
+    Find all cut parts in the selected Tekla elements and return a summary grouped by profile.
 
-    The returned data to be presented in a Markdown table format, with columns for:
-    - Profile: The profile string of the cut part
-    - Count: The number of cut parts with that profile
+    ## INPUT
+    - No additional parameters required.
 
-    Also, show total number of cut parts found across all profiles and total number of elements that were processed.
+    ## OUTPUT
+    - Table format only; first row = headers, no JSON or extra text.
+    - Leftmost "No" column with sequential row numbers starting from 1.
+
+    ### TABLE COLUMNS
+    - Profile
+    - Count
+
+    ### SUMMARY
+    - Show the total number of cut parts found across all profiles.
+    - Show the total number of processed elements.
     """
 
     selected_objects = TeklaModel().get_selected_objects()
