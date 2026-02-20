@@ -853,6 +853,7 @@ async def test_get_elements_properties_invalid_and_missing_custom_properties(mod
         errors = result.data["invalid_custom_property_definitions"]
         assert errors
 
+
 @pytest.mark.asyncio
 async def test_get_elements_cut_parts_with_cuts(model_objects):
     """

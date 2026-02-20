@@ -216,7 +216,7 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
         width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
 
         # Get cast unit total weight
-        total_weight = float(assembly.get_report_property("WEIGHT", float)) * WEIGHT_FACTOR
+        total_weight = float(assembly.get_report_property("WEIGHT")) * WEIGHT_FACTOR
 
         logger.debug("Assuming total weight: %s kg", total_weight)
 
@@ -538,7 +538,7 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
             if not custom_label:
                 raise ValueError("Custom label parameter has to be set.")
             custom_property = TemplateAttributeParser.parse(custom_label)
-            value = selected_object.get_report_property(custom_property.name, custom_property.data_type)
+            value = selected_object.get_report_property(custom_property.name)
             unit = f" {custom_property.unit}" if custom_property.unit else ""
             text = f"{custom_label} = {value}{unit}"
         else:
@@ -820,7 +820,7 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
         for custom_property in parsed_custom_props:
             try:
                 custom_property_copy = custom_property.model_copy(deep=False)
-                custom_property_copy.value = selected_object.get_report_property(custom_property_copy.name, custom_property_copy.data_type)
+                custom_property_copy.value = selected_object.get_report_property(custom_property_copy.name)
                 custom_properties.append(custom_property_copy)
             except Exception as e:
                 custom_props_errors[selected_object.guid][custom_property.name] = str(e)

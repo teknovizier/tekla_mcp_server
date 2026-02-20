@@ -465,7 +465,7 @@ class LiftingAnchorsComponent(BaseComponent):
         the minimum edge distance constraints. Additionally, it verifies that the required anchor distances
         do not exceed the total element length.
         """
-        DOUBLE_ANCHOR_SPACING_LONG_WALL  = 1000.0  # Double anchor spacing for long walls
+        DOUBLE_ANCHOR_SPACING_LONG_WALL = 1000.0  # Double anchor spacing for long walls
         DOUBLE_ANCHOR_SPACING_SHORTER_WALL = 500.0  # Double anchor spacing for shorter walls
         ROUNDING_MULTIPLE = 5
 

@@ -47,6 +47,8 @@ from tekla_mcp_server.tekla.loader import (
     ObjectFilterExpressions,
 )
 
+from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
+
 from tekla_mcp_server.utils import log_function_call
 
 
@@ -234,7 +236,7 @@ class TeklaModelObject:
         Returns the position number of the Tekla model object.
         """
         key = "ASSEMBLY_POS" if self.is_assembly else "PART_POS"
-        return str(self.get_report_property(key, str))
+        return str(self.get_report_property(key))
 
     @property
     def guid(self) -> str:
@@ -296,9 +298,9 @@ class TeklaModelObject:
         """
         Retrieves the center of gravity (COG) point for a given Tekla model object.
         """
-        cog_x = self.get_report_property("COG_X", float)
-        cog_y = self.get_report_property("COG_Y", float)
-        cog_z = self.get_report_property("COG_Z", float)
+        cog_x = self.get_report_property("COG_X")
+        cog_y = self.get_report_property("COG_Y")
+        cog_z = self.get_report_property("COG_Z")
 
         return Point(cog_x, cog_y, cog_z)
 
@@ -312,7 +314,7 @@ class TeklaModelObject:
         - The total weight of all reinforcement bars associated with the main part, secondary parts, and any rebar subassemblies.
         """
         # Get the main part
-        weight_main_part = float(self.main_part.get_report_property("WEIGHT", float))
+        weight_main_part = float(self.main_part.get_report_property("WEIGHT"))
 
         weight_secondaries = 0.0
         weight_subassemblies = 0.0
@@ -320,24 +322,24 @@ class TeklaModelObject:
 
         # Rebars on main part
         for rebar in wrap_model_objects(self.main_part.model_object.GetReinforcements()):
-            weight_rebar = rebar.get_report_property("WEIGHT_TOTAL", float)
+            weight_rebar = rebar.get_report_property("WEIGHT_TOTAL")
             weight_rebars += float(weight_rebar)
 
         if self.is_assembly:
             # Secondary parts and their rebars
             for secondary in wrap_model_objects(self.model_object.GetSecondaries()):
-                weight_secondary = secondary.get_report_property("WEIGHT", float)
+                weight_secondary = secondary.get_report_property("WEIGHT")
                 weight_secondaries += float(weight_secondary)
 
                 for rebar in wrap_model_objects(secondary.model_object.GetReinforcements()):
-                    weight_rebar = rebar.get_report_property("WEIGHT_TOTAL", float)
+                    weight_rebar = rebar.get_report_property("WEIGHT_TOTAL")
                     weight_rebars += float(weight_rebar)
 
             # Subassemblies
             for subassembly in wrap_model_objects(self.model_object.GetSubAssemblies()):
-                weight_sub = subassembly.get_report_property("WEIGHT", float)
+                weight_sub = subassembly.get_report_property("WEIGHT")
                 try:
-                    rebar_type = subassembly.get_report_property("REBAR_ASSEMBLY_TYPE", str)
+                    rebar_type = subassembly.get_report_property("REBAR_ASSEMBLY_TYPE")
                     assert rebar_type  # Must be truthy for rebar assemblies
                     weight_rebars += float(weight_sub)
                 except AttributeError:
@@ -416,7 +418,7 @@ class TeklaModelObject:
             return False
 
         # Get the volume before the cut
-        volume_before = float(self.get_report_property("VOLUME", float))
+        volume_before = float(self.get_report_property("VOLUME"))
 
         cutting_part.model_object.Class = BooleanPart.BooleanOperativeClassName  # Set as a boolean operator
 
@@ -427,7 +429,7 @@ class TeklaModelObject:
 
         # Attempt to insert the cut and check if the volume decreased
         if boolean_cut.Insert():
-            volume_after = float(self.get_report_property("VOLUME", float))
+            volume_after = float(self.get_report_property("VOLUME"))
             if volume_after < volume_before:
                 if delete_cutting_part:
                     guid = cutting_part.guid
@@ -441,16 +443,17 @@ class TeklaModelObject:
 
         return False
 
-    def get_report_property(self, property_name: str, property_type: type) -> str | int | float:
+    def get_report_property(self, property_name: str) -> str | int | float:
         """
         Retrieves a report property for a given Tekla model object.
+        Uses TemplateAttributeParser to determine the data type.
 
         Raises:
-            TypeError: If the provided property type is not str, int, or float.
+            ValueError: If the property is not found in Tekla's attribute definitions.
             AttributeError: If the property retrieval fails for the given element.
         """
-        self._validate_property_type(property_type)
-        is_ok, value = self.model_object.GetReportProperty(property_name, property_type())
+        property = TemplateAttributeParser.parse(property_name)
+        is_ok, value = self.model_object.GetReportProperty(property_name, property.data_type())
         if not is_ok:
             raise AttributeError(f"Failed to retrieve property `{property_name}`.")
 

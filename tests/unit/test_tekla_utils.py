@@ -120,7 +120,7 @@ def test_get_top_level_assembly(wall1):
 
 def test_get_report_property_weight_property(wall1):
     """Checks that a report property can be retrieved correctly."""
-    assert wall1.get_report_property("WEIGHT", float) == pytest.approx(2880.0, abs=0.1)
+    assert wall1.get_report_property("WEIGHT") == pytest.approx(2880.0, abs=0.1)
 
 
 def test_get_user_property_invalid(wall1):
