@@ -25,7 +25,6 @@ from tekla_mcp_server.models import (
 from tekla_mcp_server.tekla.loader import (
     ArrayList,
     AABB,
-    Assembly,
     BinaryFilterExpression,
     BinaryFilterExpressionCollection,
     BinaryFilterExpressionItem,
@@ -42,7 +41,6 @@ from tekla_mcp_server.tekla.loader import (
     NumericOperatorType,
     ObjectFilterExpressions,
     Operation,
-    Part,
     PartFilterExpressions,
     Point,
     Position,
@@ -629,49 +627,20 @@ def tool_hide_selected(selected_objects: ModelObjectEnumerator) -> dict:
     Works with both parts and assemblies.
     """
 
-    objects_to_hide = List[ModelObject]()
-    stack = list(selected_objects)
+    objects_to_hide = []
 
-    Add = objects_to_hide.Add  # Cache Add method for speed
+    for obj in wrap_model_objects(selected_objects):
+        if isinstance(obj, TeklaAssembly):
+            objects_to_hide.extend(obj.get_all_children())
+        elif isinstance(obj, TeklaPart):
+            objects_to_hide.extend(obj.get_all_children(include_all=False))
 
-    while stack:
-        obj = stack.pop()
+    tekla_list = List[ModelObject]()
+    for model_object in objects_to_hide:
+        tekla_list.Add(model_object)
+    ModelObjectVisualization.SetTransparency(tekla_list, TemporaryTransparency.HIDDEN)
 
-        # Process Assembly
-        if isinstance(obj, Assembly):
-            main = obj.GetMainPart()
-            if main:
-                Add(main)
-                welds = main.GetWelds()
-                while welds.MoveNext():
-                    Add(welds.Current)
-                reinfs = main.GetReinforcements()
-                while reinfs.MoveNext():
-                    Add(reinfs.Current)
-
-            # Secondaries
-            secondaries = obj.GetSecondaries()
-            for sec in secondaries:
-                Add(sec)
-                welds = sec.GetWelds()
-                while welds.MoveNext():
-                    Add(welds.Current)
-                reinfs = sec.GetReinforcements()
-                while reinfs.MoveNext():
-                    Add(reinfs.Current)
-
-            # Subassemblies
-            subs = obj.GetSubAssemblies()
-            for sub in subs:
-                stack.append(sub)
-
-        # Process Part directly
-        elif isinstance(obj, Part):
-            Add(obj)
-
-    ModelObjectVisualization.SetTransparency(objects_to_hide, TemporaryTransparency.HIDDEN)
-
-    return {"status": "success", "hidden_elements": objects_to_hide.Count}
+    return {"status": "success", "hidden_elements": len(objects_to_hide)}
 
 
 @log_function_call
@@ -681,46 +650,21 @@ def tool_color_selected(selected_objects: ModelObjectEnumerator, red: int, green
     Works with both parts and assemblies.
     """
 
-    objects_to_color = List[ModelObject]()
-    stack = list(selected_objects)
+    objects_to_color = []
 
-    Add = objects_to_color.Add
+    for obj in wrap_model_objects(selected_objects):
+        if isinstance(obj, TeklaAssembly):
+            objects_to_color.extend(obj.get_all_children())
+        elif isinstance(obj, TeklaPart):
+            objects_to_color.extend(obj.get_all_children(include_all=False))
 
-    while stack:
-        obj = stack.pop()
-
-        if isinstance(obj, Assembly):
-            main = obj.GetMainPart()
-            if main:
-                Add(main)
-                welds = main.GetWelds()
-                while welds.MoveNext():
-                    Add(welds.Current)
-                reinfs = main.GetReinforcements()
-                while reinfs.MoveNext():
-                    Add(reinfs.Current)
-
-            secondaries = obj.GetSecondaries()
-            for sec in secondaries:
-                Add(sec)
-                welds = sec.GetWelds()
-                while welds.MoveNext():
-                    Add(welds.Current)
-                reinfs = sec.GetReinforcements()
-                while reinfs.MoveNext():
-                    Add(reinfs.Current)
-
-            subs = obj.GetSubAssemblies()
-            for sub in subs:
-                stack.append(sub)
-
-        elif isinstance(obj, Part):
-            Add(obj)
-
+    tekla_list = List[ModelObject]()
+    for model_object in objects_to_color:
+        tekla_list.Add(model_object)
     color = Color(red / 255.0, green / 255.0, blue / 255.0)
-    ModelObjectVisualization.SetTemporaryState(objects_to_color, color)
+    ModelObjectVisualization.SetTemporaryState(tekla_list, color)
 
-    return {"status": "success", "colored_elements": objects_to_color.Count}
+    return {"status": "success", "colored_elements": len(objects_to_color)}
 
 
 @log_function_call

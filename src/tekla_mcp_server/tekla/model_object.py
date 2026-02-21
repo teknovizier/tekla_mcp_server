@@ -281,6 +281,26 @@ class TeklaPart(TeklaModelObject):
 
         return False
 
+    def get_all_children(self, include_all: bool = True) -> list[ModelObject]:
+        """
+        Returns all model objects belonging to this part.
+
+        Args:
+            include_all: If True, includes welds and reinforcements.
+        """
+        objects = [self._model_object]
+
+        if include_all:
+            welds = self._model_object.GetWelds()
+            while welds.MoveNext():
+                objects.append(welds.Current)
+
+            reinfs = self._model_object.GetReinforcements()
+            while reinfs.MoveNext():
+                objects.append(reinfs.Current)
+
+        return objects
+
 
 class TeklaAssembly(TeklaModelObject):
     """
@@ -381,6 +401,40 @@ class TeklaAssembly(TeklaModelObject):
         total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
 
         return total_parts_weight, weight_rebars
+
+    def get_all_children(self, include_all: bool = True) -> list[ModelObject]:
+        """
+        Returns all model objects belonging to this assembly.
+
+        Args:
+            include_all: If True, includes welds, reinforcements, secondaries, subassemblies.
+        """
+        objects = []
+        stack = [self._model_object]
+
+        while stack:
+            current = stack.pop()
+
+            if isinstance(current, Assembly):
+                main = current.GetMainPart()
+                if main:
+                    objects.extend(TeklaPart(main).get_all_children(include_all))
+
+                secondaries = current.GetSecondaries()
+                for sec in secondaries:
+                    objects.extend(TeklaPart(sec).get_all_children(include_all))
+
+                subs = current.GetSubAssemblies()
+                for sub in subs:
+                    stack.append(sub)
+
+            elif isinstance(current, Part):
+                if include_all:
+                    objects.extend(TeklaPart(current).get_all_children(include_all))
+                else:
+                    objects.append(current)
+
+        return objects
 
 
 def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
