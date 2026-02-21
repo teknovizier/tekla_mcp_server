@@ -6,15 +6,15 @@ and wall joint configurations.
 
 import json
 import math
-
 from enum import Enum
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
-from pydantic_core import PydanticCustomError
 from typing import Any, ClassVar
 
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
+from pydantic_core import PydanticCustomError
+
+from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_function_call
-from tekla_mcp_server.config import get_config
 
 
 # Enums
@@ -116,59 +116,24 @@ COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
 
 
-class _LazyConfigLoader:
-    """Lazy loader for config-dependent module-level variables."""
-
-    _element_types: dict[str, dict[str, list[int]]] | None = None
-    _lifting_anchor_types: dict[str, Any] | None = None
-    _base_components: dict[str, Any] | None = None
-
-    @property
-    def element_types(self) -> dict[str, dict[str, list[int]]]:
-        if self._element_types is None:
-            self._element_types = get_config().element_types
-        return self._element_types
-
-    @property
-    def lifting_anchor_types(self) -> dict[str, Any]:
-        if self._lifting_anchor_types is None:
-            self._lifting_anchor_types = get_config().lifting_anchor_types
-        return self._lifting_anchor_types
-
-    @property
-    def base_components(self) -> dict[str, Any]:
-        if self._base_components is None:
-            self._base_components = get_config().base_components
-        return self._base_components
-
-
-_config_loader = _LazyConfigLoader()
-_class_to_element: dict[int, tuple[str, str]] = {}
-
-
 def get_element_type_mapping() -> dict[str, dict[str, list[int]]]:
-    """Returns element type mapping from config (lazy loaded)."""
-    return _config_loader.element_types
+    """Returns element type mapping from config."""
+    return get_config().element_types
 
 
 def get_lifting_anchor_types() -> dict[str, Any]:
-    """Returns lifting anchor types from config (lazy loaded)."""
-    return _config_loader.lifting_anchor_types
+    """Returns lifting anchor types from config."""
+    return get_config().lifting_anchor_types
 
 
 def get_base_components() -> dict[str, Any]:
-    """Returns base components from config (lazy loaded)."""
-    return _config_loader.base_components
+    """Returns base components from config."""
+    return get_config().base_components
 
 
 def get_class_to_element() -> dict[int, tuple[str, str]]:
-    """Returns class to element mapping (lazy loaded)."""
-    if not _class_to_element:
-        for material, types in _config_loader.element_types.items():
-            for element_type, class_numbers in types.items():
-                for cn in class_numbers:
-                    _class_to_element[cn] = (material, element_type)
-    return _class_to_element
+    """Returns class to element mapping."""
+    return get_config().class_to_element
 
 
 def get_custom_properties_schema(component_name: str) -> dict[str, dict[str, str]] | None:

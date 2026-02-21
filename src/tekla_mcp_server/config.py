@@ -33,6 +33,17 @@ class Config:
             cls._instance = cls()
         return cls._instance
 
+    def _load_json(self, filename: str) -> dict[str, Any]:
+        """Load a JSON config file."""
+        file_path = self._config_dir.joinpath(filename)
+        if not file_path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {file_path}")
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            raise json.JSONDecodeError(f"Invalid JSON in {file_path}: {e}", e.doc, e.pos)
+
     @cached_property
     def _settings(self) -> dict[str, Any]:
         """Load settings.json with env var overrides."""
@@ -61,16 +72,15 @@ class Config:
         """Load base components configuration."""
         return self._load_json("base_components.json")
 
-    def _load_json(self, filename: str) -> dict[str, Any]:
-        """Load a JSON config file."""
-        file_path = self._config_dir.joinpath(filename)
-        if not file_path.exists():
-            raise FileNotFoundError(f"Configuration file not found: {file_path}")
-        try:
-            with open(file_path, encoding="utf-8") as f:
-                return json.load(f)
-        except json.JSONDecodeError as e:
-            raise json.JSONDecodeError(f"Invalid JSON in {file_path}: {e}", e.doc, e.pos)
+    @cached_property
+    def _class_to_element(self) -> dict[int, tuple[str, str]]:
+        """Lazy-loaded class to element mapping."""
+        result: dict[int, tuple[str, str]] = {}
+        for material, types in self._element_types.items():
+            for element_type, class_numbers in types.items():
+                for cn in class_numbers:
+                    result[cn] = (material, element_type)
+        return result
 
     @property
     def tekla_path(self) -> str:
@@ -116,6 +126,11 @@ class Config:
     def base_components(self) -> dict[str, Any]:
         """Base component definitions."""
         return self._base_components
+
+    @property
+    def class_to_element(self) -> dict[int, tuple[str, str]]:
+        """Returns class to element mapping."""
+        return self._class_to_element
 
 
 def get_config() -> Config:

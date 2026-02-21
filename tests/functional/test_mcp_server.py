@@ -28,7 +28,8 @@ from tekla_mcp_server.mcp_server import mcp
 from tekla_mcp_server.models import StringMatchType
 from tekla_mcp_server.tekla.loader import Point, Beam, Position, ViewHandler
 from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
-from tekla_mcp_server.tekla.utils import TeklaModel, TeklaModelObject
+from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.model_object import wrap_model_object
 from tekla_mcp_server.mcp_tools import add_filter
 
 
@@ -648,7 +649,7 @@ async def test_set_elements_udas(model_objects):
         assert result.data["processed_elements"] == 1
         assert result.data["updated_attributes"] == 2
 
-        wall = TeklaModelObject(wall)
+        wall = wrap_model_object(wall)
         value = wall.get_user_property("MCP_TEST_UDA1", str)
         assert value == "MCP_TEST_VALUE_1"
         value = wall.get_user_property("MCP_TEST_UDA2", str)

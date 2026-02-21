@@ -39,7 +39,7 @@ from tekla_mcp_server.mcp_tools import (
     tool_get_elements_properties,
     tool_get_elements_cut_parts,
 )
-from tekla_mcp_server.tekla.utils import TeklaModel
+from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.utils import log_mcp_tool_call
 from tekla_mcp_server.tekla.component_props_mapper import map_properties
 

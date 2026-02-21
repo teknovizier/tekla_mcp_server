@@ -35,7 +35,7 @@ class TemplateAttributeParser:
     _model: "SentenceTransformer | None" = None
 
     @classmethod
-    def _get_model(cls):
+    def _get_model(cls) -> "SentenceTransformer | None":
         if cls._model is None:
             cls._model = get_embedding_model()
         return cls._model

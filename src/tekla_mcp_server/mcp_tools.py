@@ -2,74 +2,76 @@
 Module for tools used for Tekla model operations.
 """
 
+import re
 from collections import defaultdict, Counter
 from collections.abc import Callable
 from typing import Any
-import re
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import (
-    get_element_type_mapping,
-    SelectionMode,
-    UDASetMode,
-    StringMatchType,
-    ElementType,
-    ElementLabel,
     BaseComponent,
-    LiftingAnchorsComponent,
-    ElementTypeModel,
-    ElementProperties,
     ComponentType,
+    ElementLabel,
+    ElementProperties,
+    ElementType,
+    ElementTypeModel,
+    LiftingAnchorsComponent,
     ReportProperty,
+    SelectionMode,
+    StringMatchType,
+    UDASetMode,
+    get_element_type_mapping,
 )
-
 from tekla_mcp_server.tekla.loader import (
     ArrayList,
-    TeklaStructuresDatabaseTypeEnum,
     AABB,
-    Point,
-    ModelObject,
-    ModelObjectEnumerator,
-    Beam,
-    BooleanPart,
-    Position,
-    Solid,
-    TransformationPlane,
-    Operation,
-    Color,
-    GraphicsDrawer,
-    ViewHandler,
-    BinaryFilterOperatorType,
+    Assembly,
+    BinaryFilterExpression,
     BinaryFilterExpressionCollection,
     BinaryFilterExpressionItem,
-    NumericOperatorType,
-    NumericConstantFilterExpression,
-    StringConstantFilterExpression,
-    BinaryFilterExpression,
-    PartFilterExpressions,
-    ObjectFilterExpressions,
-    TemplateFilterExpressions,
+    BinaryFilterOperatorType,
+    Beam,
+    BooleanPart,
+    Color,
+    GraphicsDrawer,
     List,
-    Assembly,
-    Part,
+    ModelObject,
+    ModelObjectEnumerator,
     ModelObjectVisualization,
+    NumericConstantFilterExpression,
+    NumericOperatorType,
+    ObjectFilterExpressions,
+    Operation,
+    Part,
+    PartFilterExpressions,
+    Point,
+    Position,
+    Solid,
+    StringConstantFilterExpression,
+    TeklaStructuresDatabaseTypeEnum,
+    TemplateFilterExpressions,
     TemporaryTransparency,
+    TransformationPlane,
+    ViewHandler,
 )
-
+from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.model_object import (
+    TeklaAssembly,
+    TeklaModelObject,
+    TeklaPart,
+    wrap_model_object,
+    wrap_model_objects,
+)
+from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.utils import (
     STRING_MATCH_TYPE_MAPPING,
-    TeklaModel,
-    TeklaModelObject,
-    wrap_model_objects,
-    get_wall_pairs,
     ensure_transformation_plane,
+    get_wall_pairs,
     insert_component,
     insert_detail,
     insert_seam,  # noqa: F401
 )
-from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
-
-from tekla_mcp_server.utils import serialize_to_json, log_function_call
+from tekla_mcp_server.utils import log_function_call, serialize_to_json
 
 
 # Helper functions
@@ -210,7 +212,7 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
         if material != "Concrete":
             raise ValueError(f"Unsupported material type: {material}. Only concrete elements are supported.")
 
-        assembly = TeklaModelObject(selected_object.GetAssembly())
+        assembly = wrap_model_object(selected_object.GetAssembly())
         solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
         length = abs(solid.MaximumPoint.X - solid.MinimumPoint.X)
         width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
@@ -338,8 +340,8 @@ def _create_boolean_cut(selected_object: ModelObject, x_position: float, y_posit
 
     # Insert the boolean part into the model
     if cutting_part.Insert():
-        target_object = TeklaModelObject(selected_object)
-        cutter_object = TeklaModelObject(cutting_part)
+        target_object = wrap_model_object(selected_object)
+        cutter_object = wrap_model_object(cutting_part)
         return target_object.add_cut(cutter_object, True)
     logger.warning("Failed to insert boolean cut part")
     return False
@@ -778,9 +780,9 @@ def tool_get_elements_udas(selected_objects: ModelObjectEnumerator) -> dict:
 
     for selected_object in wrap_model_objects(selected_objects):
         metadata = extract_metadata(selected_object)
-        if selected_object.is_assembly:
+        if isinstance(selected_object, TeklaAssembly):
             assemblies.append(metadata)
-        elif selected_object.is_part:
+        elif isinstance(selected_object, TeklaPart):
             parts.append(metadata)
         processed_elements += 1
     logger.info("Retrieved UDAs for %s elements", processed_elements)
@@ -815,7 +817,12 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
                 logger.warning("Error parsing custom property definition '%s': %s", custom_prop_definition, e)
 
     def get_single_element_properties(selected_object: TeklaModelObject) -> ElementProperties:
-        weight, _ = selected_object.weight
+        # Try to get weight safely
+        try:
+            weight, _ = selected_object.weight
+        except AttributeError:
+            weight = None
+
         custom_properties = []
         for custom_property in parsed_custom_props:
             try:
@@ -845,9 +852,9 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
 
     for selected_object in wrap_model_objects(selected_objects):
         metadata = get_single_element_properties(selected_object).model_copy(deep=True)
-        if selected_object.is_assembly:
+        if isinstance(selected_object, TeklaAssembly):
             assemblies.append(metadata)
-        elif selected_object.is_part:
+        elif isinstance(selected_object, TeklaPart):
             parts.append(metadata)
         processed_elements += 1
 
