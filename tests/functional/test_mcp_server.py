@@ -522,6 +522,16 @@ async def test_zoom_to_selection(model_objects):
 
 
 @pytest.mark.asyncio
+async def test_redraw_view():
+    """
+    Tests that `redraw_view` function can be run.
+    """
+    async with Client(mcp) as client:
+        result = await client.call_tool("redraw_view")
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.asyncio
 async def test_show_only_selected(model_objects):
     """
     Tests that `show_only_selected` function can be run.

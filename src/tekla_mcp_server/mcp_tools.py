@@ -608,6 +608,28 @@ def tool_zoom_to_selection(selected_objects: ModelObjectEnumerator) -> dict:
 
 
 @log_function_call
+def tool_redraw_view() -> dict:
+    """
+    Redraws the currently active view in Tekla.
+    """
+    # Tekla 2022 API doesn't have GetActiveView() method, so we redraw all visible views
+    # Otherwise, the following code can be used:
+
+    # active_view = ViewHandler.GetActiveView()
+    # result = ViewHandler.RedrawView(active_view)
+
+    view_enum = ViewHandler.GetVisibleViews()
+    view_redrawn = False
+
+    while view_enum.MoveNext():
+        view = view_enum.Current
+        view_redrawn = ViewHandler.RedrawView(view)
+
+    logger.info("Active views have been redrawn")
+    return {"status": "success" if view_redrawn else "error"}
+
+
+@log_function_call
 def tool_show_only_selected(selected_objects: ModelObjectEnumerator) -> dict:
     """
     Updates the Tekla view to show only the currently selected model objects.

@@ -30,6 +30,7 @@ from tekla_mcp_server.mcp_tools import (
     tool_select_elements_assemblies_or_main_parts,
     tool_draw_elements_labels,
     tool_zoom_to_selection,
+    tool_redraw_view,
     tool_show_only_selected,
     tool_hide_selected,
     tool_color_selected,
@@ -269,6 +270,15 @@ def zoom_to_selection() -> dict[str, Any]:
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
     return tool_zoom_to_selection(selected_objects)
+
+
+@mcp.tool()
+@log_mcp_tool_call
+def redraw_view() -> dict[str, Any]:
+    """
+    Redraws the currently active view in Tekla.
+    """
+    return tool_redraw_view()
 
 
 @mcp.tool()

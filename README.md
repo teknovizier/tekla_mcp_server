@@ -29,6 +29,7 @@ The server provides the following tools:
 | `select_elements_assemblies_or_main_parts` | Get assemblies or main parts for the elements selected in Tekla model and select them |
 | `draw_elements_labels`            | Draw the temporary labels (position, GUID, name, profile, material, finish, Tekla class, weight or any defined report property) for the selected elements in Tekla in the currently active rendered view  |
 | `zoom_to_selection`            | Zooms the currently active rendered view to fit the currently selected elements |
+| `redraw_view`            | Redraws the currently active view in Tekla  |
 | `show_only_selected`            | Show only the currently selected elements in the currently active rendered view  |
 | `hide_selected`            | Hide the currently selected elements in the currently active rendered view  |
 | `color_selected`            | Color the currently selected elements in the currently active rendered view with a specified RGB color  |
