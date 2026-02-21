@@ -11,14 +11,20 @@ This module provides functionality to:
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.embeddings import find_normalized_match, get_embedding_model, get_embedding_threshold, semantic_match
+from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, semantic_match, is_embeddings_enabled
 from tekla_mcp_server.models import get_custom_properties_schema
+from tekla_mcp_server.utils import find_normalized_match
 
 
 class ComponentPropsMapper:
     def __init__(self, threshold: float | None = None):
-        self._model = get_embedding_model()
-        self.threshold = threshold if threshold is not None else get_embedding_threshold()
+        self._model = None
+        self.threshold = threshold
+        self._semantic_enabled = is_embeddings_enabled()
+        if self._semantic_enabled:
+            self._model = get_embedding_model()
+            if self.threshold is None:
+                self.threshold = get_embedding_threshold()
         self._schema_cache: dict[str, dict] = {}
 
     def _load_schema(self, component_name: str) -> bool:
@@ -34,11 +40,12 @@ class ComponentPropsMapper:
         descriptions = [attr["description"] for attr in schema.values()]
         config_keys = list(schema.keys())
 
-        logger.debug("Generating embeddings for %d properties", len(descriptions))
-        embeddings = self._model.encode(descriptions)
-
-        # Map description -> (config_key, embedding)
-        desc_to_config = {desc: (key, emb.tolist()) for desc, key, emb in zip(descriptions, config_keys, embeddings)}
+        if self._semantic_enabled and self._model:
+            logger.debug("Generating embeddings for %d properties", len(descriptions))
+            embeddings = self._model.encode(descriptions)
+            desc_to_config = {desc: (key, emb.tolist()) for desc, key, emb in zip(descriptions, config_keys, embeddings)}
+        else:
+            desc_to_config = {}
 
         self._schema_cache[component_name] = {
             "schema": schema,
@@ -75,14 +82,13 @@ class ComponentPropsMapper:
         for user_key, user_value in user_dict.items():
             # Try normalized exact match against schema keys
             best_match = find_normalized_match(user_key, schema)
+            best_score = 1.0 if best_match else 0.0
 
-            # Try semantic match against descriptions if no exact match
-            if not best_match:
+            if not best_match and self._semantic_enabled and self._model and self.threshold is not None:
+                # Try semantic match against descriptions if no exact match
                 matched_desc, best_score = semantic_match(user_key, desc_embeddings, self.threshold, self._model)
                 if matched_desc:
                     best_match = desc_to_config[matched_desc][0]  # Map description back to config key
-            else:
-                best_score = 1.0  # Exact match has score of 1.0
 
             if best_match:
                 expected_type = schema[best_match].get("type", "string")

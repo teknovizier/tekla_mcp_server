@@ -83,19 +83,24 @@ class Config:
         return self._settings["content_attributes_file_path"]
 
     @property
-    def attribute_mapper(self) -> dict[str, Any]:
-        """Attribute mapper configuration."""
-        return self._settings.get("attribute_mapper", {})
+    def embeddings(self) -> dict[str, Any]:
+        """Embeddings configuration."""
+        return self._settings.get("embeddings", {})
+
+    @property
+    def embeddings_enabled(self) -> bool:
+        """Whether embeddings/semantic search is enabled."""
+        return self.embeddings.get("enabled", True)
 
     @property
     def embedding_model(self) -> str | None:
         """Embedding model name."""
-        return self.attribute_mapper.get("embedding_model")
+        return self.embeddings.get("embedding_model")
 
     @property
     def embedding_threshold(self) -> float | None:
         """Embedding threshold."""
-        return self.attribute_mapper.get("embedding_threshold")
+        return self.embeddings.get("embedding_threshold")
 
     @property
     def element_types(self) -> dict[str, Any]:

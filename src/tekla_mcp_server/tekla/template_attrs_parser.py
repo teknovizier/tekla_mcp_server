@@ -10,13 +10,16 @@ This module provides functionality to:
 from __future__ import annotations
 
 import re
-
-from sentence_transformers import SentenceTransformer
+from typing import TYPE_CHECKING
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.models import ReportProperty
-from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, find_normalized_match, semantic_match
+from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, semantic_match, is_embeddings_enabled
+from tekla_mcp_server.utils import find_normalized_match
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 
 class TemplateAttributeParser:
@@ -29,7 +32,7 @@ class TemplateAttributeParser:
     _loaded: bool = False
     _embeddings_cache: dict[str, list[float]] = {}
     _semantic_loaded: bool = False
-    _model: SentenceTransformer | None = None
+    _model: "SentenceTransformer | None" = None
 
     @classmethod
     def _get_model(cls):
@@ -39,7 +42,7 @@ class TemplateAttributeParser:
 
     @classmethod
     def _ensure_semantic_loaded(cls) -> None:
-        if cls._semantic_loaded:
+        if cls._semantic_loaded or not is_embeddings_enabled():
             return
 
         model = cls._get_model()
@@ -108,8 +111,10 @@ class TemplateAttributeParser:
         if matched_name:
             return cls._cache[matched_name]
 
-        matched_name = cls._semantic_match(attribute_name)
-        if matched_name:
-            return cls._cache[matched_name]
+        # Semantic matching only if embeddings are enabled
+        if is_embeddings_enabled():
+            matched_name = cls._semantic_match(attribute_name)
+            if matched_name:
+                return cls._cache[matched_name]
 
         raise ValueError(f"Attribute '{attribute_name}' not found.")

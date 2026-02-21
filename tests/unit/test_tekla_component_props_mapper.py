@@ -9,6 +9,13 @@ import pytest
 from tekla_mcp_server.tekla.component_props_mapper import ComponentPropsMapper, map_properties
 
 
+@pytest.fixture(autouse=True)
+def enable_embeddings():
+    """Enable embeddings for these tests that rely on semantic matching."""
+    with patch("tekla_mcp_server.tekla.component_props_mapper.is_embeddings_enabled", return_value=True):
+        yield
+
+
 class TestConvertType:
     @pytest.mark.parametrize(
         "value,expected_type,expected",

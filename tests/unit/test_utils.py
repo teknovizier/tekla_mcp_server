@@ -4,7 +4,7 @@ Unit tests for embeddings module.
 
 import pytest
 
-from tekla_mcp_server.embeddings import find_normalized_match, normalize_attribute_name
+from tekla_mcp_server.utils import find_normalized_match, normalize_attribute_name
 
 
 class TestNormalizeAttributeName:

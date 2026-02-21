@@ -54,33 +54,33 @@ class TestConfigDefaults:
 
 
 class TestConfigAttributeMapper:
-    """Test attribute_mapper property."""
+    """Test embeddings property."""
 
     @patch("builtins.open", MagicMock())
     @patch("json.load")
-    def test_attribute_mapper_defaults(self, mock_json_load):
-        """Test attribute_mapper returns empty dict when not in settings."""
+    def test_embeddings_defaults(self, mock_json_load):
+        """Test embeddings returns empty dict when not in settings."""
         mock_json_load.return_value = {
             "tekla_path": "C:\\Tekla",
             "content_attributes_file_path": "C:\\Tekla\\file.lst",
         }
         config = Config()
-        assert config.attribute_mapper == {}
+        assert config.embeddings == {}
 
     @patch("builtins.open", MagicMock())
     @patch("json.load")
-    def test_attribute_mapper_from_settings(self, mock_json_load):
-        """Test attribute_mapper returns values from settings."""
+    def test_embeddings_from_settings(self, mock_json_load):
+        """Test embeddings returns values from settings."""
         mock_json_load.return_value = {
             "tekla_path": "C:\\Tekla",
             "content_attributes_file_path": "C:\\Tekla\\file.lst",
-            "attribute_mapper": {
+            "embeddings": {
                 "embedding_model": "test-model",
                 "embedding_threshold": 0.7,
             },
         }
         config = Config()
-        assert config.attribute_mapper == {"embedding_model": "test-model", "embedding_threshold": 0.7}
+        assert config.embeddings == {"embedding_model": "test-model", "embedding_threshold": 0.7}
         assert config.embedding_model == "test-model"
         assert config.embedding_threshold == 0.7
 

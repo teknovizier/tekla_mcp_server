@@ -8,6 +8,7 @@ This file defines basic rules for AI agents and human contributors working on th
 - Never use Tekla API in unit tests
 - Keep existing style and structure unless told otherwise
 - Make changes minimal, focused, and consistent
+- Never remove existing comments, keep them as they are unless explicitly instructed otherwise
 
 ## Essential Commands
 
@@ -58,7 +59,6 @@ from collections.abc import Callable
 # Third-party
 from pydantic import BaseModel, Field, PrivateAttr
 from pydantic_core import PydanticCustomError
-from sentence_transformers import SentenceTransformer, util
 
 # Local application (use tekla_mcp_server prefix)
 from tekla_mcp_server.init import logger

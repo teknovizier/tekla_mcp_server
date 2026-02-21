@@ -14,6 +14,8 @@ Tested modules:
 
 import json
 import os
+from unittest.mock import patch
+
 import pytest
 
 if os.getenv("CI") == "true":
@@ -28,6 +30,13 @@ from tekla_mcp_server.tekla.loader import Point, Beam, Position, ViewHandler
 from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
 from tekla_mcp_server.tekla.utils import TeklaModel, TeklaModelObject
 from tekla_mcp_server.mcp_tools import add_filter
+
+
+@pytest.fixture(autouse=True)
+def enable_embeddings():
+    """Enable embeddings for these tests that rely on semantic matching."""
+    with patch("tekla_mcp_server.tekla.component_props_mapper.is_embeddings_enabled", return_value=True):
+        yield
 
 
 def create_mcp_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):

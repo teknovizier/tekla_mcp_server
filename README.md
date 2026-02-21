@@ -79,8 +79,9 @@ uv pip install -r requirements-dev.txt
 |-----------------------|----------------------------------------------------|---------------------------------------------------------------------------------|
 | `tekla_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin" | The path to the directory where Tekla Structures is located                      |
 | `content_attributes_file_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin\\applications\\Tekla\\Tools\\TplEd\\settings\\contentattributes_global.lst" | The path to the `contentattributes_global.lst` file                      |
-| `attribute_mapper.embedding_model`          | "all-MiniLM-L6-v2" | Sentence-transformers model for semantic attribute matching                      |
-| `attribute_mapper.embedding_threshold`          | 0.6 | Minimum similarity score (0-1) for attribute mapping                     |
+| `embeddings.enabled`          | true | Enable or disable semantic search (embeddings). When false, only exact/normalized matching is used |
+| `embeddings.embedding_model`          | "all-MiniLM-L6-v2" | Sentence-transformers model for semantic attribute matching                      |
+| `embeddings.embedding_threshold`          | 0.6 | Minimum similarity score (0-1) for attribute mapping                     |
 
 * Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
 * Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model

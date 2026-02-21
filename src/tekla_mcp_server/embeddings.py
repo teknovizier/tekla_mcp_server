@@ -2,34 +2,42 @@
 Embedding utilities for semantic search and similarity matching.
 """
 
-import re
-from typing import Any
-
-from sentence_transformers import SentenceTransformer, util
+from typing import TYPE_CHECKING
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 
-_embedding_model: SentenceTransformer | None = None
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
+_embedding_model: "SentenceTransformer | None" = None
 _embedding_threshold: float | None = None
+
+
+def is_embeddings_enabled() -> bool:
+    """Check if embeddings/semantic search is enabled in config."""
+    config = get_config()
+    return config.embeddings_enabled
 
 
 def _ensure_loaded() -> None:
     """Lazily load the embedding model and threshold."""
     global _embedding_model, _embedding_threshold
     if _embedding_model is None:
+        from sentence_transformers import SentenceTransformer
+
         config = get_config()
         model_name = config.embedding_model
         threshold = config.embedding_threshold
         if not model_name or threshold is None:
-            raise ImportError("Attribute mapper configuration missing. Add 'attribute_mapper' section to config with 'embedding_model' and 'embedding_threshold'.")
+            raise ImportError("Attribute mapper configuration missing. Add 'embeddings' section to config with 'embedding_model' and 'embedding_threshold'.")
         logger.info("Loading embedding model: %s", model_name)
         _embedding_model = SentenceTransformer(model_name)
         _embedding_threshold = threshold
         logger.info("Embedding model loaded")
 
 
-def get_embedding_model_and_threshold() -> tuple[SentenceTransformer, float]:
+def get_embedding_model_and_threshold() -> tuple["SentenceTransformer", float]:
     """Returns cached embedding model and threshold."""
     _ensure_loaded()
     assert _embedding_model is not None
@@ -37,7 +45,7 @@ def get_embedding_model_and_threshold() -> tuple[SentenceTransformer, float]:
     return _embedding_model, _embedding_threshold
 
 
-def get_embedding_model() -> SentenceTransformer:
+def get_embedding_model() -> "SentenceTransformer":
     """Returns cached embedding model."""
     _ensure_loaded()
     assert _embedding_model is not None
@@ -51,47 +59,11 @@ def get_embedding_threshold() -> float:
     return _embedding_threshold
 
 
-def normalize_attribute_name(name: str) -> str:
-    """
-    Normalize attribute name for comparison.
-
-    Converts to uppercase, replaces spaces/hyphens with underscores,
-    removes non-alphanumeric characters.
-
-    Args:
-        name: Attribute name to normalize
-
-    Returns:
-        Normalized attribute name (e.g., "assembly-top-level" -> "ASSEMBLY_TOP_LEVEL")
-    """
-    return re.sub(r"[_\W]+", "_", name.upper()).strip("_")
-
-
-def find_normalized_match(input_name: str, candidates: dict[str, Any]) -> str | None:
-    """
-    Find a normalized exact match for input_name in candidates.
-
-    Args:
-        input_name: User-provided attribute name
-        candidates: Dict of candidate attribute names to match against
-
-    Returns:
-        Matched key from candidates, or None if no match
-    """
-    input_normalized = normalize_attribute_name(input_name)
-    for attr_name in candidates.keys():
-        attr_normalized = normalize_attribute_name(attr_name)
-        if input_normalized == attr_normalized:
-            logger.debug("Normalized exact match for '%s': %s", input_name, attr_name)
-            return attr_name
-    return None
-
-
 def semantic_match(
     user_input: str,
     candidates_embeddings: dict[str, list[float]],
     threshold: float,
-    model: SentenceTransformer,
+    model: "SentenceTransformer",
 ) -> tuple[str | None, float]:
     """
     Perform semantic similarity search to find best matching key.
@@ -105,6 +77,8 @@ def semantic_match(
     Returns:
         Tuple of (best_match_key, best_score) or (None, 0.0) if no match
     """
+    from sentence_transformers import util
+
     user_embedding = model.encode(user_input)
 
     # Collect all scores
