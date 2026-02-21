@@ -31,6 +31,7 @@ The server provides the following tools:
 | `zoom_to_selection`            | Zooms the currently active rendered view to fit the currently selected elements |
 | `show_only_selected`            | Show only the currently selected elements in the currently active rendered view  |
 | `hide_selected`            | Hide the currently selected elements in the currently active rendered view  |
+| `color_selected`            | Color the currently selected elements in the currently active rendered view with a specified RGB color  |
 | `cut_elements_with_zero_class_parts` | Performs boolean cuts on selected elements using elements in class 0, with optional deletion of cutting parts       |
 | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts       |
 | `set_elements_udas`              | Set custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones |

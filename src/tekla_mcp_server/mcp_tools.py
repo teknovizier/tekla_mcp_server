@@ -675,6 +675,55 @@ def tool_hide_selected(selected_objects: ModelObjectEnumerator) -> dict:
 
 
 @log_function_call
+def tool_color_selected(selected_objects: ModelObjectEnumerator, red: int, green: int, blue: int) -> dict:
+    """
+    Colors selected elements in the Tekla view using ModelObjectVisualization.
+    Works with both parts and assemblies.
+    """
+
+    objects_to_color = List[ModelObject]()
+    stack = list(selected_objects)
+
+    Add = objects_to_color.Add
+
+    while stack:
+        obj = stack.pop()
+
+        if isinstance(obj, Assembly):
+            main = obj.GetMainPart()
+            if main:
+                Add(main)
+                welds = main.GetWelds()
+                while welds.MoveNext():
+                    Add(welds.Current)
+                reinfs = main.GetReinforcements()
+                while reinfs.MoveNext():
+                    Add(reinfs.Current)
+
+            secondaries = obj.GetSecondaries()
+            for sec in secondaries:
+                Add(sec)
+                welds = sec.GetWelds()
+                while welds.MoveNext():
+                    Add(welds.Current)
+                reinfs = sec.GetReinforcements()
+                while reinfs.MoveNext():
+                    Add(reinfs.Current)
+
+            subs = obj.GetSubAssemblies()
+            for sub in subs:
+                stack.append(sub)
+
+        elif isinstance(obj, Part):
+            Add(obj)
+
+    color = Color(red / 255.0, green / 255.0, blue / 255.0)
+    ModelObjectVisualization.SetTemporaryState(objects_to_color, color)
+
+    return {"status": "success", "colored_elements": objects_to_color.Count}
+
+
+@log_function_call
 def tool_cut_elements_with_zero_class_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator, delete_cutting_parts: bool = False, tekla_class: int = 0) -> dict:
     """
     Applies boolean cuts to selected elements in the Tekla model using parts of a specified class as cutting objects.

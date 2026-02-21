@@ -564,6 +564,27 @@ async def test_hide_selected_parts(model_objects):
 
 
 @pytest.mark.asyncio
+async def test_color_selected(model_objects):
+    """
+    Tests that `color_selected` function can color selected parts.
+
+    Steps:
+    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
+    - Calls `color_selected` tool with red color.
+    - Verifies success and redraws views.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("color_selected", {"red": 255, "green": 0, "blue": 0})
+        assert result.data["status"] == "success"
+        assert result.data["colored_elements"] == 2
+
+        view_enum = ViewHandler.GetAllViews()
+        while view_enum.MoveNext():
+            ViewHandler.RedrawView(view_enum.Current)
+
+
+@pytest.mark.asyncio
 async def test_cut_elements_with_zero_class_parts(model_objects):
     """
     Tests the `cut_elements_with_zero_class_parts` tool.

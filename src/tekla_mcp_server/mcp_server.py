@@ -32,6 +32,7 @@ from tekla_mcp_server.mcp_tools import (
     tool_zoom_to_selection,
     tool_show_only_selected,
     tool_hide_selected,
+    tool_color_selected,
     tool_cut_elements_with_zero_class_parts,
     tool_convert_cut_parts_to_real_parts,
     tool_set_elements_udas,
@@ -291,6 +292,21 @@ def hide_selected() -> dict[str, Any]:
     """
     selected_objects = TeklaModel().get_selected_objects()
     return tool_hide_selected(selected_objects)
+
+
+@mcp.tool()
+@log_mcp_tool_call
+def color_selected(red: int, green: int, blue: int) -> dict[str, Any]:
+    """
+    Colors the selected elements in the Tekla view with the specified color.
+
+    RGB values (0-255):
+    - red: Red component (0-255)
+    - green: Green component (0-255)
+    - blue: Blue component (0-255)
+    """
+    selected_objects = TeklaModel().get_selected_objects()
+    return tool_color_selected(selected_objects, red, green, blue)
 
 
 @mcp.tool()
