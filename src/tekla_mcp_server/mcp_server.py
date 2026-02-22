@@ -40,6 +40,7 @@ from tekla_mcp_server.mcp_tools import (
     tool_get_elements_udas,
     tool_get_elements_properties,
     tool_get_elements_cut_parts,
+    tool_compare_elements,
 )
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.utils import log_mcp_tool_call
@@ -450,6 +451,33 @@ def get_elements_cut_parts() -> dict[str, Any]:
 
     selected_objects = TeklaModel().get_selected_objects()
     return tool_get_elements_cut_parts(selected_objects)
+
+
+@mcp.tool()
+@log_mcp_tool_call
+def compare_elements() -> dict[str, Any]:
+    """
+    Compares two selected Tekla parts or assemblies and returns a human-readable summary of changes.
+
+    ## INPUT
+    - No additional parameters required.
+
+    ## INSTRUCTIONS
+    1. Ignore all fields named 'id' or 'guid' at any nesting level.
+    2. Ignore numeric differences smaller than 0.01 units. Any difference smaller than this value should be treated as identical and not reported, even if the floating-point representation differs.
+    3. Ignore order differences in lists, dictionaries, and user-defined attributes (UDAs).
+    4. Compare all properties, including report properties, user properties, cutparts, reinforcements, and welds.
+    5. Only report actual differences: changed values, missing or added keys, or type changes.
+    6. Do not mention any fields or properties that are identical.
+    7. Do not add summaries, notes, or comments about unchanged data.
+    8. If there are no differences, return exactly: "Elements are identical".
+
+    ## OUTPUT
+    A human-readable summary listing only the actual differences between the two selected parts or assemblies.
+    """
+
+    selected_objects = TeklaModel().get_selected_objects()
+    return tool_compare_elements(selected_objects)
 
 
 # Run the MCP server locally

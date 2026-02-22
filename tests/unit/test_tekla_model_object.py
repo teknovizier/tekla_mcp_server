@@ -185,3 +185,62 @@ def test_wrap_model_objects_generator():
     wrapped_list = list(wrap_model_objects(mock_enumerator))
     assert len(wrapped_list) == 2
     assert all(isinstance(w, TeklaPart) for w in wrapped_list)
+
+
+def test_part_to_snapshot(wall1):
+    """Checks that to_snapshot returns a valid PartSnapshot."""
+    snapshot = wall1.to_snapshot()
+
+    assert snapshot.id == wall1.id
+    assert snapshot.guid == wall1.guid
+    assert snapshot.pos == wall1.position
+    assert isinstance(snapshot.report_properties, dict)
+    assert isinstance(snapshot.user_properties, dict)
+    assert isinstance(snapshot.cutparts, list)
+    assert isinstance(snapshot.reinforcements, list)
+    assert isinstance(snapshot.welds, list)
+
+
+def test_part_to_snapshot_serializable(wall1):
+    """Checks that PartSnapshot is JSON-serializable."""
+    snapshot = wall1.to_snapshot()
+    dumped = snapshot.model_dump()
+    assert isinstance(dumped, dict)
+    json_str = snapshot.model_dump_json()
+    assert isinstance(json_str, str)
+
+
+def test_assembly_to_snapshot(wall1):
+    """Checks that assembly to_snapshot returns a valid AssemblySnapshot."""
+    assembly = wall1.get_top_level_assembly()
+    snapshot = assembly.to_snapshot()
+
+    assert snapshot.id == assembly.id
+    assert snapshot.guid == assembly.guid
+    assert snapshot.pos == assembly.position
+    assert isinstance(snapshot.report_properties, dict)
+    assert isinstance(snapshot.user_properties, dict)
+    assert snapshot.main_part is not None
+    assert isinstance(snapshot.secondaries, list)
+    assert isinstance(snapshot.subassemblies, list)
+
+
+def test_assembly_to_snapshot_main_part(wall1):
+    """Checks that assembly snapshot contains main part as PartSnapshot."""
+    assembly = wall1.get_top_level_assembly()
+    snapshot = assembly.to_snapshot()
+
+    assert snapshot.main_part is not None
+    assert snapshot.main_part.id == wall1.id
+    assert snapshot.main_part.guid == wall1.guid
+
+
+def test_assembly_to_snapshot_serializable(wall1):
+    """Checks that AssemblySnapshot is JSON-serializable."""
+    assembly = wall1.get_top_level_assembly()
+    snapshot = assembly.to_snapshot()
+
+    dumped = snapshot.model_dump()
+    assert isinstance(dumped, dict)
+    json_str = snapshot.model_dump_json()
+    assert isinstance(json_str, str)

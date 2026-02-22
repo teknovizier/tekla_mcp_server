@@ -69,27 +69,26 @@ from tekla_mcp_server.tekla.utils import (
     insert_detail,
     insert_seam,  # noqa: F401
 )
-from tekla_mcp_server.utils import log_function_call, serialize_to_json
+
+from tekla_mcp_server.utils import serialize_to_json, log_function_call
 
 
 # Helper functions
-@log_function_call
-def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any) -> dict[str, Any]:
+def validate_exactly_two_selected(count: int) -> None:
     """
-    Applies a component operation to selected objects in the Tekla model using a specified callback function.
+    Validate that exactly two elements are selected.
+
+    Raises:
+        ValueError: If the count is not equal to 2.
     """
-
-    tekla_model = TeklaModel()
-    selected_objects = tekla_model.get_selected_objects()
-    if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
-        return process_detail_or_component(selected_objects, callback, tekla_model, component, custom_properties_errors=custom_properties_errors, *args, **kwargs)
-    elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
-        return process_seam_or_connection(selected_objects, callback, tekla_model, component, custom_properties_errors=custom_properties_errors, *args, **kwargs)
-    logger.warning("Unsupported component type: %s", component.component_type)
-    return {"status": "error", "message": f"Unsupported component type: {component.component_type}"}
+    if count == 0:
+        raise ValueError("No elements selected. Please select two elements.")
+    if count == 1:
+        raise ValueError("Only one element selected. Please select two elements.")
+    if count > 2:
+        raise ValueError(f"More than two elements selected. Expected 2, got {count}.")
 
 
-@log_function_call
 def add_filter(
     filter_collection: BinaryFilterExpressionCollection,
     filter_expression: Any,
@@ -116,6 +115,22 @@ def add_filter(
         expr = BinaryFilterExpression(filter_expression, match_type, NumericConstantFilterExpression(value))
 
     filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
+
+
+@log_function_call
+def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    """
+    Applies a component operation to selected objects in the Tekla model using a specified callback function.
+    """
+
+    tekla_model = TeklaModel()
+    selected_objects = tekla_model.get_selected_objects()
+    if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
+        return process_detail_or_component(selected_objects, callback, tekla_model, component, custom_properties_errors=custom_properties_errors, *args, **kwargs)
+    elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
+        return process_seam_or_connection(selected_objects, callback, tekla_model, component, custom_properties_errors=custom_properties_errors, *args, **kwargs)
+    logger.warning("Unsupported component type: %s", component.component_type)
+    return {"status": "error", "message": f"Unsupported component type: {component.component_type}"}
 
 
 @log_function_call
@@ -158,13 +173,7 @@ def process_seam_or_connection(
     This function is intended for use with components that require two objects, such as wall joints.
     It validates the number of selected objects, ensuring that exactly two are selected.
     """
-    total_selected = selected_objects.GetSize()
-    if total_selected == 0:
-        raise ValueError("No elements selected. Please select two elements.")
-    if total_selected == 1:
-        raise ValueError("Only one element selected. Please select two elements.")
-    if total_selected > 2:
-        raise ValueError("More than two elements selected.")
+    validate_exactly_two_selected(selected_objects.GetSize())
 
     processed_elements = 0
     processed_components = 0
@@ -920,4 +929,74 @@ def tool_get_elements_cut_parts(selected_objects: ModelObjectEnumerator) -> dict
         "processed_elements": processed_elements,
         "total_cut_parts": total_cut_parts,
         "cut_parts_list": serialized_cut_parts,
+    }
+
+
+def tool_compare_elements(selected_objects: ModelObjectEnumerator, tolerance: float = 0.01) -> dict[str, Any]:
+    """
+    Compares two element snapshots and returns the differences.
+
+    Args:
+        selected_objects: ModelObjectEnumerator with at least two parts selected
+    """
+    validate_exactly_two_selected(selected_objects.GetSize())
+
+    # Get the two selected objects and wrap them
+    parts = list(selected_objects)
+    object_a = wrap_model_object(parts[0])
+    object_b = wrap_model_object(parts[1])
+
+    # Validate that both objects are either parts or assemblies
+    valid_types = (TeklaPart, TeklaAssembly)
+    if not isinstance(object_a, valid_types) or not isinstance(object_b, valid_types):
+        return {
+            "status": "error",
+            "message": "Both objects must be parts or assemblies",
+        }
+
+    # Generate snapshots for both objects
+    snapshot_a = object_a.to_snapshot()
+    snapshot_b = object_b.to_snapshot()
+
+    def are_snapshots_identical(obj_a: Any, obj_b: Any, tolerance: float) -> bool:
+        """
+        Compares two snapshots for equality, ignoring id/GUID fields
+        and applying numeric tolerance.
+        """
+
+        def normalize(obj: Any) -> Any:
+            """
+            Recursively normalizes snapshot data:
+            - Rounds numbers to tolerance
+            - Filters out 'id' and 'guid' fields
+            - Processes dicts, lists, and objects
+            """
+            if isinstance(obj, (int, float)):
+                return round(float(obj) / tolerance) * tolerance
+            elif isinstance(obj, dict):
+                return {k: normalize(v) for k, v in obj.items() if k.lower() not in ("id", "guid")}
+            elif isinstance(obj, list):
+                return [normalize(v) for v in obj]
+            elif hasattr(obj, "__dict__"):
+                return normalize(obj.__dict__)
+            return obj
+
+        return normalize(obj_a) == normalize(obj_b)
+
+    identical = are_snapshots_identical(snapshot_a, snapshot_b, tolerance)
+
+    if identical:
+        return {
+            "status": "success",
+            "identical": True,
+            "message": "Elements are identical",
+        }
+
+    # Return snapshots only when elements differ
+    return {
+        "status": "success",
+        "identical": False,
+        "part_a_snapshot": snapshot_a,
+        "part_b_snapshot": snapshot_b,
+        "message": "Elements have differences",
     }

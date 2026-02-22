@@ -10,7 +10,6 @@ from collections.abc import Callable
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringMatchType, BaseComponent
-from tekla_mcp_server.tekla.model import TeklaModel
 
 from tekla_mcp_server.tekla.loader import (
     StringOperatorType,
@@ -25,9 +24,10 @@ from tekla_mcp_server.tekla.loader import (
     Detail,
     Seam,
     PositionTypeEnum,
-    DetailTypeEnum,
     AutoDirectionTypeEnum,
+    DetailTypeEnum
 )
+from tekla_mcp_server.tekla.model import TeklaModel
 
 from tekla_mcp_server.utils import log_function_call
 
@@ -44,7 +44,6 @@ STRING_MATCH_TYPE_MAPPING = {
     StringMatchType.ENDS_WITH: StringOperatorType.ENDS_WITH,
     StringMatchType.NOT_ENDS_WITH: StringOperatorType.NOT_ENDS_WITH,
 }
-
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
     """

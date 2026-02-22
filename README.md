@@ -39,6 +39,7 @@ The server provides the following tools:
 | `get_elements_udas`       | Retrieve structured data about all custom attributes for the selected Tekla elements |
 | `get_elements_properties`       | Retrieve structured data about selected elements in the Tekla model, including key properties (position, GUID, name, profile, material, finish, Tekla class), weight, and any defined report properties |
 | `get_elements_cut_parts`       | Find all cut parts in the selected elements and returns a summary grouped by profile |
+| `compare_elements` | Compare two selected Tekla elements and returns detailed differences (part properties, UDA, cutparts, welds, reinforcements) |
 
 ### Compatibility
 The server was tested to work with **only Tekla 2022** and may not be compatible with other versions of Tekla Structures.

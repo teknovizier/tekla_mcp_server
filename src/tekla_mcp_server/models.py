@@ -534,3 +534,49 @@ class ElementProperties(BaseModel):
     tekla_class: str
     weight: float
     custom_properties: list[ReportProperty] | None
+
+
+class PartSnapshot(BaseModel):
+    """
+    Represents a snapshot of a Tekla part for comparison purposes:
+    - GUID
+    - ID
+    - Position
+    - Report properties
+    - User properties
+    - Cut parts
+    - Reinforcements
+    - Welds
+    """
+
+    id: int
+    guid: str
+    pos: str
+    report_properties: dict[str, Any] = Field(default_factory=dict)
+    user_properties: dict[str, Any] = Field(default_factory=dict)
+    cutparts: list[dict[str, Any]] = Field(default_factory=list)
+    reinforcements: list[dict[str, Any]] = Field(default_factory=list)
+    welds: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AssemblySnapshot(BaseModel):
+    """
+    Represents a snapshot of a Tekla assembly for comparison purposes:
+    - GUID
+    - ID
+    - Position
+    - Report properties
+    - User properties
+    - Main part snapshot
+    - Secondaries snapshots
+    - Subassemblies snapshots
+    """
+
+    id: int
+    guid: str
+    pos: str
+    report_properties: dict[str, Any] = Field(default_factory=dict)
+    user_properties: dict[str, Any] = Field(default_factory=dict)
+    main_part: PartSnapshot | None = None
+    secondaries: list[PartSnapshot] = Field(default_factory=list)
+    subassemblies: list["AssemblySnapshot"] = Field(default_factory=list)

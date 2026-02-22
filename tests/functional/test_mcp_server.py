@@ -86,6 +86,13 @@ def model_objects():
     test_wall2 = create_mcp_test_beam("MCP_TEST_WALL2", Point(0, 0, 3020), Point(2000, 0, 3020), "3000*200")
     test_wall3 = create_mcp_test_beam("MCP_TEST_WALL3", Point(2000, 0, 0), Point(4000, 0, 0), "3000*200")
     test_wall4 = create_mcp_test_beam("MCP_TEST_WALL4", Point(2000, 0, 3020), Point(4000, 0, 3020), "3000*200")
+
+    # Identical walls for testing compare_elements identical comparisons
+    test_wall5 = create_mcp_test_beam("MCP_TEST_WALL5", Point(0, 0, 6040), Point(2000, 0, 6040), "3000*200")
+    test_wall6 = create_mcp_test_beam("MCP_TEST_WALL6", Point(0, 0, 9060), Point(2000, 0, 9060), "3000*200")
+    # Wall with different profile for testing compare_elements different profile
+    test_wall7 = create_mcp_test_beam("MCP_TEST_WALL7", Point(0, 0, 12080), Point(2000, 0, 12080), "2000*150")
+
     test_sw1 = create_mcp_test_beam("MCP_TEST_SW1", Point(4000, 0, 0), Point(6000, 0, 0), "3000*200", class_type="8")
     test_slab1 = create_mcp_test_beam("MCP_TEST_SLAB1", Point(1000, 0, 3020), Point(1000, 6000, 3020), "P20(200X1200)", class_type="3")
 
@@ -101,6 +108,9 @@ def model_objects():
         "test_wall2": test_wall2,
         "test_wall3": test_wall3,
         "test_wall4": test_wall4,
+        "test_wall5": test_wall5,
+        "test_wall6": test_wall6,
+        "test_wall7": test_wall7,
         "test_sw1": test_sw1,
         "test_slab1": test_slab1,
         "void1": void1,
@@ -320,7 +330,7 @@ async def test_select_elements_by_profile():
     async with Client(mcp) as client:
         result = await client.call_tool("select_elements_by_filter", {"element_type": "Wall", "profile": "3000*200", "profile_match_type": "Is Equal"})
         assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 4
+        assert result.data["selected_elements"] == 6
 
 
 @pytest.mark.parametrize(
@@ -972,3 +982,146 @@ async def test_get_elements_cut_parts_multiple_elements(model_objects):
         cut_parts = json.loads(result.data["cut_parts_list"])
         assert isinstance(cut_parts, list)
         assert len(cut_parts) >= 1
+
+
+@pytest.mark.asyncio
+async def test_compare_identical_parts(model_objects):
+    """
+    Compare two identical parts - should report as identical.
+
+    Steps:
+    1. Selects test_wall5 and test_wall6 (identical profile/class).
+    2. Calls compare_elements.
+    3. Verifies identical is True.
+    """
+    TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("compare_elements")
+
+        assert result.data["status"] == "success"
+        assert result.data["identical"] is True
+        assert result.data["message"] == "Elements are identical"
+        assert "part_a_snapshot" not in result.data
+        assert "part_b_snapshot" not in result.data
+
+
+@pytest.mark.asyncio
+async def test_compare_different_parts_different_profile(model_objects):
+    """
+    Compare two parts with different profiles - should report differences.
+
+    Steps:
+    1. Selects test_wall1 (3000*200) and test_wall7 (2000*150).
+    2. Calls compare_elements.
+    3. Verifies identical is False.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("compare_elements")
+
+        assert result.data["status"] == "success"
+        assert result.data["identical"] is False
+        assert result.data["message"] == "Elements have differences"
+        assert "part_a_snapshot" in result.data
+        assert "part_b_snapshot" in result.data
+
+
+@pytest.mark.asyncio
+async def test_compare_different_parts_different_position(model_objects):
+    """
+    Compare two parts with different positions - should report differences.
+
+    Steps:
+    1. Selects test_wall1 and test_wall2 (different Z positions).
+    2. Calls compare_elements.
+    3. Verifies identical is False.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("compare_elements")
+
+        assert result.data["status"] == "success"
+        assert result.data["identical"] is False
+
+
+@pytest.mark.asyncio
+async def test_compare_identical_assemblies(model_objects):
+    """
+    Compare two identical assemblies - should report as identical.
+
+    Steps:
+    1. Selects test_wall5 and test_wall6.
+    2. Calls select_elements_assemblies_or_main_parts with "Assembly" mode.
+    3. Calls compare_elements.
+    4. Verifies identical is True.
+    """
+    TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
+    async with Client(mcp) as client:
+        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
+        result = await client.call_tool("compare_elements")
+
+        assert result.data["status"] == "success"
+        assert result.data["identical"] is True
+        assert result.data["message"] == "Elements are identical"
+
+
+@pytest.mark.asyncio
+async def test_compare_different_assemblies(model_objects):
+    """
+    Compare two different assemblies - should report differences.
+
+    Steps:
+    1. Selects test_wall1 and test_wall2.
+    2. Calls select_elements_assemblies_or_main_parts with "Assembly" mode.
+    3. Calls compare_elements.
+    4. Verifies identical is False.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    async with Client(mcp) as client:
+        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
+        result = await client.call_tool("compare_elements")
+
+        assert result.data["status"] == "success"
+        assert result.data["identical"] is False
+
+
+@pytest.mark.asyncio
+async def test_compare_three_elements(model_objects):
+    """
+    Select three elements - should error (requires exactly 2).
+
+    Steps:
+    1. Selects test_wall1, test_wall2, test_wall3.
+    2. Calls compare_elements.
+    3. Verifies error status with message about more than two elements.
+    """
+    TeklaModel.select_objects(
+        [
+            model_objects["test_wall1"],
+            model_objects["test_wall2"],
+            model_objects["test_wall3"],
+        ]
+    )
+    async with Client(mcp) as client:
+        result = await client.call_tool("compare_elements")
+
+        assert result.data["status"] == "error"
+        assert "More than two elements" in result.data["message"]
+
+
+@pytest.mark.asyncio
+async def test_compare_single_element(model_objects):
+    """
+    Select one element - should error (requires exactly 2).
+
+    Steps:
+    1. Selects only test_wall1.
+    2. Calls compare_elements.
+    3. Verifies error status with message about only one element.
+    """
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("compare_elements")
+
+        assert result.data["status"] == "error"
+        assert "Only one element" in result.data["message"]
