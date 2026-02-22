@@ -505,6 +505,10 @@ class TeklaPart(TeklaModelObject):
         report_properties = self.get_multiple_report_properties(PART_REPORT_PROPS)
         user_properties = self.get_all_user_properties()
 
+        # Sort dictionaries by key to eliminate order differences
+        report_properties = dict(sorted(report_properties.items()))
+        user_properties = dict(sorted(user_properties.items()))
+
         # Extract cutparts (boolean operations applied to the part)
         cutparts = []
         boolean_enum = self.model_object.GetBooleans()
@@ -763,6 +767,10 @@ class TeklaAssembly(TeklaModelObject):
         # Fetch report properties and user-defined attributes
         report_properties = self.get_multiple_report_properties(ASSEMBLY_REPORT_PROPS)
         user_properties = self.get_all_user_properties()
+
+        # Sort dictionaries by key to eliminate order differences
+        report_properties = dict(sorted(report_properties.items()))
+        user_properties = dict(sorted(user_properties.items()))
 
         # Extract main part snapshot
         main_part = self.main_part
