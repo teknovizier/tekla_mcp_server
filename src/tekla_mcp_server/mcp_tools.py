@@ -2,6 +2,8 @@
 Module for tools used for Tekla model operations.
 """
 
+import copy
+import math
 import re
 from collections import defaultdict, Counter
 from collections.abc import Callable
@@ -1171,30 +1173,39 @@ def tool_compare_elements(selected_objects: ModelObjectEnumerator, tolerance: fl
     snapshot_a = object_a.to_snapshot()
     snapshot_b = object_b.to_snapshot()
 
-    def are_snapshots_identical(obj_a: Any, obj_b: Any, tolerance: float) -> bool:
+    def are_snapshots_identical(a: Any, b: Any, tol: float) -> bool:
         """
-        Compares two snapshots for equality, ignoring id/GUID fields
+        Compare two snapshots, ignoring 'id'/'guid' fields
         and applying numeric tolerance.
+        Handles unordered lists.
         """
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            return math.isclose(a, b, abs_tol=tol)
 
-        def normalize(obj: Any) -> Any:
-            """
-            Recursively normalizes snapshot data:
-            - Rounds numbers to tolerance
-            - Filters out 'id' and 'guid' fields
-            - Processes dicts, lists, and objects
-            """
-            if isinstance(obj, (int, float)):
-                return round(float(obj) / tolerance) * tolerance
-            elif isinstance(obj, dict):
-                return {k: normalize(v) for k, v in obj.items() if k.lower() not in ("id", "guid")}
-            elif isinstance(obj, list):
-                return [normalize(v) for v in obj]
-            elif hasattr(obj, "__dict__"):
-                return normalize(obj.__dict__)
-            return obj
+        if isinstance(a, dict) and isinstance(b, dict):
+            keys_a = {k for k in a if k.lower() not in ("id", "guid")}
+            keys_b = {k for k in b if k.lower() not in ("id", "guid")}
+            if keys_a != keys_b:
+                return False
+            return all(are_snapshots_identical(a[k], b[k], tol) for k in keys_a)
 
-        return normalize(obj_a) == normalize(obj_b)
+        if isinstance(a, list) and isinstance(b, list):
+            if len(a) != len(b):
+                return False
+            b_copy = copy.deepcopy(b)
+            for item_a in a:
+                for i, item_b in enumerate(b_copy):
+                    if are_snapshots_identical(item_a, item_b, tol):
+                        b_copy.pop(i)
+                        break
+                else:
+                    return False
+            return True
+
+        if hasattr(a, "__dict__") and hasattr(b, "__dict__"):
+            return are_snapshots_identical(a.__dict__, b.__dict__, tol)
+
+        return a == b
 
     identical = are_snapshots_identical(snapshot_a, snapshot_b, tolerance)
 
