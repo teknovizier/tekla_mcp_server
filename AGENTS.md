@@ -9,6 +9,7 @@ This file defines basic rules for AI agents and human contributors working on th
 - Keep existing style and structure unless told otherwise
 - Make changes minimal, focused, and consistent
 - Never remove existing comments, keep them as they are unless explicitly instructed otherwise
+- Backwards compatibility is not required, changes can introduce breaking behavior for older versions
 
 ## Essential Commands
 
@@ -66,8 +67,10 @@ from tekla_mcp_server.models import ReportProperty
 from tekla_mcp_server.utils import log_function_call, log_mcp_tool_call
 from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, find_normalized_match
 from tekla_mcp_server.config import get_config
-from tekla_mcp_server.tekla.utils import TeklaModel, TeklaModelObject
-from tekla_mcp_server.tekla.loader import Point, Beam
+from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.model_object import TeklaModelObject
+from tekla_mcp_server.tekla.utils import wrap_model_objects
+from tekla_mcp_server.tekla.loader import Point, Beam, Identifier, Model
 ```
 
 ### Type Hints & Formatting
@@ -108,10 +111,10 @@ def tool_function(...):
 - Configure via env vars: `TEKLA_MCP_LOG_LEVEL`, `TEKLA_MCP_LOG_FILE_PATH`
 
 ### Tekla API Patterns
-- Use `TeklaModel` wrapper from `tekla/utils.py`
-- Use `TeklaModelObject` for individual objects
+- Use `TeklaModel` class from `tekla/model.py` (singleton pattern for connection reuse)
+- Use `TeklaModelObject` from `tekla/model_object.py` for individual objects
 - Always `model.commit_changes()` after modifications
-- Use `wrap_model_objects()` for conversion
+- Use `wrap_model_objects()` from `tekla/utils.py` for conversion
 
 ### MCP Server
 - Use `@mcp.tool()` decorator
@@ -134,20 +137,32 @@ tekla_mcp_server/
 │   └── tekla/                 # Tekla-specific modules
 │       ├── __init__.py
 │       ├── loader.py          # Tekla DLL loading
-│       ├── utils.py           # Tekla API wrappers
+│       ├── model.py           # Tekla Model wrapper (singleton pattern)
+│       ├── model_object.py    # Tekla ModelObject wrappers
+│       ├── utils.py           # Tekla API helpers
 │       ├── template_attrs_parser.py  # Template attribute parsing with semantic search
 │       └── component_props_mapper.py  # Component property mapping with semantic search
 ├── config/                    # Configuration JSON files
-│   ├── settings.json
-│   ├── element_types.json
-│   ├── lifting_anchor_types.json
-│   └── base_components.json
+│   ├── settings.sample.json
+│   ├── element_types.sample.json
+│   ├── lifting_anchor_types.sample.json
+│   └── base_components.sample.json
 ├── tests/
 │   ├── unit/                  # Unit tests
+│   │   ├── test_config.py
+│   │   ├── test_embeddings.py
+│   │   ├── test_init.py
+│   │   ├── test_models.py
+│   │   ├── test_utils.py
+│   │   ├── test_tekla_component_props_mapper.py
+│   │   ├── test_tekla_model_object.py
+│   │   ├── test_tekla_template_attrs_parser.py
+│   │   └── test_tekla_utils.py
 │   └── functional/            # Functional tests
+│       └── test_mcp_server.py
 ├── .env.example               # Environment variables template
 ├── pyproject.toml
-└── requirements.txt
+├── requirements.txt
 └── requirements-dev.txt
 ```
 
