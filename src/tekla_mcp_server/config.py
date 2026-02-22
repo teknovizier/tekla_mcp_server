@@ -42,7 +42,7 @@ class Config:
             with open(file_path, encoding="utf-8") as f:
                 return json.load(f)
         except json.JSONDecodeError as e:
-            raise json.JSONDecodeError(f"Invalid JSON in {file_path}: {e}", e.doc, e.pos)
+            raise json.JSONDecodeError(f"Invalid JSON in {file_path}: {e}", e.doc, e.pos) from e
 
     @cached_property
     def _settings(self) -> dict[str, Any]:

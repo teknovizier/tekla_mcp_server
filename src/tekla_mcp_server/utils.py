@@ -15,6 +15,12 @@ from tekla_mcp_server.init import logger
 def serialize_to_json(data: Any) -> str:
     """
     Serializes data to a JSON string with consistent formatting.
+
+    Args:
+        data: Data to serialize
+
+    Returns:
+        JSON string with consistent formatting
     """
     return json.dumps(data, ensure_ascii=False, indent=2)
 
@@ -59,9 +65,11 @@ def log_function_call(func: Callable) -> Callable:
     """
     Decorator that logs function calls.
 
-    Logs:
-    - Function name
-    - Positional and keyword arguments
+    Args:
+        func: The function to decorate
+
+    Returns:
+        Wrapped function that logs its arguments
     """
 
     @wraps(func)
@@ -76,14 +84,11 @@ def log_mcp_tool_call(func: Callable) -> Callable:
     """
     Decorator for MCP tools that logs function calls and handles exceptions.
 
-    Logs:
-    - Function name
-    - Positional and keyword arguments
-    - Exceptions with traceback
+    Args:
+        func: The function to decorate
 
     Returns:
-    - Original function result if successful
-    - Standardized error dictionary if an exception occurs
+        Wrapped function that logs its arguments and handles exceptions
     """
 
     @wraps(func)

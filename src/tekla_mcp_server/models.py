@@ -316,7 +316,7 @@ class BaseComponent(BaseModel):
                         self._properties = {}
                     self._properties.update(custom_props)
                 except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON in custom_properties: {e}")
+                    raise ValueError(f"Invalid JSON in custom_properties: {e}") from e
             elif isinstance(self.custom_properties, dict):
                 if self._properties is None:
                     self._properties = {}
@@ -391,18 +391,18 @@ class LiftingAnchorsComponent(BaseComponent):
         if necessary. It adjusts the required lifting capacity by applying the specified safety margin and
         selects anchors from the provided anchor types that meet the capacity requirement.
         """
-        KG_TO_TON = 1000
-        PERCENT = 100
+        kg_to_ton = 1000
+        percent = 100
 
         if anchor_types is None:
             anchor_types = get_lifting_anchor_types()
         valid_anchors = None
         n = 2  # Start with 2 anchors
         while n <= 4:
-            required_capacity = element_weight / n / KG_TO_TON
+            required_capacity = element_weight / n / kg_to_ton
 
             # Adjust the capacity to account for reserve margin
-            required_capacity += required_capacity * safety_margin / PERCENT
+            required_capacity += required_capacity * safety_margin / percent
 
             # Find anchors that meet the capacity requirement
             valid_anchors = {key: value for key, value in anchor_types.items() if value["capacity"] >= required_capacity and element_type in value["element_type"] and value["active"]}
@@ -430,23 +430,23 @@ class LiftingAnchorsComponent(BaseComponent):
         the minimum edge distance constraints. Additionally, it verifies that the required anchor distances
         do not exceed the total element length.
         """
-        DOUBLE_ANCHOR_SPACING_LONG_WALL = 1000.0  # Double anchor spacing for long walls
-        DOUBLE_ANCHOR_SPACING_SHORTER_WALL = 500.0  # Double anchor spacing for shorter walls
-        ROUNDING_MULTIPLE = 5
+        double_anchor_spacing_long_wall = 1000.0  # Double anchor spacing for long walls
+        double_anchor_spacing_shorter_wall = 500.0  # Double anchor spacing for shorter walls
+        rounding_multiple = 5
 
         # By default, place anchors at L/4 from COG
         distance_from_cog = element_length / 4
-        distance_from_start: float = math.floor((cog_x - distance_from_cog) / ROUNDING_MULTIPLE) * ROUNDING_MULTIPLE
-        distance_from_end: float = math.floor((element_length - cog_x - distance_from_cog) / ROUNDING_MULTIPLE) * ROUNDING_MULTIPLE
+        distance_from_start: float = math.floor((cog_x - distance_from_cog) / rounding_multiple) * rounding_multiple
+        distance_from_end: float = math.floor((element_length - cog_x - distance_from_cog) / rounding_multiple) * rounding_multiple
 
         required_length = distance_from_start + 2 * distance_from_cog + distance_from_end
         double_anchor_spacing = min_edge_distance  # Assume the distance between anchors to be equal to the minimum edge distance
 
         if number_of_anchors == 4:
-            if (element_length - distance_from_start - distance_from_end - DOUBLE_ANCHOR_SPACING_LONG_WALL * 2) >= DOUBLE_ANCHOR_SPACING_LONG_WALL:
-                double_anchor_spacing = DOUBLE_ANCHOR_SPACING_LONG_WALL
-            elif (element_length - distance_from_start - distance_from_end - DOUBLE_ANCHOR_SPACING_SHORTER_WALL * 2) >= DOUBLE_ANCHOR_SPACING_SHORTER_WALL:
-                double_anchor_spacing = DOUBLE_ANCHOR_SPACING_SHORTER_WALL
+            if (element_length - distance_from_start - distance_from_end - double_anchor_spacing_long_wall * 2) >= double_anchor_spacing_long_wall:
+                double_anchor_spacing = double_anchor_spacing_long_wall
+            elif (element_length - distance_from_start - distance_from_end - double_anchor_spacing_shorter_wall * 2) >= double_anchor_spacing_shorter_wall:
+                double_anchor_spacing = double_anchor_spacing_shorter_wall
 
             # Ensure distance_from_start is not less than min_edge_distance
             if distance_from_start - double_anchor_spacing / 2 > min_edge_distance:
@@ -463,8 +463,8 @@ class LiftingAnchorsComponent(BaseComponent):
             # Reduce the distance from COG, but do not allow the distance between anchors be smaller than min_edge_distance
             while distance_from_start < min_edge_distance and distance_from_end < min_edge_distance:
                 # Recalculate distances
-                distance_from_start += ROUNDING_MULTIPLE
-                distance_from_end += ROUNDING_MULTIPLE
+                distance_from_start += rounding_multiple
+                distance_from_end += rounding_multiple
 
                 # Check the minimum distance between anchors
                 gap = element_length - distance_from_start - distance_from_end

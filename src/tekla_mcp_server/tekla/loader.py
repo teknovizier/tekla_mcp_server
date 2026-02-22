@@ -32,11 +32,10 @@ from Tekla.Structures.Model import (
     Component,
     Detail,
     Seam,
-    Reinforcement,
     BaseRebarGroup,
     RebarMesh,
     RebarStrand,
-    SingleRebar
+    SingleRebar,
 )
 from Tekla.Structures.Model.Operations import Operation
 from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector as ModelObjectSelectorUI, ViewHandler, ModelObjectVisualization, TemporaryTransparency

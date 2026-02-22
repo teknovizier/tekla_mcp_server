@@ -43,7 +43,7 @@ class ComponentPropsMapper:
         if self._semantic_enabled and self._model:
             logger.debug("Generating embeddings for %d properties", len(descriptions))
             embeddings = self._model.encode(descriptions)
-            desc_to_config = {desc: (key, emb.tolist()) for desc, key, emb in zip(descriptions, config_keys, embeddings)}
+            desc_to_config = {desc: (key, emb.tolist()) for desc, key, emb in zip(descriptions, config_keys, embeddings, strict=True)}
         else:
             desc_to_config = {}
 
@@ -105,6 +105,16 @@ class ComponentPropsMapper:
 
     @staticmethod
     def _convert_type(value: Any, expected_type: str) -> Any:
+        """
+        Converts a value to the expected type.
+
+        Args:
+            value: The value to convert
+            expected_type: Expected type as string ("int", "float", "str")
+
+        Returns:
+            Value converted to the expected type, or string representation on failure
+        """
         try:
             if expected_type == "int":
                 return int(float(value))

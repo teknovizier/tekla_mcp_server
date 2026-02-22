@@ -25,7 +25,7 @@ from tekla_mcp_server.tekla.loader import (
     Seam,
     PositionTypeEnum,
     AutoDirectionTypeEnum,
-    DetailTypeEnum
+    DetailTypeEnum,
 )
 from tekla_mcp_server.tekla.model import TeklaModel
 
@@ -44,6 +44,7 @@ STRING_MATCH_TYPE_MAPPING = {
     StringMatchType.ENDS_WITH: StringOperatorType.ENDS_WITH,
     StringMatchType.NOT_ENDS_WITH: StringOperatorType.NOT_ENDS_WITH,
 }
+
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
     """
@@ -75,6 +76,15 @@ def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
 def insert_detail(selected_object: ModelObject, component: BaseComponent, point: Point, reverse: bool = False) -> bool:
     """
     Inserts a custom detail component into a Tekla model at a specified point.
+
+    Args:
+        selected_object: The primary object to attach the detail to
+        component: The component to insert
+        point: The reference point for the detail
+        reverse: If True, inserts detail in reverse direction (default False)
+
+    Returns:
+        True if insertion was successful, False otherwise
     """
     d = Detail()
     d.Name = component.name
@@ -95,7 +105,17 @@ def insert_detail(selected_object: ModelObject, component: BaseComponent, point:
 
 def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, component: BaseComponent, point1: Point, point2: Point) -> bool:
     """
-    Inserts a custom seam component into a Tekla model at a specified point.
+    Inserts a custom seam component into a Tekla model.
+
+    Args:
+        primary_object: The primary object for the seam
+        secondary_object: The secondary object for the seam
+        component: The component to insert
+        point1: First input position
+        point2: Second input position
+
+    Returns:
+        True if insertion was successful, False otherwise
     """
     s = Seam()
     s.Name = component.name
@@ -118,6 +138,13 @@ def insert_seam(primary_object: ModelObject, secondary_object: ModelObject, comp
 def insert_component(selected_object: ModelObject, component: BaseComponent) -> bool:
     """
     Inserts a component into a Tekla model to the specified object.
+
+    Args:
+        selected_object: The object to attach the component to
+        component: The component to insert
+
+    Returns:
+        True if insertion was successful, False otherwise
     """
     c = Component()
     c.Name = component.name
@@ -144,11 +171,19 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
     - Pairs walls into (bottom_wall, top_wall) if their X and Y coordinates match within precision.
     """
     # 50 mm tolerance
-    TOLERANCE = 50.0
+    tolerance = 50.0
 
     def is_within_tolerance(value1: float, value2: float, tolerance: float) -> bool:
         """
         Returns True if values are within the defined tolerance range.
+
+        Args:
+            value1: First value to compare
+            value2: Second value to compare
+            tolerance: Maximum allowed difference
+
+        Returns:
+            True if absolute difference <= tolerance
         """
         return abs(value1 - value2) <= tolerance
 
@@ -169,7 +204,7 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
         # Check if this Z-value is close to an existing one
         close_match_found = False
         for existing_z in floor_set:
-            if is_within_tolerance(existing_z, wall.StartPoint.Z, TOLERANCE):
+            if is_within_tolerance(existing_z, wall.StartPoint.Z, tolerance):
                 # No need to check further
                 close_match_found = True
                 break
@@ -195,10 +230,10 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
         matched_key = None
         for key in wall_dict:
             if (
-                is_within_tolerance(xy_key[0][0], key[0][0], TOLERANCE)
-                and is_within_tolerance(xy_key[0][1], key[0][1], TOLERANCE)
-                and is_within_tolerance(xy_key[1][0], key[1][0], TOLERANCE)
-                and is_within_tolerance(xy_key[1][1], key[1][1], TOLERANCE)
+                is_within_tolerance(xy_key[0][0], key[0][0], tolerance)
+                and is_within_tolerance(xy_key[0][1], key[0][1], tolerance)
+                and is_within_tolerance(xy_key[1][0], key[1][0], tolerance)
+                and is_within_tolerance(xy_key[1][1], key[1][1], tolerance)
             ):
                 matched_key = key
                 break

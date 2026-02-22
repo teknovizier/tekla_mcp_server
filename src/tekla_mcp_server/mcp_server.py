@@ -399,7 +399,7 @@ def get_elements_properties(custom_props_definitions: list[str] | None = None) -
     Retrieve key properties for selected Tekla elements (assemblies or parts).
 
     ## INPUT
-    - `custom_properties` [Optional]: List of user-friendly property names.
+    - `custom_props_definitions` [Optional]: List of user-friendly property names.
 
     ### BEHAVIOR
     - Extract properties not in default columns; split multi-property phrases into separate items.

@@ -95,6 +95,12 @@ class TeklaModel:
     def get_objects_by_class(self, tekla_class: int) -> ModelObjectEnumerator:
         """
         Returns objects in the model selected by the given Tekla class.
+
+        Args:
+            tekla_class: The Tekla class number to filter by
+
+        Returns:
+            ModelObjectEnumerator containing objects of the specified class
         """
         filter_collection = BinaryFilterExpressionCollection()
 
@@ -113,7 +119,13 @@ class TeklaModel:
     @log_function_call
     def get_objects_by_guid(self, guids: list[str]) -> ArrayList:
         """
-        Returns model objects by their GUIDs and returns them in an ArrayList.
+        Returns model objects by their GUIDs.
+
+        Args:
+            guids: List of GUID strings to retrieve
+
+        Returns:
+            ArrayList containing the found model objects
         """
         objects_to_select = ArrayList()
         for guid in guids:
@@ -127,6 +139,12 @@ class TeklaModel:
     def get_objects_by_filter(self, model_filter: FilterExpression | str) -> ModelObjectEnumerator:
         """
         Returns objects in the model selected by the given selection filter definition.
+
+        Args:
+            model_filter: FilterExpression object or filter name string
+
+        Returns:
+            ModelObjectEnumerator containing objects matching the filter
 
         Raises:
             TypeError: If the provided filter type is not FilterExpression or str.
@@ -148,6 +166,12 @@ class TeklaModel:
     def select_objects(model_objects: Iterable) -> bool:
         """
         Selects the given model objects in the model.
+
+        Args:
+            model_objects: Iterable of model objects to select
+
+        Returns:
+            True if selection was successful
         """
         selector = ModelObjectSelectorUI()
 

@@ -392,7 +392,7 @@ class TeklaPart(TeklaModelObject):
     @property
     def weight(self) -> tuple[float, float]:
         """
-        Calculate the weight breakdown of a given Tekla model object.
+        Calculate the weight breakdown of a given part.
 
         This function returns two weight values:
         - The total weight of the element.

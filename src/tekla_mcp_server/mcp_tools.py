@@ -78,6 +78,9 @@ def validate_exactly_two_selected(count: int) -> None:
     """
     Validate that exactly two elements are selected.
 
+    Args:
+        count: Number of selected elements
+
     Raises:
         ValueError: If the count is not equal to 2.
     """
@@ -101,6 +104,13 @@ def add_filter(
 
     For string filters: provide match_type as StringMatchType
     For numeric filters: provide match_type as NumericOperatorType (defaults to IS_EQUAL if None)
+
+    Args:
+        filter_collection: The filter collection to add to
+        filter_expression: The filter expression to add
+        value: The value to filter by
+        match_type: StringMatchType for string filters, NumericOperatorType for numeric
+        operator: Boolean operator to combine with previous filter (default BOOLEAN_AND)
     """
     if isinstance(value, str):
         # String filter - use provided match_type or default to IS_EQUAL
@@ -121,14 +131,21 @@ def add_filter(
 def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """
     Applies a component operation to selected objects in the Tekla model using a specified callback function.
+
+    Args:
+        callback: Callback function to apply to each object
+        component: Component to apply
+        custom_properties_errors: List to collect custom property errors
+        *args: Additional positional arguments for callback
+        **kwargs: Additional keyword arguments for callback
     """
 
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
     if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
-        return process_detail_or_component(selected_objects, callback, tekla_model, component, custom_properties_errors=custom_properties_errors, *args, **kwargs)
+        return process_detail_or_component(selected_objects, callback, tekla_model, component, custom_properties_errors, *args, **kwargs)
     elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
-        return process_seam_or_connection(selected_objects, callback, tekla_model, component, custom_properties_errors=custom_properties_errors, *args, **kwargs)
+        return process_seam_or_connection(selected_objects, callback, tekla_model, component, custom_properties_errors, *args, **kwargs)
     logger.warning("Unsupported component type: %s", component.component_type)
     return {"status": "error", "message": f"Unsupported component type: {component.component_type}"}
 
@@ -136,10 +153,19 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
 @log_function_call
 def process_detail_or_component(
     selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any
-) -> dict:
+) -> dict[str, Any]:
     """
     Processes a list of selected objects, applying a callback to each object that is an instance of Beam.
     Used for components that require only one primary object.
+
+    Args:
+        selected_objects: Enumerator of selected model objects
+        callback: Callback function to apply to each object
+        model: Tekla model instance
+        component: Component to apply
+        custom_properties_errors: List to collect custom property errors
+        *args: Additional positional arguments for callback
+        **kwargs: Additional keyword arguments for callback
     """
     processed_elements = 0
     processed_components = 0
@@ -167,11 +193,20 @@ def process_detail_or_component(
 @log_function_call
 def process_seam_or_connection(
     selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any
-) -> dict:
+) -> dict[str, Any]:
     """
     Processes seams or connections between selected objects in the model.
     This function is intended for use with components that require two objects, such as wall joints.
     It validates the number of selected objects, ensuring that exactly two are selected.
+
+    Args:
+        selected_objects: Enumerator of selected model objects
+        callback: Callback function to apply to each object
+        model: Tekla model instance
+        component: Component to apply
+        custom_properties_errors: List to collect custom property errors
+        *args: Additional positional arguments for callback
+        **kwargs: Additional keyword arguments for callback
     """
     validate_exactly_two_selected(selected_objects.GetSize())
 
@@ -205,10 +240,15 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
     """
     Inserts a component to the specified object in the Tekla model.
     Handles specialized components like lifting anchors with intelligent behavior.
+
+    Args:
+        model: Tekla model instance
+        component: Component to insert
+        selected_object: Target object for the component
     """
-    WEIGHT_FACTOR = 1.05  # 5% to account for the weight of subassemblies and rebars
-    SAFETY_MARGIN = 5  # 5% safety margin
-    RECESS_WIDTH_OFFSET = 100.0
+    weight_factor = 1.05  # 5% to account for the weight of subassemblies and rebars
+    safety_margin = 5  # 5% safety margin
+    recess_width_offset = 100.0  # Recess offset
 
     is_lifting_anchor = isinstance(component, LiftingAnchorsComponent)
 
@@ -225,12 +265,12 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
         width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
 
         # Get cast unit total weight
-        total_weight = float(assembly.get_report_property("WEIGHT")) * WEIGHT_FACTOR
+        total_weight = float(assembly.get_report_property("WEIGHT")) * weight_factor
 
         logger.debug("Assuming total weight: %s kg", total_weight)
 
         # Calculate the necessary number of anchors and get their type
-        safety_margin = getattr(component, "safety_margin", SAFETY_MARGIN)
+        safety_margin = getattr(component, "safety_margin", safety_margin)
         number_of_anchors, valid_anchors = LiftingAnchorsComponent.get_required_anchors(element_type, total_weight, safety_margin)
 
         # Get the first anchor's attributes
@@ -255,7 +295,7 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
             "custom": 1,
             "custom_name": first_anchor_key,
             "AnchorRecess": 2,
-            "RecessWidth": width + RECESS_WIDTH_OFFSET,
+            "RecessWidth": width + recess_width_offset,
             "CustomCRotation": 1,
             "up_direction": 1,
             **first_anchor_attributes,
@@ -307,29 +347,29 @@ def _process_lifting_anchor_recesses(selected_object: ModelObject, local_cog: An
             if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Class == "0" and operative_part.Name == "" and operative_part.Profile.ProfileString.startswith("PRMD"):
                 # Create the boolean part only if the recess is positioned below the highest Y coordinate of the element solid
                 solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
-                DEFAULT_OFFSET = 0.0  # Assume zero offset, should probably be offset = 25.0 if local_cog.X < operative_part.StartPoint.X else -25.0
-                DEFAULT_CUT_LENGTH = 300.0
-                MIN_LEDGE_HEIGHT = 100.0
-                MAGIC_OFFSET = 0.99  # Add 0.99 mm to avoid Tekla bug
+                default_offset = 0.0  # Assume zero offset, should probably be offset = 25.0 if local_cog.X < operative_part.StartPoint.X else -25.0
+                default_cut_length = 300.0
+                min_ledge_height = 100.0
+                magic_offset = 0.99  # Add 0.99 mm to avoid Tekla bug
                 ledge_height = solid.MaximumPoint.Y - operative_part.StartPoint.Y
-                if ledge_height > MIN_LEDGE_HEIGHT:
-                    _create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, DEFAULT_CUT_LENGTH)
+                if ledge_height > min_ledge_height:
+                    _create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, default_offset, default_cut_length)
                 elif ledge_height:
                     match = re.search(r"PRMD(\d+)", operative_part.Profile.ProfileString)
                     if match:
-                        cut_length = float(match.group(1)) + MAGIC_OFFSET
-                        _create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, DEFAULT_OFFSET, cut_length)
+                        cut_length = float(match.group(1)) + magic_offset
+                        _create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, default_offset, cut_length)
 
 
 def _create_boolean_cut(selected_object: ModelObject, x_position: float, y_position: float, cut_height: float, depth_offset: float, cut_length: float) -> bool:
     """
     Creates a boolean cut and applies it to the selected element.
     """
-    Z_OFFSET = 25.0
+    z_offset = 25.0
     logger.debug("Creating boolean cut at X=%s, Y=%s, height=%s, length=%s", x_position, y_position, cut_height, cut_length)
     solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
-    cut_start = Point(x_position, y_position, solid.MinimumPoint.Z - Z_OFFSET)
-    cut_end = Point(x_position, y_position, solid.MaximumPoint.Z + Z_OFFSET)
+    cut_start = Point(x_position, y_position, solid.MinimumPoint.Z - z_offset)
+    cut_end = Point(x_position, y_position, solid.MaximumPoint.Z + z_offset)
 
     # Create the boolean cutting part as a rectangular beam
     cutting_part = Beam()
@@ -359,6 +399,11 @@ def tool_remove_components(model: TeklaModel, component: BaseComponent, *selecte
     """
     Removes components with the specified number and name from the specified object in the Tekla model.
     Handles special cleanup for intelligent components like lifting anchors.
+
+    Args:
+        model: Tekla model instance
+        component: Component to remove
+        *selected_objects: Objects to remove component from
     """
     if not selected_objects:
         raise ValueError("No elements selected. Please select at least one element.")
@@ -402,9 +447,23 @@ def tool_select_elements_by_filter(
     finish_match_type: StringMatchType = StringMatchType.IS_EQUAL,
     phase: str | None = None,
     phase_match_type: StringMatchType = StringMatchType.IS_EQUAL,
-) -> dict:
+) -> dict[str, Any]:
     """
     Selects elements in the Tekla model based on type, class, name, profile, material, finish and phase filters.
+
+    Args:
+        model: Tekla model instance
+        element_type: Element type to filter by (int, list of ints, or ElementType)
+        name: Name to filter by
+        name_match_type: How to match name (default IS_EQUAL)
+        profile: Profile to filter by
+        profile_match_type: How to match profile (default IS_EQUAL)
+        material: Material to filter by
+        material_match_type: How to match material (default IS_EQUAL)
+        finish: Finish to filter by
+        finish_match_type: How to match finish (default IS_EQUAL)
+        phase: Phase to filter by
+        phase_match_type: How to match phase (default IS_EQUAL)
     """
     if not element_type and not name and not profile and not phase and not material and not finish:
         raise ValueError("At least one argument (element type, Tekla class, name, profile, material, finish or phase) must be provided.")
@@ -471,9 +530,13 @@ def tool_select_elements_by_filter(
 
 
 @log_function_call
-def tool_select_elements_by_filter_name(model: TeklaModel, filter_name: str) -> dict:
+def tool_select_elements_by_filter_name(model: TeklaModel, filter_name: str) -> dict[str, Any]:
     """
     Selects elements in the Tekla model based on the existing filter.
+
+    Args:
+        model: Tekla model instance
+        filter_name: Name of the filter to use
     """
     objects_to_select = model.get_objects_by_filter(filter_name)
     TeklaModel.select_objects(objects_to_select)
@@ -485,9 +548,13 @@ def tool_select_elements_by_filter_name(model: TeklaModel, filter_name: str) -> 
 
 
 @log_function_call
-def tool_select_elements_by_guid(model: TeklaModel, guids: list[str]) -> dict:
+def tool_select_elements_by_guid(model: TeklaModel, guids: list[str]) -> dict[str, Any]:
     """
     Selects elements in the Tekla model by their GUID.
+
+    Args:
+        model: Tekla model instance
+        guids: List of GUIDs to select
     """
 
     objects_to_select = model.get_objects_by_guid(guids)
@@ -500,9 +567,13 @@ def tool_select_elements_by_guid(model: TeklaModel, guids: list[str]) -> dict:
 
 
 @log_function_call
-def tool_select_elements_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mode: SelectionMode) -> dict:
+def tool_select_elements_assemblies_or_main_parts(selected_objects: ModelObjectEnumerator, mode: SelectionMode) -> dict[str, Any]:
     """
     Returns assemblies or main parts for the given selected objects.
+
+    Args:
+        selected_objects: Enumerator of selected objects
+        mode: Selection mode (Assembly or MainPart)
     """
     processed_elements = 0
     selected_object_types = ""
@@ -534,11 +605,16 @@ def tool_select_elements_assemblies_or_main_parts(selected_objects: ModelObjectE
 
 
 @log_function_call
-def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: ElementLabel, custom_label: str | None = None) -> dict:
+def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: ElementLabel, custom_label: str | None = None) -> dict[str, Any]:
     """
     Draws labels for the given Tekla model objects using the GraphicsDrawer.
+
+    Args:
+        selected_objects: Enumerator of selected objects
+        label: ElementLabel type to draw
+        custom_label: Custom label template string (required if label is CUSTOM)
     """
-    COLOR_BLACK = (0.0, 0.0, 0.0)
+    color_black = (0.0, 0.0, 0.0)
     drawer = GraphicsDrawer()
     processed_elements = 0
     drawn_labels = 0
@@ -562,7 +638,7 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
                 ElementLabel.CLASS: selected_object.tekla_class,
             }
             text = labels.get(label, ElementLabel.NAME)
-        if drawer.DrawText(selected_object.cog, text, Color(*COLOR_BLACK)):
+        if drawer.DrawText(selected_object.cog, text, Color(*color_black)):
             drawn_labels += 1
         processed_elements += 1
     logger.info("Drawn '%s' labels on %s elements", label.value, drawn_labels)
@@ -575,9 +651,12 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
 
 
 @log_function_call
-def tool_zoom_to_selection(selected_objects: ModelObjectEnumerator) -> dict:
+def tool_zoom_to_selection(selected_objects: ModelObjectEnumerator) -> dict[str, Any]:
     """
     Zooms the Tekla view to the provided model objects.
+
+    Args:
+        selected_objects: Enumerator of selected objects to zoom to
     """
     processed_elements = 0
 
@@ -617,7 +696,7 @@ def tool_zoom_to_selection(selected_objects: ModelObjectEnumerator) -> dict:
 
 
 @log_function_call
-def tool_redraw_view() -> dict:
+def tool_redraw_view() -> dict[str, Any]:
     """
     Redraws the currently active view in Tekla.
     """
@@ -639,9 +718,12 @@ def tool_redraw_view() -> dict:
 
 
 @log_function_call
-def tool_show_only_selected(selected_objects: ModelObjectEnumerator) -> dict:
+def tool_show_only_selected(selected_objects: ModelObjectEnumerator) -> dict[str, Any]:
     """
     Updates the Tekla view to show only the currently selected model objects.
+
+    Args:
+        selected_objects: Enumerator of selected objects to show
     """
     Operation.ShowOnlySelected(Operation.UnselectedModeEnum.Hidden)
     logger.info("Hidden all the elements except the selected ones")
@@ -652,10 +734,13 @@ def tool_show_only_selected(selected_objects: ModelObjectEnumerator) -> dict:
 
 
 @log_function_call
-def tool_hide_selected(selected_objects: ModelObjectEnumerator) -> dict:
+def tool_hide_selected(selected_objects: ModelObjectEnumerator) -> dict[str, Any]:
     """
     Hides selected elements in the Tekla view using ModelObjectVisualization.
     Works with both parts and assemblies.
+
+    Args:
+        selected_objects: Enumerator of selected objects to hide
     """
 
     objects_to_hide = []
@@ -675,10 +760,16 @@ def tool_hide_selected(selected_objects: ModelObjectEnumerator) -> dict:
 
 
 @log_function_call
-def tool_color_selected(selected_objects: ModelObjectEnumerator, red: int, green: int, blue: int) -> dict:
+def tool_color_selected(selected_objects: ModelObjectEnumerator, red: int, green: int, blue: int) -> dict[str, Any]:
     """
     Colors selected elements in the Tekla view using ModelObjectVisualization.
     Works with both parts and assemblies.
+
+    Args:
+        selected_objects: Enumerator of selected objects to color
+        red: Red component of RGB color (0-255)
+        green: Green component of RGB color (0-255)
+        blue: Blue component of RGB color (0-255)
     """
 
     objects_to_color = []
@@ -699,9 +790,15 @@ def tool_color_selected(selected_objects: ModelObjectEnumerator, red: int, green
 
 
 @log_function_call
-def tool_cut_elements_with_zero_class_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator, delete_cutting_parts: bool = False, tekla_class: int = 0) -> dict:
+def tool_cut_elements_with_zero_class_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator, delete_cutting_parts: bool = False, tekla_class: int = 0) -> dict[str, Any]:
     """
     Applies boolean cuts to selected elements in the Tekla model using parts of a specified class as cutting objects.
+
+    Args:
+        model: Tekla model instance
+        selected_objects: Enumerator of objects to cut
+        delete_cutting_parts: Whether to delete cutting parts after operation (default False)
+        tekla_class: Tekla class number for cutting parts (default 0)
     """
 
     processed_elements = 0
@@ -731,9 +828,13 @@ def tool_cut_elements_with_zero_class_parts(model: TeklaModel, selected_objects:
 
 
 @log_function_call
-def tool_convert_cut_parts_to_real_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator) -> dict:
+def tool_convert_cut_parts_to_real_parts(model: TeklaModel, selected_objects: ModelObjectEnumerator) -> dict[str, Any]:
     """
     Inserts operative parts from boolean parts as real model objects.
+
+    Args:
+        model: Tekla model instance
+        selected_objects: Enumerator of selected objects
     """
     processed_elements = 0
     inserted_booleans = 0
@@ -758,9 +859,14 @@ def tool_convert_cut_parts_to_real_parts(model: TeklaModel, selected_objects: Mo
 
 
 @log_function_call
-def tool_set_elements_udas(selected_objects: ModelObjectEnumerator, udas: dict[str, Any], mode: UDASetMode) -> dict:
+def tool_set_elements_udas(selected_objects: ModelObjectEnumerator, udas: dict[str, Any], mode: UDASetMode) -> dict[str, Any]:
     """
     Applies UDAs to a collection of Tekla model objects.
+
+    Args:
+        selected_objects: Enumerator of selected objects
+        udas: Dictionary of user-defined attributes to set
+        mode: UDASetMode (ADD, OVERWRITE, or REMOVE)
     """
     processed_elements = 0
     updated_attributes = 0
@@ -791,15 +897,18 @@ def tool_set_elements_udas(selected_objects: ModelObjectEnumerator, udas: dict[s
 
 
 @log_function_call
-def tool_get_elements_udas(selected_objects: ModelObjectEnumerator) -> dict:
+def tool_get_elements_udas(selected_objects: ModelObjectEnumerator) -> dict[str, Any]:
     """
     Retrieves GUID, position, and all UDAs for a collection of model objects.
+
+    Args:
+        selected_objects: Enumerator of selected objects
     """
     processed_elements = 0
     assemblies: list[dict] = []
     parts: list[dict] = []
 
-    def extract_metadata(selected_object: TeklaModelObject) -> dict:
+    def extract_metadata(selected_object: TeklaModelObject) -> dict[str, Any]:
         return {"guid": selected_object.guid, "position": selected_object.position, "udas": selected_object.get_all_user_properties()}
 
     for selected_object in wrap_model_objects(selected_objects):
@@ -820,9 +929,13 @@ def tool_get_elements_udas(selected_objects: ModelObjectEnumerator) -> dict:
 
 
 @log_function_call
-def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom_props_definitions: list[str]) -> dict:
+def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom_props_definitions: list[str]) -> dict[str, Any]:
     """
     Extracts and serializes key element properties from a collection of model objects.
+
+    Args:
+        selected_objects: Enumerator of selected objects
+        custom_props_definitions: List of custom property names to extract
     """
     processed_elements = 0
     assemblies: list[ElementProperties] = []
@@ -898,9 +1011,12 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
 
 
 @log_function_call
-def tool_get_elements_cut_parts(selected_objects: ModelObjectEnumerator) -> dict:
+def tool_get_elements_cut_parts(selected_objects: ModelObjectEnumerator) -> dict[str, Any]:
     """
     Extracts cut parts from selected elements and groups them by profile.
+
+    Args:
+        selected_objects: Enumerator of selected objects
     """
     processed_elements = 0
     cut_parts_by_profile: Counter[str] = Counter()
@@ -932,12 +1048,14 @@ def tool_get_elements_cut_parts(selected_objects: ModelObjectEnumerator) -> dict
     }
 
 
+@log_function_call
 def tool_compare_elements(selected_objects: ModelObjectEnumerator, tolerance: float = 0.01) -> dict[str, Any]:
     """
     Compares two element snapshots and returns the differences.
 
     Args:
         selected_objects: ModelObjectEnumerator with at least two parts selected
+        tolerance: Tolerance for comparing floating-point numbers (default 0.01)
     """
     validate_exactly_two_selected(selected_objects.GetSize())
 

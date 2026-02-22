@@ -54,7 +54,7 @@ class TemplateAttributeParser:
             return
 
         embeddings = model.encode(attribute_names)
-        cls._embeddings_cache = {name: emb.tolist() for name, emb in zip(attribute_names, embeddings)}
+        cls._embeddings_cache = {name: emb.tolist() for name, emb in zip(attribute_names, embeddings, strict=True)}
         cls._semantic_loaded = True
         logger.info("Generated embeddings for %d template attributes", len(attribute_names))
 
