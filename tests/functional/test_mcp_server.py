@@ -269,97 +269,14 @@ async def test_remove_components(model_objects):
         assert result2.data["status"] == "success"
 
 
-@pytest.mark.parametrize(
-    "kwargs,expected",
-    [
-        ({"element_type": []}, "error"),
-        ({"element_type": [-777]}, "error"),
-        ({"element_type": "Tribune"}, "error"),
-        ({"element_type": [1]}, "success"),
-        ({"element_type": 1}, "success"),
-        ({"element_type": [1, 8]}, "success"),
-        ({"element_type": "Wall"}, "success"),
-    ],
-)
-@pytest.mark.asyncio
-async def test_select_elements_filter_basic(kwargs, expected):
-    """
-    Tests the `select_elements_by_filter` function, ensuring it correctly selects elements based on various parameters.
-
-    Steps:
-    - Validates behavior when no elements are provided (should return "error").
-    - Ensures non-existing classes return "error".
-    - Checks selection of specific element types (`WALL`, `TRIBUNE`, etc.).
-    """
-    async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == expected
-
-
-@pytest.mark.parametrize(
-    "kwargs,expected",
-    [
-        ({"element_type": "Wall", "name": "MCP_TEST_WALL2"}, 1),
-        ({"element_type": [8], "name": "MCP_TEST_WALL2"}, None),
-        ({"element_type": 8, "name": "MCP_TEST_WALL2"}, None),
-        ({"element_type": [1], "name": "MCP_TEST_WALL2"}, 1),
-        ({"name": "MCP_TEST_WALL2"}, 1),
-        ({"name": "EST_WALL2", "name_match_type": "Ends With"}, 1),
-        ({"name": "MCP_TEST_WALL2", "name_match_type": "Contains"}, 1),
-    ],
-)
-@pytest.mark.asyncio
-async def test_select_elements_by_name(kwargs, expected):
-    """
-    Steps:
-    - Validates selection by type and name, ensuring correct matching methods (`STARTS_WITH`, `ENDS_WITH`, `CONTAINS`).
-    """
-    async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == ("success" if expected else "error")
-        if expected:
-            assert result.data["selected_elements"] == expected
-
-
-@pytest.mark.asyncio
-async def test_select_elements_by_profile():
-    """
-    Steps:
-    - Validates selection by profile, ensuring correct matching methods.
-    """
-    async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_by_filter", {"element_type": "Wall", "profile": "3000*200", "profile_match_type": "Is Equal"})
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 6
-
-
-@pytest.mark.parametrize(
-    "name,match_type,expected",
-    [
-        ("MCP_TEST_WALL", "Contains", "success"),
-        ("MCP_TEST_WALL8585", "Starts With", "error"),
-        ("MCP_TEST_WALL8585", "Ends With", "error"),
-        ("MCP_TEST_WALL", "Is Equal", "error"),
-    ],
-)
-@pytest.mark.asyncio
-async def test_select_elements_name_matching(name, match_type, expected):
-    """
-    Steps:
-    - Validates selection by name, ensuring correct matching methods.
-    """
-    async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_by_filter", {"name": name, "name_match_type": match_type})
-        assert result.data["status"] == expected
-
-
 @pytest.mark.asyncio
 async def test_select_elements_by_filter_name(model_objects):
     """
-    Tests the `select_elements_by_filter_name` function, ensuring it correctly selects elements based on the existing filter settings.
+    Tests the `select_elements_by_filter_name` function, ensuring it correctly selects elements based on existing filter settings.
 
     Steps:
-    - Checks selection of specific elements.
+    - Checks selection with invalid filter name.
+    - Checks selection with valid filter name.
     """
     async with Client(mcp) as client:
         # Invalid filter
@@ -370,6 +287,272 @@ async def test_select_elements_by_filter_name(model_objects):
         result = await client.call_tool("select_elements_by_filter_name", {"filter_name": "standard"})
         assert result.data["status"] == "success"
         assert result.data["selected_elements"]
+
+
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_no_filters_returns_error(model_objects):
+    """
+    Tests the `select_elements_by_filter` function when called without any filter parameters.
+
+    Steps:
+    - Calls select_elements_by_filter with an empty filter configuration.
+    - Verifies that it returns an error status.
+    """
+    async with Client(mcp) as client:
+        result = await client.call_tool("select_elements_by_filter", {})
+        assert result.data["status"] == "error"
+
+
+@pytest.mark.parametrize("element_type", ["Wall", None])
+@pytest.mark.parametrize("tekla_classes", [1, [1], [1, 8]])
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_element_type_and_tekla_classes(model_objects, element_type, tekla_classes):
+    """
+    Tests the `select_elements_by_filter` function with element_type and tekla_classes parameters.
+
+    Steps:
+    - Calls select_elements_by_filter with various element_type and tekla_classes combinations.
+    - Verifies that the operation returns a success status.
+    """
+    async with Client(mcp) as client:
+        kwargs = {}
+        if element_type:
+            kwargs["element_type"] = element_type
+        if tekla_classes:
+            kwargs["tekla_classes"] = tekla_classes
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.parametrize("invalid_element_type", ["InvalidType", "NonExistent", "FakeWall"])
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_invalid_element_type(model_objects, invalid_element_type):
+    """
+    Tests the `select_elements_by_filter` function with invalid element_type values.
+
+    Steps:
+    - Calls select_elements_by_filter with various invalid element_type values.
+    - Verifies that the operation returns an error status.
+    """
+    async with Client(mcp) as client:
+        kwargs = {"element_type": invalid_element_type}
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "error"
+
+
+@pytest.mark.parametrize(
+    "field,match_type,value",
+    [
+        ("name", "Contains", "MCP"),
+        ("name", "Starts With", "MCP_TEST"),
+        ("name", "Ends With", "WALL1"),
+        ("name", "Not Contains", "INVALID"),
+        ("name", "Is Not Equal", "OTHER_NAME"),
+        ("profile", "Contains", "3000"),
+        ("material", "Contains", "Concrete"),
+        ("finish", "Is Not Equal", "PAINT"),
+        ("phase", "Is Equal", "1"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_standard_string_filters(model_objects, field, value, match_type):
+    """
+    Tests the `select_elements_by_filter` function with various standard string filter conditions.
+
+    Steps:
+    - Calls select_elements_by_filter with different string filter fields and match types.
+    - Verifies that the operation returns a success status.
+    """
+    async with Client(mcp) as client:
+        kwargs = {
+            "element_type": "Wall",
+            "standard_string_filters": {field: {"conditions": {"match_type": match_type, "value": value}}},
+        }
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.parametrize("logic", ["AND", "OR"])
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_string_multiple_conditions(model_objects, logic):
+    """
+    Tests the `select_elements_by_filter` function with multiple string filter conditions.
+
+    Steps:
+    - Calls select_elements_by_filter with multiple string filter conditions using AND/OR logic.
+    - Verifies that the operation returns a success status.
+    """
+    async with Client(mcp) as client:
+        kwargs = {
+            "element_type": "Wall",
+            "standard_string_filters": {
+                "name": {
+                    "conditions": [
+                        {"match_type": "Contains", "value": "A"},
+                        {"match_type": "Contains", "value": "B"},
+                    ],
+                    "logic": logic,
+                }
+            },
+        }
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_custom_string_filters(model_objects):
+    """
+    Tests the `select_elements_by_filter` function with custom string filters.
+
+    Steps:
+    - Calls select_elements_by_filter with an empty custom_string_filters dictionary.
+    - Verifies that the operation returns a success status.
+    """
+    async with Client(mcp) as client:
+        kwargs = {
+            "element_type": "Wall",
+            "custom_string_filters": {},
+        }
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.parametrize(
+    "prop",
+    [
+        {"name": "HEIGHT", "match_type": "Greater Than", "value": 2000},
+        {"name": "WEIGHT", "match_type": "Greater Than", "value": 300},
+        {"name": "LENGTH", "match_type": "Greater Than", "value": 2500},
+        {"name": "HEIGHT", "match_type": "Smaller Than", "value": 5000},
+        {"name": "WEIGHT", "match_type": "Smaller Or Equal", "value": 5000},
+        {"name": "LENGTH", "match_type": "Greater Or Equal", "value": 1000},
+        {"name": "HEIGHT", "match_type": "Is Equal", "value": 2000},
+    ],
+)
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_numeric_single_condition(model_objects, prop):
+    """
+    Tests the `select_elements_by_filter` function with numeric filter conditions.
+
+    Steps:
+    - Calls select_elements_by_filter with different numeric filter properties.
+    - Verifies that the operation returns a success status.
+    """
+    async with Client(mcp) as client:
+        kwargs = {
+            "element_type": "Wall",
+            "custom_numeric_filters": {
+                prop["name"]: {
+                    "conditions": {
+                        "match_type": prop["match_type"],
+                        "value": prop["value"],
+                    }
+                }
+            },
+        }
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.parametrize("logic", ["AND", "OR"])
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_numeric_multiple_conditions(model_objects, logic):
+    """
+    Tests the `select_elements_by_filter` function with multiple numeric filter conditions.
+
+    Steps:
+    - Calls select_elements_by_filter with multiple numeric conditions using AND/OR logic.
+    - Verifies that the operation returns a success status.
+    """
+    async with Client(mcp) as client:
+        kwargs = {
+            "element_type": "Wall",
+            "custom_numeric_filters": {
+                "HEIGHT": {
+                    "conditions": [
+                        {"match_type": "Greater Than", "value": 1000},
+                        {"match_type": "Smaller Than", "value": 5000},
+                    ],
+                    "logic": logic,
+                }
+            },
+        }
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.parametrize("num_properties", [1, 2, 3])
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_numeric_multiple_properties(model_objects, num_properties):
+    """
+    Tests the `select_elements_by_filter` function with multiple numeric filter properties.
+
+    Steps:
+    - Calls select_elements_by_filter with 1, 2, or 3 numeric filter properties.
+    - Verifies that the operation returns a success status.
+    """
+    props = ["HEIGHT", "WEIGHT", "LENGTH"][:num_properties]
+
+    async with Client(mcp) as client:
+        filters = {prop: {"conditions": {"match_type": "Greater Than", "value": 1000}} for prop in props}
+
+        kwargs = {
+            "element_type": "Wall",
+            "custom_numeric_filters": filters,
+        }
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.parametrize("combine_with", ["AND", "OR"])
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_combined_filters(model_objects, combine_with):
+    """
+    Tests the `select_elements_by_filter` function with combined string and numeric filters.
+
+    Steps:
+    - Calls select_elements_by_filter with both standard_string_filters and custom_numeric_filters.
+    - Verifies that the operation returns a success status.
+    """
+    async with Client(mcp) as client:
+        kwargs = {
+            "element_type": "Wall",
+            "standard_string_filters": {"name": {"conditions": {"match_type": "Contains", "value": "MCP"}}},
+            "custom_numeric_filters": {"HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000}}},
+            "combine_with": combine_with,
+        }
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "success"
+
+
+@pytest.mark.parametrize("invalid_logic", ["and", "or", "XOR", "", "NOT"])
+@pytest.mark.asyncio
+async def test_select_elements_by_filter_invalid_combine_with(model_objects, invalid_logic):
+    """
+    Tests the `select_elements_by_filter` function with invalid combine_with values.
+
+    Steps:
+    - Calls select_elements_by_filter with various invalid combine_with values.
+    - Verifies that the operation returns an error status.
+    """
+    async with Client(mcp) as client:
+        kwargs = {
+            "element_type": "Wall",
+            "standard_string_filters": {"name": {"conditions": {"match_type": "Contains", "value": "MCP"}}},
+            "combine_with": invalid_logic,
+        }
+
+        result = await client.call_tool("select_elements_by_filter", kwargs)
+        assert result.data["status"] == "error"
 
 
 @pytest.mark.asyncio

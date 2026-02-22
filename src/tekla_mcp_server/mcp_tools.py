@@ -16,9 +16,13 @@ from tekla_mcp_server.models import (
     ElementType,
     ElementTypeModel,
     LiftingAnchorsComponent,
+    NumericMatchType,
     ReportProperty,
     SelectionMode,
+    StandardStringFilterKey,
+    StringFilterOption,
     StringMatchType,
+    NumericFilterOption,
     UDASetMode,
     get_element_type_mapping,
 )
@@ -62,6 +66,7 @@ from tekla_mcp_server.tekla.model_object import (
 )
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.utils import (
+    NUMERIC_MATCH_TYPE_MAPPING,
     STRING_MATCH_TYPE_MAPPING,
     ensure_transformation_plane,
     get_wall_pairs,
@@ -95,34 +100,64 @@ def validate_exactly_two_selected(count: int) -> None:
 def add_filter(
     filter_collection: BinaryFilterExpressionCollection,
     filter_expression: Any,
-    value: str | int,
-    match_type: StringMatchType | NumericOperatorType = None,
+    value: str | int | float,
+    match_type: StringMatchType | NumericMatchType | NumericOperatorType | None = None,
     operator: BinaryFilterOperatorType = BinaryFilterOperatorType.BOOLEAN_AND,
 ) -> None:
     """
     Adds a filter expression to the filter collection.
 
-    For string filters: provide match_type as StringMatchType
-    For numeric filters: provide match_type as NumericOperatorType (defaults to IS_EQUAL if None)
+    For string filters: provide match_type as StringMatchType enum
+    For numeric filters: provide match_type as NumericMatchType or NumericOperatorType enum
+    For Tekla enum types (like TeklaStructuresDatabaseTypeEnum): uses default IS_EQUAL
 
     Args:
         filter_collection: The filter collection to add to
         filter_expression: The filter expression to add
         value: The value to filter by
-        match_type: StringMatchType for string filters, NumericOperatorType for numeric
+        match_type: Enum for match type (StringMatchType, NumericMatchType, or NumericOperatorType)
         operator: Boolean operator to combine with previous filter (default BOOLEAN_AND)
     """
+    # Handle Tekla enum types (e.g., TeklaStructuresDatabaseTypeEnum)
+    if not isinstance(value, (str, int, float)):
+        expr = BinaryFilterExpression(filter_expression, NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(value))
+        filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
+        return
+
+    # Determine if this is a string or numeric filter based on match_type
+    is_string_filter = False
+    if match_type is not None:
+        if isinstance(match_type, StringMatchType):
+            is_string_filter = True
+        elif isinstance(match_type, NumericMatchType):
+            is_string_filter = False
+
+    # Convert numeric strings to numbers ONLY for numeric filters
+    if isinstance(value, str) and not is_string_filter:
+        try:
+            if value.replace(".", "").replace("-", "").isdigit():
+                value = float(value) if "." in value else int(value)
+        except ValueError:
+            pass  # Keep as string if conversion fails
+
     if isinstance(value, str):
-        # String filter - use provided match_type or default to IS_EQUAL
+        # String filter - require match_type to be provided as StringMatchType enum
         if match_type is None:
             match_type = StringMatchType.IS_EQUAL
         op = STRING_MATCH_TYPE_MAPPING.get(match_type)
         expr = BinaryFilterExpression(filter_expression, op, StringConstantFilterExpression(value))
-    else:
-        # Numeric filter - use provided match_type or default to IS_EQUAL
+    elif isinstance(value, (int, float)):
+        # Numeric filter - require match_type to be provided as NumericMatchType or NumericOperatorType enum
         if match_type is None:
             match_type = NumericOperatorType.IS_EQUAL
-        expr = BinaryFilterExpression(filter_expression, match_type, NumericConstantFilterExpression(value))
+        # If already NumericOperatorType (from Tekla), use directly
+        if isinstance(match_type, NumericOperatorType):
+            op = match_type
+        else:
+            op = NUMERIC_MATCH_TYPE_MAPPING.get(match_type)
+        expr = BinaryFilterExpression(filter_expression, op, NumericConstantFilterExpression(value))
+    else:
+        raise ValueError(f"Unsupported value type: {type(value)}")
 
     filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
 
@@ -436,96 +471,156 @@ def tool_remove_components(model: TeklaModel, component: BaseComponent, *selecte
 @log_function_call
 def tool_select_elements_by_filter(
     model: TeklaModel,
-    element_type: int | list[int] | ElementType | None = None,
-    name: str | None = None,
-    name_match_type: StringMatchType = StringMatchType.IS_EQUAL,
-    profile: str | None = None,
-    profile_match_type: StringMatchType = StringMatchType.IS_EQUAL,
-    material: str | None = None,
-    material_match_type: StringMatchType = StringMatchType.IS_EQUAL,
-    finish: str | None = None,
-    finish_match_type: StringMatchType = StringMatchType.IS_EQUAL,
-    phase: str | None = None,
-    phase_match_type: StringMatchType = StringMatchType.IS_EQUAL,
+    element_type: ElementType | None = None,
+    tekla_classes: int | list[int] | None = None,
+    standard_string_filters: dict[str, StringFilterOption] | None = None,
+    custom_string_filters: dict[str, StringFilterOption] | None = None,
+    custom_numeric_filters: dict[str, NumericFilterOption] | None = None,
+    combine_with: str = "AND",
 ) -> dict[str, Any]:
     """
-    Selects elements in the Tekla model based on type, class, name, profile, material, finish and phase filters.
+    Select elements using standard Tekla properties, custom attributes, and numeric ranges.
 
     Args:
-        model: Tekla model instance
-        element_type: Element type to filter by (int, list of ints, or ElementType)
-        name: Name to filter by
-        name_match_type: How to match name (default IS_EQUAL)
-        profile: Profile to filter by
-        profile_match_type: How to match profile (default IS_EQUAL)
-        material: Material to filter by
-        material_match_type: How to match material (default IS_EQUAL)
-        finish: Finish to filter by
-        finish_match_type: How to match finish (default IS_EQUAL)
-        phase: Phase to filter by
-        phase_match_type: How to match phase (default IS_EQUAL)
+        model: TeklaModel instance
+        element_type: Named element type (ElementType enum)
+        tekla_classes: Tekla class number(s) - int or list of ints (e.g., 1, 8, 100)
+        standard_string_filters: Dict of standard property names to StringFilterOption.
+            Valid keys: name, profile, material, finish, phase
+        custom_string_filters: Dict of custom string property names to StringFilterOption
+        custom_numeric_filters: Dict of custom numeric property names to NumericFilterOption
+        combine_with: How to combine filter groups - "AND" or "OR", default "AND"
     """
-    if not element_type and not name and not profile and not phase and not material and not finish:
-        raise ValueError("At least one argument (element type, Tekla class, name, profile, material, finish or phase) must be provided.")
+    if combine_with not in {"AND", "OR"}:
+        raise ValueError(f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'.")
+
+    if not any(
+        [
+            element_type,
+            tekla_classes,
+            standard_string_filters,
+            custom_string_filters,
+            custom_numeric_filters,
+        ]
+    ):
+        raise ValueError("At least one filter must be provided.")
+
+    valid_standard_keys = {k.value for k in StandardStringFilterKey}
+    if standard_string_filters:
+        for key in standard_string_filters:
+            if key not in valid_standard_keys:
+                raise ValueError(f"Invalid standard_string_filters key '{key}'. Must be one of: {valid_standard_keys}")
 
     filter_collection = BinaryFilterExpressionCollection()
 
-    # Filter on parts
-    add_filter(filter_collection, ObjectFilterExpressions.Type(), TeklaStructuresDatabaseTypeEnum.PART)
+    filter_collection.Add(
+        BinaryFilterExpressionItem(
+            BinaryFilterExpression(
+                ObjectFilterExpressions.Type(),
+                NumericOperatorType.IS_EQUAL,
+                NumericConstantFilterExpression(TeklaStructuresDatabaseTypeEnum.PART),
+            )
+        )
+    )
 
-    # Filter on element types = Tekla classes
+    filter_groups: list[BinaryFilterExpressionCollection] = []
+
+    def build_filter_group(
+        expression,
+        filter_option: StringFilterOption | NumericFilterOption,
+        is_numeric: bool = False,
+    ) -> BinaryFilterExpressionCollection:
+        sub = BinaryFilterExpressionCollection()
+        conditions = filter_option.conditions
+        logic = filter_option.logic
+        if not isinstance(conditions, list):
+            conditions = [conditions]
+        operator = BinaryFilterOperatorType.BOOLEAN_OR if logic == "OR" else BinaryFilterOperatorType.BOOLEAN_AND
+        for cond in conditions:
+            value = cond.value
+            match_type_str = cond.match_type
+            if is_numeric:
+                match_type = NumericMatchType(match_type_str)
+            else:
+                match_type = StringMatchType(match_type_str)
+            add_filter(sub, expression, value, match_type, operator=operator)
+        return sub
+
+    STANDARD_EXPRESSION_MAP = {
+        "name": PartFilterExpressions.Name(),
+        "profile": PartFilterExpressions.Profile(),
+        "material": PartFilterExpressions.Material(),
+        "finish": PartFilterExpressions.Finish(),
+        "phase": TemplateFilterExpressions.CustomString("ASSEMBLY.PHASE"),
+    }
+
     if element_type:
-        tekla_classes: list[int] = []
-        if isinstance(element_type, int):
-            element_type = [element_type]
-        if isinstance(element_type, list):
-            tekla_classes = element_type
-        elif isinstance(element_type, ElementType):
-            tekla_classes = []
-            for material_types in get_element_type_mapping().values():
-                if element_type.name in material_types:
-                    tekla_classes.extend(material_types[element_type.name])
+        element_type_classes: list[int] = []
+        if isinstance(element_type, ElementType):
+            for mapping in get_element_type_mapping().values():
+                if element_type.name in mapping:
+                    element_type_classes.extend(mapping[element_type.name])
         else:
-            raise ValueError("Invalid input. Please enter a Tekla class number or element type.")
+            raise ValueError("Invalid element_type.")
+        type_sub = BinaryFilterExpressionCollection()
+        for cls in element_type_classes:
+            add_filter(
+                type_sub,
+                PartFilterExpressions.Class(),
+                cls,
+                NumericOperatorType.IS_EQUAL,
+                operator=BinaryFilterOperatorType.BOOLEAN_OR,
+            )
+        filter_groups.append(type_sub)
 
-        filter_collection_class = BinaryFilterExpressionCollection()
-        for tekla_class in tekla_classes:
-            add_filter(filter_collection_class, PartFilterExpressions.Class(), tekla_class, operator=BinaryFilterOperatorType.BOOLEAN_OR)
-        filter_collection.Add(BinaryFilterExpressionItem(filter_collection_class))
-        logger.debug("Filtering by Tekla classes: %s", tekla_classes)
+    if tekla_classes:
+        if isinstance(tekla_classes, int):
+            tekla_classes = [tekla_classes]
+        type_sub = BinaryFilterExpressionCollection()
+        for cls in tekla_classes:
+            add_filter(
+                type_sub,
+                PartFilterExpressions.Class(),
+                cls,
+                NumericOperatorType.IS_EQUAL,
+                operator=BinaryFilterOperatorType.BOOLEAN_OR,
+            )
+        filter_groups.append(type_sub)
 
-    # Filter on name
-    if name:
-        add_filter(filter_collection, PartFilterExpressions.Name(), name, name_match_type)
-        logger.debug("Filtering by name: %s with match type: %s", name, name_match_type)
+    if standard_string_filters:
+        for key, filter_option in standard_string_filters.items():
+            expression = STANDARD_EXPRESSION_MAP[key]
+            filter_groups.append(build_filter_group(expression, filter_option))
 
-    # Filter on profile
-    if profile:
-        add_filter(filter_collection, PartFilterExpressions.Profile(), profile, profile_match_type)
-        logger.debug("Filtering by profile: %s with match type: %s", profile, profile_match_type)
+    if custom_string_filters:
+        for field_name, filter_option in custom_string_filters.items():
+            custom_property = TemplateAttributeParser.parse(field_name)
+            expression = TemplateFilterExpressions.CustomString(custom_property.name)
+            filter_groups.append(build_filter_group(expression, filter_option))
 
-    # Filter on material
-    if material:
-        add_filter(filter_collection, PartFilterExpressions.Material(), material, material_match_type)
-        logger.debug("Filtering by material: %s with match type: %s", material, material_match_type)
+    if custom_numeric_filters:
+        for field_name, filter_option in custom_numeric_filters.items():
+            custom_property = TemplateAttributeParser.parse(field_name)
+            expression = TemplateFilterExpressions.CustomNumber(custom_property.name)
+            filter_groups.append(build_filter_group(expression, filter_option, is_numeric=True))
 
-    # Filter on finish
-    if finish:
-        add_filter(filter_collection, PartFilterExpressions.Finish(), finish, finish_match_type)
-        logger.debug("Filtering by finish: %s with match type: %s", finish, finish_match_type)
-
-    # Filter on phase
-    if phase:
-        assembly_phase = TemplateFilterExpressions.CustomString("ASSEMBLY.PHASE")
-        add_filter(filter_collection, assembly_phase, phase, phase_match_type)
-        logger.debug("Filtering by phase: %s with match type: %s", phase, phase_match_type)
+    if len(filter_groups) == 1:
+        filter_collection.Add(BinaryFilterExpressionItem(filter_groups[0], BinaryFilterOperatorType.BOOLEAN_AND))
+    elif len(filter_groups) > 1:
+        combined = BinaryFilterExpressionCollection()
+        group_operator = BinaryFilterOperatorType.BOOLEAN_OR if combine_with == "OR" else BinaryFilterOperatorType.BOOLEAN_AND
+        for fg in filter_groups:
+            combined.Add(BinaryFilterExpressionItem(fg, group_operator))
+        filter_collection.Add(BinaryFilterExpressionItem(combined, BinaryFilterOperatorType.BOOLEAN_AND))
 
     objects_to_select = model.get_objects_by_filter(filter_collection)
     TeklaModel.select_objects(objects_to_select)
-    logger.info("Selected %s elements by filter", objects_to_select.GetSize())
+
+    count = objects_to_select.GetSize()
+
     return {
-        "status": "success" if objects_to_select.GetSize() else "error",
-        "selected_elements": objects_to_select.GetSize(),
+        "status": "success" if count else "error",
+        "selected_elements": count,
     }
 
 

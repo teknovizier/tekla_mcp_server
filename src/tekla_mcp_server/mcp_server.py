@@ -12,7 +12,8 @@ from fastmcp import FastMCP
 from tekla_mcp_server.models import (
     SelectionModeModel,
     UDASetModeModel,
-    StringMatchTypeModel,
+    StringFilterOption,
+    NumericFilterOption,
     ElementTypeModel,
     ElementLabelModel,
     ElementType,
@@ -125,77 +126,126 @@ def remove_components(component_name: str) -> dict[str, Any]:
 @mcp.tool()
 @log_mcp_tool_call
 def select_elements_by_filter(
-    element_type: str | int | list[int] | ElementType | None = None,
-    name: str | None = None,
-    name_match_type: str = "Is Equal",
-    profile: str | None = None,
-    profile_match_type: str = "Is Equal",
-    material: str | None = None,
-    material_match_type: str = "Is Equal",
-    finish: str | None = None,
-    finish_match_type: str = "Is Equal",
-    phase: str | None = None,
-    phase_match_type: str = "Is Equal",
+    element_type: str | ElementType | None = None,
+    tekla_classes: int | list[int] | None = None,
+    standard_string_filters: dict[str, StringFilterOption] | None = None,
+    custom_string_filters: dict[str, StringFilterOption] | None = None,
+    custom_numeric_filters: dict[str, NumericFilterOption] | None = None,
+    combine_with: str = "AND",
 ) -> dict[str, Any]:
     """
-    Selects elements based on their type or Tekla class, name, profile, material, finish, phase and matching criteria.
+    Selects elements in the Tekla model using standard properties,
+    custom attributes and numeric ranges.
 
-    Valid concrete element types:
-    - `Wall`
-    - `Sandwich Wall`
-    - `Stair Flight`
-    - `Hollow Core Slab`
-    - `Massive Slab`
-    - `Column`
-    - `Beam`
-    - `Filigree Wall`
-    - `Filigree Slab`
-    - `Tribune`
-    - `TT Slab`
-    - `Balcony Slab`
-    - `Stair Landing`
-    - `Curved Stair`
+    ## INPUT
+    element_type: Named element type (string).
+        Valid values: "Wall", "Steel Beam", "Column", "Beam", etc.
+        Use tekla_classes for numeric class filtering.
 
-    Valid steel element types:
-    - `Steel Beam`
-    - `Steel Column`
-    - `Steel Truss`
-    - `Steel Brace`
+    tekla_classes: Tekla class number(s) as integer(s).
+        Valid values: 1 (Wall), 8 (Sandwich Wall), 100 (Steel Beam), etc.
+        Can be a single int or list of ints.
 
-    Valid match types:
-    - `Is Equal`: Checks for exact match.
-    - `Is Not Equal`: Checks for exact mismatch.
-    - `Contains`: Checks if one string is a substring of another.
-    - `Not Contains`: Checks if one string is not a substring of another.
-    - `Starts With`: Checks if a string starts with a specified substring.
-    - `Not Starts With`: Checks if a string does not start with a specified substring.
-    - `Ends With`: Checks if a string ends with a specified substring.
-    - `Not Ends With`: Checks if a string does not end with a specified substring.
+    standard_string_filters: Dict of standard Tekla properties to filter options.
+        Valid keys: name, profile, material, finish, phase
+
+    custom_string_filters: Dict of custom attribute names to StringFilterOption.
+        Use for string-type template attributes.
+
+    custom_numeric_filters: Dict of custom property names to NumericFilterOption.
+        Use for numeric-type template attributes (e.g., WEIGHT).
+        Do not use for Tekla built-in properties like "Class" - use element_type instead.
+
+    combine_with: How to combine filter groups - "AND" (default) or "OR".
+        - "AND": element matches ALL filter groups
+        - "OR": element matches ANY filter group
+
+    StringFilterOption structure:
+        Single condition: {"conditions": {"match_type": "Contains", "value": "beam"}}
+        Multiple conditions: {"conditions": [
+            {"match_type": "Is Equal", "value": "beam1"},
+            {"match_type": "Is Equal", "value": "beam2"}
+        ], "logic": "OR"}  # or "AND"
+
+    Valid match types for string filters:
+        - `Is Equal`: Exact match
+        - `Is Not Equal`: Exact mismatch
+        - `Contains`: Substring match
+        - `Not Contains`: Not contains
+        - `Starts With`: Starts with substring
+        - `Not Starts With`: Does not start with substring
+        - `Ends With`: Ends with substring
+        - `Not Ends With`: Does not end with substring
+
+    NumericFilterOption structure:
+        Single condition: {"conditions": {"match_type": "Greater Than", "value": 2000}}
+        Multiple conditions: {"conditions": [
+            {"match_type": "Greater Than", "value": 3000},
+            {"match_type": "Smaller Than", "value": 5000}
+        ], "logic": "AND"}  # or "OR"
+
+    Valid match types for numeric filters:
+        - `Is Equal`: Exact match
+        - `Is Not Equal`: Not equal
+        - `Smaller Than`: Less than
+        - `Smaller Or Equal`: Less than or equal
+        - `Greater Than`: Greater than
+        - `Greater Or Equal`: Greater than or equal
+
+    ### EXAMPLES
+    # NAME = "Wall" OR PHASE = "2"
+    {
+        "standard_string_filters": {
+            "name": {"conditions": {"match_type": "Is Equal", "value": "Wall"}},
+            "phase": {"conditions": {"match_type": "Is Equal", "value": "2"}}
+        },
+        "combine_with": "OR"
+    }
+
+    # element_type = Wall AND (name = "beam" OR profile = "200*600")
+    {
+        "element_type": "Wall",
+        "standard_string_filters": {
+            "name": {"conditions": {"match_type": "Is Equal", "value": "beam"}},
+            "profile": {"conditions": {"match_type": "Is Equal", "value": "200*600"}}
+        },
+        "combine_with": "OR"
+    }
+
+    # Elements in class 1 (Wall) with name ending in "1601"
+    {
+        "tekla_classes": 1,
+        "standard_string_filters": {
+            "name": {"conditions": {"match_type": "Ends With", "value": "1601"}}
+        }
+    }
+
+    # Multiple classes: Sandwich Wall (8) and Wall (1)
+    {
+        "tekla_classes": [8, 1],
+        "standard_string_filters": {
+            "name": {"conditions": {"match_type": "Contains", "value": "test"}}
+        }
+    }
+
+    At least one filter must be provided.
     """
 
     tekla_model = TeklaModel()
 
     if isinstance(element_type, str):
         element_type = ElementTypeModel(value=element_type).to_enum()
+    elif element_type is not None and not isinstance(element_type, ElementType):
+        raise ValueError("element_type must be a string (e.g., 'Wall', 'Steel Beam') or ElementType. Use tekla_classes for numeric class filtering.")
 
-    name_match_type_enum = StringMatchTypeModel(value=name_match_type).to_enum()
-    profile_match_type_enum = StringMatchTypeModel(value=profile_match_type).to_enum()
-    material_match_type_enum = StringMatchTypeModel(value=material_match_type).to_enum()
-    finish_match_type_enum = StringMatchTypeModel(value=finish_match_type).to_enum()
-    phase_match_type_enum = StringMatchTypeModel(value=phase_match_type).to_enum()
     return tool_select_elements_by_filter(
-        tekla_model,
-        element_type,
-        name,
-        name_match_type_enum,
-        profile,
-        profile_match_type_enum,
-        material,
-        material_match_type_enum,
-        finish,
-        finish_match_type_enum,
-        phase,
-        phase_match_type_enum,
+        model=tekla_model,
+        element_type=element_type,
+        tekla_classes=tekla_classes,
+        standard_string_filters=standard_string_filters,
+        custom_string_filters=custom_string_filters,
+        custom_numeric_filters=custom_numeric_filters,
+        combine_with=combine_with,
     )
 
 

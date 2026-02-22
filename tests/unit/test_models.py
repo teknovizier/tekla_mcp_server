@@ -16,7 +16,6 @@ from pydantic_core import ValidationError
 from tekla_mcp_server.models import (
     SelectionModeModel,
     UDASetModeModel,
-    StringMatchTypeModel,
     ElementTypeModel,
     ComponentTypeModel,
     ElementLabelModel,
@@ -263,45 +262,6 @@ def test_uda_set_mode_model_invalid(input_val):
     """
     with pytest.raises(ValidationError):
         UDASetModeModel(value=input_val)
-
-
-@pytest.mark.parametrize(
-    "input_val,expected_enum",
-    [
-        ("Is Equal", "IS_EQUAL"),
-        ("Is Not Equal", "IS_NOT_EQUAL"),
-        ("Contains", "CONTAINS"),
-        ("Not Contains", "NOT_CONTAINS"),
-        ("Starts With", "STARTS_WITH"),
-        ("Not Starts With", "NOT_STARTS_WITH"),
-        ("Ends With", "ENDS_WITH"),
-        ("Not Ends With", "NOT_ENDS_WITH"),
-    ],
-)
-def test_string_match_type_model_valid(input_val, expected_enum):
-    """
-    Checks StringMatchTypeModel accepts valid values and maps to correct enum.
-    """
-    model = StringMatchTypeModel(value=input_val)
-    assert model.to_enum().name == expected_enum
-
-
-@pytest.mark.parametrize(
-    "input_val",
-    [
-        "Equals",
-        "NotEquals",
-        "",
-        "is equal",
-        "Random",
-    ],
-)
-def test_string_match_type_model_invalid(input_val):
-    """
-    Checks StringMatchTypeModel raises error for invalid values.
-    """
-    with pytest.raises(ValidationError):
-        StringMatchTypeModel(value=input_val)
 
 
 @pytest.mark.parametrize(

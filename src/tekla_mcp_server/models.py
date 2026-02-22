@@ -51,6 +51,32 @@ class StringMatchType(Enum):
     NOT_ENDS_WITH = "Not Ends With"
 
 
+class NumericMatchType(Enum):
+    """
+    Represents the matching types for Numeric objects:
+    """
+
+    IS_EQUAL = "Is Equal"
+    IS_NOT_EQUAL = "Is Not Equal"
+    SMALLER_THAN = "Smaller Than"
+    SMALLER_OR_EQUAL = "Smaller Or Equal"
+    GREATER_THAN = "Greater Than"
+    GREATER_OR_EQUAL = "Greater Or Equal"
+
+
+class StandardStringFilterKey(str, Enum):
+    """
+    Valid keys for standard string filters.
+    These correspond to built-in Tekla properties.
+    """
+
+    NAME = "name"
+    PROFILE = "profile"
+    MATERIAL = "material"
+    FINISH = "finish"
+    PHASE = "phase"
+
+
 class ElementType(Enum):
     """
     Represents different types of elements in Tekla.
@@ -110,7 +136,6 @@ class ElementLabel(Enum):
 # Mappings
 SELECTION_MODES = {e.value for e in SelectionMode}
 UDA_SET_MODES = {e.value for e in UDASetMode}
-STRING_MATCH_TYPES = {e.value for e in StringMatchType}
 ELEMENT_TYPES = {e.value for e in ElementType}
 COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
@@ -209,19 +234,120 @@ class UDASetModeModel(EnumWrapper):
         return UDASetMode(self.value)
 
 
-class StringMatchTypeModel(EnumWrapper):
+class StringFilterCondition(BaseModel):
     """
-    Represents a validated string match type.
+    Encapsulates a string filter condition with match type and value.
+    Validates match_type against valid StringMatchType values.
     """
 
-    _valid_values = STRING_MATCH_TYPES
-    _error_code = "invalid_string_match_mode"
+    match_type: str
+    value: str
 
-    def to_enum(self) -> StringMatchType:
-        """
-        Converts the validated string value to a enum.
-        """
-        return StringMatchType(self.value)
+    @field_validator("match_type", mode="before")
+    @classmethod
+    def validate_match_type(cls, v: str) -> str:
+        valid_values = {e.value for e in StringMatchType}
+        if v not in valid_values:
+            raise PydanticCustomError(
+                "invalid_string_match_mode",
+                f"Invalid match_type '{v}'. Must be one of: {valid_values}",
+            )
+        return v
+
+
+class StringFilterOption(BaseModel):
+    """
+    Encapsulates string filter conditions for a property.
+    Supports single condition or list of conditions with configurable logic.
+    """
+
+    conditions: StringFilterCondition | list[StringFilterCondition]
+    logic: str = "OR"
+
+    @field_validator("logic", mode="before")
+    @classmethod
+    def validate_logic(cls, v: str) -> str:
+        valid_values = {"AND", "OR"}
+        if v not in valid_values:
+            raise PydanticCustomError(
+                "invalid_filter_logic",
+                f"Invalid logic '{v}'. Must be one of: {valid_values}",
+            )
+        return v
+
+    def to_dict(self) -> dict[str, str] | list[dict[str, str]]:
+        """Converts conditions to dict format for tool function."""
+        if isinstance(self.conditions, list):
+            return [{"match_type": cond.match_type, "value": cond.value} for cond in self.conditions]
+        return {"match_type": self.conditions.match_type, "value": self.conditions.value}
+
+    def get_values(self) -> str | list[str]:
+        """Extracts value(s) from conditions."""
+        if isinstance(self.conditions, list):
+            return [c.value for c in self.conditions]
+        return self.conditions.value
+
+    def get_match_type(self) -> str:
+        """Extracts match_type from first condition."""
+        if isinstance(self.conditions, list):
+            return self.conditions[0].match_type
+        return self.conditions.match_type
+
+    def get_logic(self) -> str:
+        """Returns the logic mode (AND/OR)."""
+        return self.logic
+
+
+class NumericFilterCondition(BaseModel):
+    """
+    Encapsulates a numeric filter condition with match type and value.
+    Validates match_type against valid NumericMatchType values.
+    """
+
+    match_type: str
+    value: float
+
+    @field_validator("match_type", mode="before")
+    @classmethod
+    def validate_match_type(cls, v: str) -> str:
+        valid_values = {e.value for e in NumericMatchType}
+        if v not in valid_values:
+            raise PydanticCustomError(
+                "invalid_numeric_match_mode",
+                f"Invalid match_type '{v}'. Must be one of: {valid_values}",
+            )
+        return v
+
+
+class NumericFilterOption(BaseModel):
+    """
+    Encapsulates numeric filter conditions for a property.
+    Supports single condition or list of conditions with configurable logic.
+    """
+
+    conditions: NumericFilterCondition | list[NumericFilterCondition]
+    logic: str = "AND"
+
+    @field_validator("logic", mode="before")
+    @classmethod
+    def validate_logic(cls, v: str) -> str:
+        valid_values = {"AND", "OR"}
+        if v not in valid_values:
+            raise PydanticCustomError(
+                "invalid_filter_logic",
+                f"Invalid logic '{v}'. Must be one of: {valid_values}",
+            )
+        return v
+
+    def to_dict(self) -> dict[str, Any] | list[dict[str, Any]]:
+        """Converts conditions to dict format for tool function."""
+        if isinstance(self.conditions, list):
+            return [{"match_type": cond.match_type, "value": cond.value} for cond in self.conditions]
+        return {"match_type": self.conditions.match_type, "value": self.conditions.value}
+
+    def get_logic(self) -> str:
+        """Returns the logic mode (AND/OR)."""
+        return self.logic
 
 
 class ElementTypeModel(EnumWrapper):
