@@ -2,8 +2,6 @@
 Module for tools used for Tekla model operations.
 """
 
-import copy
-import math
 import re
 from collections import defaultdict, Counter
 from collections.abc import Callable
@@ -162,6 +160,26 @@ def add_filter(
         raise ValueError(f"Unsupported value type: {type(value)}")
 
     filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
+
+
+def normalize_snapshot(obj: Any, tolerance: float) -> Any:
+    """
+    Recursively rounds all float values to the nearest multiple of tolerance.
+    Applies canonical ordering to lists for deterministic comparison.
+    """
+    if isinstance(obj, float):
+        quantized = round(obj / tolerance) * tolerance
+        # Prevent floating-point artifacts
+        return float(f"{quantized:.10f}")
+    elif isinstance(obj, dict):
+        return {k: normalize_snapshot(v, tolerance) for k, v in obj.items() if k.lower() not in ("id", "guid")}
+    elif isinstance(obj, list):
+        normalized = [normalize_snapshot(item, tolerance) for item in obj]
+        normalized.sort(key=lambda x: repr(x))
+        return normalized
+    elif hasattr(obj, "__dict__"):
+        return normalize_snapshot(vars(obj), tolerance)
+    return obj
 
 
 @log_function_call
@@ -1173,41 +1191,33 @@ def tool_compare_elements(selected_objects: ModelObjectEnumerator, tolerance: fl
     snapshot_a = object_a.to_snapshot()
     snapshot_b = object_b.to_snapshot()
 
-    def are_snapshots_identical(a: Any, b: Any, tol: float) -> bool:
+    # Normalize numbers according to tolerance
+    snapshot_a_normalized = normalize_snapshot(snapshot_a, tolerance)
+    snapshot_b_normalized = normalize_snapshot(snapshot_b, tolerance)
+
+    def are_snapshots_identical(a: Any, b: Any) -> bool:
         """
-        Compare two snapshots, ignoring 'id'/'guid' fields
-        and applying numeric tolerance.
-        Handles unordered lists.
+        Compare two snapshots, ignoring 'id'/'guid' fields.
         """
         if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-            return math.isclose(a, b, abs_tol=tol)
+            return a == b
 
         if isinstance(a, dict) and isinstance(b, dict):
             keys_a = {k for k in a if k.lower() not in ("id", "guid")}
             keys_b = {k for k in b if k.lower() not in ("id", "guid")}
             if keys_a != keys_b:
                 return False
-            return all(are_snapshots_identical(a[k], b[k], tol) for k in keys_a)
+            return all(are_snapshots_identical(a[k], b[k]) for k in keys_a)
 
         if isinstance(a, list) and isinstance(b, list):
-            if len(a) != len(b):
-                return False
-            b_copy = copy.deepcopy(b)
-            for item_a in a:
-                for i, item_b in enumerate(b_copy):
-                    if are_snapshots_identical(item_a, item_b, tol):
-                        b_copy.pop(i)
-                        break
-                else:
-                    return False
-            return True
+            return a == b
 
         if hasattr(a, "__dict__") and hasattr(b, "__dict__"):
-            return are_snapshots_identical(a.__dict__, b.__dict__, tol)
+            return are_snapshots_identical(a.__dict__, b.__dict__)
 
         return a == b
 
-    identical = are_snapshots_identical(snapshot_a, snapshot_b, tolerance)
+    identical = are_snapshots_identical(snapshot_a_normalized, snapshot_b_normalized)
 
     if identical:
         return {
@@ -1220,7 +1230,7 @@ def tool_compare_elements(selected_objects: ModelObjectEnumerator, tolerance: fl
     return {
         "status": "success",
         "identical": False,
-        "part_a_snapshot": snapshot_a,
-        "part_b_snapshot": snapshot_b,
+        "part_a_snapshot": snapshot_a_normalized,
+        "part_b_snapshot": snapshot_b_normalized,
         "message": "Elements have differences",
     }

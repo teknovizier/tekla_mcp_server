@@ -514,13 +514,12 @@ def compare_elements() -> dict[str, Any]:
 
     ## INSTRUCTIONS
     1. Ignore all fields named 'id' or 'guid' at any nesting level.
-    2. Ignore numeric differences smaller than 0.01 units. Any difference smaller than this value should be treated as identical and not reported, even if the floating-point representation differs.
-    3. Ignore order differences in lists, dictionaries, and user-defined attributes (UDAs).
-    4. Compare all properties, including report properties, user properties, cutparts, reinforcements, and welds.
-    5. Only report actual differences: changed values, missing or added keys, or type changes.
-    6. Do not mention any fields or properties that are identical.
-    7. Do not add summaries, notes, or comments about unchanged data.
-    8. If there are no differences, return exactly: "Elements are identical".
+    2. Ignore order differences in lists, dictionaries, and user-defined attributes (UDAs).
+    3. Compare all properties, including report properties, user properties, cutparts, reinforcements, and welds.
+    4. Only report actual differences: changed values, missing or added keys, or type changes.
+    5. Do not mention any fields or properties that are identical.
+    6. Do not add summaries, notes, or comments about unchanged data.
+    7. If there are no differences, return exactly: "Elements are identical".
 
     ## OUTPUT
     A human-readable summary listing only the actual differences between the two selected parts or assemblies.
