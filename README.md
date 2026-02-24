@@ -140,10 +140,11 @@ The project includes a comprehensive test suite:
 - `test_init.py`: DLL loading and error handling
 - `test_config.py`: Configuration management
 - `test_models.py`: Data model validation
+- `test_utils.py`: Decorators and utilities
 - `test_tekla_utils.py`: Tekla API wrapper tests
-- `test_embeddings.py`: Semantic embedding and attribute matching
-- `test_component_props_mapper.py`: Component property mapping
-- `test_template_attrs_parser.py`: Template attribute parsing
+- `test_tekla_model_object.py`: Tekla ModelObject wrappers
+- `test_tekla_component_props_mapper.py`: Component property mapping
+- `test_tekla_template_attrs_parser.py`: Template attribute parsing
 
 ### Functional Tests (`tests/functional/`)
 - `test_mcp_server.py`: End-to-end MCP tool integration tests

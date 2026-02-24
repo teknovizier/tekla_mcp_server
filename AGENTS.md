@@ -22,8 +22,8 @@ This file defines basic rules for AI agents and human contributors working on th
 - All tests: `uv run pytest tests/`
 - Unit only: `uv run pytest tests/unit/`
 - Functional only: `uv run pytest tests/functional/`
-- Single test: `uv run pytest tests/unit/test_embeddings.py::TestNormalizeAttributeName::test_normalize -xvs`
-- Single test class: `uv run pytest tests/unit/test_embeddings.py::TestNormalizeAttributeName -xvs`
+- Single test: `uv run pytest tests/unit/test_utils.py::test_log_function_call -xvs`
+- Single test class: `uv run pytest tests/unit/test_utils.py::TestLogFunctionCall -xvs`
 - Verbose: `uv run pytest -xvs tests/`
 
 ⚠️ Functional tests modify Tekla models - run only in test environments.
@@ -149,8 +149,8 @@ tekla_mcp_server/
 │   └── base_components.sample.json
 ├── tests/
 │   ├── unit/                  # Unit tests
+│   │   ├── __init__.py
 │   │   ├── test_config.py
-│   │   ├── test_embeddings.py
 │   │   ├── test_init.py
 │   │   ├── test_models.py
 │   │   ├── test_utils.py
@@ -159,6 +159,7 @@ tekla_mcp_server/
 │   │   ├── test_tekla_template_attrs_parser.py
 │   │   └── test_tekla_utils.py
 │   └── functional/            # Functional tests
+│       ├── __init__.py
 │       └── test_mcp_server.py
 ├── .env.example               # Environment variables template
 ├── pyproject.toml
