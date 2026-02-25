@@ -313,7 +313,13 @@ def draw_elements_labels(label: str | None = None, custom_label: str | None = No
     """
 
     selected_objects = TeklaModel().get_selected_objects()
-    label_value = "Name" if label is None else label
+
+    # If custom_label is set, we override label_value to "Custom"
+    if custom_label:
+        label_value = "Custom"
+    else:
+        label_value = "Name" if label is None else label
+
     label_enum = ElementLabelModel(value=label_value).to_enum()
     return tool_draw_elements_labels(selected_objects, label_enum, custom_label)
 
