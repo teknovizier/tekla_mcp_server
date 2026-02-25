@@ -7,7 +7,7 @@ and wall joint configurations.
 import json
 import math
 from enum import Enum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
 from pydantic_core import PydanticCustomError
@@ -662,7 +662,50 @@ class ElementProperties(BaseModel):
     custom_properties: list[ReportProperty] | None
 
 
-class PartSnapshot(BaseModel):
+class ModelObjectSnapshot(BaseModel):
+    """
+    Base class for Tekla object snapshots:
+    - GUID
+    - ID
+    - Position
+    - Report properties
+    - User properties
+    """
+
+    id: int
+    guid: str
+    pos: str
+    report_properties: dict[str, Any] = Field(default_factory=dict)
+    user_properties: dict[str, Any] = Field(default_factory=dict)
+
+    def normalize(self, tolerance: float) -> Self:
+        """
+        Recursively rounds all float values to the nearest multiple of tolerance.
+        """
+        normalized_props = self._normalize_dict(self.report_properties, tolerance)
+        normalized_user_props = self._normalize_dict(self.user_properties, tolerance)
+        return self._normalize_self(normalized_props, normalized_user_props, tolerance)
+
+    def _normalize_value(self, value: Any, tolerance: float) -> Any:
+        if isinstance(value, float):
+            quantized = round(value / tolerance) * tolerance
+            return float(f"{quantized:.10f}")
+        elif isinstance(value, dict):
+            return {k: self._normalize_value(v, tolerance) for k, v in value.items()}
+        elif isinstance(value, list):
+            normalized = [self._normalize_value(item, tolerance) for item in value]
+            normalized.sort(key=lambda x: repr(x))
+            return normalized
+        return value
+
+    def _normalize_dict(self, d: dict[str, Any], tolerance: float) -> dict[str, Any]:
+        return {k: self._normalize_value(v, tolerance) for k, v in d.items()}
+
+    def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
+        raise NotImplementedError
+
+
+class PartSnapshot(ModelObjectSnapshot):
     """
     Represents a snapshot of a Tekla part for comparison purposes:
     - GUID
@@ -675,17 +718,24 @@ class PartSnapshot(BaseModel):
     - Welds
     """
 
-    id: int
-    guid: str
-    pos: str
-    report_properties: dict[str, Any] = Field(default_factory=dict)
-    user_properties: dict[str, Any] = Field(default_factory=dict)
     cutparts: list[dict[str, Any]] = Field(default_factory=list)
     reinforcements: list[dict[str, Any]] = Field(default_factory=list)
     welds: list[dict[str, Any]] = Field(default_factory=list)
 
+    def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
+        return self.__class__(
+            id=self.id,
+            guid=self.guid,
+            pos=self.pos,
+            report_properties=normalized_props,
+            user_properties=normalized_user_props,
+            cutparts=[self._normalize_dict(cp, tolerance) for cp in self.cutparts],
+            reinforcements=[self._normalize_dict(r, tolerance) for r in self.reinforcements],
+            welds=[self._normalize_dict(w, tolerance) for w in self.welds],
+        )
 
-class AssemblySnapshot(BaseModel):
+
+class AssemblySnapshot(ModelObjectSnapshot):
     """
     Represents a snapshot of a Tekla assembly for comparison purposes:
     - GUID
@@ -698,11 +748,18 @@ class AssemblySnapshot(BaseModel):
     - Subassemblies snapshots
     """
 
-    id: int
-    guid: str
-    pos: str
-    report_properties: dict[str, Any] = Field(default_factory=dict)
-    user_properties: dict[str, Any] = Field(default_factory=dict)
     main_part: PartSnapshot | None = None
     secondaries: list[PartSnapshot] = Field(default_factory=list)
     subassemblies: list["AssemblySnapshot"] = Field(default_factory=list)
+
+    def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
+        return self.__class__(
+            id=self.id,
+            guid=self.guid,
+            pos=self.pos,
+            report_properties=normalized_props,
+            user_properties=normalized_user_props,
+            main_part=self.main_part.normalize(tolerance) if self.main_part else None,
+            secondaries=[s.normalize(tolerance) for s in self.secondaries],
+            subassemblies=[s.normalize(tolerance) for s in self.subassemblies],
+        )

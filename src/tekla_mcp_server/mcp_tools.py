@@ -162,26 +162,6 @@ def add_filter(
     filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
 
 
-def normalize_snapshot(obj: Any, tolerance: float) -> Any:
-    """
-    Recursively rounds all float values to the nearest multiple of tolerance.
-    Applies canonical ordering to lists for deterministic comparison.
-    """
-    if isinstance(obj, float):
-        quantized = round(obj / tolerance) * tolerance
-        # Prevent floating-point artifacts
-        return float(f"{quantized:.10f}")
-    elif isinstance(obj, dict):
-        return {k: normalize_snapshot(v, tolerance) for k, v in obj.items() if k.lower() not in ("id", "guid")}
-    elif isinstance(obj, list):
-        normalized = [normalize_snapshot(item, tolerance) for item in obj]
-        normalized.sort(key=lambda x: repr(x))
-        return normalized
-    elif hasattr(obj, "__dict__"):
-        return normalize_snapshot(vars(obj), tolerance)
-    return obj
-
-
 @log_function_call
 def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """
@@ -1192,8 +1172,8 @@ def tool_compare_elements(selected_objects: ModelObjectEnumerator, tolerance: fl
     snapshot_b = object_b.to_snapshot()
 
     # Normalize numbers according to tolerance
-    snapshot_a_normalized = normalize_snapshot(snapshot_a, tolerance)
-    snapshot_b_normalized = normalize_snapshot(snapshot_b, tolerance)
+    snapshot_a_normalized = snapshot_a.normalize(tolerance).model_dump()
+    snapshot_b_normalized = snapshot_b.normalize(tolerance).model_dump()
 
     def are_snapshots_identical(a: Any, b: Any) -> bool:
         """

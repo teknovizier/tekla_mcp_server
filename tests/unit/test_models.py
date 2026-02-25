@@ -23,6 +23,8 @@ from tekla_mcp_server.models import (
     LiftingAnchorsComponent,
     ReportProperty,
     ElementProperties,
+    PartSnapshot,
+    AssemblySnapshot,
 )
 
 
@@ -447,3 +449,174 @@ def test_element_properties_with_custom_properties():
     data = json.loads(elem.model_dump_json())
     assert data["custom_properties"][0]["data_type"] == "float"
     assert data["custom_properties"][1]["data_type"] == "str"
+
+
+class TestPartSnapshotNormalize:
+    @pytest.mark.parametrize(
+        "input_val,tolerance,expected",
+        [
+            (1234.567, 100, 1200.0),
+            (1234.567, 0.1, 1234.6),
+            (1234.567, 1, 1235.0),
+            (50.0, 100, 0.0),
+            (-123.456, 100, -100.0),
+            (0.0, 100, 0.0),
+        ],
+    )
+    def test_float_rounding(self, input_val, tolerance, expected):
+        snapshot = PartSnapshot(
+            id=1,
+            guid="g1",
+            pos="P1",
+            report_properties={"x": input_val},
+        )
+        result = snapshot.normalize(tolerance)
+        assert result.report_properties["x"] == expected
+
+    def test_dict_with_floats(self):
+        snapshot = PartSnapshot(
+            id=1,
+            guid="g1",
+            pos="P1",
+            report_properties={"a": 123.456, "b": 789.012},
+        )
+        result = snapshot.normalize(100)
+        assert result.report_properties["a"] == 100.0
+        assert result.report_properties["b"] == 800.0
+
+    def test_list_of_floats_normalized_and_sorted(self):
+        snapshot = PartSnapshot(
+            id=1,
+            guid="g1",
+            pos="P1",
+            report_properties={"vals": [150.0, 50.0, 250.0]},
+        )
+        result = snapshot.normalize(100)
+        assert result.report_properties["vals"] == [0.0, 200.0, 200.0]
+
+    def test_non_floats_unchanged(self):
+        snapshot = PartSnapshot(
+            id=1,
+            guid="g1",
+            pos="P1",
+            report_properties={"i": 42, "s": "text", "b": True, "lst": [1, "a"]},
+            user_properties={"nested": {"x": 10}},
+        )
+        result = snapshot.normalize(100)
+        assert result.report_properties["i"] == 42
+        assert result.report_properties["s"] == "text"
+        assert result.report_properties["b"] is True
+        assert result.user_properties["nested"]["x"] == 10
+
+    def test_cutparts_normalized(self):
+        snapshot = PartSnapshot(
+            id=1,
+            guid="g1",
+            pos="P1",
+            cutparts=[{"length": 123.456, "angle": 45.789}],
+        )
+        result = snapshot.normalize(100)
+        assert result.cutparts[0]["length"] == 100.0
+        assert result.cutparts[0]["angle"] == 0.0
+
+    def test_reinforcements_normalized(self):
+        snapshot = PartSnapshot(
+            id=1,
+            guid="g1",
+            pos="P1",
+            reinforcements=[{"weight": 567.89, "count": 5}],
+        )
+        result = snapshot.normalize(100)
+        assert result.reinforcements[0]["weight"] == 600.0
+        assert result.reinforcements[0]["count"] == 5
+
+    def test_welds_normalized(self):
+        snapshot = PartSnapshot(
+            id=1,
+            guid="g1",
+            pos="P1",
+            welds=[{"size": 6.5, "type": "Fillet"}],
+        )
+        result = snapshot.normalize(10)
+        assert result.welds[0]["size"] == 10.0
+        assert result.welds[0]["type"] == "Fillet"
+
+    def test_empty_dicts_and_lists(self):
+        snapshot = PartSnapshot(id=1, guid="g1", pos="P1", report_properties={}, cutparts=[])
+        result = snapshot.normalize(100)
+        assert result.report_properties == {}
+        assert result.cutparts == []
+
+
+class TestAssemblySnapshotNormalize:
+    def test_main_part_normalized(self):
+        main_part = PartSnapshot(id=1, guid="g1", pos="P1", report_properties={"x": 123.456})
+        assembly = AssemblySnapshot(id=10, guid="ga1", pos="A1", main_part=main_part)
+        result = assembly.normalize(100)
+        assert result.main_part.report_properties["x"] == 100.0
+
+    def test_secondaries_normalized(self):
+        sec1 = PartSnapshot(id=1, guid="g1", pos="P1", report_properties={"y": 150.0})
+        sec2 = PartSnapshot(id=2, guid="g2", pos="P2", report_properties={"y": 250.0})
+        assembly = AssemblySnapshot(id=10, guid="ga1", pos="A1", secondaries=[sec1, sec2])
+        result = assembly.normalize(100)
+        assert result.secondaries[0].report_properties["y"] == 200.0
+        assert result.secondaries[1].report_properties["y"] == 200.0
+
+    def test_subassemblies_normalized(self):
+        sub = AssemblySnapshot(id=2, guid="ga2", pos="A2", report_properties={"z": 456.789})
+        assembly = AssemblySnapshot(id=10, guid="ga1", pos="A1", subassemblies=[sub])
+        result = assembly.normalize(100)
+        assert result.subassemblies[0].report_properties["z"] == 500.0
+
+    def test_nested_mixed_structure(self):
+        main_part = PartSnapshot(id=1, guid="g1", pos="P1", report_properties={"x": 123.0})
+        sec = PartSnapshot(id=2, guid="g2", pos="P2", report_properties={"y": 0.0})
+        sub = AssemblySnapshot(id=3, guid="ga2", pos="A2", main_part=main_part, secondaries=[sec])
+        assembly = AssemblySnapshot(id=10, guid="ga1", pos="A1", main_part=main_part, secondaries=[sec], subassemblies=[sub])
+        result = assembly.normalize(100)
+        assert result.main_part.report_properties["x"] == 100.0
+        assert result.secondaries[0].report_properties["y"] == 0.0
+        assert result.subassemblies[0].main_part.report_properties["x"] == 100.0
+
+    def test_none_main_part_handled(self):
+        assembly = AssemblySnapshot(id=10, guid="ga1", pos="A1", main_part=None)
+        result = assembly.normalize(100)
+        assert result.main_part is None
+
+
+class TestNormalizeEdgeCases:
+    @pytest.mark.parametrize(
+        "input_val,tolerance,expected",
+        [
+            (0.001, 0.001, 0.001),
+            (0.0005, 0.001, 0.0),
+            (123.456789, 0.001, 123.457),
+            (-0.001, 0.001, -0.001),
+            (500.5, 0.5, 500.5),
+        ],
+    )
+    def test_small_tolerance(self, input_val, tolerance, expected):
+        snapshot = PartSnapshot(id=1, guid="g1", pos="P1", report_properties={"x": input_val})
+        result = snapshot.normalize(tolerance)
+        assert result.report_properties["x"] == expected
+
+    def test_mixed_type_list(self):
+        snapshot = PartSnapshot(
+            id=1,
+            guid="g1",
+            pos="P1",
+            report_properties={"vals": [1.5, "text", 2.5, True]},
+        )
+        result = snapshot.normalize(10)
+        assert result.report_properties["vals"] == ["text", 0.0, 0.0, True]
+
+    def test_deeply_nested_dict(self):
+        snapshot = PartSnapshot(
+            id=1,
+            guid="g1",
+            pos="P1",
+            report_properties={"l1": {"l2": {"l3": 123.456}}},
+        )
+        result = snapshot.normalize(100)
+        assert result.report_properties["l1"]["l2"]["l3"] == 100.0
