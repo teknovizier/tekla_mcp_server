@@ -1,5 +1,5 @@
 """
-Unit tests for embeddings module.
+Unit tests for utils module.
 """
 
 import pytest

@@ -57,10 +57,14 @@ def check_tekla_connection() -> dict[str, Any]:
     """
     Check Tekla connection status.
 
-    Returns:
-        - connected: boolean - whether Tekla is connected
-        - model_path: str - path to opened model (if any)
-        - message: str - status message
+    ## INPUT
+    - No additional parameters required.
+
+    ## OUTPUT
+    - Returns connection status with fields:
+      - connected: boolean
+      - model_path: str | null
+      - message: str
     """
     try:
         tekla_model = TeklaModel()
@@ -82,13 +86,12 @@ def put_components(
     custom_properties: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Inserts Tekla components into the selected objects, using the given
-    component name and an optional custom properties.
+    Inserts Tekla components into the selected objects.
 
-    Args:
-        component_name: The name of the Tekla component
-        properties_set: The name of the Tekla component properties set to use
-        custom_properties: Custom properties to apply to the component (dict)
+    ## INPUT
+    - `component_name` [Required]: The name of the Tekla component
+    - `properties_set` [Optional]: The name of the Tekla component properties set to use (standard by default)
+    - `custom_properties` [Optional]: Custom properties to apply to the component (dict)
     """
 
     resolved_custom_properties = custom_properties
@@ -111,8 +114,8 @@ def remove_components(component_name: str) -> dict[str, Any]:
     """
     Removes Tekla components from selected objects.
 
-    Args:
-        component_name: The name of the Tekla component
+    ## INPUT
+    - `component_name` [Required]: The name of the Tekla component
     """
 
     # Create appropriate component type based on name
@@ -254,6 +257,9 @@ def select_elements_by_filter(
 def select_elements_by_filter_name(filter_name: str) -> dict[str, Any]:
     """
     Selects elements applying an existing Tekla filter.
+
+    ## INPUT
+    - `filter_name` [Required]: Name of the Tekla filter to apply
     """
 
     tekla_model = TeklaModel()
@@ -265,6 +271,9 @@ def select_elements_by_filter_name(filter_name: str) -> dict[str, Any]:
 def select_elements_by_guid(guids: list[str]) -> dict[str, Any]:
     """
     Selects elements by their GUID.
+
+    ## INPUT
+    - `guids` [Required]: List of GUIDs to select
     """
 
     tekla_model = TeklaModel()
@@ -275,11 +284,13 @@ def select_elements_by_guid(guids: list[str]) -> dict[str, Any]:
 @log_mcp_tool_call
 def select_elements_assemblies_or_main_parts(mode: str) -> dict[str, Any]:
     """
-    Selects assemblies selected elements belong to.
+    Selects assemblies or main parts for the selected elements.
 
-    Valid modes:
-    - `Assembly`
-    - `Main Part`
+    ## INPUT
+    - `mode` [Required]: Selection mode
+
+    ## VALID VALUES
+    - `mode`: Assembly, Main Part
     """
 
     selected_objects = TeklaModel().get_selected_objects()
@@ -293,16 +304,12 @@ def draw_elements_labels(label: str | None = None, custom_label: str | None = No
     """
     Draws temporary labels in the Tekla model.
 
-    Valid labels:
-    - `Position`
-    - `GUID`
-    - `Name` (default)
-    - `Profile`
-    - `Material`
-    - `Finish`
-    - `Class`
-    - `Weight`
-    - `Custom` (requires `custom_label` to be set)
+    ## INPUT
+    - `label` [Optional]: Type of label to draw
+    - `custom_label` [Optional]: Custom report property name for labeling
+
+    ## VALID VALUES
+    - `label`: Position, GUID, Name, Profile, Material, Finish, Class, Weight
     """
 
     selected_objects = TeklaModel().get_selected_objects()
@@ -316,6 +323,9 @@ def draw_elements_labels(label: str | None = None, custom_label: str | None = No
 def zoom_to_selection() -> dict[str, Any]:
     """
     Zooms the Tekla current view to fit the currently selected model objects.
+
+    ## INPUT
+    - No additional parameters required.
     """
 
     tekla_model = TeklaModel()
@@ -328,6 +338,13 @@ def zoom_to_selection() -> dict[str, Any]:
 def redraw_view() -> dict[str, Any]:
     """
     Redraws the currently active view in Tekla.
+
+    ## INPUT
+    - No additional parameters required.
+
+    ## INSTRUCTIONS
+    - This tool MUST NOT be called immediately after the coloring tool.
+    - If coloring was just applied, do not trigger a redraw.
     """
     return tool_redraw_view()
 
@@ -337,6 +354,9 @@ def redraw_view() -> dict[str, Any]:
 def show_only_selected() -> dict[str, Any]:
     """
     Shows only the currently selected model objects in the Tekla current view, hiding all others.
+
+    ## INPUT
+    - No additional parameters required.
     """
 
     tekla_model = TeklaModel()
@@ -349,7 +369,9 @@ def show_only_selected() -> dict[str, Any]:
 def hide_selected() -> dict[str, Any]:
     """
     Hides the selected elements in the Tekla view.
-    Works with both parts and assemblies.
+
+    ## INPUT
+    - No additional parameters required.
     """
     selected_objects = TeklaModel().get_selected_objects()
     return tool_hide_selected(selected_objects)
@@ -361,10 +383,10 @@ def color_selected(red: int, green: int, blue: int) -> dict[str, Any]:
     """
     Colors the selected elements in the Tekla view with the specified color.
 
-    RGB values (0-255):
-    - red: Red component (0-255)
-    - green: Green component (0-255)
-    - blue: Blue component (0-255)
+    ## INPUT
+    - `red` [Required]: Red component (0-255)
+    - `green` [Required]: Green component (0-255)
+    - `blue` [Required]: Blue component (0-255)
     """
     selected_objects = TeklaModel().get_selected_objects()
     return tool_color_selected(selected_objects, red, green, blue)
@@ -374,8 +396,10 @@ def color_selected(red: int, green: int, blue: int) -> dict[str, Any]:
 @log_mcp_tool_call
 def cut_elements_with_zero_class_parts(delete_cutting_parts: bool = False) -> dict[str, Any]:
     """
-    Performs boolean cuts on selected model objects using parts in class 0, with optional deletion of cutting parts.
-    If `delete_cutting_parts` is set to True, the cutting parts used in the operation will be removed from the model after the cuts are applied.
+    Performs boolean cuts on selected model objects using parts in class 0.
+
+    ## INPUT
+    - `delete_cutting_parts` [Optional]: If True, removes cutting parts after cuts are applied (default: False)
     """
 
     tekla_model = TeklaModel()
@@ -388,6 +412,9 @@ def cut_elements_with_zero_class_parts(delete_cutting_parts: bool = False) -> di
 def convert_cut_parts_to_real_parts() -> dict[str, Any]:
     """
     Finds boolean parts and inserts them as real model objects.
+
+    ## INPUT
+    - No additional parameters required.
     """
 
     tekla_model = TeklaModel()
@@ -401,9 +428,12 @@ def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
     """
     Sets user-defined attributes (UDAs) on selected elements.
 
-    Valid modes:
-    - `Keep Existing Values`
-    - `Overwrite Existing Values`
+    ## INPUT
+    - `udas` [Required]: Dictionary of attribute names and values to set
+    - `mode` [Required]: How to handle existing values
+
+    ## VALID VALUES
+    - `mode`: Keep Existing Values, Overwrite Existing Values
     """
 
     selected_objects = TeklaModel().get_selected_objects()

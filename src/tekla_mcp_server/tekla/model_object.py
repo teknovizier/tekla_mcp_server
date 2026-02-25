@@ -414,7 +414,7 @@ class TeklaPart(TeklaModelObject):
 
     def has_spatial_overlap(self, other: TeklaModelObject) -> bool:
         """
-        Checks whether the bounding boxes of this Tekla assembly and another TeklaModelObject intersect.
+        Checks whether the bounding boxes of this Tekla part and another TeklaModelObject intersect.
         """
         solid_self = self.model_object.GetSolid()
         solid_other = other.model_object.GetSolid()
@@ -429,7 +429,7 @@ class TeklaPart(TeklaModelObject):
 
     def add_cut(self, cutting_part: TeklaPart, delete_cutting_part: bool = False) -> bool:
         """
-        Attempts to perform a boolean cut operation on this Tekla assembly using a TeklaPart as the cutting part.
+        Attempts to perform a boolean cut operation on this Tekla part using a TeklaPart as the cutting part.
 
         The method first checks for self-cutting and spatial overlap between the objects. If valid, it sets the cutting part
         as a Boolean operator and performs the cut. It then compares the volume before and after the operation to verify
