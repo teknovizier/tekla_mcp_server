@@ -243,13 +243,16 @@ class TeklaModelObject:
 
         It goes up the assembly chain until it reaches the highest one.
         If there's no assembly, it returns None.
+        If the object itself is an Assembly, it is considered top-level.
 
         Raises:
             TypeError: If the returned object is not of type Assembly.
         """
-        assembly = self._model_object.GetAssembly()
-        if assembly is None:
-            return None
+        assembly = self._model_object
+        if not isinstance(assembly, Assembly):
+            assembly = assembly.GetAssembly()
+            if assembly is None:
+                return None
 
         while assembly and assembly.GetAssembly():
             assembly = assembly.GetAssembly()
