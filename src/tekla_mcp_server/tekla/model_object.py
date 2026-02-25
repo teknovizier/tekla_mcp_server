@@ -327,12 +327,6 @@ class TeklaModelObject:
                 result[prop] = None
         return result
 
-    def get_coordinate_system_origin(self) -> Point:
-        """
-        Returns the origin point of the model's coordinate system.
-        """
-        return self.model_object.GetCoordinateSystem().Origin
-
     @staticmethod
     def _validate_property_type(property_type: type) -> None:
         """
@@ -583,15 +577,13 @@ class TeklaPart(TeklaModelObject):
         weld_enum = self.model_object.GetWelds()
         while weld_enum.MoveNext():
             weld = weld_enum.Current
-            wrapped_weld = TeklaModelObject(weld)
-
             weld_wrapped = wrap_model_object(weld)
             weld_props = weld_wrapped.get_multiple_report_properties(WELD_REPORT_PROPS) if weld_wrapped else {}
 
             # Calculate relative position to the main part
             try:
-                weld_pos = wrapped_weld.get_coordinate_system_origin()
-                main_pos = self.get_coordinate_system_origin()
+                weld_pos = weld.GetCoordinateSystem().Origin
+                main_pos = self.model_object.GetCoordinateSystem().Origin
                 relative_position = {
                     "dx": float(weld_pos.X - main_pos.X),
                     "dy": float(weld_pos.Y - main_pos.Y),
