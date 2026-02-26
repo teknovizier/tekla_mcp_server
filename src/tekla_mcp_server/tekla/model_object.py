@@ -248,18 +248,22 @@ class TeklaModelObject:
         Raises:
             TypeError: If the returned object is not of type Assembly.
         """
-        assembly = self._model_object
-        if not isinstance(assembly, Assembly):
-            assembly = assembly.GetAssembly()
+        obj = self._model_object
+
+        # If it's not an Assembly - get its assembly
+        if not isinstance(obj, Assembly):
+            assembly = obj.GetAssembly()
             if assembly is None:
+                logger.warning("No assembly found for object %s.", self.guid)
                 return None
+        else:
+            assembly = obj
 
-        while assembly and assembly.GetAssembly():
-            assembly = assembly.GetAssembly()
-
-        if assembly is None:
-            logger.warning("No assembly found for the object %s.", self.guid)
-            return None
+        # Always go up if there's a parent
+        parent = assembly.GetAssembly()
+        while parent is not None:
+            assembly = parent
+            parent = assembly.GetAssembly()
 
         if not isinstance(assembly, Assembly):
             raise TypeError(f"Expected Assembly object, got {type(assembly).__name__}.")
