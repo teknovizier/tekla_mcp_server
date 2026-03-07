@@ -54,7 +54,11 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 
 The server uses **sentence-transformers** to enable semantic attribute mapping, converting user-friendly names to Tekla attributes based on embedding similarity. The default model is `all-MiniLM-L6-v2` from HuggingFace. This works for both:
 - Component attributes: use natural terms like "rebar size" and automatically map them to the correct attribute (e.g., "SBSize_list")
-- Template attributes: use natural terms like "area netto" or "assembly bottom level" and automatically map them to the correct Tekla attribute (e.g., "AREA_NET", "ASSEMBLY_BOTTOM_LEVEL")
+- Template attributes: use natural terms like "area netto" or "assembly bottom level" and automatically map them to the correct Tekla attribute (e.g., `AREA_NET`, `ASSEMBLY_BOTTOM_LEVEL`)
+
+The semantic matching uses a **weighted approach** that combines:
+- **Attribute name similarity** (configurable via `name_weight`, default 0.7)
+- **Attribute description similarity** (configurable via `description_weight`, default 0.3)
 
 ## Requirements
 
@@ -82,13 +86,33 @@ uv pip install -r requirements-dev.txt
 |-----------------------|----------------------------------------------------|---------------------------------------------------------------------------------|
 | `tekla_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin" | The path to the directory where Tekla Structures is located                      |
 | `content_attributes_file_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin\\applications\\Tekla\\Tools\\TplEd\\settings\\contentattributes_global.lst" | The path to the `contentattributes_global.lst` file                      |
+| `template_attributes_json_name`          | - | The filename of JSON file in `config/` folder with template attribute descriptions for semantic search. See [Template Attributes JSON](#template-attributes-json) for format |
 | `embeddings.enabled`          | true | Enable or disable semantic search (embeddings). When false, only exact/normalized matching is used |
 | `embeddings.embedding_model`          | "all-MiniLM-L6-v2" | Sentence-transformers model for semantic attribute matching                      |
-| `embeddings.embedding_threshold`          | 0.6 | Minimum similarity score (0-1) for attribute mapping                     |
+| `embeddings.embedding_threshold`          | 0.6 | Minimum similarity score (0-1) for semantic matching |
+| `embeddings.name_weight`          | 0.7 | Weight (0-1) given to attribute name in weighted semantic matching. Higher values favor exact name matches |
+| `embeddings.description_weight`          | 0.3 | Weight (0-1) given to attribute description in weighted semantic matching. Higher values favor description matches |
 
 * Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
 * Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model
 * Rename `config/base_components.sample.json` to `config/base_components.json`, and specify the names and component numbers you'd like to make available to the MCP server. Components can optionally include `custom_properties` with descriptions for semantic mapping
+* Rename `config/tekla_template_attributes_2025.sample.json` to `config/tekla_template_attributes_2025.json`, and fill in descriptions for template attributes to enable semantic search
+
+### Template Attributes JSON
+
+The optional `template_attributes_json_name` config property points to a JSON filename containing template attribute descriptions. This enables semantic search to match user queries like "area netto" or "assembly bottom level" to Tekla attributes like `AREA_NET` or `ASSEMBLY_BOTTOM_LEVEL`.
+
+**JSON format:**
+```json
+{
+  "attributes": [
+      {"name": "WEIGHT", "description": "Weight of the model object"},
+      {"name": "AREA_NET", "description": "Net area of the object excluding openings"},
+      {"name": "ASSEMBLY_BOTTOM_LEVEL", "description": "Bottom elevation of the assembly"},
+    ...
+  ]
+}
+```
 
 ### Environment Variables
 

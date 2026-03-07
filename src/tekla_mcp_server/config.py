@@ -93,6 +93,14 @@ class Config:
         return self._settings["content_attributes_file_path"]
 
     @property
+    def template_attributes_json_path(self) -> str | None:
+        """Full path to template attributes JSON file."""
+        name = self._settings.get("template_attributes_json_name")
+        if name:
+            return str(self._config_dir / name)
+        return None
+
+    @property
     def embeddings(self) -> dict[str, Any]:
         """Embeddings configuration."""
         return self._settings.get("embeddings", {})
@@ -111,6 +119,16 @@ class Config:
     def embedding_threshold(self) -> float | None:
         """Embedding threshold."""
         return self.embeddings.get("embedding_threshold")
+
+    @property
+    def embedding_name_weight(self) -> float:
+        """Weight for attribute name in weighted semantic match."""
+        return self.embeddings.get("name_weight", 0.7)
+
+    @property
+    def embedding_description_weight(self) -> float:
+        """Weight for attribute description in weighted semantic match."""
+        return self.embeddings.get("description_weight", 0.3)
 
     @property
     def element_types(self) -> dict[str, Any]:

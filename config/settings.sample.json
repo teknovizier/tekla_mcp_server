@@ -4,6 +4,8 @@
     "embeddings": {
         "enabled": true,
         "embedding_threshold": 0.6,
-        "embedding_model": "all-MiniLM-L6-v2"
+        "embedding_model": "all-MiniLM-L6-v2",
+        "name_weight": 0.7,
+        "description_weight": 0.3
     }
 }

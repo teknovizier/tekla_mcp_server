@@ -59,6 +59,18 @@ def get_embedding_threshold() -> float:
     return _embedding_threshold
 
 
+def get_embedding_name_weight() -> float:
+    """Returns weight for attribute name in weighted semantic match."""
+    config = get_config()
+    return config.embedding_name_weight
+
+
+def get_embedding_description_weight() -> float:
+    """Returns weight for attribute description in weighted semantic match."""
+    config = get_config()
+    return config.embedding_description_weight
+
+
 def semantic_match(
     user_input: str,
     candidates_embeddings: dict[str, list[float]],

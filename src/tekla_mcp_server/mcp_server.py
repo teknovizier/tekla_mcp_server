@@ -9,6 +9,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import (
     SelectionModeModel,
     UDASetModeModel,
@@ -567,4 +568,12 @@ def compare_elements() -> dict[str, Any]:
 
 # Run the MCP server locally
 if __name__ == "__main__":
+    from tekla_mcp_server.embeddings import is_embeddings_enabled
+    if is_embeddings_enabled():
+        from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
+
+        logger.info("Pre-loading embeddings at startup...")
+        TemplateAttributeParser._ensure_semantic_loaded()
+        logger.info("Embeddings ready")
+
     mcp.run()
