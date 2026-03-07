@@ -713,13 +713,16 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
     drawer = GraphicsDrawer()
     processed_elements = 0
     drawn_labels = 0
+
+    if label == ElementLabel.CUSTOM:
+        if not custom_label:
+            raise ValueError("Custom label parameter has to be set.")
+        custom_property = TemplateAttributeParser.parse(custom_label)
+        unit = f" {custom_property.unit}" if custom_property.unit else ""
+
     for selected_object in wrap_model_objects(selected_objects):
         if label == ElementLabel.CUSTOM:
-            if not custom_label:
-                raise ValueError("Custom label parameter has to be set.")
-            custom_property = TemplateAttributeParser.parse(custom_label)
             value = selected_object.get_report_property(custom_property.name)
-            unit = f" {custom_property.unit}" if custom_property.unit else ""
             text = f"{custom_label} = {value}{unit}"
         else:
             labels = {
