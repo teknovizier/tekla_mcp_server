@@ -10,6 +10,20 @@ from tekla_mcp_server.tekla.component_props_mapper import ComponentPropsMapper, 
 
 
 @pytest.fixture(autouse=True)
+def reset_class_state():
+    """Reset class-level state before each test."""
+    original_cache = ComponentPropsMapper._cache.copy()
+    original_model = ComponentPropsMapper._model
+    original_threshold = ComponentPropsMapper._threshold
+    original_semantic_loaded = ComponentPropsMapper._semantic_loaded
+    yield
+    ComponentPropsMapper._cache = original_cache
+    ComponentPropsMapper._model = original_model
+    ComponentPropsMapper._threshold = original_threshold
+    ComponentPropsMapper._semantic_loaded = original_semantic_loaded
+
+
+@pytest.fixture(autouse=True)
 def enable_embeddings():
     """Enable embeddings for these tests that rely on semantic matching."""
     with patch("tekla_mcp_server.tekla.component_props_mapper.is_embeddings_enabled", return_value=True):
@@ -51,8 +65,8 @@ class TestMapKeys:
         mock_model.encode.return_value = np.array([0.1, 0.2], dtype=np.float32)
 
         mapper = ComponentPropsMapper()
-        mapper._model = mock_model
-        mapper._schema_cache["Border Rebar"] = {
+        ComponentPropsMapper._model = mock_model
+        ComponentPropsMapper._cache["Border Rebar"] = {
             "schema": {"SB_SIZE": {"description": "rebar size", "type": "int"}},
             "config_keys": ["SB_SIZE"],
             "desc_to_config": {"rebar size": ("SB_SIZE", [0.1, 0.2])},
@@ -67,8 +81,8 @@ class TestMapKeys:
         mock_model.encode.return_value = np.array([0.1, -0.9], dtype=np.float32)
 
         mapper = ComponentPropsMapper()
-        mapper._model = mock_model
-        mapper._schema_cache["Border Rebar"] = {
+        ComponentPropsMapper._model = mock_model
+        ComponentPropsMapper._cache["Border Rebar"] = {
             "schema": {"SB_SIZE": {"description": "rebar size", "type": "int"}},
             "config_keys": ["SB_SIZE"],
             "desc_to_config": {"rebar size": ("SB_SIZE", [0.9, 0.9])},
@@ -86,8 +100,8 @@ class TestMapKeys:
         ]
 
         mapper = ComponentPropsMapper()
-        mapper._model = mock_model
-        mapper._schema_cache["Border Rebar"] = {
+        ComponentPropsMapper._model = mock_model
+        ComponentPropsMapper._cache["Border Rebar"] = {
             "schema": {
                 "SB_SIZE": {"description": "rebar size", "type": "int"},
                 "SB_CLASS": {"description": "rebar class", "type": "string"},
@@ -107,8 +121,8 @@ class TestMapKeys:
         import numpy as np
 
         mapper = ComponentPropsMapper()
-        mapper._model = MagicMock()
-        mapper._schema_cache["Border Rebar"] = {
+        ComponentPropsMapper._model = MagicMock()
+        ComponentPropsMapper._cache["Border Rebar"] = {
             "schema": {"SB_SIZE": {"description": "rebar size", "type": "int"}},
             "config_keys": ["SB_SIZE"],
             "desc_to_config": {"rebar size": ("SB_SIZE", np.array([0.1, 0.2], dtype=np.float32))},
@@ -126,8 +140,8 @@ class TestMapKeys:
         ]
 
         mapper = ComponentPropsMapper()
-        mapper._model = mock_model
-        mapper._schema_cache["Border Rebar"] = {
+        ComponentPropsMapper._model = mock_model
+        ComponentPropsMapper._cache["Border Rebar"] = {
             "schema": {
                 "SB_SIZE": {"description": "rebar size", "type": "int"},
             },

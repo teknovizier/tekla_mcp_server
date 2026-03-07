@@ -91,7 +91,7 @@ class TemplateAttributeParser:
         return cls._model
 
     @classmethod
-    def _ensure_semantic_loaded(cls) -> None:
+    def preload(cls) -> None:
         if cls._semantic_loaded or not is_embeddings_enabled():
             return
 
@@ -128,7 +128,7 @@ class TemplateAttributeParser:
 
         from sentence_transformers import util
 
-        cls._ensure_semantic_loaded()
+        cls.preload()
         if not cls._embeddings_cache or not cls._description_embeddings_cache:
             logger.debug("Semantic match for '%s': no embeddings cache", user_input)
             return None

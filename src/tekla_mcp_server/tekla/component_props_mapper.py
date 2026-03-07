@@ -8,27 +8,42 @@ This module provides functionality to:
 4. Convert values to expected types from config
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, semantic_match, is_embeddings_enabled
 from tekla_mcp_server.models import get_custom_properties_schema
 from tekla_mcp_server.utils import find_normalized_match
 
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
 
 class ComponentPropsMapper:
+    _cache: dict[str, dict] = {}
+    _semantic_match_cache: dict[str, str] = {}
+    _semantic_loaded: bool = False
+    _model: "SentenceTransformer | None" = None
+    _threshold: float | None = None
+
+    @classmethod
+    def _get_model(cls) -> "SentenceTransformer | None":
+        if cls._model is None and cls._semantic_loaded:
+            cls._model = get_embedding_model()
+        return cls._model
+
     def __init__(self, threshold: float | None = None):
-        self._model = None
-        self.threshold = threshold
-        self._semantic_enabled = is_embeddings_enabled()
-        if self._semantic_enabled:
-            self._model = get_embedding_model()
-            if self.threshold is None:
-                self.threshold = get_embedding_threshold()
-        self._schema_cache: dict[str, dict] = {}
+        if ComponentPropsMapper._semantic_loaded is False and is_embeddings_enabled():
+            ComponentPropsMapper._semantic_loaded = True
+        if ComponentPropsMapper._semantic_loaded:
+            if ComponentPropsMapper._model is None:
+                ComponentPropsMapper._model = get_embedding_model()
+            if ComponentPropsMapper._threshold is None and threshold is None:
+                ComponentPropsMapper._threshold = get_embedding_threshold()
+        self.threshold = threshold or ComponentPropsMapper._threshold
 
     def _load_schema(self, component_name: str) -> bool:
-        if component_name in self._schema_cache:
+        if component_name in ComponentPropsMapper._cache:
             logger.debug("Using cached schema for component: %s", component_name)
             return True
 
@@ -40,14 +55,14 @@ class ComponentPropsMapper:
         descriptions = [attr["description"] for attr in schema.values()]
         config_keys = list(schema.keys())
 
-        if self._semantic_enabled and self._model:
+        if self._semantic_loaded and ComponentPropsMapper._model:
             logger.debug("Generating embeddings for %d properties", len(descriptions))
-            embeddings = self._model.encode(descriptions)
+            embeddings = ComponentPropsMapper._model.encode(descriptions)
             desc_to_config = {desc: (key, emb.tolist()) for desc, key, emb in zip(descriptions, config_keys, embeddings, strict=True)}
         else:
             desc_to_config = {}
 
-        self._schema_cache[component_name] = {
+        ComponentPropsMapper._cache[component_name] = {
             "schema": schema,
             "config_keys": config_keys,
             "desc_to_config": desc_to_config,
@@ -70,7 +85,7 @@ class ComponentPropsMapper:
         if not self._load_schema(component_name):
             return {}
 
-        cached = self._schema_cache[component_name]
+        cached = ComponentPropsMapper._cache[component_name]
         schema = cached["schema"]
         desc_to_config = cached["desc_to_config"]
 
@@ -84,9 +99,9 @@ class ComponentPropsMapper:
             best_match = find_normalized_match(user_key, schema)
             best_score = 1.0 if best_match else 0.0
 
-            if not best_match and self._semantic_enabled and self._model and self.threshold is not None:
+            if not best_match and self._semantic_loaded and ComponentPropsMapper._model and self.threshold is not None:
                 # Try semantic match against descriptions if no exact match
-                matched_desc, best_score = semantic_match(user_key, desc_embeddings, self.threshold, self._model)
+                matched_desc, best_score = semantic_match(user_key, desc_embeddings, self.threshold, ComponentPropsMapper._model)
                 if matched_desc:
                     best_match = desc_to_config[matched_desc][0]  # Map description back to config key
 
@@ -124,6 +139,20 @@ class ComponentPropsMapper:
                 return str(value)
         except (ValueError, TypeError):
             return str(value)
+
+    @classmethod
+    def preload(cls) -> None:
+        """Pre-load the embedding model at startup."""
+        if cls._semantic_loaded:
+            return
+        if not is_embeddings_enabled():
+            return
+
+        cls._semantic_loaded = True
+        logger.info("Pre-loading component props mapper embedding model...")
+        cls._model = get_embedding_model()
+        cls._threshold = get_embedding_threshold()
+        logger.info("Component props mapper embedding model loaded")
 
 
 def map_properties(user_dict: dict[str, Any], component_name: str) -> dict[str, Any]:

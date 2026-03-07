@@ -571,9 +571,11 @@ if __name__ == "__main__":
     from tekla_mcp_server.embeddings import is_embeddings_enabled
     if is_embeddings_enabled():
         from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
+        from tekla_mcp_server.tekla.component_props_mapper import ComponentPropsMapper
 
         logger.info("Pre-loading embeddings at startup...")
-        TemplateAttributeParser._ensure_semantic_loaded()
+        TemplateAttributeParser.preload()
+        ComponentPropsMapper.preload()
         logger.info("Embeddings ready")
 
     mcp.run()
