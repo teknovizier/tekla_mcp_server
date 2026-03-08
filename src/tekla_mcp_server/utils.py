@@ -56,7 +56,6 @@ def find_normalized_match(input_name: str, candidates: dict[str, Any]) -> str | 
     for attr_name in candidates.keys():
         attr_normalized = normalize_attribute_name(attr_name)
         if input_normalized == attr_normalized:
-            logger.debug("Normalized exact match for '%s': %s", input_name, attr_name)
             return attr_name
     return None
 
