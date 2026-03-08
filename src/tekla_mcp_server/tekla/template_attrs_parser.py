@@ -85,6 +85,38 @@ class TemplateAttributeParser:
             cls._descriptions_cache = {}
 
     @classmethod
+    def _load_attributes(cls) -> None:
+        """Load Tekla attribute definitions from file."""
+        if cls._loaded:
+            return
+
+        config = get_config()
+        logger.debug("Loading Tekla attribute definitions from file '%s'", config.content_attributes_file_path)
+        with open(config.content_attributes_file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("//") or stripped.startswith("[") or stripped.lower().startswith("name"):
+                    continue
+
+                first_split = re.split(r"\s", stripped, maxsplit=1)
+                if len(first_split) < 2:
+                    continue
+
+                name = first_split[0].strip()
+                remainder = first_split[1].strip()
+                rest_parts = re.split(r"\s{2,}", remainder)
+                while len(rest_parts) < 8:
+                    rest_parts.append(None)
+
+                dtype = rest_parts[0]
+                unit = rest_parts[6] if rest_parts[6] != "*" else None
+
+                cls._cache[name] = ReportProperty(name=name, data_type=ReportProperty.map_string_to_type(dtype), unit=unit)
+
+        cls._loaded = True
+        logger.info("Tekla attribute definitions loaded and cached")
+
+    @classmethod
     def _get_model(cls) -> "SentenceTransformer | None":
         if cls._model is None:
             cls._model = get_embedding_model()
@@ -92,6 +124,8 @@ class TemplateAttributeParser:
 
     @classmethod
     def preload(cls) -> None:
+        cls._load_attributes()
+
         if cls._semantic_loaded or not is_embeddings_enabled():
             return
 
@@ -193,32 +227,7 @@ class TemplateAttributeParser:
 
         logger.debug("Parsing attribute: '%s'", attribute_name)
 
-        if not cls._loaded:
-            config = get_config()
-            logger.debug("Loading Tekla attribute definitions from file '%s'", config.content_attributes_file_path)
-            with open(config.content_attributes_file_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    stripped = line.strip()
-                    if not stripped or stripped.startswith("//") or stripped.startswith("[") or stripped.lower().startswith("name"):
-                        continue
-
-                    first_split = re.split(r"\s", stripped, maxsplit=1)
-                    if len(first_split) < 2:
-                        continue
-
-                    name = first_split[0].strip()
-                    remainder = first_split[1].strip()
-                    rest_parts = re.split(r"\s{2,}", remainder)
-                    while len(rest_parts) < 8:
-                        rest_parts.append(None)
-
-                    dtype = rest_parts[0]
-                    unit = rest_parts[6] if rest_parts[6] != "*" else None
-
-                    cls._cache[name] = ReportProperty(name=name, data_type=ReportProperty.map_string_to_type(dtype), unit=unit)
-
-            cls._loaded = True
-            logger.info("Tekla attribute definitions loaded and cached")
+        cls._load_attributes()
 
         # 1. Try normalized exact match
         matched_name = find_normalized_match(attribute_name, cls._cache)
