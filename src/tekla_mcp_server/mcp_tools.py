@@ -723,7 +723,7 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
     for selected_object in wrap_model_objects(selected_objects):
         if label == ElementLabel.CUSTOM:
             value = selected_object.get_report_property(custom_property.name)
-            text = f"{custom_label} = {value}{unit}"
+            text = f"{custom_property.name} = {value}{unit}"
         else:
             labels = {
                 ElementLabel.POSITION: selected_object.position,
