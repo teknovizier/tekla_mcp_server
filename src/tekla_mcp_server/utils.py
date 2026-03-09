@@ -41,6 +41,24 @@ def normalize_attribute_name(name: str) -> str:
     return re.sub(r"[_\W]+", "_", name.upper()).strip("_")
 
 
+def normalize_for_embedding(name: str) -> str:
+    """
+    Normalize attribute name for embeddings.
+
+    Converts to lowercase, replaces underscores/hyphens with spaces,
+    removes non-alphanumeric characters except spaces.
+
+    Args:
+        name: Attribute name to normalize
+
+    Returns:
+        Normalized attribute name (e.g., "ASSEMBLY_TOP_LEVEL" -> "assembly top level")
+    """
+    name = re.sub(r"[_\-]+", " ", name)
+    name = re.sub(r"[^a-zA-Z0-9 ]+", "", name)
+    return name.lower().strip()
+
+
 def find_normalized_match(input_name: str, candidates: dict[str, Any]) -> str | None:
     """
     Find a normalized exact match for input_name in candidates.

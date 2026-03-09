@@ -59,18 +59,6 @@ def get_embedding_threshold() -> float:
     return _embedding_threshold
 
 
-def get_embedding_name_weight() -> float:
-    """Returns weight for attribute name in weighted semantic match."""
-    config = get_config()
-    return config.embedding_name_weight
-
-
-def get_embedding_description_weight() -> float:
-    """Returns weight for attribute description in weighted semantic match."""
-    config = get_config()
-    return config.embedding_description_weight
-
-
 def semantic_match(
     user_input: str,
     candidates_embeddings: dict[str, list[float]],
@@ -90,8 +78,10 @@ def semantic_match(
         Tuple of (best_match_key, best_score) or (None, 0.0) if no match
     """
     from sentence_transformers import util
+    import torch
 
-    user_embedding = model.encode(user_input)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    user_embedding = model.encode(user_input, device=device)
 
     # Collect all scores
     all_scores = []

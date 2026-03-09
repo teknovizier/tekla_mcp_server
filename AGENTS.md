@@ -146,6 +146,7 @@ tekla_mcp_server/
 │   ├── settings.sample.json
 │   ├── element_types.sample.json
 │   ├── lifting_anchor_types.sample.json
+│   ├── semantic_overrides.sample.json
 │   └── base_components.sample.json
 ├── tests/
 │   ├── unit/                  # Unit tests

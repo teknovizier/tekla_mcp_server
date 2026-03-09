@@ -73,6 +73,11 @@ class Config:
         return self._load_json("base_components.json")
 
     @cached_property
+    def _semantic_overrides(self) -> dict[str, Any]:
+        """Load semantic override configuration."""
+        return self._load_json("semantic_overrides.json")
+
+    @cached_property
     def _class_to_element(self) -> dict[int, tuple[str, str]]:
         """Lazy-loaded class to element mapping."""
         result: dict[int, tuple[str, str]] = {}
@@ -121,16 +126,6 @@ class Config:
         return self.embeddings.get("embedding_threshold")
 
     @property
-    def embedding_name_weight(self) -> float:
-        """Weight for attribute name in weighted semantic match."""
-        return self.embeddings.get("name_weight", 0.7)
-
-    @property
-    def embedding_description_weight(self) -> float:
-        """Weight for attribute description in weighted semantic match."""
-        return self.embeddings.get("description_weight", 0.3)
-
-    @property
     def element_types(self) -> dict[str, Any]:
         """Element type mappings."""
         return self._element_types
@@ -144,6 +139,11 @@ class Config:
     def base_components(self) -> dict[str, Any]:
         """Base component definitions."""
         return self._base_components
+    
+    @property
+    def semantic_overrides(self) -> dict[str, Any]:
+        """Semantic override configuration."""
+        return self._semantic_overrides
 
     @property
     def class_to_element(self) -> dict[int, tuple[str, str]]:

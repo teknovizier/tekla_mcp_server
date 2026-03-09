@@ -57,7 +57,10 @@ class ComponentPropsMapper:
 
         if self._semantic_loaded and ComponentPropsMapper._model:
             logger.debug("Generating embeddings for %d properties", len(descriptions))
-            embeddings = ComponentPropsMapper._model.encode(descriptions)
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            embeddings = ComponentPropsMapper._model.encode(descriptions, device=device)
             desc_to_config = {desc: (key, emb.tolist()) for desc, key, emb in zip(descriptions, config_keys, embeddings, strict=True)}
         else:
             desc_to_config = {}
