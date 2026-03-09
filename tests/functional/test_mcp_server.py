@@ -89,7 +89,8 @@ def model_objects():
 
     # Identical walls for testing compare_elements identical comparisons
     test_wall5 = create_mcp_test_beam("MCP_TEST_WALL5", Point(0, 0, 6040), Point(2000, 0, 6040), "3000*200")
-    test_wall6 = create_mcp_test_beam("MCP_TEST_WALL6", Point(0, 0, 9060), Point(2000, 0, 9060), "3000*200")
+    test_wall6 = create_mcp_test_beam("MCP_TEST_WALL5", Point(0, 0, 9060), Point(2000, 0, 9060), "3000*200")
+
     # Wall with different profile for testing compare_elements different profile
     test_wall7 = create_mcp_test_beam("MCP_TEST_WALL7", Point(0, 0, 12080), Point(2000, 0, 12080), "2000*150")
 
