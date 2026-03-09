@@ -307,10 +307,16 @@ def draw_elements_labels(label: str | None = None, custom_label: str | None = No
 
     ## INPUT
     - `label` [Optional]: Type of label to draw
-    - `custom_label` [Optional]: Custom report property name for labeling
+    - `custom_label` [Optional]: Any user-provided report property name.
+
+    ## BEHAVIOR
+    Treat any value provided by the user as the name of a Tekla attribute.
+    If `custom_label` is provided, use it.
+    Otherwise use `label`.
 
     ## VALID VALUES
     - `label`: Position, GUID, Name, Profile, Material, Finish, Class, Weight
+    - `custom_label`: Any value
     """
 
     selected_objects = TeklaModel().get_selected_objects()
