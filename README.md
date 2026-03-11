@@ -52,7 +52,7 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 - Qwen3
 - gpt-oss
 
-The server uses **sentence-transformers** to perform semantic attribute mapping, converting user-friendly text into Tekla attribute names based on embedding similarity. By default, it loads **fine‑tuned Tekla‑specific model** published on HuggingFace: `teknovizier/minilm-tekla-attr-embed-v1`.
+The server uses **sentence-transformers** to perform semantic attribute mapping, converting user-friendly text into Tekla attribute names based on embedding similarity. By default, it loads **fine‑tuned Tekla‑specific model** published on HuggingFace: [teknovizier/minilm-tekla-attr-embed-v1](https://huggingface.co/teknovizier/minilm-tekla-attr-embed-v1).
 
 This model supports both:
 - Component attributes: use natural terms like "rebar size" and automatically map them to the correct attribute (e.g., `SBSize_list`)
