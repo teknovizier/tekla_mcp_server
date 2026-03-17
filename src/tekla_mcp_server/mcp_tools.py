@@ -1139,6 +1139,27 @@ def tool_get_elements_cut_parts(selected_objects: ModelObjectEnumerator) -> dict
 
 
 @log_function_call
+def tool_run_macro(macro_name: str) -> dict[str, Any]:
+    """
+    Runs a Tekla macro with the specified name.
+
+    Args:
+        macro_name: Name or path of the macro to run (e.g., "MyMacro.cs")
+    """
+    result = Operation.RunMacro(macro_name)
+
+    if not result and not macro_name.endswith(".cs"):
+        macro_name = macro_name + ".cs"
+        result = Operation.RunMacro(macro_name)
+
+    logger.info("Ran macro '%s'", macro_name)
+    return {
+        "status": "success" if result else "error",
+        "macro_name": macro_name,
+    }
+
+
+@log_function_call
 def tool_compare_elements(selected_objects: ModelObjectEnumerator, tolerance: float = 0.01) -> dict[str, Any]:
     """
     Compares two element snapshots and returns the differences.

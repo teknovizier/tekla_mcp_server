@@ -43,6 +43,7 @@ from tekla_mcp_server.mcp_tools import (
     tool_get_elements_properties,
     tool_get_elements_cut_parts,
     tool_compare_elements,
+    tool_run_macro,
 )
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.utils import log_mcp_tool_call
@@ -572,9 +573,31 @@ def compare_elements() -> dict[str, Any]:
     return tool_compare_elements(selected_objects)
 
 
+@mcp.tool()
+@log_mcp_tool_call
+def run_macro(macro_name: str) -> dict[str, Any]:
+    """
+    Runs a Tekla macro with the specified name.
+
+    ## INPUT
+    - `macro_name` [Required]: Name or path of the macro file to run (e.g., "MyMacro.cs")
+
+    The macro must be located in the Tekla macro folder or model folder.
+    The full path or relative path to the .cs macro file can be used.
+    Example: "MyModelingMacro.cs" or @"..\\drawings\\MyDrawingMacro.cs".
+    If the extension is omitted, .cs will be automatically appended by the tool.
+
+    ## OUTPUT
+    Returns status indicating whether the macro ran successfully.
+    """
+
+    return tool_run_macro(macro_name)
+
+
 # Run the MCP server locally
 if __name__ == "__main__":
     from tekla_mcp_server.embeddings import is_embeddings_enabled
+
     if is_embeddings_enabled():
         from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
         from tekla_mcp_server.tekla.component_props_mapper import ComponentPropsMapper

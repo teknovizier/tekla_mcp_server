@@ -1309,3 +1309,18 @@ async def test_compare_single_element(model_objects):
 
         assert result.data["status"] == "error"
         assert "Only one element" in result.data["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_macro_nonexistent():
+    """
+    Tests that run_macro returns an error for non-existent macro.
+
+    Steps:
+    1. Calls run_macro with a non-existent macro name.
+    2. Verifies that it returns an error status with appropriate message.
+    """
+    async with Client(mcp) as client:
+        result = await client.call_tool("run_macro", {"macro_name": "NonExistentMacro.cs"})
+        assert result.data["status"] == "error"
+        assert result.data["macro_name"] == "NonExistentMacro.cs"
