@@ -154,7 +154,7 @@ def test_parse_template_attribute(attr_name, expected_type, expected_unit):
         ("object width", "WIDTH"),
         ("object height", "HEIGHT"),
         ("top level global", "TOP_LEVEL_GLOBAL"),
-        ("bottom level global", "BOTTOM_LEVEL_GLOBAL")
+        ("bottom level global", "BOTTOM_LEVEL_GLOBAL"),
     ],
 )
 def test_parse_template_attribute_match(user_input, expected_attr):

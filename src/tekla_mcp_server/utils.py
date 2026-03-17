@@ -2,12 +2,11 @@
 Module for utility functions.
 """
 
+import json
 import re
 from functools import wraps
 from collections.abc import Callable
 from typing import Any
-
-import json
 
 from tekla_mcp_server.init import logger
 

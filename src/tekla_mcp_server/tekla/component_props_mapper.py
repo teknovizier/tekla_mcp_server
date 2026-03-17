@@ -11,7 +11,7 @@ This module provides functionality to:
 from typing import TYPE_CHECKING, Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, semantic_match, is_embeddings_enabled
+from tekla_mcp_server.embeddings import get_compute_device, get_embedding_model, get_embedding_threshold, semantic_match, is_embeddings_enabled
 from tekla_mcp_server.models import get_custom_properties_schema
 from tekla_mcp_server.utils import find_normalized_match
 
@@ -57,9 +57,8 @@ class ComponentPropsMapper:
 
         if self._semantic_loaded and ComponentPropsMapper._model:
             logger.debug("Generating embeddings for %d properties", len(descriptions))
-            import torch
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = get_compute_device()
             embeddings = ComponentPropsMapper._model.encode(descriptions, device=device)
             desc_to_config = {desc: (key, emb.tolist()) for desc, key, emb in zip(descriptions, config_keys, embeddings, strict=True)}
         else:

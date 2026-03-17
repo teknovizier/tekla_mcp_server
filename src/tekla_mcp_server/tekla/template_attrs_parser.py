@@ -16,6 +16,7 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.models import ReportProperty
 from tekla_mcp_server.embeddings import (
+    get_compute_device,
     get_embedding_model,
     get_embedding_threshold,
     is_embeddings_enabled,
@@ -25,25 +26,7 @@ from tekla_mcp_server.utils import find_normalized_match, normalize_for_embeddin
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
     import torch
-def match_override(user_input: str, overrides: dict[str, str]) -> str | None:
-    query = user_input.lower().strip()
-    query_tokens = set(re.findall(r"\w+", query))
 
-    # exact match
-    if query in overrides:
-        return overrides[query]
-
-    for key in sorted(overrides, key=len, reverse=True):
-        key_tokens = set(re.findall(r"\w+", key))
-
-        # ignore overly generic overrides like "name"
-        if len(key_tokens) < 2:
-            continue
-
-        if key_tokens.issubset(query_tokens):
-            return overrides[key]
-
-    return None
 
 class TemplateAttributeParser:
     """
@@ -101,8 +84,6 @@ class TemplateAttributeParser:
 
     @classmethod
     def preload(cls) -> None:
-        import torch
-
         cls._load_attributes()
 
         if cls._semantic_loaded or not is_embeddings_enabled():
@@ -116,7 +97,7 @@ class TemplateAttributeParser:
         if not attribute_names:
             return
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = get_compute_device()
         attribute_names = list(cls._cache.keys())
         normalized_labels = [normalize_for_embedding(name) for name in attribute_names]
 
@@ -125,7 +106,6 @@ class TemplateAttributeParser:
 
         cls._semantic_loaded = True
         logger.info("Generated embeddings for %d template attributes", len(attribute_names))
-
 
     @classmethod
     def _override_match(cls, user_input: str) -> str | None:
@@ -180,7 +160,7 @@ class TemplateAttributeParser:
         logger.debug("Semantic match for '%s'", user_input)
 
         # Encode user input, convert to tensor
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = get_compute_device()
         normalized_query = normalize_for_embedding(user_input)
         user_embedding = model.encode(normalized_query, convert_to_tensor=True, device=device)
 

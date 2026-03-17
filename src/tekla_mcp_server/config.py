@@ -139,7 +139,7 @@ class Config:
     def base_components(self) -> dict[str, Any]:
         """Base component definitions."""
         return self._base_components
-    
+
     @property
     def semantic_overrides(self) -> dict[str, Any]:
         """Semantic override configuration."""

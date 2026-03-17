@@ -163,7 +163,7 @@ def add_filter(
 
 
 @log_function_call
-def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any) -> dict[str, Any]:
+def manage_components_on_selected_objects(callback: Callable[..., int], component: Any, custom_properties_errors: list[str] | None = None, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """
     Applies a component operation to selected objects in the Tekla model using a specified callback function.
 
@@ -187,7 +187,7 @@ def manage_components_on_selected_objects(callback: Callable[..., int], componen
 
 @log_function_call
 def process_detail_or_component(
-    selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any
+    selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, custom_properties_errors: list[str] | None = None, *args: Any, **kwargs: Any
 ) -> dict[str, Any]:
     """
     Processes a list of selected objects, applying a callback to each object that is an instance of Beam.
@@ -227,7 +227,7 @@ def process_detail_or_component(
 
 @log_function_call
 def process_seam_or_connection(
-    selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, custom_properties_errors: list | None = None, *args: Any, **kwargs: Any
+    selected_objects: ModelObjectEnumerator, callback: Callable[..., int], model: TeklaModel, component: Any, custom_properties_errors: list[str] | None = None, *args: Any, **kwargs: Any
 ) -> dict[str, Any]:
     """
     Processes seams or connections between selected objects in the model.
@@ -494,15 +494,7 @@ def tool_select_elements_by_filter(
     if combine_with not in {"AND", "OR"}:
         raise ValueError(f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'.")
 
-    if not any(
-        [
-            element_type,
-            tekla_classes,
-            standard_string_filters,
-            custom_string_filters,
-            custom_numeric_filters,
-        ]
-    ):
+    if not any((element_type, tekla_classes, standard_string_filters, custom_string_filters, custom_numeric_filters)):
         raise ValueError("At least one filter must be provided.")
 
     valid_standard_keys = {k.value for k in StandardStringFilterKey}

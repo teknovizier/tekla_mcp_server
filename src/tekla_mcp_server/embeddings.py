@@ -14,6 +14,17 @@ _embedding_model: "SentenceTransformer | None" = None
 _embedding_threshold: float | None = None
 
 
+def get_compute_device() -> str:
+    """Safely determine compute device (CPU or CUDA)."""
+    try:
+        import torch
+
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        logger.warning("torch not available, using CPU")
+        return "cpu"
+
+
 def is_embeddings_enabled() -> bool:
     """Check if embeddings/semantic search is enabled in config."""
     config = get_config()
@@ -78,9 +89,8 @@ def semantic_match(
         Tuple of (best_match_key, best_score) or (None, 0.0) if no match
     """
     from sentence_transformers import util
-    import torch
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_compute_device()
     user_embedding = model.encode(user_input, device=device)
 
     # Collect all scores
