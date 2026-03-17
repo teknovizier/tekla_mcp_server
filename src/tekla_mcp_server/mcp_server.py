@@ -549,12 +549,12 @@ def get_elements_cut_parts() -> dict[str, Any]:
 
 @mcp.tool()
 @log_mcp_tool_call
-def compare_elements() -> dict[str, Any]:
+def compare_elements(ignore_numbering: bool = False) -> dict[str, Any]:
     """
     Compares two selected Tekla parts or assemblies and returns a human-readable summary of changes.
 
     ## INPUT
-    - No additional parameters required.
+    - `ignore_numbering` [Optional]: If True, skips numbering check (default: False)
 
     ## INSTRUCTIONS
     1. Ignore all fields named 'id' or 'guid' at any nesting level.
@@ -570,7 +570,7 @@ def compare_elements() -> dict[str, Any]:
     """
 
     selected_objects = TeklaModel().get_selected_objects()
-    return tool_compare_elements(selected_objects)
+    return tool_compare_elements(selected_objects, ignore_numbering)
 
 
 @mcp.tool()

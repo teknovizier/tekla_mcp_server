@@ -1160,18 +1160,27 @@ def tool_run_macro(macro_name: str) -> dict[str, Any]:
 
 
 @log_function_call
-def tool_compare_elements(selected_objects: ModelObjectEnumerator, tolerance: float = 0.01) -> dict[str, Any]:
+def tool_compare_elements(selected_objects: ModelObjectEnumerator, ignore_numbering: bool = False, tolerance: float = 0.01) -> dict[str, Any]:
     """
     Compares two element snapshots and returns the differences.
 
     Args:
         selected_objects: ModelObjectEnumerator with at least two parts selected
+        ignore_numbering: If False, returns error when numbering is not up-to-date (default False)
         tolerance: Tolerance for comparing floating-point numbers (default 0.01)
     """
     validate_exactly_two_selected(selected_objects.GetSize())
 
-    # Get the two selected objects and wrap them
+    # Get the two selected objects and check if the numbering for them is up-to-date
     parts = list(selected_objects)
+    if not ignore_numbering:
+        if not all(Operation.IsNumberingUpToDate(part) for part in parts):
+            return {
+                "status": "error",
+                "message": "Numbering is not up-to-date for selected elements. Please update numbering before comparing.",
+            }
+
+    # Wrap these objects
     object_a = wrap_model_object(parts[0])
     object_b = wrap_model_object(parts[1])
 

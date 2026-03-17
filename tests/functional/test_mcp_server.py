@@ -1169,6 +1169,23 @@ async def test_get_elements_cut_parts_multiple_elements(model_objects):
 
 
 @pytest.mark.asyncio
+async def test_compare_elements_numbering_not_up_to_date(model_objects):
+    """
+    Compare two parts when numbering is not up-to-date - should return error.
+
+    Steps:
+    1. Selects test_wall5 and test_wall6 (identical profile/class).
+    2. Calls compare_elements without ignore_numbering.
+    3. Verifies error status with message about numbering.
+    """
+    TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
+    async with Client(mcp) as client:
+        result = await client.call_tool("compare_elements")
+        
+        assert result.data["status"] == "error"
+        assert "numbering" in result.data["message"].lower()
+
+@pytest.mark.asyncio
 async def test_compare_identical_parts(model_objects):
     """
     Compare two identical parts - should report as identical.
@@ -1180,7 +1197,7 @@ async def test_compare_identical_parts(model_objects):
     """
     TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements")
+        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
 
         assert result.data["status"] == "success"
         assert result.data["identical"] is True
@@ -1201,7 +1218,7 @@ async def test_compare_different_parts_different_profile(model_objects):
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements")
+        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
 
         assert result.data["status"] == "success"
         assert result.data["identical"] is False
@@ -1222,7 +1239,7 @@ async def test_compare_different_parts_different_position(model_objects):
     """
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements")
+        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
 
         assert result.data["status"] == "success"
         assert result.data["identical"] is False
@@ -1242,7 +1259,7 @@ async def test_compare_identical_assemblies(model_objects):
     TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
     async with Client(mcp) as client:
         await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        result = await client.call_tool("compare_elements")
+        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
 
         assert result.data["status"] == "success"
         assert result.data["identical"] is True
@@ -1263,7 +1280,7 @@ async def test_compare_different_assemblies(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     async with Client(mcp) as client:
         await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        result = await client.call_tool("compare_elements")
+        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
 
         assert result.data["status"] == "success"
         assert result.data["identical"] is False
@@ -1287,7 +1304,7 @@ async def test_compare_three_elements(model_objects):
         ]
     )
     async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements")
+        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
 
         assert result.data["status"] == "error"
         assert "More than two elements" in result.data["message"]
@@ -1305,7 +1322,7 @@ async def test_compare_single_element(model_objects):
     """
     TeklaModel.select_objects([model_objects["test_wall1"]])
     async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements")
+        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
 
         assert result.data["status"] == "error"
         assert "Only one element" in result.data["message"]
