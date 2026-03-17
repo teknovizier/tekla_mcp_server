@@ -18,29 +18,29 @@ To use this server, users must first install and configure an MCP client.
 
 ### Tools
 The server provides the following tools:
-| Tool                             | Description                                                                 |
-|----------------------------------|-----------------------------------------------------------------------------|
-| `check_tekla_connection` | Check Tekla connection status. Returns whether Tekla is connected, the model path, and a status message |
-| `put_components`   | Insert Tekla components with optional semantic attribute mapping that converts user-friendly names (e.g., "rebar size") to config keys (e.g., "SBSize_list"). Supports intelligent components like `Lifting Anchor` with automatic placement calculations |
-| `remove_components`   | Remove Tekla components with specified name from the selected elements |
-| `select_elements_by_filter`   | Select elements in Tekla model based on type/Tekla class, name, profile, material, finish and phase |
-| `select_elements_by_filter_name`   | Select elements in Tekla model based on the predefined filter |
-| `select_elements_by_guid`     | Select elements in Tekla model by their GUID                                |
-| `select_elements_assemblies_or_main_parts` | Get assemblies or main parts for the elements selected in Tekla model and select them |
-| `draw_elements_labels`            | Draw the temporary labels (position, GUID, name, profile, material, finish, Tekla class, weight or any defined report property) for the selected elements in Tekla in the currently active rendered view  |
-| `zoom_to_selection`            | Zooms the currently active rendered view to fit the currently selected elements |
-| `redraw_view`            | Redraws the currently active view in Tekla  |
-| `show_only_selected`            | Show only the currently selected elements in the currently active rendered view  |
-| `hide_selected`            | Hide the currently selected elements in the currently active rendered view  |
-| `color_selected`            | Color the currently selected elements in the currently active rendered view with a specified RGB color  |
-| `cut_elements_with_zero_class_parts` | Performs boolean cuts on selected elements using elements in class 0, with optional deletion of cutting parts       |
-| `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts       |
-| `set_elements_udas`              | Set custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones |
-| `get_elements_udas`       | Retrieve structured data about all custom attributes for the selected Tekla elements |
-| `get_elements_properties`       | Retrieve structured data about selected elements in the Tekla model, including key properties (position, GUID, name, profile, material, finish, Tekla class), weight, and any defined report properties |
-| `get_elements_cut_parts`       | Find all cut parts in the selected elements and returns a summary grouped by profile |
-| `compare_elements` | Compare two selected Tekla elements and returns detailed differences (part properties, UDA, cutparts, welds, reinforcements) |
-| `run_macro` | Run a Tekla macro with the specified name |
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `check_tekla_connection` | Check Tekla connection status. Returns whether Tekla is connected, the model path, and a status message | - |
+| `put_components` | Insert Tekla components with optional semantic attribute mapping that converts user-friendly names (e.g., "rebar size") to config keys (e.g., "SBSize_list"). Supports intelligent components like `Lifting Anchor` with automatic placement calculations | `component_name` (required), `properties_set`, `custom_properties` |
+| `remove_components` | Remove Tekla components with specified name from the selected elements | `component_name` (required) |
+| `select_elements_by_filter` | Select elements in Tekla model based on type/Tekla class, name, profile, material, finish and phase. Supports complex filters with AND/OR logic | `element_type`, `tekla_classes`, `standard_string_filters`, `custom_string_filters`, `custom_numeric_filters`, `combine_with` |
+| `select_elements_by_filter_name` | Select elements in Tekla model based on the predefined filter | `filter_name` (required) |
+| `select_elements_by_guid` | Select elements in Tekla model by their GUID | `guids` (required) |
+| `select_elements_assemblies_or_main_parts` | Get assemblies or main parts for the elements selected in Tekla model and select them | `mode` (required): Assembly or Main Part |
+| `draw_elements_labels` | Draw the temporary labels (position, GUID, name, profile, material, finish, Tekla class, weight or any defined report property) for the selected elements in Tekla in the currently active rendered view | `label`, `custom_label` |
+| `zoom_to_selection` | Zooms the currently active rendered view to fit the currently selected elements | - |
+| `redraw_view` | Redraws the currently active view in Tekla | - |
+| `show_only_selected` | Show only the currently selected elements in the currently active rendered view | - |
+| `hide_selected` | Hide the currently selected elements in the currently active rendered view | - |
+| `color_selected` | Color the currently selected elements in the currently active rendered view with a specified RGB color | `red`, `green`, `blue` (required, 0-255) |
+| `cut_elements_with_zero_class_parts` | Performs boolean cuts on selected elements using elements in class 0, with optional deletion of cutting parts | `delete_cutting_parts` |
+| `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts | - |
+| `set_elements_udas` | Set custom attributes on selected Tekla elements. You can choose to keep existing values or replace them with new ones | `udas` (required), `mode` (required) |
+| `get_elements_udas` | Retrieve structured data about all custom attributes for the selected Tekla elements | - |
+| `get_elements_properties` | Retrieve structured data about selected elements in the Tekla model, including key properties (position, GUID, name, profile, material, finish, Tekla class), weight, and any defined report properties | `custom_props_definitions` |
+| `get_elements_cut_parts` | Find all cut parts in the selected elements and returns a summary grouped by profile | - |
+| `compare_elements` | Compare two selected Tekla elements and returns detailed differences (part properties, UDA, cutparts, welds, reinforcements) | `ignore_numbering` |
+| `run_macro` | Run a Tekla macro with the specified name. If the extension is omitted, .cs will be automatically appended | `macro_name` (required) |
 
 ### Compatibility
 The server was tested to work with **only Tekla 2022** and may not be compatible with other versions of Tekla Structures.
