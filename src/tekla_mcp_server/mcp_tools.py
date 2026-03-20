@@ -1210,6 +1210,13 @@ def tool_run_macro(macro_name: str) -> dict[str, Any]:
     Args:
         macro_name: Name of the macro to run (e.g., "MyMacro.cs")
     """
+    if Operation.IsMacroRunning():
+        logger.warning("Cannot run macro '%s': Tekla is busy running another macro", macro_name)
+        return {
+            "status": "error",
+            "message": "Tekla is busy running another macro",
+        }
+
     result = Operation.RunMacro(macro_name)
 
     logger.info("Ran macro '%s'", macro_name)
