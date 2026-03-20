@@ -1,9 +1,11 @@
 {
-  "Lifting Anchor": {
+  "lifting_anchor": {
+    "tekla_name": "Lifting Anchor",
     "number": 30000080,
     "safety_margin": 5
   },
-  "Border Rebar": {
+  "border_rebar": {
+    "tekla_name": "Border Rebar",
     "number": 150000092,
     "custom_properties": {
       "SBSize_list": {
@@ -25,6 +27,30 @@
       "SBEndCondRight": {
         "description": "end conditions right",
         "type": "int"
+      },
+      "SB_y_bot_cc": {
+        "description": "bottom concrete cover",
+        "type": "float"
+      },
+      "SB_y_bot_L": {
+        "description": "bottom leg length",
+        "type": "float"
+      },
+      "SB_y_top_cc": {
+        "description": "top concrete cover",
+        "type": "float"
+      },
+      "SB_y_top_L": {
+        "description": "top leg length",
+        "type": "float"
+      },
+      "SB_z_bot": {
+        "description": "side bottom concrete cover",
+        "type": "float"
+      },
+      "SB_z_top": {
+        "description": "side top concrete cover",
+        "type": "float"
       }
     }
   }

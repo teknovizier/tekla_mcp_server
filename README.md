@@ -54,10 +54,9 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 - Qwen3
 - gpt-oss
 
-The server uses **sentence-transformers** to perform semantic attribute mapping, converting user-friendly text into Tekla attribute names based on embedding similarity. By default, it loads **fine‑tuned Tekla‑specific model** published on HuggingFace: [teknovizier/minilm-tekla-attr-embed-v1](https://huggingface.co/teknovizier/minilm-tekla-attr-embed-v1).
+The server uses **sentence-transformers** to perform semantic attribute mapping for **template attributes**, converting user-friendly text into Tekla attribute names based on embedding similarity. By default, it loads **fine‑tuned Tekla‑specific model** published on HuggingFace: [teknovizier/minilm-tekla-attr-embed-v1](https://huggingface.co/teknovizier/minilm-tekla-attr-embed-v1).
 
-This model supports both:
-- Component attributes: use natural terms like "rebar size" and automatically map them to the correct attribute (e.g., `SBSize_list`)
+This model supports:
 - Template attributes: use natural terms like "area netto" or "assembly bottom level" and automatically map them to the correct Tekla attribute (e.g., `AREA_NET`, `ASSEMBLY_BOTTOM_LEVEL`)
 
 **Using a Different Embedding Model:**
@@ -96,7 +95,7 @@ uv pip install -r requirements-dev.txt
 
 * Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
 * Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model
-* Rename `config/base_components.sample.json` to `config/base_components.json`, and specify the names and component numbers you'd like to make available to the MCP server. Components can optionally include `custom_properties` with descriptions for semantic mapping
+* Rename `config/base_components.sample.json` to `config/base_components.json`, and specify the names and component numbers you'd like to make available to the MCP server. Components are keyed by snake_case config keys (e.g., `border_rebar`, `lifting_anchor`) with a `tekla_name` field for the Tekla API. Components can optionally include `custom_properties` with descriptions for LLM mapping via MCP resources
 * Rename `config/semantic_overrides.sample.json` to `config/semantic_overrides.json`, and update the values to match the Tekla attribute names. Only include overrides for common ambiguous or critical attributes - all other queries are handled by the semantic model
 
 ### Environment Variables
@@ -152,7 +151,6 @@ The project includes a comprehensive test suite:
 - `test_utils.py`: Decorators and utilities
 - `test_tekla_utils.py`: Tekla API wrapper tests
 - `test_tekla_model_object.py`: Tekla ModelObject wrappers
-- `test_tekla_component_props_mapper.py`: Component property mapping
 - `test_tekla_template_attrs_parser.py`: Template attribute parsing
 
 ### Functional Tests (`tests/functional/`)

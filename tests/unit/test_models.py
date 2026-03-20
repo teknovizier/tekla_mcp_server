@@ -20,6 +20,7 @@ from tekla_mcp_server.models import (
     ComponentTypeModel,
     ElementLabelModel,
     ElementType,
+    BaseComponent,
     LiftingAnchorsComponent,
     ReportProperty,
     ElementProperties,
@@ -620,3 +621,46 @@ class TestNormalizeEdgeCases:
         )
         result = snapshot.normalize(100)
         assert result.report_properties["l1"]["l2"]["l3"] == 100.0
+
+
+class TestBaseComponentCustomPropertiesValidation:
+    """Tests for custom_properties validation in BaseComponent."""
+
+    def test_valid_custom_properties(self):
+        """Valid properties should pass."""
+        component = BaseComponent(
+            name="Border Rebar",
+            custom_properties={"SBSize_list": "10", "SBGrade_list": "B500B"},
+        )
+        assert component.custom_properties == {"SBSize_list": "10", "SBGrade_list": "B500B"}
+
+    def test_unknown_property_raises(self):
+        """Unknown property should raise ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            BaseComponent(
+                name="Border Rebar",
+                custom_properties={"unknown_prop": "value"},
+            )
+        assert "Unknown property: 'unknown_prop'" in str(exc_info.value)
+
+    def test_invalid_type_raises(self):
+        """Wrong type should raise ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            BaseComponent(
+                name="Border Rebar",
+                custom_properties={"SBEndCondLeft": {"not": "an int"}},  # dict instead of int
+            )
+        assert "Invalid value for 'SBEndCondLeft'" in str(exc_info.value)
+
+    def test_none_custom_properties(self):
+        """None should be allowed."""
+        component = BaseComponent(name="Border Rebar", custom_properties=None)
+        assert component.custom_properties is None
+
+    def test_unknown_component_skips_validation(self):
+        """Unknown component should skip validation."""
+        component = BaseComponent(
+            name="Unknown Component",
+            custom_properties={"any_prop": "any_value"},
+        )
+        assert component.custom_properties == {"any_prop": "any_value"}

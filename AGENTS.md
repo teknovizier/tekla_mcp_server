@@ -140,8 +140,7 @@ tekla_mcp_server/
 │       ├── model.py           # Tekla Model wrapper (singleton pattern)
 │       ├── model_object.py    # Tekla ModelObject wrappers
 │       ├── utils.py           # Tekla API helpers
-│       ├── template_attrs_parser.py  # Template attribute parsing with semantic search
-│       └── component_props_mapper.py  # Component property mapping with semantic search
+│       └── template_attrs_parser.py  # Template attribute parsing with semantic search
 ├── config/                    # Configuration JSON files
 │   ├── settings.sample.json
 │   ├── element_types.sample.json
@@ -155,7 +154,6 @@ tekla_mcp_server/
 │   │   ├── test_init.py
 │   │   ├── test_models.py
 │   │   ├── test_utils.py
-│   │   ├── test_tekla_component_props_mapper.py
 │   │   ├── test_tekla_model_object.py
 │   │   ├── test_tekla_template_attrs_parser.py
 │   │   └── test_tekla_utils.py

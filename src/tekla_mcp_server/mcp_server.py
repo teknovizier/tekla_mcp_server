@@ -5,9 +5,12 @@ This server facilitates interaction with Tekla Structures, allowing users to
 speed-up modeling processes.
 """
 
+import json
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.resources import ResourceResult, ResourceContent
+from fastmcp.server.transforms import ResourcesAsTools
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import (
@@ -20,6 +23,7 @@ from tekla_mcp_server.models import (
     ElementType,
     BaseComponent,
     LiftingAnchorsComponent,
+    get_base_components,
 )
 
 from tekla_mcp_server.mcp_tools import (
@@ -47,10 +51,34 @@ from tekla_mcp_server.mcp_tools import (
 )
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.utils import log_mcp_tool_call
-from tekla_mcp_server.tekla.component_props_mapper import map_properties
 
 
 mcp = FastMCP("Tekla MCP Server")
+
+
+# MCP Resources
+@mcp.resource("component://schema")
+def get_component_list() -> ResourceResult:
+    """
+    Returns mapping of Tekla component names to config keys.
+
+    Use this to find the config key for a component, then call
+    component://schema/{config_key} to get the property schema.
+    """
+    data = {comp.get("tekla_name"): key for key, comp in get_base_components().items() if comp.get("tekla_name")}
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(data), mime_type="application/json")])
+
+
+@mcp.resource("component://schema/{component_key}")
+def get_component_schema(component_key: str) -> ResourceResult:
+    """
+    Returns the custom_properties schema for a specific component.
+    """
+    component = get_base_components().get(component_key)
+    if component:
+        custom_props = component.get("custom_properties", {})
+        return ResourceResult(contents=[ResourceContent(content=json.dumps(custom_props), mime_type="application/json")])
+    return ResourceResult(contents=[])
 
 
 # MCP tools
@@ -91,24 +119,26 @@ def put_components(
     Inserts Tekla components into the selected objects.
 
     ## INPUT
-    - `component_name` [Required]: The name of the Tekla component
+    - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor")
     - `properties_set` [Optional]: The name of the Tekla component properties set to use (standard by default)
     - `custom_properties` [Optional]: Custom properties to apply to the component (dict)
+
+    ## INSTRUCTIONS
+    - First read `component://schema` to discover available components.
+    - Then read `component://schema/{component_key}` to get custom properties for a specific component.
+    - Use Tekla config keys (e.g., `SBSize_list`, `SBGrade_list`) as property names, NOT user-friendly descriptions.
+    - Example: For "Border Rebar", read the schema to get: `SBSize_list` for "rebar size", `SBGrade_list` for "rebar grade".
     """
 
-    resolved_custom_properties = custom_properties
-    unmapped_keys = []
-    if custom_properties:
-        mapped = map_properties(custom_properties, component_name)
-        if mapped:
-            unmapped_keys = mapped.pop("unmapped_keys", [])
-            resolved_custom_properties = mapped
+    try:
+        if component_name == "Lifting Anchor":
+            component: BaseComponent = LiftingAnchorsComponent(properties_set=properties_set, custom_properties=custom_properties)
+        else:
+            component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=custom_properties)
+    except ValueError as e:
+        return {"status": "error", "message": "Invalid custom_properties", "errors": str(e)}
 
-    if component_name == "Lifting Anchor":
-        component: BaseComponent = LiftingAnchorsComponent(properties_set=properties_set, custom_properties=resolved_custom_properties)
-    else:
-        component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=resolved_custom_properties)
-    return manage_components_on_selected_objects(tool_put_components, component, unmapped_keys)
+    return manage_components_on_selected_objects(tool_put_components, component)
 
 
 @mcp.tool()
@@ -117,10 +147,9 @@ def remove_components(component_name: str) -> dict[str, Any]:
     Removes Tekla components from selected objects.
 
     ## INPUT
-    - `component_name` [Required]: The name of the Tekla component
+    - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor", "Border Rebar")
     """
 
-    # Create appropriate component type based on name
     if component_name == "Lifting Anchor":
         component: BaseComponent = LiftingAnchorsComponent()
     else:
@@ -600,11 +629,12 @@ if __name__ == "__main__":
 
     if is_embeddings_enabled():
         from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
-        from tekla_mcp_server.tekla.component_props_mapper import ComponentPropsMapper
 
         logger.info("Pre-loading embeddings at startup...")
         TemplateAttributeParser.preload()
-        ComponentPropsMapper.preload()
         logger.info("Embeddings ready")
+
+    # Add the transform - creates list_resources and read_resource tools
+    mcp.add_transform(ResourcesAsTools(mcp))
 
     mcp.run()

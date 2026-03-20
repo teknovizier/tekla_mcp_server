@@ -14,7 +14,6 @@ Tested modules:
 
 import json
 import os
-from unittest.mock import patch
 
 import pytest
 
@@ -31,13 +30,6 @@ from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, Part
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tekla.model_object import wrap_model_object
 from tekla_mcp_server.mcp_tools import add_filter
-
-
-@pytest.fixture(autouse=True)
-def enable_embeddings():
-    """Enable embeddings for these tests that rely on semantic matching."""
-    with patch("tekla_mcp_server.tekla.component_props_mapper.is_embeddings_enabled", return_value=True):
-        yield
 
 
 def create_mcp_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):
@@ -190,51 +182,19 @@ async def test_put_components_invalid_component(model_objects):
 
 
 @pytest.mark.asyncio
-async def test_put_components_with_mapped_properties(model_objects):
+async def test_put_components_with_custom_properties(model_objects):
     """
-    Tests attribute mapping in `put_components` for Border Rebar.
+    Tests `put_components` for Border Rebar with custom properties using config keys.
 
     Steps:
     - Selects `self.test_wall1`.
-    - Calls `put_components` with "Border Rebar" and custom_properties using user-friendly names.
-    - Verifies successful placement.
-    """
-    TeklaModel.select_objects([model_objects["test_wall1"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_properties": {"rebar size": "10", "rebar grade": "B500B"}})
-        assert result.data["status"] == "success"
-
-
-@pytest.mark.asyncio
-async def test_put_components_without_attribute_mapping(model_objects):
-    """
-    Tests `put_components` with explicit config attribute names (no mapping needed).
-
-    Steps:
-    - Selects `self.test_wall1`.
-    - Calls `put_components` with direct config attribute names.
+    - Calls `put_components` with "Border Rebar" and custom_properties using Tekla config keys.
     - Verifies successful placement.
     """
     TeklaModel.select_objects([model_objects["test_wall1"]])
     async with Client(mcp) as client:
         result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_properties": {"SBSize_list": "12", "SBGrade_list": "B500B"}})
         assert result.data["status"] == "success"
-
-
-@pytest.mark.asyncio
-async def test_put_components_partial_attribute_mapping(model_objects):
-    """
-    Tests attribute mapping when some keys map and some don't.
-
-    Steps:
-    - Selects `self.test_wall1`.
-    - Provides mix of mappable and non-mappable keys.
-    - Verifies placement.
-    """
-    TeklaModel.select_objects([model_objects["test_wall1"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_properties": {"rebar size": "10", "unknown attribute": "value"}})
-        assert result.data["status"] == "warning"
 
 
 @pytest.mark.asyncio
@@ -1181,9 +1141,10 @@ async def test_compare_elements_numbering_not_up_to_date(model_objects):
     TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
     async with Client(mcp) as client:
         result = await client.call_tool("compare_elements")
-        
+
         assert result.data["status"] == "error"
         assert "numbering" in result.data["message"].lower()
+
 
 @pytest.mark.asyncio
 async def test_compare_identical_parts(model_objects):

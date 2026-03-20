@@ -161,17 +161,17 @@ def get_class_to_element() -> dict[int, tuple[str, str]]:
     return get_config().class_to_element
 
 
-def get_custom_properties_schema(component_name: str) -> dict[str, dict[str, str]] | None:
+def get_custom_properties_schema(component_key: str) -> dict[str, dict[str, str]] | None:
     """
-    Returns the custom_properties schema for a given component name.
+    Returns the custom_properties schema for a component config key.
 
     Args:
-        component_name: The name of the component
+        component_key: The config key (e.g., "lifting_anchor", "border_rebar")
 
     Returns:
         Dictionary of custom properties with their descriptions and types, or None if not defined
     """
-    component = get_base_components().get(component_name)
+    component = get_base_components().get(component_key)
     if component:
         return component.get("custom_properties")
     return None
@@ -421,17 +421,69 @@ class BaseComponent(BaseModel):
     _component_type: ComponentType = PrivateAttr()
     _properties: dict[str, Any] | None = PrivateAttr(default=None)
 
+    @field_validator("custom_properties", mode="before")
+    @classmethod
+    def validate_custom_properties(cls, v, info):
+        if v is None:
+            return v
+
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError:
+                raise ValueError("custom_properties must be valid JSON")
+
+        if not isinstance(v, dict):
+            raise ValueError("custom_properties must be a dictionary")
+
+        name = info.data.get("name")
+        if not name:
+            raise ValueError("'name' required for custom_properties validation")
+
+        base_components = get_base_components()
+        component_def = next((c for c in base_components.values() if c.get("tekla_name") == name), None)
+        schema = component_def.get("custom_properties") if component_def else None
+        if not schema:
+            return v
+
+        errors = []
+        TYPE_MAP = {"str": str, "int": int, "float": float}
+
+        for key, value in v.items():
+            if key not in schema:
+                errors.append(f"Unknown property: '{key}'")
+            else:
+                expected_type = schema[key].get("type")
+                if expected_type:
+                    expected_python_type = TYPE_MAP.get(expected_type)
+                    if expected_python_type and not isinstance(value, expected_python_type):
+                        try:
+                            v[key] = expected_python_type(value)
+                        except (ValueError, TypeError):
+                            errors.append(f"Invalid value for '{key}': expected {expected_type}, got {type(value).__name__}")
+
+        if errors:
+            raise ValueError("; ".join(errors))
+
+        return v
+
     def model_post_init(self, __context) -> None:
         """
         Initializes private attributes after model creation.
         """
-        self._number = get_base_components().get(self.name, {}).get("number", -1)
-        self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT  # Default to custom detail component
+        base_components = get_base_components()
+        component_def = None
+        for key, comp in base_components.items():
+            if comp.get("tekla_name") == self.name:
+                component_def = comp
+                break
+
+        self._number = component_def.get("number", -1) if component_def else -1
+        self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT
 
         if self.properties_set is None:
             self.properties_set = "standard"
 
-        # Initialize properties from custom_properties if provided
         if self.custom_properties:
             if isinstance(self.custom_properties, str):
                 try:
@@ -488,7 +540,9 @@ class LiftingAnchorsComponent(BaseComponent):
     Specialized component for Lifting Anchor with intelligent behavior.
     """
 
-    name: str = Field(default="Lifting Anchor", init=False, description="The name of the Tekla component. Always `Lifting Anchor`.")
+    _config_key: ClassVar[str] = "lifting_anchor"
+
+    name: str = Field(default="Lifting Anchor", init=False, description="The name of the Tekla component.")
 
     # Private attributes
     _safety_margin: int = PrivateAttr()
@@ -498,7 +552,8 @@ class LiftingAnchorsComponent(BaseComponent):
         super().__init__(**data)
 
     def model_post_init(self, __context):
-        self._safety_margin = get_base_components().get(self.name, {}).get("safety_margin", 5)
+        component = get_base_components().get(self._config_key)
+        self._safety_margin = component.get("safety_margin", 5) if component else 5
         super().model_post_init(__context)
 
     # Getters
