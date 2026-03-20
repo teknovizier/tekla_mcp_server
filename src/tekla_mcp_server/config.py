@@ -6,7 +6,7 @@ Loads configuration from JSON files in the config/ directory.
 
 import json
 import os
-from functools import cached_property
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -15,100 +15,75 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+@lru_cache
 def _get_config_dir() -> Path:
     """Get config directory, supporting TEKLA_MCP_CONFIG_DIR env var."""
     env_dir = os.getenv("TEKLA_MCP_CONFIG_DIR", "config")
     return Path(env_dir)
 
 
+@lru_cache(maxsize=8)
+def _load_json(filename: str) -> dict[str, Any]:
+    """Load a JSON config file with caching."""
+    config_dir = _get_config_dir()
+    file_path = config_dir / filename
+    if not file_path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {file_path}")
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(f"Invalid JSON in {file_path}: {e}", e.doc, e.pos) from e
+
+
+@lru_cache
+def _load_settings() -> dict[str, Any]:
+    """Load settings.json with validation."""
+    settings = _load_json("settings.json")
+    required_keys = ["tekla_path", "content_attributes_file_path"]
+    for key in required_keys:
+        if key not in settings:
+            raise ValueError(f"Missing required key '{key}' in settings.json")
+    return settings
+
+
+@lru_cache
+def _get_class_to_element() -> dict[int, tuple[str, str]]:
+    """Lazy-loaded class to element mapping."""
+    element_types = _load_json("element_types.json")
+    result: dict[int, tuple[str, str]] = {}
+    for material, types in element_types.items():
+        for element_type, class_numbers in types.items():
+            for cn in class_numbers:
+                result[cn] = (material, element_type)
+    return result
+
+
 class Config:
-    """Centralized configuration manager with lazy loading."""
-
-    _instance: "Config | None" = None
-    _config_dir: Path = _get_config_dir()
-
-    @classmethod
-    def get_instance(cls) -> "Config":
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-
-    def _load_json(self, filename: str) -> dict[str, Any]:
-        """Load a JSON config file."""
-        file_path = self._config_dir.joinpath(filename)
-        if not file_path.exists():
-            raise FileNotFoundError(f"Configuration file not found: {file_path}")
-        try:
-            with open(file_path, encoding="utf-8") as f:
-                return json.load(f)
-        except json.JSONDecodeError as e:
-            raise json.JSONDecodeError(f"Invalid JSON in {file_path}: {e}", e.doc, e.pos) from e
-
-    @cached_property
-    def _settings(self) -> dict[str, Any]:
-        """Load settings.json with env var overrides."""
-        settings = self._load_json("settings.json")
-
-        # Validate required keys
-        required_keys = ["tekla_path", "content_attributes_file_path"]
-        for key in required_keys:
-            if key not in settings:
-                raise ValueError(f"Missing required key '{key}' in settings.json")
-
-        return settings
-
-    @cached_property
-    def _element_types(self) -> dict[str, Any]:
-        """Load element types configuration."""
-        return self._load_json("element_types.json")
-
-    @cached_property
-    def _lifting_anchor_types(self) -> dict[str, Any]:
-        """Load lifting anchor types configuration."""
-        return self._load_json("lifting_anchor_types.json")
-
-    @cached_property
-    def _base_components(self) -> dict[str, Any]:
-        """Load base components configuration."""
-        return self._load_json("base_components.json")
-
-    @cached_property
-    def _semantic_overrides(self) -> dict[str, Any]:
-        """Load semantic override configuration."""
-        return self._load_json("semantic_overrides.json")
-
-    @cached_property
-    def _class_to_element(self) -> dict[int, tuple[str, str]]:
-        """Lazy-loaded class to element mapping."""
-        result: dict[int, tuple[str, str]] = {}
-        for material, types in self._element_types.items():
-            for element_type, class_numbers in types.items():
-                for cn in class_numbers:
-                    result[cn] = (material, element_type)
-        return result
+    """Centralized configuration manager - thin wrapper around cached functions."""
 
     @property
     def tekla_path(self) -> str:
         """Tekla Structures installation path."""
-        return self._settings["tekla_path"]
+        return _load_settings()["tekla_path"]
 
     @property
     def content_attributes_file_path(self) -> str:
         """Path to Tekla content attributes file."""
-        return self._settings["content_attributes_file_path"]
+        return _load_settings()["content_attributes_file_path"]
 
     @property
     def template_attributes_json_path(self) -> str | None:
         """Full path to template attributes JSON file."""
-        name = self._settings.get("template_attributes_json_name")
+        name = _load_settings().get("template_attributes_json_name")
         if name:
-            return str(self._config_dir / name)
+            return str(_get_config_dir() / name)
         return None
 
     @property
     def embeddings(self) -> dict[str, Any]:
         """Embeddings configuration."""
-        return self._settings.get("embeddings", {})
+        return _load_settings().get("embeddings", {})
 
     @property
     def embeddings_enabled(self) -> bool:
@@ -133,34 +108,35 @@ class Config:
     @property
     def element_types(self) -> dict[str, Any]:
         """Element type mappings."""
-        return self._element_types
+        return _load_json("element_types.json")
 
     @property
     def lifting_anchor_types(self) -> dict[str, Any]:
         """Lifting anchor type mappings."""
-        return self._lifting_anchor_types
+        return _load_json("lifting_anchor_types.json")
 
     @property
     def base_components(self) -> dict[str, Any]:
         """Base component definitions."""
-        return self._base_components
+        return _load_json("base_components.json")
 
     @property
     def semantic_overrides(self) -> dict[str, Any]:
         """Semantic override configuration."""
-        return self._semantic_overrides
+        return _load_json("semantic_overrides.json")
 
     @property
     def tekla_macro_directories(self) -> list[str]:
         """List of directories to scan for Tekla macros."""
-        return self._settings.get("tekla_macro_directory", [])
+        return _load_settings().get("tekla_macro_directory", [])
 
     @property
     def class_to_element(self) -> dict[int, tuple[str, str]]:
         """Returns class to element mapping."""
-        return self._class_to_element
+        return _get_class_to_element()
 
 
+@lru_cache
 def get_config() -> Config:
     """Get the singleton Config instance."""
-    return Config.get_instance()
+    return Config()

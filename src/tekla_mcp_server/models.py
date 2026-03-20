@@ -7,6 +7,8 @@ and wall joint configurations.
 import json
 import math
 from enum import Enum
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
@@ -141,26 +143,31 @@ COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
 
 
+@lru_cache
 def get_element_type_mapping() -> dict[str, dict[str, list[int]]]:
     """Returns element type mapping from config."""
     return get_config().element_types
 
 
+@lru_cache
 def get_lifting_anchor_types() -> dict[str, Any]:
     """Returns lifting anchor types from config."""
     return get_config().lifting_anchor_types
 
 
+@lru_cache
 def get_base_components() -> dict[str, Any]:
     """Returns base components from config."""
     return get_config().base_components
 
 
+@lru_cache
 def get_class_to_element() -> dict[int, tuple[str, str]]:
     """Returns class to element mapping."""
     return get_config().class_to_element
 
 
+@lru_cache(maxsize=32)
 def get_custom_properties_schema(component_key: str) -> dict[str, dict[str, str]] | None:
     """
     Returns the custom_properties schema for a component config key.
@@ -177,19 +184,17 @@ def get_custom_properties_schema(component_key: str) -> dict[str, dict[str, str]
     return None
 
 
+@lru_cache
 def get_macros() -> list[str]:
     """Returns list of available Tekla macros from configured directories."""
-    from pathlib import Path
-
     directories = get_config().tekla_macro_directories
     macro_names: list[str] = []
 
     for directory in directories:
         dir_path = Path(directory)
         if dir_path.is_dir():
-            for file in dir_path.rglob("*"):
-                if file.suffix.lower() in (".cs"):
-                    macro_names.append(file.name)
+            for file in dir_path.rglob("*.cs"):
+                macro_names.append(file.name)
 
     return sorted(macro_names)
 
