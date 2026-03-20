@@ -27,29 +27,51 @@ from tekla_mcp_server.models import (
     get_macros,
 )
 
-from tekla_mcp_server.mcp_tools import (
-    manage_components_on_selected_objects,
-    tool_put_components,
-    tool_remove_components,
+# Selection
+from tekla_mcp_server.tools.selection import (
     tool_select_elements_by_filter,
     tool_select_elements_by_filter_name,
     tool_select_elements_by_guid,
     tool_select_elements_assemblies_or_main_parts,
+)
+
+# Components
+from tekla_mcp_server.tools.components import (
+    manage_components_on_selected_objects,
+    tool_put_components,
+    tool_remove_components,
+)
+
+# View
+from tekla_mcp_server.tools.view import (
     tool_draw_elements_labels,
     tool_zoom_to_selection,
     tool_redraw_view,
     tool_show_only_selected,
     tool_hide_selected,
     tool_color_selected,
-    tool_cut_elements_with_zero_class_parts,
-    tool_convert_cut_parts_to_real_parts,
+)
+
+# Properties
+from tekla_mcp_server.tools.properties import (
     tool_set_elements_udas,
     tool_get_elements_udas,
     tool_get_elements_properties,
     tool_get_elements_cut_parts,
-    tool_compare_elements,
+)
+
+# Operations
+from tekla_mcp_server.tools.operations import (
+    tool_cut_elements_with_zero_class_parts,
+    tool_convert_cut_parts_to_real_parts,
     tool_run_macro,
 )
+
+# Properties
+from tekla_mcp_server.tools.properties import tool_compare_elements
+
+# Info
+from tekla_mcp_server.tools.info import tool_check_tekla_connection
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.utils import log_mcp_tool_call
 
@@ -105,17 +127,7 @@ def check_tekla_connection() -> dict[str, Any]:
       - model_path: str | null
       - message: str
     """
-    try:
-        tekla_model = TeklaModel()
-        return {
-            "connected": True,
-            "model_path": tekla_model.model.GetInfo().ModelPath,
-            "message": "Connected to Tekla",
-        }
-    except ConnectionError as e:
-        return {"connected": False, "model_path": None, "message": str(e)}
-    except Exception as e:
-        return {"connected": False, "model_path": None, "message": f"Error: {e}"}
+    return tool_check_tekla_connection()
 
 
 @mcp.tool()

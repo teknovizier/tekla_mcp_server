@@ -29,7 +29,7 @@ from tekla_mcp_server.tekla.loader import Point, Beam, Position, ViewHandler
 from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tekla.model_object import wrap_model_object
-from tekla_mcp_server.mcp_tools import add_filter
+from tekla_mcp_server.tools.selection import add_filter
 
 
 def create_mcp_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):

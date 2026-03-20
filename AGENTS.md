@@ -61,7 +61,7 @@ from collections.abc import Callable
 from pydantic import BaseModel, Field, PrivateAttr
 from pydantic_core import PydanticCustomError
 
-# Local application (use tekla_mcp_server prefix)
+# Local application
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import ReportProperty
 from tekla_mcp_server.utils import log_function_call, log_mcp_tool_call
@@ -71,6 +71,16 @@ from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tekla.model_object import TeklaModelObject
 from tekla_mcp_server.tekla.utils import wrap_model_objects
 from tekla_mcp_server.tekla.loader import Point, Beam, Identifier, Model
+
+# Tools modules
+from tekla_mcp_server.tools.selection import (
+    tool_select_elements_by_filter,
+    tool_select_elements_by_guid,
+)
+from tekla_mcp_server.tools.components import tool_put_components, tool_remove_components
+from tekla_mcp_server.tools.view import tool_draw_elements_labels, tool_zoom_to_selection
+from tekla_mcp_server.tools.properties import tool_get_elements_properties, tool_set_elements_udas, tool_compare_elements
+from tekla_mcp_server.tools.operations import tool_cut_elements_with_zero_class_parts
 ```
 
 ### Type Hints & Formatting
@@ -120,7 +130,7 @@ def tool_function(...):
 - Use `@mcp.tool()` decorator
 - Return dict with `status` key
 - Validate inputs in MCP tool layer
-- Use `mcp_tools.py` for actual operations
+- Use `tools/` modules for actual operations (selection, components, properties, view, operations, info)
 
 ## Project Structure
 ```
@@ -131,9 +141,15 @@ tekla_mcp_server/
 │   ├── embeddings.py          # Embedding model loading and text normalization
 │   ├── init.py                # Logging, DLL loading
 │   ├── mcp_server.py          # Main server with MCP tools
-│   ├── mcp_tools.py           # MCP tool implementations
 │   ├── models.py              # Data models and enums
 │   ├── utils.py               # Decorators and utilities
+│   ├── tools/                 # MCP tool implementations (organized by category)
+│   │   ├── selection.py       # Selection tools (select by filter, GUID, etc.)
+│   │   ├── components.py      # Component tools (put/remove components)
+│   │   ├── properties.py      # Property tools (UDAs, properties, compare)
+│   │   ├── view.py           # View tools (labels, zoom, color, hide)
+│   │   ├── operations.py     # Operation tools (cut, macro)
+│   │   └── info.py           # Info tools (connection check)
 │   └── tekla/                 # Tekla-specific modules
 │       ├── __init__.py
 │       ├── loader.py          # Tekla DLL loading
