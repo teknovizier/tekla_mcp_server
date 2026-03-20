@@ -43,6 +43,14 @@ The server provides the following tools:
 | Operations | `run_macro` | Run a Tekla macro with the specified name | `macro_name` (required) |
 | Info | `check_tekla_connection` | Check Tekla connection status. Returns whether Tekla is connected, the model path, and a status message | - |
 
+### Resources
+The server exposes the following MCP resources:
+
+| Resource | Description |
+|----------|-------------|
+| `component://schema` | Returns the list of Tekla components available in server configuration |
+| `component://schema/{component_key}` | Returns the custom_properties schema for a specific component |
+
 ### Compatibility
 The server was tested to work with **only Tekla 2022** and may not be compatible with other versions of Tekla Structures.
 
