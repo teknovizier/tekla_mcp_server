@@ -177,6 +177,23 @@ def get_custom_properties_schema(component_key: str) -> dict[str, dict[str, str]
     return None
 
 
+def get_macros() -> list[str]:
+    """Returns list of available Tekla macros from configured directories."""
+    from pathlib import Path
+
+    directories = get_config().tekla_macro_directories
+    macro_names: list[str] = []
+
+    for directory in directories:
+        dir_path = Path(directory)
+        if dir_path.is_dir():
+            for file in dir_path.rglob("*"):
+                if file.suffix.lower() in (".cs"):
+                    macro_names.append(file.name)
+
+    return sorted(macro_names)
+
+
 # Classes
 class EnumWrapper(BaseModel):
     """

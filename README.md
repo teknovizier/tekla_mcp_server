@@ -50,6 +50,7 @@ The server exposes the following MCP resources:
 |----------|-------------|
 | `component://schema` | Returns the list of Tekla components available in server configuration |
 | `component://schema/{component_key}` | Returns the custom_properties schema for a specific component |
+| `macro://list` | Returns list of available Tekla macros from configured directories |
 
 ### Compatibility
 The server was tested to work with **only Tekla 2022** and may not be compatible with other versions of Tekla Structures.
@@ -103,6 +104,7 @@ If you want to replace the default embedding model with another one - either a H
 |-----------------------|----------------------------------------------------|---------------------------------------------------------------------------------|
 | `tekla_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin" | The path to the directory where Tekla Structures is located                      |
 | `content_attributes_file_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin\\applications\\Tekla\\Tools\\TplEd\\settings\\contentattributes_global.lst" | The path to the `contentattributes_global.lst` file                      |
+| `tekla_macro_directory`          | - | Array of directory paths to scan for Tekla macros. Typically set to the directories defined in Tekla's `XS_MACRO_DIRECTORY` configuration (e.g., `["C:\\ProgramData\\Trimble\\Tekla Structures\\2022.0\\environments\\common\\macros"]`) |
 | `template_attributes_json_name`          | - | The filename of JSON file in `config/` folder with template attribute descriptions for semantic search. See [Template Attributes JSON](#template-attributes-json) for format |
 | `embeddings.enabled`          | true | Enable or disable semantic search (embeddings). When false, only exact/normalized matching is used |
 | `embeddings.embedding_model`          | "teknovizier/minilm-tekla-attr-embed-v1" | Sentence-transformers model for semantic attribute matching. Can be a HuggingFace model ID (e.g., `your-username/tekla-attribute-model`) or a local path (e.g., `tekla_attribute_model`)                      |

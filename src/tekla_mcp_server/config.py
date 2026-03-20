@@ -151,6 +151,11 @@ class Config:
         return self._semantic_overrides
 
     @property
+    def tekla_macro_directories(self) -> list[str]:
+        """List of directories to scan for Tekla macros."""
+        return self._settings.get("tekla_macro_directory", [])
+
+    @property
     def class_to_element(self) -> dict[int, tuple[str, str]]:
         """Returns class to element mapping."""
         return self._class_to_element

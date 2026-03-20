@@ -24,6 +24,7 @@ from tekla_mcp_server.models import (
     BaseComponent,
     LiftingAnchorsComponent,
     get_base_components,
+    get_macros,
 )
 
 from tekla_mcp_server.mcp_tools import (
@@ -79,6 +80,14 @@ def get_component_schema(component_key: str) -> ResourceResult:
         custom_props = component.get("custom_properties", {})
         return ResourceResult(contents=[ResourceContent(content=json.dumps(custom_props), mime_type="application/json")])
     return ResourceResult(contents=[])
+
+
+@mcp.resource("macro://list")
+def get_macro_list() -> ResourceResult:
+    """
+    Returns a list of available Tekla macros from configured directories.
+    """
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_macros()), mime_type="application/json")])
 
 
 # MCP tools
@@ -609,12 +618,10 @@ def run_macro(macro_name: str) -> dict[str, Any]:
     Runs a Tekla macro with the specified name.
 
     ## INPUT
-    - `macro_name` [Required]: Name or path of the macro file to run (e.g., "MyMacro.cs")
+    - `macro_name` [Required]: Name of the macro file to run (e.g., "MyMacro.cs")
 
-    The macro must be located in the Tekla macro folder or model folder.
-    The full path or relative path to the .cs macro file can be used.
-    Example: "MyModelingMacro.cs" or @"..\\drawings\\MyDrawingMacro.cs".
-    If the extension is omitted, .cs will be automatically appended by the tool.
+    ## AVAILABLE MACROS
+    Use the `macro://list` resource to get a list of available macros.
 
     ## OUTPUT
     Returns status indicating whether the macro ran successfully.
