@@ -34,6 +34,7 @@ def _ensure_loaded() -> None:
     """Lazily load the embedding model."""
     global _embedding_model
     if _embedding_model is None:
+        logger.info("Importing SentenceTransformer...")
         from sentence_transformers import SentenceTransformer
 
         config = get_config()
