@@ -3,7 +3,7 @@ Module for tools used for Tekla model operations.
 """
 
 import re
-from collections import defaultdict, Counter
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from typing import Any
 
@@ -1229,7 +1229,7 @@ def tool_run_macro(macro_name: str) -> dict[str, Any]:
 @log_function_call
 def tool_compare_elements(selected_objects: ModelObjectEnumerator, ignore_numbering: bool = False, tolerance: float = 0.01) -> dict[str, Any]:
     """
-    Compares two element snapshots and returns the differences.
+    Compares two selected Tekla parts or assemblies and returns the differences.
 
     Args:
         selected_objects: ModelObjectEnumerator with at least two parts selected
@@ -1264,45 +1264,80 @@ def tool_compare_elements(selected_objects: ModelObjectEnumerator, ignore_number
     snapshot_b = object_b.to_snapshot()
 
     # Normalize numbers according to tolerance
-    snapshot_a_normalized = snapshot_a.normalize(tolerance).model_dump()
-    snapshot_b_normalized = snapshot_b.normalize(tolerance).model_dump()
+    snapshot_a_normalized = snapshot_a.normalize(tolerance)
+    snapshot_b_normalized = snapshot_b.normalize(tolerance)
 
-    def are_snapshots_identical(a: Any, b: Any) -> bool:
-        """
-        Compare two snapshots, ignoring 'id'/'guid' fields.
-        """
-        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-            return a == b
+    # Get diff views for clean comparison
+    diff_a = snapshot_a_normalized.to_diff_view()
+    diff_b = snapshot_b_normalized.to_diff_view()
+
+    def _canonical(value: Any) -> Any:
+        """Canonicalize value for comparison - removes id/guid, sorts lists/dicts."""
+        if isinstance(value, dict):
+            return tuple((k, _canonical(v)) for k, v in sorted(value.items()) if k.lower() not in ("id", "guid"))
+        if isinstance(value, list):
+            return tuple(sorted(_canonical(v) for v in value))
+        return value
+
+    def _compute_diff(a: Any, b: Any) -> Any:
+        """Compute differences between two values."""
+        canon_a = _canonical(a)
+        canon_b = _canonical(b)
+
+        if canon_a == canon_b:
+            return None
 
         if isinstance(a, dict) and isinstance(b, dict):
-            keys_a = {k for k in a if k.lower() not in ("id", "guid")}
-            keys_b = {k for k in b if k.lower() not in ("id", "guid")}
-            if keys_a != keys_b:
-                return False
-            return all(are_snapshots_identical(a[k], b[k]) for k in keys_a)
+            diff = {}
+            for key in set(a) | set(b):
+                if key.lower() in ("id", "guid"):
+                    continue
+                d = _compute_diff(a.get(key), b.get(key))
+                if d is not None:
+                    diff[key] = d
+            return diff or None
 
-        if isinstance(a, list) and isinstance(b, list):
-            return a == b
+        return {"a": a, "b": b}
 
-        if hasattr(a, "__dict__") and hasattr(b, "__dict__"):
-            return are_snapshots_identical(a.__dict__, b.__dict__)
-
-        return a == b
-
-    identical = are_snapshots_identical(snapshot_a_normalized, snapshot_b_normalized)
-
-    if identical:
+    if _canonical(diff_a) == _canonical(diff_b):
         return {
             "status": "success",
             "identical": True,
             "message": "Elements are identical",
         }
 
-    # Return snapshots only when elements differ
+    # Compute diff for clean comparison
+    diff = _compute_diff(diff_a, diff_b)
+
+    # Generate human-readable summary
+    def diff_to_summary(d: Any, path: str = "") -> list[str]:
+        """Convert diff dict to human-readable list of differences."""
+        if d is None:
+            return []
+        if not isinstance(d, dict):
+            return []
+
+        summary = []
+        for key, value in d.items():
+            current_path = f"{path}.{key}" if path else key
+
+            if isinstance(value, dict) and "a" in value and "b" in value:
+                summary.append(f"{current_path}: A={value['a']}, B={value['b']}")
+            else:
+                child_summary = diff_to_summary(value, current_path)
+                summary.extend(child_summary)
+
+        return summary
+
+    diff_summary = diff_to_summary(diff)
+
+    # Return diff view + raw snapshots
     return {
         "status": "success",
         "identical": False,
-        "part_a_snapshot": snapshot_a_normalized,
-        "part_b_snapshot": snapshot_b_normalized,
+        "differences": diff,
+        "differences_summary": diff_summary,
+        "part_a_raw": snapshot_a_normalized.model_dump(),
+        "part_b_raw": snapshot_b_normalized.model_dump(),
         "message": "Elements have differences",
     }

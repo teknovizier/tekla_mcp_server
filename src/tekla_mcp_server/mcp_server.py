@@ -594,14 +594,22 @@ def compare_elements(ignore_numbering: bool = False) -> dict[str, Any]:
     ## INPUT
     - `ignore_numbering` [Optional]: If True, skips numbering check (default: False)
 
+    ## RESPONSE FIELDS
+    - `identical`: Boolean - True if elements are identical, False otherwise
+    - `differences`: Only present when `identical=False`. Machine-readable diff format
+    - `differences_summary`: Only present when `identical=False`. Human-readable list of differences
+    - `part_a_raw`: Full snapshot of Part A (with guid/id) - use only when you need identifiers
+    - `part_b_raw`: Full snapshot of Part B (with guid/id) - use only when you need identifiers
+
     ## INSTRUCTIONS
-    1. Ignore all fields named 'id' or 'guid' at any nesting level.
-    2. Ignore order differences in lists, dictionaries, and user-defined attributes (UDAs).
-    3. Compare all properties, including report properties, user properties, cutparts, reinforcements, and welds.
-    4. Only report actual differences: changed values, missing or added keys, or type changes.
-    5. Do not mention any fields or properties that are identical.
-    6. Do not add summaries, notes, or comments about unchanged data.
-    7. If there are no differences, return exactly: "Elements are identical".
+    1. Check `identical` field first
+    2. If `identical=False`, use `differences_summary` for human-readable report
+    3. Use `differences` for programmatic analysis if needed
+    4. Use `part_a_raw`/`part_b_raw` only when you need guid/id identifiers
+
+    ## WHAT TO IGNORE
+    - `id` and `guid` fields - they are ALWAYS different (not actual differences)
+    - Order of items in lists (cutparts, reinforcements, welds) - pre-sorted for comparison
 
     ## OUTPUT
     A human-readable summary listing only the actual differences between the two selected parts or assemblies.

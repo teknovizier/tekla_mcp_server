@@ -522,13 +522,13 @@ class TeklaPart(TeklaModelObject):
                     try:
                         boolean_pos = operative_part.GetCoordinateSystem().Origin
                         main_pos = self.model_object.GetCoordinateSystem().Origin
-                        relative_position = {
+                        relative_pos = {
                             "dx": float(boolean_pos.X - main_pos.X),
                             "dy": float(boolean_pos.Y - main_pos.Y),
                             "dz": float(boolean_pos.Z - main_pos.Z),
                         }
                     except Exception:
-                        relative_position = None
+                        relative_pos = None
 
                     cutparts.append(
                         {
@@ -537,7 +537,7 @@ class TeklaPart(TeklaModelObject):
                             "name": operative_part.Name,
                             "profile": operative_part.Profile.ProfileString,
                             "type": str(boolean_part.Type),
-                            "relative_position": relative_position,
+                            "relative_pos": relative_pos,
                         }
                     )
 
@@ -588,20 +588,20 @@ class TeklaPart(TeklaModelObject):
             try:
                 weld_pos = weld.GetCoordinateSystem().Origin
                 main_pos = self.model_object.GetCoordinateSystem().Origin
-                relative_position = {
+                relative_pos = {
                     "dx": float(weld_pos.X - main_pos.X),
                     "dy": float(weld_pos.Y - main_pos.Y),
                     "dz": float(weld_pos.Z - main_pos.Z),
                 }
             except Exception:
-                relative_position = None
+                relative_pos = None
 
             welds.append(
                 {
                     "id": weld.Identifier.ID,
                     "guid": weld.Identifier.GUID.ToString(),
                     "report_properties": weld_props,
-                    "relative_position": relative_position,
+                    "relative_pos": relative_pos,
                 }
             )
 

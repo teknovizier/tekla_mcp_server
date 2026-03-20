@@ -750,6 +750,22 @@ class ModelObjectSnapshot(BaseModel):
     report_properties: dict[str, Any] = Field(default_factory=dict)
     user_properties: dict[str, Any] = Field(default_factory=dict)
 
+    @staticmethod
+    def _sort_key_for_comparison(value: Any) -> tuple | str:
+        """Generate a stable sort key for comparison, excluding id and guid fields."""
+        if isinstance(value, dict):
+            return tuple((k, ModelObjectSnapshot._sort_key_for_comparison(v)) for k, v in sorted(value.items()) if k.lower() not in ("id", "guid"))
+        elif isinstance(value, list):
+            return tuple(sorted(ModelObjectSnapshot._sort_key_for_comparison(v) for v in value))
+        return str(type(value).__name__) + ":" + str(value)
+
+    @staticmethod
+    def _deterministic_sort_key(item: dict[str, Any]) -> tuple:
+        """Generate deterministic sort key with hash tiebreaker for consistent ordering."""
+        content_key = ModelObjectSnapshot._sort_key_for_comparison(item)
+        content_hash = hash(str(content_key))
+        return (content_key, content_hash)
+
     def normalize(self, tolerance: float) -> Self:
         """
         Recursively rounds all float values to the nearest multiple of tolerance.
@@ -759,19 +775,23 @@ class ModelObjectSnapshot(BaseModel):
         return self._normalize_self(normalized_props, normalized_user_props, tolerance)
 
     def _normalize_value(self, value: Any, tolerance: float) -> Any:
+        if value is None:
+            return None
         if isinstance(value, float):
             quantized = round(value / tolerance) * tolerance
             return float(f"{quantized:.10f}")
         elif isinstance(value, dict):
-            return {k: self._normalize_value(v, tolerance) for k, v in value.items()}
+            result = {k: self._normalize_value(v, tolerance) for k, v in value.items() if v is not None}
+            return result if result else None
         elif isinstance(value, list):
-            normalized = [self._normalize_value(item, tolerance) for item in value]
-            normalized.sort(key=lambda x: repr(x))
-            return normalized
+            normalized = [self._normalize_value(item, tolerance) for item in value if item is not None]
+            if normalized:
+                normalized.sort(key=ModelObjectSnapshot._sort_key_for_comparison)
+            return normalized if normalized else None
         return value
 
     def _normalize_dict(self, d: dict[str, Any], tolerance: float) -> dict[str, Any]:
-        return {k: self._normalize_value(v, tolerance) for k, v in d.items()}
+        return {k: self._normalize_value(v, tolerance) for k, v in d.items() if v is not None}
 
     def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
         raise NotImplementedError
@@ -795,16 +815,36 @@ class PartSnapshot(ModelObjectSnapshot):
     welds: list[dict[str, Any]] = Field(default_factory=list)
 
     def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
+        cutparts = [self._normalize_dict(cp, tolerance) for cp in self.cutparts if cp is not None]
+        cutparts.sort(key=ModelObjectSnapshot._deterministic_sort_key) if cutparts else None
+
+        reinforcements = [self._normalize_dict(r, tolerance) for r in self.reinforcements if r is not None]
+        reinforcements.sort(key=ModelObjectSnapshot._deterministic_sort_key) if reinforcements else None
+
+        welds = [self._normalize_dict(w, tolerance) for w in self.welds if w is not None]
+        welds.sort(key=ModelObjectSnapshot._deterministic_sort_key) if welds else None
+
         return self.__class__(
             id=self.id,
             guid=self.guid,
             pos=self.pos,
             report_properties=normalized_props,
             user_properties=normalized_user_props,
-            cutparts=[self._normalize_dict(cp, tolerance) for cp in self.cutparts],
-            reinforcements=[self._normalize_dict(r, tolerance) for r in self.reinforcements],
-            welds=[self._normalize_dict(w, tolerance) for w in self.welds],
+            cutparts=cutparts,
+            reinforcements=reinforcements,
+            welds=welds,
         )
+
+    def to_diff_view(self) -> dict[str, Any]:
+        """Convert snapshot to diff-friendly view for comparison."""
+        return {
+            "pos": self.pos,
+            "report_properties": self.report_properties,
+            "user_properties": self.user_properties,
+            "cutparts": self.cutparts,
+            "reinforcements": self.reinforcements,
+            "welds": self.welds,
+        }
 
 
 class AssemblySnapshot(ModelObjectSnapshot):
@@ -835,3 +875,14 @@ class AssemblySnapshot(ModelObjectSnapshot):
             secondaries=[s.normalize(tolerance) for s in self.secondaries],
             subassemblies=[s.normalize(tolerance) for s in self.subassemblies],
         )
+
+    def to_diff_view(self) -> dict[str, Any]:
+        """Convert snapshot to diff-friendly view for comparison."""
+        return {
+            "pos": self.pos,
+            "report_properties": self.report_properties,
+            "user_properties": self.user_properties,
+            "main_part": self.main_part.to_diff_view() if self.main_part else None,
+            "secondaries": [s.to_diff_view() for s in self.secondaries],
+            "subassemblies": [s.to_diff_view() for s in self.subassemblies],
+        }

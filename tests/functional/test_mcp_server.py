@@ -1185,8 +1185,9 @@ async def test_compare_different_parts_different_profile(model_objects):
         assert result.data["status"] == "success"
         assert result.data["identical"] is False
         assert result.data["message"] == "Elements have differences"
-        assert "part_a_snapshot" in result.data
-        assert "part_b_snapshot" in result.data
+        assert "differences" in result.data
+        assert "part_a_raw" in result.data
+        assert "part_b_raw" in result.data
 
 
 @pytest.mark.asyncio

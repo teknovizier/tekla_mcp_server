@@ -609,8 +609,8 @@ class TestNormalizeEdgeCases:
             pos="P1",
             report_properties={"vals": [1.5, "text", 2.5, True]},
         )
-        result = snapshot.normalize(10)
-        assert result.report_properties["vals"] == ["text", 0.0, 0.0, True]
+        result = snapshot.normalize(0.1)
+        assert result.report_properties["vals"] == [True, 1.5, 2.5, "text"]
 
     def test_deeply_nested_dict(self):
         snapshot = PartSnapshot(
