@@ -121,9 +121,14 @@ class Config:
         return self.embeddings.get("embedding_model")
 
     @property
-    def embedding_threshold(self) -> float | None:
-        """Embedding threshold."""
-        return self.embeddings.get("embedding_threshold")
+    def embedding_spread_threshold(self) -> float:
+        """Embedding spread threshold for confidence detection (default 0.1)."""
+        return self.embeddings.get("embedding_spread_threshold", 0.1)
+
+    @property
+    def embedding_minimum_threshold(self) -> float:
+        """Minimum embedding confidence to resolve directly (default 0.8)."""
+        return self.embeddings.get("embedding_minimum_threshold", 0.8)
 
     @property
     def element_types(self) -> dict[str, Any]:

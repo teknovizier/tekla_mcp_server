@@ -116,8 +116,8 @@ def test_get_report_property_weight_property(wall1):
 
 
 def test_get_report_property_invalid(wall1):
-    """Checks that accessing an invalid report property raises AttributeError."""
-    with pytest.raises(ValueError):
+    """Checks that accessing an invalid report property raises KeyError."""
+    with pytest.raises(KeyError):
         wall1.get_report_property("INVALID_PROPERTY_NAME")
 
 

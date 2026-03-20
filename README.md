@@ -54,13 +54,7 @@ Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [
 - Qwen3
 - gpt-oss
 
-The server uses **sentence-transformers** to perform semantic attribute mapping for **template attributes**, converting user-friendly text into Tekla attribute names based on embedding similarity. By default, it loads **fine‑tuned Tekla‑specific model** published on HuggingFace: [teknovizier/minilm-tekla-attr-embed-v1](https://huggingface.co/teknovizier/minilm-tekla-attr-embed-v1).
 
-This model supports:
-- Template attributes: use natural terms like "area netto" or "assembly bottom level" and automatically map them to the correct Tekla attribute (e.g., `AREA_NET`, `ASSEMBLY_BOTTOM_LEVEL`)
-
-**Using a Different Embedding Model:**
-If you want to replace the default embedding model with another one - either a HuggingFace model (e.g., `your-username/tekla-attribute-model`) or a locally saved directory, you can do so by updating the configuration. Set `embeddings.embedding_model` in `config/settings.json` to the HuggingFace model ID or to the path of your local model folder. 
 
 ## Requirements
 
@@ -78,6 +72,19 @@ uv pip install -r requirements-dev.txt
 
 ⚠️ *Note:* You may experience a naming conflict with the `clr` string styling package. A solution is to rename or delete the folder `C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\site-packages\clr`.
 
+### Semantic Attribute Mapping
+The server uses **sentence-transformers** (MiniLM) to perform semantic attribute mapping for **template attributes**, converting user-friendly text into Tekla attribute names. By default, it loads **fine‑tuned Tekla‑specific model** published on HuggingFace: [teknovizier/minilm-tekla-attr-embed-v1](https://huggingface.co/teknovizier/minilm-tekla-attr-embed-v1).
+
+#### How it works
+
+- MiniLM returns the top candidates for a query.
+- If the top candidate is clearly distinct and confident, it is selected automatically.
+- If uncertain, the **top candidates are passed to an LLM** for final selection.
+
+#### Using a Different Model
+
+If you want to replace the default embedding model with another one - either a HuggingFace model (e.g., `your-username/tekla-attribute-model`) or a locally saved directory, you can do so by updating the configuration. Set `embeddings.embedding_model` in `config/settings.json` to the HuggingFace model ID or to the path of your local model folder. 
+
 ## Setting up
 
 ### Configuration Files
@@ -91,7 +98,8 @@ uv pip install -r requirements-dev.txt
 | `template_attributes_json_name`          | - | The filename of JSON file in `config/` folder with template attribute descriptions for semantic search. See [Template Attributes JSON](#template-attributes-json) for format |
 | `embeddings.enabled`          | true | Enable or disable semantic search (embeddings). When false, only exact/normalized matching is used |
 | `embeddings.embedding_model`          | "teknovizier/minilm-tekla-attr-embed-v1" | Sentence-transformers model for semantic attribute matching. Can be a HuggingFace model ID (e.g., `your-username/tekla-attribute-model`) or a local path (e.g., `tekla_attribute_model`)                      |
-| `embeddings.embedding_threshold`          | 0.6 | Minimum similarity score (0-1) for semantic matching. Fine-tuned models may require lower thresholds (e.g., 0.55) |
+| `embeddings.embedding_spread_threshold`          | 0.1 | Minimum stddev of top-k scores for direct resolution. Below this threshold, candidates are returned for LLM to choose from |
+| `embeddings.embedding_minimum_threshold`          | 0.8 | Minimum confidence score (0-1) for direct resolution. Below this threshold, candidates are returned for LLM to choose from |
 
 * Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
 * Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model

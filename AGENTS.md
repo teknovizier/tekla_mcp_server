@@ -65,7 +65,7 @@ from pydantic_core import PydanticCustomError
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import ReportProperty
 from tekla_mcp_server.utils import log_function_call, log_mcp_tool_call
-from tekla_mcp_server.embeddings import get_embedding_model, get_embedding_threshold, find_normalized_match
+from tekla_mcp_server.embeddings import get_embedding_model, find_normalized_match
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tekla.model_object import TeklaModelObject

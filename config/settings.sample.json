@@ -3,7 +3,8 @@
     "content_attributes_file_path": "C:\\Program Files\\Tekla Structures\\2022.0\\bin\\applications\\Tekla\\Tools\\TplEd\\settings\\contentattributes_global.lst",
     "embeddings": {
         "enabled": true,
-        "embedding_threshold": 0.6,
-        "embedding_model": "teknovizier/minilm-tekla-attr-embed-v1"
+        "embedding_model": "teknovizier/minilm-tekla-attr-embed-v1",
+        "embedding_spread_threshold": 0.1,
+        "embedding_minimum_threshold": 0.8
     }
 }

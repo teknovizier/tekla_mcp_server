@@ -279,7 +279,7 @@ class TeklaModelObject:
             ValueError: If the property is not found in Tekla's attribute definitions.
             AttributeError: If the property retrieval fails for the given element.
         """
-        report_property = TemplateAttributeParser.parse(property_name)
+        report_property = TemplateAttributeParser.get_attribute(property_name)
         is_ok, value = self.model_object.GetReportProperty(property_name, report_property.data_type())
         if not is_ok:
             raise AttributeError(f"Failed to retrieve property `{property_name}`.")

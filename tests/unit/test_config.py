@@ -76,13 +76,13 @@ class TestConfigAttributeMapper:
             "content_attributes_file_path": "C:\\Tekla\\file.lst",
             "embeddings": {
                 "embedding_model": "test-model",
-                "embedding_threshold": 0.7,
+                "embedding_spread_threshold": 0.1,
             },
         }
         config = Config()
-        assert config.embeddings == {"embedding_model": "test-model", "embedding_threshold": 0.7}
+        assert config.embeddings == {"embedding_model": "test-model", "embedding_spread_threshold": 0.1}
         assert config.embedding_model == "test-model"
-        assert config.embedding_threshold == 0.7
+        assert config.embedding_spread_threshold == 0.1
 
 
 class TestGetConfigSingleton:

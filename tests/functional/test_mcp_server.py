@@ -1041,12 +1041,13 @@ async def test_get_elements_properties_invalid_and_missing_custom_properties(mod
             def get_prop_value(prop_name: str, default="N/A"):
                 return next((p["value"] for p in props if p["name"] == prop_name), default)
 
-            assert get_prop_value("ASSEMBLY_TOP_LEVELL") == "N/A"
-            assert get_prop_value("NON_EXISTENT_PROPERTY") == "N/A"
             assert get_prop_value("ASSEMBLY_TOP_LEVEL") != "N/A"
+            assert get_prop_value("NON_EXISTENT_PROPERTY") == "N/A"
 
         errors = result.data["invalid_custom_property_definitions"]
-        assert errors
+        assert errors == ["NON_EXISTENT_PROPERTY"]
+        resolution_errors = result.data["resolution_errors"]
+        assert any(e["query"] == "NON_EXISTENT_PROPERTY" for e in resolution_errors)
 
 
 @pytest.mark.asyncio

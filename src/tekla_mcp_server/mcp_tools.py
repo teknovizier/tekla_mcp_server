@@ -584,17 +584,46 @@ def tool_select_elements_by_filter(
             expression = STANDARD_EXPRESSION_MAP[key]
             filter_groups.append(build_filter_group(expression, filter_option))
 
+    string_resolution_errors: list[dict[str, Any]] = []
+    numeric_resolution_errors: list[dict[str, Any]] = []
+
     if custom_string_filters:
+        string_queries = list(custom_string_filters.keys())
+        if string_queries:
+            resolution = TemplateAttributeParser.resolve_attributes(string_queries)
+            errors = resolution.get("errors", [])
+            string_resolution_errors = errors
+            resolved_string_attrs: dict[str, str | None] = {}
+            for query, resolved in zip(string_queries, resolution["resolved"]):
+                if any(e["query"] == query for e in errors):
+                    resolved_string_attrs[query] = None
+                else:
+                    resolved_string_attrs[query] = resolved
+
         for field_name, filter_option in custom_string_filters.items():
-            custom_property = TemplateAttributeParser.parse(field_name)
-            expression = TemplateFilterExpressions.CustomString(custom_property.name)
-            filter_groups.append(build_filter_group(expression, filter_option))
+            resolved_name = resolved_string_attrs.get(field_name)
+            if resolved_name:
+                expression = TemplateFilterExpressions.CustomString(resolved_name)
+                filter_groups.append(build_filter_group(expression, filter_option))
 
     if custom_numeric_filters:
+        numeric_queries = list(custom_numeric_filters.keys())
+        if numeric_queries:
+            resolution = TemplateAttributeParser.resolve_attributes(numeric_queries)
+            errors = resolution.get("errors", [])
+            numeric_resolution_errors = errors
+            resolved_numeric_attrs: dict[str, str | None] = {}
+            for query, resolved in zip(numeric_queries, resolution["resolved"]):
+                if any(e["query"] == query for e in errors):
+                    resolved_numeric_attrs[query] = None
+                else:
+                    resolved_numeric_attrs[query] = resolved
+
         for field_name, filter_option in custom_numeric_filters.items():
-            custom_property = TemplateAttributeParser.parse(field_name)
-            expression = TemplateFilterExpressions.CustomNumber(custom_property.name)
-            filter_groups.append(build_filter_group(expression, filter_option, is_numeric=True))
+            resolved_name = resolved_numeric_attrs.get(field_name)
+            if resolved_name:
+                expression = TemplateFilterExpressions.CustomNumber(resolved_name)
+                filter_groups.append(build_filter_group(expression, filter_option, is_numeric=True))
 
     if len(filter_groups) == 1:
         filter_collection.Add(BinaryFilterExpressionItem(filter_groups[0], BinaryFilterOperatorType.BOOLEAN_AND))
@@ -609,10 +638,13 @@ def tool_select_elements_by_filter(
     TeklaModel.select_objects(objects_to_select)
 
     count = objects_to_select.GetSize()
+    has_resolution_errors = bool(string_resolution_errors or numeric_resolution_errors)
 
     return {
-        "status": "success" if count else "error",
+        "status": "partial" if has_resolution_errors else ("success" if count else "error"),
         "selected_elements": count,
+        "string_resolution_errors": string_resolution_errors,
+        "numeric_resolution_errors": numeric_resolution_errors,
     }
 
 
@@ -701,21 +733,34 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
         label: ElementLabel type to draw
         custom_label: Custom label template string (required if label is CUSTOM)
     """
+    resolved_label = None
+    unit = None
+    resolution_errors: list[dict[str, Any]] = []
+    skip_custom_label = False
+
+    if label == ElementLabel.CUSTOM and custom_label:
+        resolution = TemplateAttributeParser.resolve_attributes([custom_label])
+        errors = resolution.get("errors", [])
+        if errors:
+            candidates = resolution.get("candidates", {})
+            resolution_errors.append({"query": custom_label, "candidates": candidates.get(custom_label, [])})
+            skip_custom_label = True
+        else:
+            resolved_label = resolution["resolved"][0]
+            custom_property = TemplateAttributeParser.get_attribute(resolved_label)
+            unit = f" {custom_property.unit}" if custom_property.unit else ""
+
     color_black = (0.0, 0.0, 0.0)
     drawer = GraphicsDrawer()
     processed_elements = 0
     drawn_labels = 0
 
-    if label == ElementLabel.CUSTOM:
-        if not custom_label:
-            raise ValueError("Custom label parameter has to be set.")
-        custom_property = TemplateAttributeParser.parse(custom_label)
-        unit = f" {custom_property.unit}" if custom_property.unit else ""
-
     for selected_object in wrap_model_objects(selected_objects):
         if label == ElementLabel.CUSTOM:
-            value = selected_object.get_report_property(custom_property.name)
-            text = f"{custom_property.name} = {value}{unit}"
+            if skip_custom_label:
+                continue
+            value = selected_object.get_report_property(resolved_label)
+            text = f"{resolved_label} = {value}{unit}"
         else:
             labels = {
                 ElementLabel.POSITION: selected_object.position,
@@ -732,11 +777,18 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
             drawn_labels += 1
         processed_elements += 1
     logger.info("Drawn '%s' labels on %s elements", label.value, drawn_labels)
+    if drawn_labels and not resolution_errors:
+        status = "success"
+    elif drawn_labels and resolution_errors:
+        status = "partial"
+    else:  # No drawn labels
+        status = "error"
     return {
-        "status": "success" if drawn_labels else "error",
+        "status": status,
         "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
         "drawn_labels": drawn_labels,
+        "resolution_errors": resolution_errors,
     }
 
 
@@ -1027,21 +1079,29 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
         selected_objects: Enumerator of selected objects
         custom_props_definitions: List of custom property names to extract
     """
+    resolution_errors: list[dict[str, Any]] = []
+    if custom_props_definitions:
+        resolution = TemplateAttributeParser.resolve_attributes(custom_props_definitions)
+        resolution_errors = resolution.get("errors", [])
+        custom_props_definitions = resolution["resolved"]
+
     processed_elements = 0
     assemblies: list[ElementProperties] = []
     parts: list[ElementProperties] = []
     custom_props_errors: dict[str, dict[str, str]] = defaultdict(dict)
 
     parsed_custom_props: list[ReportProperty] = []
-    failed_custom_prop_definitions: list[str] = []
+    failed_custom_prop_definitions = []
+    for error_entry in resolution_errors:
+        failed_custom_prop_definitions.append(error_entry["query"])
     if custom_props_definitions:
-        for custom_prop_definition in custom_props_definitions:
+        for attr_name in custom_props_definitions:
             try:
-                parsed_prop = TemplateAttributeParser.parse(custom_prop_definition)
+                parsed_prop = TemplateAttributeParser.get_attribute(attr_name)
                 parsed_custom_props.append(parsed_prop)
-            except Exception as e:
-                failed_custom_prop_definitions.append(custom_prop_definition)
-                logger.warning("Error parsing custom property definition '%s': %s", custom_prop_definition, e)
+            except KeyError:
+                failed_custom_prop_definitions.append(attr_name)
+                logger.warning("Attribute not found: '%s'", attr_name)
 
     def get_single_element_properties(selected_object: TeklaModelObject) -> ElementProperties:
         # Try to get weight safely
@@ -1089,14 +1149,18 @@ def tool_get_elements_properties(selected_objects: ModelObjectEnumerator, custom
     serialized_parts = serialize_to_json([a.model_dump() for a in parts])
 
     logger.info("Retrieved properties for %s elements", processed_elements)
+    status = "success" if assemblies or parts else "error"
+    if resolution_errors:
+        status = "partial"
     return {
-        "status": "success" if assemblies or parts else "error",
+        "status": status,
         "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
         "assemblies_list": serialized_assemblies,
         "parts_list": serialized_parts,
         "invalid_custom_property_definitions": failed_custom_prop_definitions,
         "custom_property_extraction_errors": custom_props_errors,
+        "resolution_errors": resolution_errors,
     }
 
 
