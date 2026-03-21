@@ -42,6 +42,13 @@ from tekla_mcp_server.tekla.utils import (
 from tekla_mcp_server.utils import log_function_call
 
 
+def _to_filter_option(val: Any, model_class: type[StringFilterOption] | type[NumericFilterOption]) -> StringFilterOption | NumericFilterOption:
+    """Convert dict input to Pydantic model if needed."""
+    if isinstance(val, dict):
+        return model_class.model_validate(val)
+    return val
+
+
 def validate_exactly_two_selected(count: int) -> None:
     """
     Validate that exactly two elements are selected.
@@ -124,13 +131,13 @@ def tool_select_elements_by_filter(
     model: TeklaModel,
     element_type: ElementType | None = None,
     tekla_classes: int | list[int] | None = None,
-    standard_string_filters: dict[str, StringFilterOption] | None = None,
-    custom_string_filters: dict[str, StringFilterOption] | None = None,
-    custom_numeric_filters: dict[str, NumericFilterOption] | None = None,
+    standard_string_filters: dict[str, Any] | None = None,
+    custom_string_filters: dict[str, Any] | None = None,
+    custom_numeric_filters: dict[str, Any] | None = None,
     combine_with: str = "AND",
 ) -> dict[str, Any]:
     """
-    Select elements using standard Tekla properties, custom attributes, and numeric ranges.
+    Select element using standard Tekla properties, custom attributes, and numeric ranges.
 
     Args:
         model: TeklaModel instance
@@ -233,6 +240,7 @@ def tool_select_elements_by_filter(
     if standard_string_filters:
         for key, filter_option in standard_string_filters.items():
             expression = STANDARD_EXPRESSION_MAP[key]
+            filter_option = _to_filter_option(filter_option, StringFilterOption)
             filter_groups.append(build_filter_group(expression, filter_option))
 
     string_resolution_errors: list[dict[str, Any]] = []
@@ -255,6 +263,7 @@ def tool_select_elements_by_filter(
             resolved_name = resolved_string_attrs.get(field_name)
             if resolved_name:
                 expression = TemplateFilterExpressions.CustomString(resolved_name)
+                filter_option = _to_filter_option(filter_option, StringFilterOption)
                 filter_groups.append(build_filter_group(expression, filter_option))
 
     if custom_numeric_filters:
@@ -274,6 +283,7 @@ def tool_select_elements_by_filter(
             resolved_name = resolved_numeric_attrs.get(field_name)
             if resolved_name:
                 expression = TemplateFilterExpressions.CustomNumber(resolved_name)
+                filter_option = _to_filter_option(filter_option, NumericFilterOption)
                 filter_groups.append(build_filter_group(expression, filter_option, is_numeric=True))
 
     if len(filter_groups) == 1:

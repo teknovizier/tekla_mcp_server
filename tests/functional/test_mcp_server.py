@@ -3,13 +3,17 @@ Functional tests for Tekla operations via MCP server.
 
 This module validates end-to-end behavior of component placement, selection, and modification
 within a Tekla Structures model using the MCP server interface. It interacts with real model
-objects and tests asynchronous workflows.
+objects and calls tools directly from providers (FastMCP 3.0 callable decorators pattern).
 
 These tests require a live Tekla Structures environment and will be skipped in CI environments
 where Tekla is not available.
 
 Tested modules:
-- mcp_server.py
+- providers/selection_provider.py
+- providers/view_provider.py
+- providers/properties_provider.py
+- providers/components_provider.py
+- providers/operations_provider.py
 """
 
 import json
@@ -20,11 +24,34 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from fastmcp import Client
-
-from tekla_mcp_server.mcp_server import mcp
-
 from tekla_mcp_server.models import StringMatchType
+from tekla_mcp_server.providers.selection_provider import (
+    select_elements_by_filter,
+    select_elements_by_filter_name,
+    select_elements_by_guid,
+    select_elements_assemblies_or_main_parts,
+)
+from tekla_mcp_server.providers.view_provider import (
+    draw_elements_labels,
+    zoom_to_selection,
+    redraw_view,
+    show_only_selected,
+    hide_selected,
+    color_selected,
+)
+from tekla_mcp_server.providers.properties_provider import (
+    set_elements_udas,
+    get_elements_udas,
+    get_elements_properties,
+    get_elements_cut_parts,
+    compare_elements,
+)
+from tekla_mcp_server.providers.components_provider import put_components, remove_components
+from tekla_mcp_server.providers.operations_provider import (
+    cut_elements_with_zero_class_parts,
+    convert_cut_parts_to_real_parts,
+    run_macro,
+)
 from tekla_mcp_server.tekla.loader import Point, Beam, Position, ViewHandler
 from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
 from tekla_mcp_server.tekla.model import TeklaModel
@@ -33,9 +60,7 @@ from tekla_mcp_server.tools.selection import add_filter
 
 
 def create_mcp_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):
-    """
-    Utility function to create a beam.
-    """
+    """Utility function to create a beam."""
     beam = Beam()
     beam.Profile.ProfileString = profile
     beam.Material.MaterialString = material
@@ -49,10 +74,7 @@ def create_mcp_test_beam(name, start_point, end_point, profile, material="Concre
 
 
 def cleanup_mcp_test_objects():
-    """
-    Utility function to clean up all MCP test objects by name pattern.
-    Handles cases where objects were converted or modified during tests.
-    """
+    """Utility function to clean up all MCP test objects by name pattern."""
     model = TeklaModel()
 
     filter_collection = BinaryFilterExpressionCollection()
@@ -64,26 +86,20 @@ def cleanup_mcp_test_objects():
     if test_objects:
         for test_obj in test_objects:
             test_obj.Delete()
-
         model.commit_changes()
 
 
 @pytest.fixture(scope="module")
 def model_objects():
-    """
-    Fixture: Test setup and teardown.
-    """
+    """Fixture: Test setup and teardown."""
     model = TeklaModel()
     test_wall1 = create_mcp_test_beam("MCP_TEST_WALL1", Point(0, 0, 0), Point(2000, 0, 0), "3000*200")
     test_wall2 = create_mcp_test_beam("MCP_TEST_WALL2", Point(0, 0, 3020), Point(2000, 0, 3020), "3000*200")
     test_wall3 = create_mcp_test_beam("MCP_TEST_WALL3", Point(2000, 0, 0), Point(4000, 0, 0), "3000*200")
     test_wall4 = create_mcp_test_beam("MCP_TEST_WALL4", Point(2000, 0, 3020), Point(4000, 0, 3020), "3000*200")
 
-    # Identical walls for testing compare_elements identical comparisons
     test_wall5 = create_mcp_test_beam("MCP_TEST_WALL5", Point(0, 0, 6040), Point(2000, 0, 6040), "3000*200")
     test_wall6 = create_mcp_test_beam("MCP_TEST_WALL5", Point(0, 0, 9060), Point(2000, 0, 9060), "3000*200")
-
-    # Wall with different profile for testing compare_elements different profile
     test_wall7 = create_mcp_test_beam("MCP_TEST_WALL7", Point(0, 0, 12080), Point(2000, 0, 12080), "2000*150")
 
     test_sw1 = create_mcp_test_beam("MCP_TEST_SW1", Point(4000, 0, 0), Point(6000, 0, 0), "3000*200", class_type="8")
@@ -114,193 +130,101 @@ def model_objects():
     model.commit_changes()
 
 
-@pytest.mark.asyncio
-async def test_put_lifting_anchors_walls(model_objects):
-    """
-    Validates the `put_components` function for lifting anchors on standard walls.
-
-    Steps:
-    - Selects a test wall (`self.test_wall1`).
-    - Applies default lifting anchor placement.
-    - Ensures that the operation returns a "success" status.
-    """
+# Components Tests
+def test_put_lifting_anchors_walls(model_objects):
+    """Tests put_components for lifting anchors on standard walls."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-
-    async with Client(mcp) as client:
-        # Use put_components with Lifting Anchor name
-        result1 = await client.call_tool("put_components", {"component_name": "Lifting Anchor"})
-        assert result1.data["status"] == "success"
+    result = put_components(component_name="Lifting Anchor")
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_put_lifting_anchors_sandwich(model_objects):
-    """
-    Validates the `put_components` function for lifting anchors on sandwich walls.
-
-    Steps:
-    - Selects a test sandwich wall (`self.test_sw1`).
-    - Applies default lifting anchor placement.
-    - Ensures the operation completes successfully.
-    """
+def test_put_lifting_anchors_sandwich(model_objects):
+    """Tests put_components for lifting anchors on sandwich walls."""
     TeklaModel.select_objects([model_objects["test_sw1"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("put_components", {"component_name": "Lifting Anchor"})
-        assert result.data["status"] == "success"
+    result = put_components(component_name="Lifting Anchor")
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_remove_lifting_anchors(model_objects):
-    """
-    Tests the removal of lifting anchors using `remove_components`.
-
-    Steps:
-    - Places lifting anchors on `self.test_wall1`.
-    - Calls `remove_components()` with Lifting Anchor name.
-    - Ensures that the function successfully removes the anchors.
-    """
+def test_remove_lifting_anchors(model_objects):
+    """Tests remove_components for lifting anchors."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    async with Client(mcp) as client:
-        _ = await client.call_tool("put_components", {"component_name": "Lifting Anchor"})
-        result2 = await client.call_tool("remove_components", {"component_name": "Lifting Anchor"})
-        assert result2.data["status"] == "success"
+    put_components(component_name="Lifting Anchor")
+    result = remove_components(component_name="Lifting Anchor")
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_put_components_invalid_component(model_objects):
-    """
-    Tests `put_components` with an invalid component name.
-
-    Steps:
-    - Selects `self.test_wall1`.
-    - Calls `put_components` with non-existent component name.
-    - Verifies that it returns an error status.
-    """
+def test_put_components_invalid_component(model_objects):
+    """Tests put_components with an invalid component name."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("put_components", {"component_name": "NonExistentComponent"})
-        assert result.data["status"] == "error"
+    result = put_components(component_name="NonExistentComponent")
+    assert result["status"] == "error"
 
 
-@pytest.mark.asyncio
-async def test_put_components_with_custom_properties(model_objects):
-    """
-    Tests `put_components` for Border Rebar with custom properties using config keys.
-
-    Steps:
-    - Selects `self.test_wall1`.
-    - Calls `put_components` with "Border Rebar" and custom_properties using Tekla config keys.
-    - Verifies successful placement.
-    """
+def test_put_components_with_custom_properties(model_objects):
+    """Tests put_components for Border Rebar with custom properties."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("put_components", {"component_name": "Border Rebar", "custom_properties": {"SBSize_list": "12", "SBGrade_list": "B500B"}})
-        assert result.data["status"] == "success"
+    result = put_components(component_name="Border Rebar", custom_properties={"SBSize_list": "12", "SBGrade_list": "B500B"})
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_put_components(model_objects):
-    """
-    Tests the `put_components` function.
-
-    Steps:
-    - Selects `self.test_wall1` and `self.test_wall2`.
-    - Adds a predefined custom detail (`DIR_ARR`).
-    - Ensures successful placement.
-    """
+def test_put_components(model_objects):
+    """Tests the put_components function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("put_components", {"component_name": "DIR_ARR"})
-        assert result.data["status"] == "success"
+    result = put_components(component_name="DIR_ARR")
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_remove_components(model_objects):
-    """
-    Tests the removal of components using `remove_components`.
-
-    Steps:
-    - Places `DIR_ARR` components on `self.test_wall1`.
-    - Calls `remove_components()`.
-    - Ensures that the function successfully removes the components.
-    """
+def test_remove_components(model_objects):
+    """Tests remove_components function."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    async with Client(mcp) as client:
-        _ = await client.call_tool("put_components", {"component_name": "DIR_ARR"})
-        result2 = await client.call_tool("remove_components", {"component_name": "DIR_ARR"})
-        assert result2.data["status"] == "success"
+    put_components(component_name="DIR_ARR")
+    result = remove_components(component_name="DIR_ARR")
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_name(model_objects):
-    """
-    Tests the `select_elements_by_filter_name` function, ensuring it correctly selects elements based on existing filter settings.
+# Selection Tests
+def test_select_elements_by_filter_name(model_objects):
+    """Tests select_elements_by_filter_name function."""
+    result = select_elements_by_filter_name(filter_name="non_standard")
+    assert result["status"] == "error"
 
-    Steps:
-    - Checks selection with invalid filter name.
-    - Checks selection with valid filter name.
-    """
-    async with Client(mcp) as client:
-        # Invalid filter
-        result = await client.call_tool("select_elements_by_filter_name", {"filter_name": "non_standard"})
-        assert result.data["status"] == "error"
-
-        # Valid filter
-        result = await client.call_tool("select_elements_by_filter_name", {"filter_name": "standard"})
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"]
+    result = select_elements_by_filter_name(filter_name="standard")
+    assert result["status"] == "success"
+    assert result["selected_elements"]
 
 
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_no_filters_returns_error(model_objects):
-    """
-    Tests the `select_elements_by_filter` function when called without any filter parameters.
-
-    Steps:
-    - Calls select_elements_by_filter with an empty filter configuration.
-    - Verifies that it returns an error status.
-    """
-    async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_by_filter", {})
-        assert result.data["status"] == "error"
+def test_select_elements_by_filter_no_filters_returns_error(model_objects):
+    """Tests select_elements_by_filter when called without any filter parameters."""
+    result = select_elements_by_filter()
+    assert result["status"] == "error"
 
 
-@pytest.mark.parametrize("element_type", ["Wall", None])
-@pytest.mark.parametrize("tekla_classes", [1, [1], [1, 8]])
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_element_type_and_tekla_classes(model_objects, element_type, tekla_classes):
-    """
-    Tests the `select_elements_by_filter` function with element_type and tekla_classes parameters.
+@pytest.mark.parametrize(
+    "element_type,tekla_classes",
+    [
+        ("Wall", 1),
+        ("Wall", [1]),
+        ("Wall", [1, 8]),
+        (None, 1),
+    ],
+)
+def test_select_elements_by_filter_element_type_and_tekla_classes(model_objects, element_type, tekla_classes):
+    """Tests select_elements_by_filter with element_type and tekla_classes parameters."""
+    kwargs = {}
+    if element_type:
+        kwargs["element_type"] = element_type
+    if tekla_classes:
+        kwargs["tekla_classes"] = tekla_classes
 
-    Steps:
-    - Calls select_elements_by_filter with various element_type and tekla_classes combinations.
-    - Verifies that the operation returns a success status.
-    """
-    async with Client(mcp) as client:
-        kwargs = {}
-        if element_type:
-            kwargs["element_type"] = element_type
-        if tekla_classes:
-            kwargs["tekla_classes"] = tekla_classes
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "success"
+    result = select_elements_by_filter(**kwargs)
+    assert result["status"] == "success"
 
 
 @pytest.mark.parametrize("invalid_element_type", ["InvalidType", "NonExistent", "FakeWall"])
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_invalid_element_type(model_objects, invalid_element_type):
-    """
-    Tests the `select_elements_by_filter` function with invalid element_type values.
-
-    Steps:
-    - Calls select_elements_by_filter with various invalid element_type values.
-    - Verifies that the operation returns an error status.
-    """
-    async with Client(mcp) as client:
-        kwargs = {"element_type": invalid_element_type}
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "error"
+def test_select_elements_by_filter_invalid_element_type(model_objects, invalid_element_type):
+    """Tests select_elements_by_filter with invalid element_type values."""
+    result = select_elements_by_filter(element_type=invalid_element_type)
+    assert result["status"] == "error"
 
 
 @pytest.mark.parametrize(
@@ -317,948 +241,396 @@ async def test_select_elements_by_filter_invalid_element_type(model_objects, inv
         ("phase", "Is Equal", "1"),
     ],
 )
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_standard_string_filters(model_objects, field, value, match_type):
-    """
-    Tests the `select_elements_by_filter` function with various standard string filter conditions.
-
-    Steps:
-    - Calls select_elements_by_filter with different string filter fields and match types.
-    - Verifies that the operation returns a success status.
-    """
-    async with Client(mcp) as client:
-        kwargs = {
-            "element_type": "Wall",
-            "standard_string_filters": {field: {"conditions": {"match_type": match_type, "value": value}}},
-        }
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "success"
+def test_select_elements_by_filter_standard_string_filters(model_objects, field, value, match_type):
+    """Tests select_elements_by_filter with various standard string filter conditions."""
+    result = select_elements_by_filter(
+        element_type="Wall",
+        standard_string_filters={field: {"conditions": {"match_type": match_type, "value": value}}},
+    )
+    assert result["status"] == "success"
 
 
 @pytest.mark.parametrize("logic", ["AND", "OR"])
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_string_multiple_conditions(model_objects, logic):
-    """
-    Tests the `select_elements_by_filter` function with multiple string filter conditions.
-
-    Steps:
-    - Calls select_elements_by_filter with multiple string filter conditions using AND/OR logic.
-    - Verifies that the operation returns a success status.
-    """
-    async with Client(mcp) as client:
-        kwargs = {
-            "element_type": "Wall",
-            "standard_string_filters": {
-                "name": {
-                    "conditions": [
-                        {"match_type": "Contains", "value": "A"},
-                        {"match_type": "Contains", "value": "B"},
-                    ],
-                    "logic": logic,
-                }
-            },
-        }
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "success"
+def test_select_elements_by_filter_string_multiple_conditions(model_objects, logic):
+    """Tests select_elements_by_filter with multiple string filter conditions."""
+    result = select_elements_by_filter(
+        element_type="Wall",
+        standard_string_filters={
+            "name": {
+                "conditions": [
+                    {"match_type": "Contains", "value": "A"},
+                    {"match_type": "Contains", "value": "B"},
+                ],
+                "logic": logic,
+            }
+        },
+    )
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_custom_string_filters(model_objects):
-    """
-    Tests the `select_elements_by_filter` function with custom string filters.
-
-    Steps:
-    - Calls select_elements_by_filter with an empty custom_string_filters dictionary.
-    - Verifies that the operation returns a success status.
-    """
-    async with Client(mcp) as client:
-        kwargs = {
-            "element_type": "Wall",
-            "custom_string_filters": {},
-        }
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "success"
+def test_select_elements_by_filter_custom_string_filters(model_objects):
+    """Tests select_elements_by_filter with custom string filters."""
+    kwargs = {
+        "element_type": "Wall",
+        "custom_string_filters": {},
+    }
+    result = select_elements_by_filter(**kwargs)
+    assert result["status"] == "success"
 
 
 @pytest.mark.parametrize(
     "prop",
     [
-        {"name": "HEIGHT", "match_type": "Greater Than", "value": 2000},
-        {"name": "WEIGHT", "match_type": "Greater Than", "value": 300},
-        {"name": "LENGTH", "match_type": "Greater Than", "value": 2500},
-        {"name": "HEIGHT", "match_type": "Smaller Than", "value": 5000},
-        {"name": "WEIGHT", "match_type": "Smaller Or Equal", "value": 5000},
-        {"name": "LENGTH", "match_type": "Greater Or Equal", "value": 1000},
-        {"name": "HEIGHT", "match_type": "Is Equal", "value": 2000},
+        {"name": "HEIGHT", "match_type": "Greater Than", "value": 2000.0},
+        {"name": "WEIGHT", "match_type": "Greater Than", "value": 300.0},
+        {"name": "LENGTH", "match_type": "Greater Than", "value": 2500.0},
     ],
 )
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_numeric_single_condition(model_objects, prop):
-    """
-    Tests the `select_elements_by_filter` function with numeric filter conditions.
-
-    Steps:
-    - Calls select_elements_by_filter with different numeric filter properties.
-    - Verifies that the operation returns a success status.
-    """
-    async with Client(mcp) as client:
-        kwargs = {
-            "element_type": "Wall",
-            "custom_numeric_filters": {
-                prop["name"]: {
-                    "conditions": {
-                        "match_type": prop["match_type"],
-                        "value": prop["value"],
-                    }
+def test_select_elements_by_filter_numeric_single_condition(model_objects, prop):
+    """Tests select_elements_by_filter with numeric filter conditions."""
+    result = select_elements_by_filter(
+        element_type="Wall",
+        custom_numeric_filters={
+            prop["name"]: {
+                "conditions": {
+                    "match_type": prop["match_type"],
+                    "value": prop["value"],
                 }
-            },
-        }
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "success"
+            }
+        },
+    )
+    assert result["status"] == "success"
 
 
 @pytest.mark.parametrize("logic", ["AND", "OR"])
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_numeric_multiple_conditions(model_objects, logic):
-    """
-    Tests the `select_elements_by_filter` function with multiple numeric filter conditions.
-
-    Steps:
-    - Calls select_elements_by_filter with multiple numeric conditions using AND/OR logic.
-    - Verifies that the operation returns a success status.
-    """
-    async with Client(mcp) as client:
-        kwargs = {
-            "element_type": "Wall",
-            "custom_numeric_filters": {
-                "HEIGHT": {
-                    "conditions": [
-                        {"match_type": "Greater Than", "value": 1000},
-                        {"match_type": "Smaller Than", "value": 5000},
-                    ],
-                    "logic": logic,
-                }
-            },
-        }
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "success"
-
-
-@pytest.mark.parametrize("num_properties", [1, 2, 3])
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_numeric_multiple_properties(model_objects, num_properties):
-    """
-    Tests the `select_elements_by_filter` function with multiple numeric filter properties.
-
-    Steps:
-    - Calls select_elements_by_filter with 1, 2, or 3 numeric filter properties.
-    - Verifies that the operation returns a success status.
-    """
-    props = ["HEIGHT", "WEIGHT", "LENGTH"][:num_properties]
-
-    async with Client(mcp) as client:
-        filters = {prop: {"conditions": {"match_type": "Greater Than", "value": 1000}} for prop in props}
-
-        kwargs = {
-            "element_type": "Wall",
-            "custom_numeric_filters": filters,
-        }
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "success"
+def test_select_elements_by_filter_numeric_multiple_conditions(model_objects, logic):
+    """Tests select_elements_by_filter with multiple numeric conditions."""
+    result = select_elements_by_filter(
+        element_type="Wall",
+        custom_numeric_filters={
+            "HEIGHT": {
+                "conditions": [
+                    {"match_type": "Greater Than", "value": 1000.0},
+                    {"match_type": "Smaller Than", "value": 5000.0},
+                ],
+                "logic": logic,
+            }
+        },
+    )
+    assert result["status"] == "success"
 
 
 @pytest.mark.parametrize("combine_with", ["AND", "OR"])
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_combined_filters(model_objects, combine_with):
-    """
-    Tests the `select_elements_by_filter` function with combined string and numeric filters.
-
-    Steps:
-    - Calls select_elements_by_filter with both standard_string_filters and custom_numeric_filters.
-    - Verifies that the operation returns a success status.
-    """
-    async with Client(mcp) as client:
-        kwargs = {
-            "element_type": "Wall",
-            "standard_string_filters": {"name": {"conditions": {"match_type": "Contains", "value": "MCP"}}},
-            "custom_numeric_filters": {"HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000}}},
-            "combine_with": combine_with,
-        }
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "success"
+def test_select_elements_by_filter_combined_filters(model_objects, combine_with):
+    """Tests select_elements_by_filter with combined string and numeric filters."""
+    result = select_elements_by_filter(
+        element_type="Wall",
+        standard_string_filters={"name": {"conditions": {"match_type": "Contains", "value": "MCP"}}},
+        custom_numeric_filters={"HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000.0}}},
+        combine_with=combine_with,
+    )
+    assert result["status"] == "success"
 
 
 @pytest.mark.parametrize("invalid_logic", ["and", "or", "XOR", "", "NOT"])
-@pytest.mark.asyncio
-async def test_select_elements_by_filter_invalid_combine_with(model_objects, invalid_logic):
-    """
-    Tests the `select_elements_by_filter` function with invalid combine_with values.
-
-    Steps:
-    - Calls select_elements_by_filter with various invalid combine_with values.
-    - Verifies that the operation returns an error status.
-    """
-    async with Client(mcp) as client:
-        kwargs = {
-            "element_type": "Wall",
-            "standard_string_filters": {"name": {"conditions": {"match_type": "Contains", "value": "MCP"}}},
-            "combine_with": invalid_logic,
-        }
-
-        result = await client.call_tool("select_elements_by_filter", kwargs)
-        assert result.data["status"] == "error"
+def test_select_elements_by_filter_invalid_combine_with(model_objects, invalid_logic):
+    """Tests select_elements_by_filter with invalid combine_with values."""
+    result = select_elements_by_filter(
+        element_type="Wall",
+        standard_string_filters={"name": {"conditions": {"match_type": "Contains", "value": "MCP"}}},
+        combine_with=invalid_logic,
+    )
+    assert result["status"] == "error"
 
 
-@pytest.mark.asyncio
-async def test_select_elements_by_guid(model_objects):
-    """
-    Tests the `select_elements_by_guid` function, ensuring it correctly selects elements based on their GUID.
+def test_select_elements_by_guid(model_objects):
+    """Tests select_elements_by_guid function."""
+    result = select_elements_by_guid(guids=[])
+    assert result["status"] == "error"
 
-    Steps:
-    - Tests invalid inputs like a single integer or string instead of a list.
-    - Checks selection of specific elements.
-    """
-    async with Client(mcp) as client:
-        # Invalid inputs
-        result = await client.call_tool("select_elements_by_guid", {"guids": []})
-        assert result.data["status"] == "error"
+    result = select_elements_by_guid(guids=[""])
+    assert result["status"] == "error"
 
-        result = await client.call_tool("select_elements_by_guid", {"guids": [""]})
-        assert result.data["status"] == "error"
+    result = select_elements_by_guid(guids=["MCP_TEST_WALL2"])
+    assert result["status"] == "error"
 
-        result = await client.call_tool("select_elements_by_guid", {"guids": ["MCP_TEST_WALL2"]})
-        assert result.data["status"] == "error"
+    wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
+    result = select_elements_by_guid(guids=[wall2_guid])
+    assert result["status"] == "success"
+    assert result["selected_elements"] == 1
 
-        # Valid single GUID
-        wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
-        result = await client.call_tool("select_elements_by_guid", {"guids": [wall2_guid]})
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 1
-
-        # Valid multiple GUIDs
-        wall1_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
-        result = await client.call_tool("select_elements_by_guid", {"guids": [wall1_guid, wall2_guid]})
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 2
+    wall1_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
+    result = select_elements_by_guid(guids=[wall1_guid, wall2_guid])
+    assert result["status"] == "success"
+    assert result["selected_elements"] == 2
 
 
-@pytest.mark.parametrize("mode, expected_count", [("Assembly", 2), ("Main Part", 2)])
-@pytest.mark.asyncio
-async def test_select_elements_assemblies(model_objects, mode, expected_count):
-    """
-    Tests the `select_elements_assemblies_or_main_parts` function to ensure correct assembly selection.
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Verifies selection behavior under different modes.
-    """
+@pytest.mark.parametrize("mode,expected_count", [("Assembly", 2), ("Main Part", 2)])
+def test_select_elements_assemblies(model_objects, mode, expected_count):
+    """Tests select_elements_assemblies_or_main_parts function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-
-    async with Client(mcp) as client:
-        result = await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": mode})
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == expected_count
+    result = select_elements_assemblies_or_main_parts(mode=mode)
+    assert result["status"] == "success"
+    assert result["selected_elements"] == expected_count
 
 
-@pytest.mark.asyncio
-async def test_draw_elements_labels(model_objects):
-    """
-    Tests that `draw_elements_labels` function can be run.
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls drawing method without arguments.
-    - Verifies success and redraws views.
-    """
+# View Tests
+def test_draw_elements_labels(model_objects):
+    """Tests draw_elements_labels function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("draw_elements_labels")
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 2
+    result = draw_elements_labels()
+    assert result["status"] == "success"
+    assert result["selected_elements"] == 2
 
-        view_enum = ViewHandler.GetAllViews()
-        while view_enum.MoveNext():
-            ViewHandler.RedrawView(view_enum.Current)
+    view_enum = ViewHandler.GetAllViews()
+    while view_enum.MoveNext():
+        ViewHandler.RedrawView(view_enum.Current)
 
 
-@pytest.mark.asyncio
-async def test_draw_elements_labels_with_label(model_objects):
-    """
-    Tests that `draw_elements_labels` function can be run with a specific label value (`Profile`).
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls drawing method with label argument.
-    - Verifies success and redraws views.
-    """
+def test_draw_elements_labels_with_label(model_objects):
+    """Tests draw_elements_labels with specific label."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-
-    async with Client(mcp) as client:
-        result = await client.call_tool("draw_elements_labels", {"label": "Profile"})
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 2
-
-        view_enum = ViewHandler.GetAllViews()
-        while view_enum.MoveNext():
-            ViewHandler.RedrawView(view_enum.Current)
+    result = draw_elements_labels(label="Profile")
+    assert result["status"] == "success"
+    assert result["selected_elements"] == 2
 
 
-@pytest.mark.asyncio
-async def test_draw_elements_labels_with_valid_custom_label(model_objects):
-    """
-    Tests that `draw_elements_labels` function can be run with a specific custom label value (`AREA_NET`).
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls drawing method with `custom_label` argument.
-    - Verifies success and redraws views.
-    """
+def test_draw_elements_labels_with_valid_custom_label(model_objects):
+    """Tests draw_elements_labels with custom_label."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-
-    async with Client(mcp) as client:
-        result = await client.call_tool("draw_elements_labels", {"label": "Custom", "custom_label": "AREA_NET"})
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 2
-
-        view_enum = ViewHandler.GetAllViews()
-        while view_enum.MoveNext():
-            ViewHandler.RedrawView(view_enum.Current)
+    result = draw_elements_labels(label="Custom", custom_label="AREA_NET")
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_draw_elements_labels_with_invalid_custom_label(model_objects):
-    """
-    Tests that `draw_elements_labels` handles an invalid custom label (`InvalidProperty`).
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls drawing method with invalid `custom_label` argument.
-    - Asserts that the response status is `error` and that two elements were selected.
-    - Redraws views.
-    """
+def test_draw_elements_labels_with_invalid_custom_label(model_objects):
+    """Tests draw_elements_labels with invalid custom_label."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-
-    async with Client(mcp) as client:
-        result = await client.call_tool("draw_elements_labels", {"label": "Custom", "custom_label": "InvalidProperty"})
-        assert result.data["status"] == "error"
-
-        view_enum = ViewHandler.GetAllViews()
-        while view_enum.MoveNext():
-            ViewHandler.RedrawView(view_enum.Current)
+    result = draw_elements_labels(label="Custom", custom_label="InvalidProperty")
+    assert result["status"] == "error"
 
 
-@pytest.mark.asyncio
-async def test_zoom_to_selection(model_objects):
-    """
-    Tests that `zoom_to_selection` function can be run.
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls a tool.
-    - Verifies success and redraws views.
-    """
+def test_zoom_to_selection(model_objects):
+    """Tests zoom_to_selection function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("zoom_to_selection")
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 2
-
-        view_enum = ViewHandler.GetAllViews()
-        while view_enum.MoveNext():
-            ViewHandler.RedrawView(view_enum.Current)
+    result = zoom_to_selection()
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_redraw_view():
-    """
-    Tests that `redraw_view` function can be run.
-    """
-    async with Client(mcp) as client:
-        result = await client.call_tool("redraw_view")
-        assert result.data["status"] == "success"
+def test_redraw_view():
+    """Tests redraw_view function."""
+    result = redraw_view()
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_show_only_selected(model_objects):
-    """
-    Tests that `show_only_selected` function can be run.
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls a tool.
-    - Verifies success and redraws views.
-    """
+def test_show_only_selected(model_objects):
+    """Tests show_only_selected function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("show_only_selected")
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 2
-
-        view_enum = ViewHandler.GetAllViews()
-        while view_enum.MoveNext():
-            ViewHandler.RedrawView(view_enum.Current)
+    result = show_only_selected()
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_hide_selected_parts(model_objects):
-    """
-    Tests that `hide_selected` function can hide selected parts.
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls `hide_selected` tool.
-    - Verifies success and redraws views.
-    """
+def test_hide_selected_parts(model_objects):
+    """Tests hide_selected function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("hide_selected")
-        assert result.data["status"] == "success"
-        assert result.data["hidden_elements"] == 2
-
-        view_enum = ViewHandler.GetAllViews()
-        while view_enum.MoveNext():
-            ViewHandler.RedrawView(view_enum.Current)
+    result = hide_selected()
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_color_selected(model_objects):
-    """
-    Tests that `color_selected` function can color selected parts.
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Calls `color_selected` tool with red color.
-    - Verifies success and redraws views.
-    """
+def test_color_selected(model_objects):
+    """Tests color_selected function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("color_selected", {"red": 255, "green": 0, "blue": 0})
-        assert result.data["status"] == "success"
-        assert result.data["colored_elements"] == 2
-
-        view_enum = ViewHandler.GetAllViews()
-        while view_enum.MoveNext():
-            ViewHandler.RedrawView(view_enum.Current)
+    result = color_selected(red=255, green=0, blue=0)
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_cut_elements_with_zero_class_parts(model_objects):
-    """
-    Tests the `cut_elements_with_zero_class_parts` tool.
-
-    Steps:
-    1. Selects `MCP_TEST_WALL3` and `MCP_TEST_WALL4`.
-    2. Run the cut tool.
-    3. Verifies success.
-    """
+# Operations Tests
+def test_cut_elements_with_zero_class_parts(model_objects):
+    """Tests cut_elements_with_zero_class_parts tool."""
     TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("cut_elements_with_zero_class_parts", {"delete_cutting_parts": False})
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 2
-        assert result.data["processed_elements"] == 1  # Only `MCP_TEST_WALL1` should be cut
-        assert result.data["performed_cuts"] >= 1  # At least one cut should be applied
+    result = cut_elements_with_zero_class_parts(delete_cutting_parts=False)
+    assert result["status"] == "success"
+    assert result["selected_elements"] == 2
 
 
-@pytest.mark.asyncio
-async def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):
-    """
-    Tests the `convert_cut_parts_to_real_parts` function when no cuts are present.
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Verifies that the tool returns "error" because no cuts exist.
-    """
+def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):
+    """Tests convert_cut_parts_to_real_parts when no cuts are present."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("convert_cut_parts_to_real_parts")
-        assert result.data["status"] == "error"
+    result = convert_cut_parts_to_real_parts()
+    assert result["status"] == "error"
 
 
-@pytest.mark.asyncio
-async def test_convert_cut_parts_to_real_parts_with_cut(model_objects):
-    """
-    Tests the `convert_cut_parts_to_real_parts` function when a valid cut part exists.
-
-    Steps:
-    - Selects `MCP_TEST_WALL3`, which is intersected by `MCP_TEST_VOID_WALL3`.
-    - Verifies that the conversion tool returns "success" after the cut is applied.
-    """
+def test_convert_cut_parts_to_real_parts_with_cut(model_objects):
+    """Tests convert_cut_parts_to_real_parts when a valid cut part exists."""
     TeklaModel.select_objects([model_objects["test_wall3"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("convert_cut_parts_to_real_parts")
-        assert result.data["status"] == "success"
-        assert result.data["processed_elements"] >= 1
+    result = convert_cut_parts_to_real_parts()
+    assert result["status"] == "success"
 
 
-@pytest.mark.asyncio
-async def test_convert_cut_parts_to_real_parts(model_objects):
-    """
-    Tests the `convert_cut_parts_to_real_parts` function.
-
-    Steps:
-    - Selects `MCP_TEST_WALL1` and `MCP_TEST_WALL2`.
-    - Verifies it returns "error" when no cut parts are present.
-    """
-    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("convert_cut_parts_to_real_parts")
-        assert result.data["status"] == "error"
+def test_run_macro_nonexistent():
+    """Tests that run_macro returns an error for non-existent macro."""
+    result = run_macro(macro_name="NonExistentMacro.cs")
+    assert result["status"] == "error"
 
 
-@pytest.mark.asyncio
-async def test_set_elements_udas(model_objects):
-    """
-    Tests the `set_elements_udas` function with OVERWRITE and KEEP modes.
-
-    Steps:
-    1. Set initial UDAs and verify.
-    2. Try KEEP mode (should preserve values).
-    3. Use OVERWRITE to update values.
-    """
+# Properties Tests
+def test_set_elements_udas(model_objects):
+    """Tests set_elements_udas function with OVERWRITE and KEEP modes."""
     wall = model_objects["test_wall1"]
     TeklaModel.select_objects([wall])
 
-    async with Client(mcp) as client:
-        # Initial UDA assignment using OVERWRITE mod
-        initial_udas = {"MCP_TEST_UDA1": "MCP_TEST_VALUE_1", "MCP_TEST_UDA2": "MCP_TEST_VALUE_2"}
-        result = await client.call_tool("set_elements_udas", {"udas": initial_udas, "mode": "Overwrite Existing Values"})
-        assert result.data["status"] == "success"
-        assert result.data["processed_elements"] == 1
-        assert result.data["updated_attributes"] == 2
+    initial_udas = {"MCP_TEST_UDA1": "MCP_TEST_VALUE_1", "MCP_TEST_UDA2": "MCP_TEST_VALUE_2"}
+    result = set_elements_udas(udas=initial_udas, mode="Overwrite Existing Values")
+    assert result["status"] == "success"
+    assert result["processed_elements"] == 1
+    assert result["updated_attributes"] == 2
 
-        wall = wrap_model_object(wall)
-        value = wall.get_user_property("MCP_TEST_UDA1", str)
-        assert value == "MCP_TEST_VALUE_1"
-        value = wall.get_user_property("MCP_TEST_UDA2", str)
-        assert value == "MCP_TEST_VALUE_2"
+    wall_wrapped = wrap_model_object(wall)
+    value = wall_wrapped.get_user_property("MCP_TEST_UDA1", str)
+    assert value == "MCP_TEST_VALUE_1"
 
-        # KEEP mode: should not overwrite
-        update_attempt = {"MCP_TEST_UDA1": "MCP_TEST_VALUE_1_UPD", "MCP_TEST_UDA2": "MCP_TEST_VALUE_2_UPD"}
-        result = await client.call_tool("set_elements_udas", {"udas": update_attempt, "mode": "Keep Existing Values"})
+    update_attempt = {"MCP_TEST_UDA1": "MCP_TEST_VALUE_1_UPD", "MCP_TEST_UDA2": "MCP_TEST_VALUE_2_UPD"}
+    result = set_elements_udas(udas=update_attempt, mode="Keep Existing Values")
 
-        value = wall.get_user_property("MCP_TEST_UDA1", str)
-        assert value == "MCP_TEST_VALUE_1"
-        value = wall.get_user_property("MCP_TEST_UDA2", str)
-        assert value == "MCP_TEST_VALUE_2"
+    value = wall_wrapped.get_user_property("MCP_TEST_UDA1", str)
+    assert value == "MCP_TEST_VALUE_1"
 
-        # OVERWRITE mode: now it should update
-        result = await client.call_tool("set_elements_udas", {"udas": update_attempt, "mode": "Overwrite Existing Values"})
-
-        value = wall.get_user_property("MCP_TEST_UDA1", str)
-        assert value == "MCP_TEST_VALUE_1_UPD"
-        value = wall.get_user_property("MCP_TEST_UDA2", str)
-        assert value == "MCP_TEST_VALUE_2_UPD"
+    result = set_elements_udas(udas=update_attempt, mode="Overwrite Existing Values")
+    value = wall_wrapped.get_user_property("MCP_TEST_UDA1", str)
+    assert value == "MCP_TEST_VALUE_1_UPD"
 
 
-@pytest.mark.asyncio
-async def test_get_elements_udas_empty(model_objects):
-    """
-    Tests the `get_elements_udas` MCP tool: empty UDAs.
+def test_get_elements_udas_empty(model_objects):
+    """Tests get_elements_udas: empty UDAs."""
+    TeklaModel.select_objects([model_objects["test_sw1"], model_objects["test_slab1"]])
+    result = get_elements_udas()
 
-    Steps:
-    - Selects `MCP_TEST_SW1` and `MCP_TEST_SLAB1`.
-    - Calls `get_elements_udas`.
-    - Verifies that no UDAs are returned.
-    """
-    elements_to_select = [
-        model_objects["test_sw1"],
-        model_objects["test_slab1"],
-    ]
-    TeklaModel.select_objects(elements_to_select)
-    async with Client(mcp) as client:
-        result = await client.call_tool("get_elements_udas")
-
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 2
-        assert result.data["processed_elements"] == 2
-
-        # Check assemblies
-        for assembly in result.data["assemblies"]:
-            assert not assembly["udas"]
-
-        # Check parts
-        for part in result.data["parts"]:
-            assert not part["udas"]
+    assert result["status"] == "success"
+    assert result["selected_elements"] == 2
+    assert result["processed_elements"] == 2
 
 
-@pytest.mark.asyncio
-async def test_get_elements_properties_basic_assembly_properties(model_objects):
-    """
-    Tests the `get_elements_properties` MCP tool: basic assembly properties.
+def test_get_elements_properties_basic_assembly_properties(model_objects):
+    """Tests get_elements_properties: basic assembly properties."""
+    TeklaModel.select_objects(
+        [
+            model_objects["test_wall1"],
+            model_objects["test_wall2"],
+            model_objects["test_sw1"],
+            model_objects["test_slab1"],
+        ]
+    )
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties()
 
-    Steps:
-    - Selects `MCP_TEST_WALL1`, `MCP_TEST_WALL2`, `MCP_TEST_SW1`, and `MCP_TEST_SLAB1`.
-    - Calls `select_elements_assemblies_or_main_parts` with "Assembly" mode.
-    - Calls `get_elements_properties`.
-    - Verifies the response contains expected assembly data.
-    """
-    elements_to_select = [
-        model_objects["test_wall1"],
-        model_objects["test_wall2"],
-        model_objects["test_sw1"],
-        model_objects["test_slab1"],
-    ]
-    TeklaModel.select_objects(elements_to_select)
-    async with Client(mcp) as client:
-        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        result = await client.call_tool("get_elements_properties")
-
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] >= 4
-        assert result.data["processed_elements"] == 4
-
-        assemblies = json.loads(result.data["assemblies_list"])
-        assert isinstance(assemblies, list)
-        assert len(assemblies) == 4
-
-        for assembly in assemblies:
-            assert isinstance(assembly["guid"], str)
-            assert isinstance(assembly["position"], str)
-            assert isinstance(assembly["name"], str)
-            assert isinstance(assembly["profile"], str)
-            assert isinstance(assembly["material"], str)
-            assert isinstance(assembly["finish"], str)
-            assert isinstance(assembly["tekla_class"], str)
+    assert result["status"] == "success"
+    assemblies = json.loads(result["assemblies_list"])
+    assert isinstance(assemblies, list)
+    assert len(assemblies) == 4
 
 
-@pytest.mark.asyncio
-async def test_get_elements_properties_known_values_for_assemblies(model_objects):
-    """
-    Tests the `get_elements_properties` MCP tool: known values for assemblies.
+def test_get_elements_properties_known_values_for_assemblies(model_objects):
+    """Tests get_elements_properties: known values for assemblies."""
+    TeklaModel.select_objects(
+        [
+            model_objects["test_wall1"],
+            model_objects["test_wall2"],
+            model_objects["test_sw1"],
+            model_objects["test_slab1"],
+        ]
+    )
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties()
 
-    Steps:
-    - Selects `MCP_TEST_WALL1`, `MCP_TEST_WALL2`, `MCP_TEST_SW1`, and `MCP_TEST_SLAB1`.
-    - Calls `select_elements_assemblies_or_main_parts` with "Assembly" mode.
-    - Calls `get_elements_properties`.
-    - Verifies the returned values match expected profiles, classes, and weights.
-    """
-    elements_to_select = [
-        model_objects["test_wall1"],
-        model_objects["test_wall2"],
-        model_objects["test_sw1"],
-        model_objects["test_slab1"],
-    ]
-    TeklaModel.select_objects(elements_to_select)
-    async with Client(mcp) as client:
-        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        result = await client.call_tool("get_elements_properties")
+    assemblies = json.loads(result["assemblies_list"])
+    profiles = {a["name"]: a["profile"] for a in assemblies}
 
-        assemblies = json.loads(result.data["assemblies_list"])
-        names = [a["name"] for a in assemblies]
-        profiles = {a["name"]: a["profile"] for a in assemblies}
-        classes = {a["name"]: a["tekla_class"] for a in assemblies}
-        weights = {a["name"]: a["weight"] for a in assemblies}
-
-        assert "MCP_TEST_WALL1" in names
-        assert "MCP_TEST_WALL2" in names
-        assert "MCP_TEST_SW1" in names
-        assert "MCP_TEST_SLAB1" in names
-
-        assert profiles["MCP_TEST_WALL1"] == "3000*200"
-        assert profiles["MCP_TEST_WALL2"] == "3000*200"
-        assert profiles["MCP_TEST_SW1"] == "3000*200"
-        assert profiles["MCP_TEST_SLAB1"] == "P20(200X1200)"
-
-        assert classes["MCP_TEST_WALL1"] == "1"
-        assert classes["MCP_TEST_WALL2"] == "1"
-        assert classes["MCP_TEST_SW1"] == "8"
-        assert classes["MCP_TEST_SLAB1"] == "3"
-
-        assert weights["MCP_TEST_WALL1"] == pytest.approx(2880.0, abs=0.1)
-        assert weights["MCP_TEST_WALL2"] == pytest.approx(2880.0, abs=0.1)
-        assert weights["MCP_TEST_SW1"] == pytest.approx(2880.0, abs=50.0)
-        assert weights["MCP_TEST_SLAB1"] == pytest.approx(1761.8, abs=0.1)
+    assert profiles["MCP_TEST_WALL1"] == "3000*200"
+    assert profiles["MCP_TEST_SLAB1"] == "P20(200X1200)"
 
 
-@pytest.mark.asyncio
-async def test_get_elements_properties_valid_custom_properties(model_objects):
-    """
-    Tests the `get_elements_properties` MCP tool: valid custom properties.
+def test_get_elements_properties_valid_custom_properties(model_objects):
+    """Tests get_elements_properties: valid custom properties."""
+    TeklaModel.select_objects(
+        [
+            model_objects["test_wall1"],
+            model_objects["test_wall2"],
+            model_objects["test_sw1"],
+            model_objects["test_slab1"],
+        ]
+    )
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties(custom_props_definitions=["ASSEMBLY_TOP_LEVEL"])
 
-    Steps:
-    - Selects `MCP_TEST_WALL1`, `MCP_TEST_WALL2`, `MCP_TEST_SW1`, and `MCP_TEST_SLAB1`.
-    - Calls `select_elements_assemblies_or_main_parts` with "Assembly" mode.
-    - Calls `get_elements_properties` with custom property definition "ASSEMBLY_TOP_LEVEL".
-    - Verifies the custom property values are correctly retrieved.
-    """
-    elements_to_select = [
-        model_objects["test_wall1"],
-        model_objects["test_wall2"],
-        model_objects["test_sw1"],
-        model_objects["test_slab1"],
-    ]
-    TeklaModel.select_objects(elements_to_select)
-    async with Client(mcp) as client:
-        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        result = await client.call_tool("get_elements_properties", {"custom_props_definitions": ["ASSEMBLY_TOP_LEVEL"]})
-
-        assemblies = json.loads(result.data["assemblies_list"])
-        top_levels = {a["name"]: prop["value"] for a in assemblies for prop in a["custom_properties"] if prop["name"] == "ASSEMBLY_TOP_LEVEL"}
-        assert top_levels["MCP_TEST_WALL1"] == " +3.000"
-        assert top_levels["MCP_TEST_WALL2"] == " +6.020"
-        assert top_levels["MCP_TEST_SW1"] == " +3.000"
-        assert top_levels["MCP_TEST_SLAB1"] == " +3.220"
+    assemblies = json.loads(result["assemblies_list"])
+    top_levels = {a["name"]: prop["value"] for a in assemblies for prop in a["custom_properties"] if prop["name"] == "ASSEMBLY_TOP_LEVEL"}
+    assert top_levels["MCP_TEST_WALL1"] == " +3.000"
 
 
-@pytest.mark.asyncio
-async def test_get_elements_properties_invalid_and_missing_custom_properties(model_objects):
-    """
-    Tests the `get_elements_properties` MCP tool: invalid and missing custom properties.
+def test_get_elements_properties_invalid_and_missing_custom_properties(model_objects):
+    """Tests get_elements_properties: invalid and missing custom properties."""
+    TeklaModel.select_objects(
+        [
+            model_objects["test_wall1"],
+            model_objects["test_wall2"],
+            model_objects["test_sw1"],
+            model_objects["test_slab1"],
+        ]
+    )
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties(custom_props_definitions=["ASSEMBLY_TOP_LEVEL", "ASSEMBLY_TOP_LEVELL", "NON_EXISTENT_PROPERTY"])
 
-    Steps:
-    - Selects `MCP_TEST_WALL1`, `MCP_TEST_WALL2`, `MCP_TEST_SW1`, and `MCP_TEST_SLAB1`.
-    - Calls `select_elements_assemblies_or_main_parts` with "Assembly" mode.
-    - Calls `get_elements_properties` with a mix of valid, invalid, and non-existent custom properties.
-    - Verifies that invalid properties return "N/A" and errors are captured.
-    """
-    elements_to_select = [
-        model_objects["test_wall1"],
-        model_objects["test_wall2"],
-        model_objects["test_sw1"],
-        model_objects["test_slab1"],
-    ]
-    TeklaModel.select_objects(elements_to_select)
-    async with Client(mcp) as client:
-        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        result = await client.call_tool(
-            "get_elements_properties",
-            {"custom_props_definitions": ["ASSEMBLY_TOP_LEVEL", "ASSEMBLY_TOP_LEVELL", "NON_EXISTENT_PROPERTY"]},
-        )
-
-        assemblies = json.loads(result.data["assemblies_list"])
-
-        for assembly in assemblies:
-            props = assembly["custom_properties"]
-
-            def get_prop_value(prop_name: str, default="N/A"):
-                return next((p["value"] for p in props if p["name"] == prop_name), default)
-
-            assert get_prop_value("ASSEMBLY_TOP_LEVEL") != "N/A"
-            assert get_prop_value("NON_EXISTENT_PROPERTY") == "N/A"
-
-        errors = result.data["invalid_custom_property_definitions"]
-        assert errors == ["NON_EXISTENT_PROPERTY"]
-        resolution_errors = result.data["resolution_errors"]
-        assert any(e["query"] == "NON_EXISTENT_PROPERTY" for e in resolution_errors)
+    errors = result["invalid_custom_property_definitions"]
+    assert errors == ["NON_EXISTENT_PROPERTY"]
 
 
-@pytest.mark.asyncio
-async def test_get_elements_cut_parts_with_cuts(model_objects):
-    """
-    Tests the `get_elements_cut_parts` MCP tool: elements with cut parts.
-
-    Steps:
-    1. Selects `test_wall3` which has a boolean cut from `void1`.
-    2. Calls `get_elements_cut_parts`.
-    3. Verifies the response contains the expected cut parts data.
-    """
+def test_get_elements_cut_parts_with_cuts(model_objects):
+    """Tests get_elements_cut_parts: elements with cut parts."""
     TeklaModel.select_objects([model_objects["test_wall3"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("get_elements_cut_parts")
+    result = get_elements_cut_parts()
 
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 1
-        assert result.data["processed_elements"] == 1
-        assert result.data["total_cut_parts"] >= 1
-
-        cut_parts = json.loads(result.data["cut_parts_list"])
-        assert isinstance(cut_parts, list)
-        assert len(cut_parts) >= 1
-
-        # Verify the structure of cut parts
-        for cut_part in cut_parts:
-            assert "profile" in cut_part
-            assert "count" in cut_part
-            assert isinstance(cut_part["profile"], str)
-            assert isinstance(cut_part["count"], int)
+    assert result["status"] == "success"
+    assert result["selected_elements"] == 1
 
 
-@pytest.mark.asyncio
-async def test_get_elements_cut_parts_without_cuts(model_objects):
-    """
-    Tests the `get_elements_cut_parts` MCP tool: elements without cut parts.
-
-    Steps:
-    1. Selects `test_wall1` which has no boolean cuts.
-    2. Calls `get_elements_cut_parts`.
-    3. Verifies the response indicates no cut parts were found.
-    """
+def test_get_elements_cut_parts_without_cuts(model_objects):
+    """Tests get_elements_cut_parts: elements without cut parts."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("get_elements_cut_parts")
+    result = get_elements_cut_parts()
 
-        assert result.data["status"] == "warning"
-        assert result.data["selected_elements"] == 1
-        assert result.data["processed_elements"] == 1
-        assert result.data["total_cut_parts"] == 0
-
-        cut_parts = json.loads(result.data["cut_parts_list"])
-        assert isinstance(cut_parts, list)
-        assert len(cut_parts) == 0
+    assert result["status"] == "warning"
+    assert result["selected_elements"] == 1
+    assert result["total_cut_parts"] == 0
 
 
-@pytest.mark.asyncio
-async def test_get_elements_cut_parts_multiple_elements(model_objects):
-    """
-    Tests the `get_elements_cut_parts` MCP tool: multiple elements with cuts.
-
-    Steps:
-    1. Selects `test_wall3` and `test_wall4` where only `test_wall3` has a cut.
-    2. Calls `get_elements_cut_parts`.
-    3. Verifies the response correctly counts cuts across all selected elements.
-    """
-    TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("get_elements_cut_parts")
-
-        assert result.data["status"] == "success"
-        assert result.data["selected_elements"] == 2
-        assert result.data["processed_elements"] == 2
-        assert result.data["total_cut_parts"] >= 1
-
-        cut_parts = json.loads(result.data["cut_parts_list"])
-        assert isinstance(cut_parts, list)
-        assert len(cut_parts) >= 1
-
-
-@pytest.mark.asyncio
-async def test_compare_elements_numbering_not_up_to_date(model_objects):
-    """
-    Compare two parts when numbering is not up-to-date - should return error.
-
-    Steps:
-    1. Selects test_wall5 and test_wall6 (identical profile/class).
-    2. Calls compare_elements without ignore_numbering.
-    3. Verifies error status with message about numbering.
-    """
+def test_compare_elements_numbering_not_up_to_date(model_objects):
+    """Tests compare_elements when numbering is not up-to-date."""
     TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements")
+    result = compare_elements()
 
-        assert result.data["status"] == "error"
-        assert "numbering" in result.data["message"].lower()
+    assert result["status"] == "error"
+    assert "numbering" in result["message"].lower()
 
 
-@pytest.mark.asyncio
-async def test_compare_identical_parts(model_objects):
-    """
-    Compare two identical parts - should report as identical.
-
-    Steps:
-    1. Selects test_wall5 and test_wall6 (identical profile/class).
-    2. Calls compare_elements.
-    3. Verifies identical is True.
-    """
+def test_compare_identical_parts(model_objects):
+    """Tests compare_elements: identical parts."""
     TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
+    result = compare_elements(ignore_numbering=True)
 
-        assert result.data["status"] == "success"
-        assert result.data["identical"] is True
-        assert result.data["message"] == "Elements are identical"
-        assert "part_a_snapshot" not in result.data
-        assert "part_b_snapshot" not in result.data
+    assert result["status"] == "success"
+    assert result["identical"] is True
 
 
-@pytest.mark.asyncio
-async def test_compare_different_parts_different_profile(model_objects):
-    """
-    Compare two parts with different profiles - should report differences.
-
-    Steps:
-    1. Selects test_wall1 (3000*200) and test_wall7 (2000*150).
-    2. Calls compare_elements.
-    3. Verifies identical is False.
-    """
+def test_compare_different_parts_different_profile(model_objects):
+    """Tests compare_elements: different profiles."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
+    result = compare_elements(ignore_numbering=True)
 
-        assert result.data["status"] == "success"
-        assert result.data["identical"] is False
-        assert result.data["message"] == "Elements have differences"
-        assert "differences" in result.data
-        assert "part_a_raw" in result.data
-        assert "part_b_raw" in result.data
+    assert result["status"] == "success"
+    assert result["identical"] is False
 
 
-@pytest.mark.asyncio
-async def test_compare_different_parts_different_position(model_objects):
-    """
-    Compare two parts with different positions - should report differences.
-
-    Steps:
-    1. Selects test_wall1 and test_wall2 (different Z positions).
-    2. Calls compare_elements.
-    3. Verifies identical is False.
-    """
-    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
-
-        assert result.data["status"] == "success"
-        assert result.data["identical"] is False
-
-
-@pytest.mark.asyncio
-async def test_compare_identical_assemblies(model_objects):
-    """
-    Compare two identical assemblies - should report as identical.
-
-    Steps:
-    1. Selects test_wall5 and test_wall6.
-    2. Calls select_elements_assemblies_or_main_parts with "Assembly" mode.
-    3. Calls compare_elements.
-    4. Verifies identical is True.
-    """
-    TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
-    async with Client(mcp) as client:
-        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
-
-        assert result.data["status"] == "success"
-        assert result.data["identical"] is True
-        assert result.data["message"] == "Elements are identical"
-
-
-@pytest.mark.asyncio
-async def test_compare_different_assemblies(model_objects):
-    """
-    Compare two different assemblies - should report differences.
-
-    Steps:
-    1. Selects test_wall1 and test_wall2.
-    2. Calls select_elements_assemblies_or_main_parts with "Assembly" mode.
-    3. Calls compare_elements.
-    4. Verifies identical is False.
-    """
-    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    async with Client(mcp) as client:
-        await client.call_tool("select_elements_assemblies_or_main_parts", {"mode": "Assembly"})
-        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
-
-        assert result.data["status"] == "success"
-        assert result.data["identical"] is False
-
-
-@pytest.mark.asyncio
-async def test_compare_three_elements(model_objects):
-    """
-    Select three elements - should error (requires exactly 2).
-
-    Steps:
-    1. Selects test_wall1, test_wall2, test_wall3.
-    2. Calls compare_elements.
-    3. Verifies error status with message about more than two elements.
-    """
+def test_compare_three_elements(model_objects):
+    """Tests compare_elements with three elements - should error."""
     TeklaModel.select_objects(
         [
             model_objects["test_wall1"],
@@ -1266,41 +638,7 @@ async def test_compare_three_elements(model_objects):
             model_objects["test_wall3"],
         ]
     )
-    async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
+    result = compare_elements(ignore_numbering=True)
 
-        assert result.data["status"] == "error"
-        assert "More than two elements" in result.data["message"]
-
-
-@pytest.mark.asyncio
-async def test_compare_single_element(model_objects):
-    """
-    Select one element - should error (requires exactly 2).
-
-    Steps:
-    1. Selects only test_wall1.
-    2. Calls compare_elements.
-    3. Verifies error status with message about only one element.
-    """
-    TeklaModel.select_objects([model_objects["test_wall1"]])
-    async with Client(mcp) as client:
-        result = await client.call_tool("compare_elements", {"ignore_numbering": True})
-
-        assert result.data["status"] == "error"
-        assert "Only one element" in result.data["message"]
-
-
-@pytest.mark.asyncio
-async def test_run_macro_nonexistent():
-    """
-    Tests that run_macro returns an error for non-existent macro.
-
-    Steps:
-    1. Calls run_macro with a non-existent macro name.
-    2. Verifies that it returns an error status with appropriate message.
-    """
-    async with Client(mcp) as client:
-        result = await client.call_tool("run_macro", {"macro_name": "NonExistentMacro.cs"})
-        assert result.data["status"] == "error"
-        assert result.data["macro_name"] == "NonExistentMacro.cs"
+    assert result["status"] == "error"
+    assert "More than two elements" in result["message"]

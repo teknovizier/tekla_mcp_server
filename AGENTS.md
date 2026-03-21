@@ -72,14 +72,19 @@ from tekla_mcp_server.tekla.model_object import TeklaModelObject
 from tekla_mcp_server.tekla.utils import wrap_model_objects
 from tekla_mcp_server.tekla.loader import Point, Beam, Identifier, Model
 
-# Tools modules
-from tekla_mcp_server.tools.selection import (
-    tool_select_elements_by_filter,
-    tool_select_elements_by_guid,
-)
-from tekla_mcp_server.tools.components import tool_put_components, tool_remove_components
-from tekla_mcp_server.tools.view import tool_draw_elements_labels, tool_zoom_to_selection
-from tekla_mcp_server.tools.properties import tool_get_elements_properties, tool_set_elements_udas, tool_compare_elements
+# Providers (MCP tool definitions)
+from tekla_mcp_server.providers.selection_provider import select_elements_by_filter
+from tekla_mcp_server.providers.view_provider import draw_elements_labels
+from tekla_mcp_server.providers.properties_provider import get_elements_properties
+from tekla_mcp_server.providers.components_provider import put_components
+from tekla_mcp_server.providers.operations_provider import cut_elements_with_zero_class_parts
+from tekla_mcp_server.providers.info_provider import check_tekla_connection
+
+# Tools modules (actual implementations)
+from tekla_mcp_server.tools.selection import tool_select_elements_by_filter
+from tekla_mcp_server.tools.components import tool_put_components
+from tekla_mcp_server.tools.view import tool_draw_elements_labels
+from tekla_mcp_server.tools.properties import tool_get_elements_properties
 from tekla_mcp_server.tools.operations import tool_cut_elements_with_zero_class_parts
 ```
 
@@ -121,39 +126,62 @@ def tool_function(...):
 - Configure via env vars: `TEKLA_MCP_LOG_LEVEL`, `TEKLA_MCP_LOG_FILE_PATH`
 
 ### Tekla API Patterns
-- Use `TeklaModel` class from `tekla/model.py` (singleton pattern for connection reuse)
+- Use `TeklaModel` class from `tekla/model.py` (singleton pattern via `lru_cache`)
 - Use `TeklaModelObject` from `tekla/model_object.py` for individual objects
 - Always `model.commit_changes()` after modifications
 - Use `wrap_model_objects()` from `tekla/utils.py` for conversion
 
-### MCP Server
-- Use `@mcp.tool()` decorator
-- Return dict with `status` key
-- Validate inputs in MCP tool layer
-- Use `tools/` modules for actual operations (selection, components, properties, view, operations, info)
+### MCP Server Architecture
+- **Providers** (`providers/`) - MCP tool definitions with docstrings
+- **Tools** (`tools/`) - Actual implementation logic
+- Use `LocalProvider` for organizing tools into modules
+- Tool functions accept `dict[str, Any]` inputs (MCP sends JSON)
+- Use `_to_filter_option()` helper to convert dicts to Pydantic models
+
+### MCP Resources (Read-Only Data)
+Resources provide discovery/metadata, not actions.
+
+### MCP Tools (Actions)
+Tools perform operations that may mutate state:
+| Provider | Tools |
+|----------|-------|
+| `selection_provider` | `select_elements_by_filter`, `select_elements_by_guid`, etc. |
+| `view_provider` | `draw_elements_labels`, `zoom_to_selection`, etc. |
+| `properties_provider` | `get_elements_properties`, `set_elements_udas`, etc. |
+| `components_provider` | `put_components`, `remove_components` |
+| `operations_provider` | `cut_elements_with_zero_class_parts`, `run_macro` |
+| `info_provider` | `check_tekla_connection` |
 
 ## Project Structure
 ```
 tekla_mcp_server/
 ├── src/tekla_mcp_server/     # Source code (package)
 │   ├── __init__.py
-│   ├── config.py              # Configuration management
+│   ├── config.py              # Configuration management (lru_cache for caching)
 │   ├── embeddings.py          # Embedding model loading and text normalization
 │   ├── init.py                # Logging, DLL loading
-│   ├── mcp_server.py          # Main server with MCP tools
-│   ├── models.py              # Data models and enums
-│   ├── utils.py               # Decorators and utilities
-│   ├── tools/                 # MCP tool implementations (organized by category)
-│   │   ├── selection.py       # Selection tools (select by filter, GUID, etc.)
-│   │   ├── components.py      # Component tools (put/remove components)
-│   │   ├── properties.py      # Property tools (UDAs, properties, compare)
-│   │   ├── view.py           # View tools (labels, zoom, color, hide)
-│   │   ├── operations.py     # Operation tools (cut, macro)
-│   │   └── info.py           # Info tools (connection check)
+│   ├── mcp_server.py          # Main server (registers providers and resources)
+│   ├── models.py              # Data models, enums, filter options
+│   ├── utils.py               # Decorators and utilities (response helpers)
+│   ├── providers/             # MCP tool definitions (docstrings + orchestration)
+│   │   ├── __init__.py
+│   │   ├── selection_provider.py
+│   │   ├── view_provider.py
+│   │   ├── properties_provider.py
+│   │   ├── components_provider.py
+│   │   ├── operations_provider.py
+│   │   └── info_provider.py
+│   ├── tools/                 # Tool implementations (business logic)
+│   │   ├── selection.py       # Selection logic
+│   │   ├── components.py      # Component operations
+│   │   ├── properties.py      # Property operations
+│   │   ├── view.py           # View operations
+│   │   ├── operations.py     # Boolean cuts, macros
+│   │   └── info.py           # Connection checks
 │   └── tekla/                 # Tekla-specific modules
 │       ├── __init__.py
-│       ├── loader.py          # Tekla DLL loading
-│       ├── model.py           # Tekla Model wrapper (singleton pattern)
+│       ├── loader.py          # Tekla DLL loading (pythonnet)
+│       ├── model.py           # Tekla Model wrapper (singleton via lru_cache)
 │       ├── model_object.py    # Tekla ModelObject wrappers
 │       ├── utils.py           # Tekla API helpers
 │       └── template_attrs_parser.py  # Template attribute parsing with semantic search
