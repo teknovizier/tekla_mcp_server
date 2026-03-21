@@ -6,6 +6,7 @@ Loads configuration from JSON files in the config/ directory.
 
 import json
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -61,8 +62,8 @@ def _get_class_to_element() -> dict[int, tuple[str, str]]:
 
 @lru_cache
 def _get_tekla_macro_directories() -> list[str]:
-    """Get macro directories from Tekla's XS_MACRO_DIRECTORY advanced option.
-
+    """
+    Get macro directories from Tekla's XS_MACRO_DIRECTORY advanced option.
     Returns only valid, existing directory paths.
     """
     from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
@@ -79,6 +80,65 @@ def _get_tekla_macro_directories() -> list[str]:
     return paths
 
 
+@lru_cache
+def _get_contentattributes_file_paths() -> list[str]:
+    """Get all contentattributes file paths from tpled.ini INCLUDE statements.
+    Returns list of paths to all .lst files referenced in the main contentattributes file.
+    """
+    def resolve_path(raw_path: str, base: Path, tekla_base: Path) -> Path:
+        """Resolve a raw path relative to base or tekla_base."""
+        if raw_path.startswith("@") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):
+            return base.parent / raw_path[2:]
+        if raw_path.startswith(".") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):
+            return tekla_base / raw_path[2:]
+        return base.parent / raw_path
+    
+    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
+
+    # Get tpled.ini location
+    _, tpled_ini_path = TeklaStructuresSettings.GetAdvancedOption("XS_TPLED_INI", str())
+    if not tpled_ini_path:
+        return []
+
+    ini_path = Path(tpled_ini_path)
+    if ini_path.is_dir():
+        ini_path = ini_path / "tpled.ini"
+    if not ini_path.exists():
+        return []
+
+    tekla_base = Path(_load_settings()["tekla_path"]) / "applications" / "Tekla" / "Tools" / "TplEd"
+
+    # Find main contentattributes.lst file
+    content_attr_path: Path | None = None
+    for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if "contentattributes.lst" in line.lower():
+            content_attr_path = resolve_path(line.strip(), ini_path, tekla_base)
+            break
+
+    if not content_attr_path or not content_attr_path.exists():
+        return []
+
+    # Parse included files
+    included_files: list[str] = []
+    try:
+        for line in content_attr_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[BINDINGS]"):
+                break
+            if not stripped or stripped.startswith("//") or not stripped.startswith("[INCLUDE"):
+                continue
+
+            match = re.search(r"\[INCLUDE\s+(.+)\]", stripped, re.IGNORECASE)
+            if match:
+                resolved = resolve_path(match.group(1).strip(), content_attr_path, tekla_base)
+                if resolved.exists():
+                    included_files.append(str(resolved))
+    except FileNotFoundError:
+        return []
+
+    return included_files
+
+
 class Config:
     """Centralized configuration manager - thin wrapper around cached functions."""
 
@@ -89,11 +149,13 @@ class Config:
 
     @property
     def content_attributes_file_path(self) -> str:
-        """Path to Tekla content attributes file.
-
-        Derived from tekla_path.
-        """
+        """Path to main Tekla content attributes file (deprecated, use content_attributes_file_paths)."""
         return str(Path(self.tekla_path) / "applications" / "Tekla" / "Tools" / "TplEd" / "settings" / "contentattributes_global.lst")
+
+    @property
+    def content_attributes_file_paths(self) -> list[str]:
+        """List of all Tekla contentattributes file paths from tpled.ini INCLUDE statements."""
+        return _get_contentattributes_file_paths()
 
     @property
     def template_attributes_json_path(self) -> str | None:
@@ -150,11 +212,7 @@ class Config:
 
     @property
     def tekla_macro_directories(self) -> list[str]:
-        """List of directories to scan for Tekla macros.
-
-        Reads from Tekla's XS_MACRO_DIRECTORY advanced option.
-        Returns only valid, existing directory paths.
-        """
+        """List of directories to scan for Tekla macros."""
         return _get_tekla_macro_directories()
 
     @property

@@ -14,6 +14,9 @@ import clr
 import System
 
 
+# Global flag to prevent re-loading DLLs
+_dlls_loaded = False
+
 # Constants
 _log_level = os.getenv("TEKLA_MCP_LOG_LEVEL", "DEBUG")
 _log_file_path = os.getenv("TEKLA_MCP_LOG_FILE_PATH", "mcp_server.log")
@@ -37,6 +40,11 @@ def load_dlls() -> bool:
     libraries using the `clr` module. If any DLL is not found, an exception is raised,
     and the application exits.
     """
+    global _dlls_loaded
+
+    if _dlls_loaded:
+        return True
+
     dlls = [
         "Tekla.Structures.dll",
         "Tekla.Structures.Plugins.dll",
@@ -62,6 +70,7 @@ def load_dlls() -> bool:
         for dll in dlls:
             clr.AddReference(os.path.join(tekla_path, dll))
 
+        _dlls_loaded = True
         logger.info("Successfully loaded all Tekla Structures DLLs")
         return True
 

@@ -56,36 +56,46 @@ class TemplateAttributeParser:
 
     @classmethod
     def _load_attributes(cls) -> None:
-        """Load attribute definitions from Tekla contentattributes file into cache."""
+        """Load attribute definitions from all Tekla contentattributes files into cache."""
         if cls._loaded:
             return
 
         config = get_config()
-        logger.debug("Loading Tekla attribute definitions from '%s'", config.content_attributes_file_path)
+        file_paths = config.content_attributes_file_paths
+        logger.debug("Loading Tekla attribute definitions from %d files", len(file_paths))
 
-        with open(config.content_attributes_file_path, "r", encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if s.startswith("[BINDINGS]"):
-                    break
-                if not s or s.startswith("//") or s.startswith("["):
-                    continue
-
-                parts = re.split(r"\s", s, maxsplit=1)
-                if len(parts) < 2:
-                    continue
-
-                name, remainder = parts[0].strip(), parts[1].strip()
-                rest_parts = re.split(r"\s{2,}", remainder)
-                while len(rest_parts) < 8:
-                    rest_parts.append(None)
-
-                dtype = rest_parts[0]
-                unit = rest_parts[6] if rest_parts[6] != "*" else None
-                cls._cache[name] = ReportProperty(name=name, data_type=ReportProperty.map_string_to_type(dtype), unit=unit)
+        for file_path in file_paths:
+            cls._load_attributes_from_file(file_path)
 
         cls._loaded = True
-        logger.info("Tekla attribute definitions loaded and cached")
+        logger.info("Tekla attribute definitions loaded and cached: %d attributes", len(cls._cache))
+
+    @classmethod
+    def _load_attributes_from_file(cls, file_path: str) -> None:
+        """Load attribute definitions from a single contentattributes file."""
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    s = line.strip()
+                    if s.startswith("[BINDINGS]"):
+                        break
+                    if not s or s.startswith("//") or s.startswith("["):
+                        continue
+
+                    parts = re.split(r"\s", s, maxsplit=1)
+                    if len(parts) < 2:
+                        continue
+
+                    name, remainder = parts[0].strip(), parts[1].strip()
+                    rest_parts = re.split(r"\s{2,}", remainder)
+                    while len(rest_parts) < 8:
+                        rest_parts.append(None)
+
+                    dtype = rest_parts[0]
+                    unit = rest_parts[6] if rest_parts[6] != "*" else None
+                    cls._cache[name] = ReportProperty(name=name, data_type=ReportProperty.map_string_to_type(dtype), unit=unit)
+        except FileNotFoundError:
+            logger.warning("Contentattributes file not found: %s", file_path)
 
     @classmethod
     def resolve_attributes(cls, queries: list[str]) -> dict:
