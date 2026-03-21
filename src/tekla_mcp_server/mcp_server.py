@@ -25,19 +25,19 @@ from tekla_mcp_server.providers import (
 mcp = FastMCP("Tekla MCP Server")
 
 
-@mcp.resource("component://schema")
+@mcp.resource("tekla://components")
 def get_component_list() -> ResourceResult:
     """
     Returns mapping of Tekla component names to config keys.
 
     Use this to find the config key for a component, then call
-    component://schema/{component_key} to get the property schema.
+    tekla://components/{component_key} to get the property schema.
     """
     data = {comp.get("tekla_name"): key for key, comp in get_base_components().items() if comp.get("tekla_name")}
     return ResourceResult(contents=[ResourceContent(content=json.dumps(data), mime_type="application/json")])
 
 
-@mcp.resource("component://schema/{component_key}")
+@mcp.resource("tekla://components/{component_key}")
 def get_component_schema(component_key: str) -> ResourceResult:
     """
     Returns the custom_properties schema for a specific component.
@@ -49,7 +49,7 @@ def get_component_schema(component_key: str) -> ResourceResult:
     return ResourceResult(contents=[])
 
 
-@mcp.resource("macro://list")
+@mcp.resource("tekla://macros")
 def get_macro_list() -> ResourceResult:
     """
     Returns a list of available Tekla macros from configured directories.
@@ -57,7 +57,7 @@ def get_macro_list() -> ResourceResult:
     return ResourceResult(contents=[ResourceContent(content=json.dumps(get_macros()), mime_type="application/json")])
 
 
-@mcp.resource("filters://selection")
+@mcp.resource("tekla://filters/selection")
 def get_selection_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla selection filter names from .SObjGrp files.
@@ -65,7 +65,7 @@ def get_selection_filter_list() -> ResourceResult:
     return ResourceResult(contents=[ResourceContent(content=json.dumps(get_filters(".SObjGrp")), mime_type="application/json")])
 
 
-@mcp.resource("filters://view")
+@mcp.resource("tekla://filters/view")
 def get_view_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla view filter names from .VObjGrp files.
@@ -73,7 +73,7 @@ def get_view_filter_list() -> ResourceResult:
     return ResourceResult(contents=[ResourceContent(content=json.dumps(get_filters(".VObjGrp")), mime_type="application/json")])
 
 
-@mcp.resource("info://connection_status")
+@mcp.resource("tekla://connection_status")
 def get_connection_status() -> ResourceResult:
     """
     Returns the current Tekla connection status.
