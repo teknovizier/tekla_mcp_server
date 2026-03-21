@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 from fastmcp.resources import ResourceResult, ResourceContent
 from fastmcp.server.transforms import ResourcesAsTools
 
+from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import get_base_components, get_macros, get_filters
 from tekla_mcp_server.providers import (
@@ -105,6 +106,19 @@ def get_connection_status() -> ResourceResult:
                 )
             ]
         )
+
+
+@mcp.resource("project://requirements")
+def get_project_requirements() -> ResourceResult:
+    """
+    Provides the complete set of project requirements and conventions.
+
+    This resource aggregates foundational rules, guidelines, and
+    expected practices that should be followed throughout the project,
+    helping the AI understand the project scope and design conventions.
+    """
+    content = get_config()._load_requirements()
+    return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/markdown")])
 
 
 # Add all providers to the MCP server

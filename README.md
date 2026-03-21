@@ -48,6 +48,7 @@ The server exposes the following MCP resources:
 
 | Resource | Description |
 |----------|-------------|
+| `project://requirements` | Returns combined content of markdown files from the requirements folder (e.g., reinforcement defaults, material specs) |
 | `tekla://components` | Returns the list of Tekla components available in server configuration |
 | `tekla://components/{component_key}` | Returns the custom_properties schema for a specific component |
 | `tekla://macros` | Returns list of available Tekla macros from configured directories |
@@ -111,11 +112,26 @@ If you want to replace the default embedding model with another one - either a H
 | **Property**         | **Default**                                        | **Description**                                                                 |
 |-----------------------|----------------------------------------------------|---------------------------------------------------------------------------------|
 | `tekla_path`          | "C:\\Program Files\\Tekla Structures\\2022.0\\bin" | The path to the directory where Tekla Structures is located                      |
+| `requirements_folder` | "requirements" | The folder path containing markdown files with project design requirements (e.g., reinforcement defaults). Can be absolute or relative to config dir. Files are exposed via MCP `project://requirements` resource |
 | `template_attributes_json_name`          | - | The filename of JSON file in `config/` folder with template attribute descriptions for semantic search. See [Template Attributes JSON](#template-attributes-json) for format |
 | `embeddings.enabled`          | true | Enable or disable semantic search (embeddings). When false, only exact/normalized matching is used |
 | `embeddings.embedding_model`          | "teknovizier/minilm-tekla-attr-embed-v1" | Sentence-transformers model for semantic attribute matching. Can be a HuggingFace model ID (e.g., `your-username/tekla-attribute-model`) or a local path (e.g., `tekla_attribute_model`)                      |
 | `embeddings.embedding_spread_threshold`          | 0.1 | Minimum stddev of top-k scores for direct resolution. Below this threshold, candidates are returned for LLM to choose from |
 | `embeddings.embedding_minimum_threshold`          | 0.8 | Minimum confidence score (0-1) for direct resolution. Below this threshold, candidates are returned for LLM to choose from |
+
+### Requirements Folder
+
+The `requirements_folder` contains project-specific design requirements in Markdown format. The AI can load this information into context, allowing it to understand and apply your project's design standards when calling MCP tools.
+
+**Features:**
+- Markdown files are automatically loaded and combined
+- Exposed via MCP `project://requirements` resource
+- AI references this when answering questions or calling tools
+
+**Example use cases:**
+- Reinforcement specifications (rebar grades, mesh types, cover requirements)
+- Material standards (concrete classes, steel grades)
+- Project-specific naming conventions
 
 * Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
 * Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model

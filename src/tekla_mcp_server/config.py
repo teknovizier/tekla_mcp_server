@@ -85,6 +85,7 @@ def _get_contentattributes_file_paths() -> list[str]:
     """Get all contentattributes file paths from tpled.ini INCLUDE statements.
     Returns list of paths to all .lst files referenced in the main contentattributes file.
     """
+
     def resolve_path(raw_path: str, base: Path, tekla_base: Path) -> Path:
         """Resolve a raw path relative to base or tekla_base."""
         if raw_path.startswith("@") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):
@@ -92,7 +93,7 @@ def _get_contentattributes_file_paths() -> list[str]:
         if raw_path.startswith(".") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):
             return tekla_base / raw_path[2:]
         return base.parent / raw_path
-    
+
     from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
 
     # Get tpled.ini location
@@ -219,6 +220,31 @@ class Config:
     def class_to_element(self) -> dict[int, tuple[str, str]]:
         """Returns class to element mapping."""
         return _get_class_to_element()
+
+    @property
+    def requirements_folder(self) -> Path:
+        """Folder containing requirements markdown files."""
+        folder = _load_settings().get("requirements_folder", "requirements")
+        path = Path(folder)
+        if not path.is_absolute():
+            path = _get_config_dir() / folder
+        if not path.is_dir():
+            return _get_config_dir() / "requirements"
+        return path
+
+    @lru_cache
+    def _load_requirements(self) -> str:
+        """Load and combine all markdown files from requirements folder."""
+        folder = self.requirements_folder
+        if not folder.exists():
+            return "# Requirements\n\nRequirements folder not found."
+        files = sorted(folder.glob("*.md"))
+        if not files:
+            return "# Requirements\n\nNo requirements files found."
+        contents = []
+        for f in files:
+            contents.append(f.read_text(encoding="utf-8"))
+        return "\n\n---\n\n".join(contents)
 
 
 @lru_cache
