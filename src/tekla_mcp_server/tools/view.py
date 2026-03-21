@@ -17,9 +17,9 @@ from tekla_mcp_server.tekla.loader import (
     Operation,
     Point,
     TemporaryTransparency,
-    View,
     ViewHandler,
 )
+from tekla_mcp_server.tekla.utils import get_active_views
 from tekla_mcp_server.tekla.model_object import (
     TeklaAssembly,
     TeklaPart,
@@ -145,15 +145,15 @@ def tool_redraw_view() -> dict[str, Any]:
     """
     Redraws the currently active view in Tekla.
     """
-    view_enum = ViewHandler.GetVisibleViews()
-    view_redrawn = False
+    views = get_active_views()
+    views_redrawn = 0
 
-    while view_enum.MoveNext():
-        view = view_enum.Current
-        view_redrawn = ViewHandler.RedrawView(view)
+    for view in views:
+        if ViewHandler.RedrawView(view):
+            views_redrawn += 1
 
-    logger.info("Active views have been redrawn")
-    return {"status": "success" if view_redrawn else "error"}
+    logger.info("Redrawn %d active views", len(views))
+    return {"status": "success", "views_redrawn": views_redrawn, "total_views": len(views)}
 
 
 @log_function_call
@@ -171,15 +171,13 @@ def tool_apply_view_filter(filter_name: str) -> dict[str, Any]:
         logger.warning("Invalid filter '%s' requested. Available filters: %s", filter_name, available)
         return {"status": "error", "message": f"Invalid filter '{filter_name}'", "available_filters": available}
 
-    view_enum = ViewHandler.GetVisibleViews()
-
-    while view_enum.MoveNext():
-        view: View = view_enum.Current
+    views = get_active_views()
+    for view in views:
         view.ViewFilter = filter_name
         view.Modify()
 
-    logger.info("Applied view filter '%s'", filter_name)
-    return {"status": "success", "filter_name": filter_name}
+    logger.info("Applied view filter '%s' to %d views", filter_name, len(views))
+    return {"status": "success", "filter_name": filter_name, "views_modified": len(views)}
 
 
 @log_function_call

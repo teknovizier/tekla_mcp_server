@@ -4,6 +4,7 @@ Module for utility functions used for geometry manipulations.
 
 from __future__ import annotations
 
+import re
 from functools import wraps
 from typing import Any
 from collections.abc import Callable
@@ -27,6 +28,9 @@ from tekla_mcp_server.tekla.loader import (
     PositionTypeEnum,
     AutoDirectionTypeEnum,
     DetailTypeEnum,
+    ViewHandler,
+    View,
+    TeklaStructuresInfo,
 )
 from tekla_mcp_server.tekla.model import TeklaModel
 
@@ -262,3 +266,42 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
 
     logger.debug("Wall pairs identified: %s", wall_pairs)
     return wall_pairs
+
+
+def get_tekla_major_version() -> int:
+    """
+    Returns the Tekla major version.
+
+    Returns:
+        Major version number (e.g., 2022, 2024).
+        Defaults to 2022 if parsing fails.
+    """
+    version = TeklaStructuresInfo.GetCurrentProgramVersion()
+    match = re.match(r"(\d{4})", version)
+    if match:
+        return int(match.group(1))
+    return 2022
+
+
+def get_active_views() -> list[View]:
+    """
+    Returns the currently active views.
+
+    Uses ViewHandler.GetActiveView() for Tekla 2024+,
+    falls back to ViewHandler.GetVisibleViews() for earlier versions.
+
+    Returns:
+        List of View objects that are currently active/visible.
+    """
+    views: list[View] = []
+
+    if get_tekla_major_version() >= 2024:
+        active_view = ViewHandler.GetActiveView()
+        if active_view is not None:
+            views.append(active_view)
+    else:
+        view_enum = ViewHandler.GetVisibleViews()
+        while view_enum.MoveNext():
+            views.append(view_enum.Current)
+
+    return views
