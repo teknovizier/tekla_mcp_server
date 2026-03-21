@@ -25,11 +25,11 @@ class TestConfigDefaults:
         with patch("tekla_mcp_server.config._load_json") as mock_load:
             mock_load.return_value = {
                 "tekla_path": "C:\\Tekla",
-                "content_attributes_file_path": "C:\\Tekla\\file.lst",
             }
             config = Config()
             assert config.tekla_path == "C:\\Tekla"
-            assert config.content_attributes_file_path == "C:\\Tekla\\file.lst"
+            expected_path = "C:\\Tekla\\applications\\Tekla\\Tools\\TplEd\\settings\\contentattributes_global.lst"
+            assert config.content_attributes_file_path == expected_path
 
     def test_loads_element_types(self):
         """Test that element_types.json is loaded."""
@@ -45,7 +45,6 @@ class TestConfigDefaults:
         def mock_load_json(filename):
             return {
                 "tekla_path": "C:\\Tekla",
-                "content_attributes_file_path": "C:\\Tekla\\file.lst",
             }
 
         with patch("tekla_mcp_server.config._load_json", mock_load_json):
@@ -62,7 +61,6 @@ class TestConfigAttributeMapper:
         with patch("tekla_mcp_server.config._load_json") as mock_load:
             mock_load.return_value = {
                 "tekla_path": "C:\\Tekla",
-                "content_attributes_file_path": "C:\\Tekla\\file.lst",
             }
             config = Config()
             assert config.embeddings == {}
@@ -72,7 +70,6 @@ class TestConfigAttributeMapper:
         with patch("tekla_mcp_server.config._load_json") as mock_load:
             mock_load.return_value = {
                 "tekla_path": "C:\\Tekla",
-                "content_attributes_file_path": "C:\\Tekla\\file.lst",
                 "embeddings": {
                     "embedding_model": "test-model",
                     "embedding_spread_threshold": 0.1,

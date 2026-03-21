@@ -40,7 +40,7 @@ def _load_json(filename: str) -> dict[str, Any]:
 def _load_settings() -> dict[str, Any]:
     """Load settings.json with validation."""
     settings = _load_json("settings.json")
-    required_keys = ["tekla_path", "content_attributes_file_path"]
+    required_keys = ["tekla_path"]
     for key in required_keys:
         if key not in settings:
             raise ValueError(f"Missing required key '{key}' in settings.json")
@@ -89,8 +89,11 @@ class Config:
 
     @property
     def content_attributes_file_path(self) -> str:
-        """Path to Tekla content attributes file."""
-        return _load_settings()["content_attributes_file_path"]
+        """Path to Tekla content attributes file.
+
+        Derived from tekla_path.
+        """
+        return str(Path(self.tekla_path) / "applications" / "Tekla" / "Tools" / "TplEd" / "settings" / "contentattributes_global.lst")
 
     @property
     def template_attributes_json_path(self) -> str | None:
