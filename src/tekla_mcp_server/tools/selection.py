@@ -176,7 +176,7 @@ def tool_select_elements_by_filter(
     filter_groups: list[BinaryFilterExpressionCollection] = []
 
     def build_filter_group(
-        expression,
+        expression: Any,
         filter_option: StringFilterOption | NumericFilterOption,
         is_numeric: bool = False,
     ) -> BinaryFilterExpressionCollection:

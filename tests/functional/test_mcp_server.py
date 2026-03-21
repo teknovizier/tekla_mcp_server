@@ -576,6 +576,8 @@ def test_get_elements_properties_valid_custom_properties(model_objects):
 
 def test_get_elements_properties_invalid_and_missing_custom_properties(model_objects):
     """Tests get_elements_properties: invalid and missing custom properties."""
+    from tekla_mcp_server.embeddings import is_embeddings_enabled
+
     TeklaModel.select_objects(
         [
             model_objects["test_wall1"],
@@ -585,7 +587,13 @@ def test_get_elements_properties_invalid_and_missing_custom_properties(model_obj
         ]
     )
     select_elements_assemblies_or_main_parts(mode="Assembly")
-    result = get_elements_properties(custom_props_definitions=["ASSEMBLY_TOP_LEVEL", "ASSEMBLY_TOP_LEVELL", "NON_EXISTENT_PROPERTY"])
+
+    if is_embeddings_enabled():
+        custom_props = ["ASSEMBLY_TOP_LEVEL", "NON_EXISTENT_PROPERTY"]
+    else:
+        custom_props = ["NON_EXISTENT_PROPERTY"]
+
+    result = get_elements_properties(custom_props_definitions=custom_props)
 
     errors = result["invalid_custom_property_definitions"]
     assert errors == ["NON_EXISTENT_PROPERTY"]

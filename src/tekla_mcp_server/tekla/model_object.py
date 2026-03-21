@@ -818,7 +818,7 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         return TeklaAssembly(model_object)
     elif isinstance(model_object, Part):
         return TeklaPart(model_object)
-    elif isinstance(model_object, Boolean) or isinstance(model_object, BaseWeld) or isinstance(model_object, Reinforcement):
+    elif isinstance(model_object, (Boolean, BaseWeld, Reinforcement)):
         return TeklaModelObject(model_object)
     else:
         return None

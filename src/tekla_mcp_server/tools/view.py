@@ -5,7 +5,7 @@ View tools for Tekla model operations.
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import ElementLabel
+from tekla_mcp_server.models import ElementLabel, get_filters
 from tekla_mcp_server.tekla.loader import (
     AABB,
     Color,
@@ -164,8 +164,6 @@ def tool_apply_view_filter(filter_name: str) -> dict[str, Any]:
     Args:
         filter_name: Name of the view filter to apply
     """
-    from tekla_mcp_server.models import get_filters
-
     available = get_filters(".VObjGrp")
     if filter_name not in available:
         logger.warning("Invalid filter '%s' requested. Available filters: %s", filter_name, available)

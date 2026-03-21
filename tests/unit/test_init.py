@@ -23,6 +23,10 @@ from tekla_mcp_server.init import load_dlls
 @pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_load_dlls_success():
     """Checks that all DLLs are loaded and returns True."""
+    import tekla_mcp_server.init as init_module
+
+    init_module._dlls_loaded = False
+
     mock_config = MagicMock()
     mock_config.tekla_path = "C:\\Tekla"
     with patch("tekla_mcp_server.init.get_config", return_value=mock_config), patch("tekla_mcp_server.init.clr.AddReference") as mock_add_ref:
@@ -33,6 +37,10 @@ def test_load_dlls_success():
 @pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
 def test_load_dlls_file_not_found_triggers_exception_and_exit():
     """Checks error handling when DLL is missing."""
+    import tekla_mcp_server.init as init_module
+
+    init_module._dlls_loaded = False
+
     mock_config = MagicMock()
     mock_config.tekla_path = "C:\\Tekla"
     with (
