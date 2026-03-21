@@ -19,7 +19,6 @@ from tekla_mcp_server.providers import (
     properties_provider,
     operations_provider,
     components_provider,
-    info_provider,
 )
 
 
@@ -58,13 +57,51 @@ def get_macro_list() -> ResourceResult:
     return ResourceResult(contents=[ResourceContent(content=json.dumps(get_macros()), mime_type="application/json")])
 
 
+@mcp.resource("info://connection_status")
+def get_connection_status() -> ResourceResult:
+    """
+    Returns the current Tekla connection status.
+
+    ## RESPONSE
+    - connected: boolean
+    - model_path: str | null
+    - message: str
+    """
+    from tekla_mcp_server.tekla.model import TeklaModel
+
+    try:
+        model = TeklaModel()
+        return ResourceResult(
+            contents=[
+                ResourceContent(
+                    content=json.dumps(
+                        {
+                            "connected": True,
+                            "model_path": model.model.GetInfo().ModelPath,
+                            "message": "Connected to Tekla model",
+                        }
+                    ),
+                    mime_type="application/json",
+                )
+            ]
+        )
+    except ConnectionError as e:
+        return ResourceResult(
+            contents=[
+                ResourceContent(
+                    content=json.dumps({"connected": False, "model_path": None, "message": str(e)}),
+                    mime_type="application/json",
+                )
+            ]
+        )
+
+
 # Add all providers to the MCP server
 mcp.add_provider(selection_provider)
 mcp.add_provider(view_provider)
 mcp.add_provider(properties_provider)
 mcp.add_provider(operations_provider)
 mcp.add_provider(components_provider)
-mcp.add_provider(info_provider)
 
 
 # Run the MCP server locally

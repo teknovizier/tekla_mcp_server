@@ -41,7 +41,6 @@ The server provides the following tools:
 | Operations | `cut_elements_with_zero_class_parts` | Performs boolean cuts on selected elements using elements in class 0, with optional deletion of cutting parts | `delete_cutting_parts` |
 | Operations | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts | - |
 | Operations | `run_macro` | Run a Tekla macro with the specified name | `macro_name` (required) |
-| Info | `check_tekla_connection` | Check Tekla connection status. Returns whether Tekla is connected, the model path, and a status message | - |
 
 ### Resources
 The server exposes the following MCP resources:
@@ -51,6 +50,7 @@ The server exposes the following MCP resources:
 | `component://schema` | Returns the list of Tekla components available in server configuration |
 | `component://schema/{component_key}` | Returns the custom_properties schema for a specific component |
 | `macro://list` | Returns list of available Tekla macros from configured directories |
+| `info://connection_status` | Returns the current Tekla connection status (connected, model_path, message) |
 
 ### Compatibility
 The server was tested to work with **only Tekla 2022** and may not be compatible with other versions of Tekla Structures.

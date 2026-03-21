@@ -78,7 +78,6 @@ from tekla_mcp_server.providers.view_provider import draw_elements_labels
 from tekla_mcp_server.providers.properties_provider import get_elements_properties
 from tekla_mcp_server.providers.components_provider import put_components
 from tekla_mcp_server.providers.operations_provider import cut_elements_with_zero_class_parts
-from tekla_mcp_server.providers.info_provider import check_tekla_connection
 
 # Tools modules (actual implementations)
 from tekla_mcp_server.tools.selection import tool_select_elements_by_filter
@@ -139,7 +138,13 @@ def tool_function(...):
 - Use `_to_filter_option()` helper to convert dicts to Pydantic models
 
 ### MCP Resources (Read-Only Data)
-Resources provide discovery/metadata, not actions.
+Resources provide discovery/metadata, not actions:
+| Resource | Purpose |
+|----------|---------|
+| `component://schema` | List all available components |
+| `component://schema/{key}` | Get properties for a component |
+| `macro://list` | List available Tekla macros |
+| `info://connection_status` | Current Tekla connection status |
 
 ### MCP Tools (Actions)
 Tools perform operations that may mutate state:
@@ -150,7 +155,6 @@ Tools perform operations that may mutate state:
 | `properties_provider` | `get_elements_properties`, `set_elements_udas`, etc. |
 | `components_provider` | `put_components`, `remove_components` |
 | `operations_provider` | `cut_elements_with_zero_class_parts`, `run_macro` |
-| `info_provider` | `check_tekla_connection` |
 
 ## Project Structure
 ```
@@ -169,15 +173,13 @@ tekla_mcp_server/
 │   │   ├── view_provider.py
 │   │   ├── properties_provider.py
 │   │   ├── components_provider.py
-│   │   ├── operations_provider.py
-│   │   └── info_provider.py
+│   │   └── operations_provider.py
 │   ├── tools/                 # Tool implementations (business logic)
 │   │   ├── selection.py       # Selection logic
 │   │   ├── components.py      # Component operations
 │   │   ├── properties.py      # Property operations
 │   │   ├── view.py           # View operations
-│   │   ├── operations.py     # Boolean cuts, macros
-│   │   └── info.py           # Connection checks
+│   │   └── operations.py     # Boolean cuts, macros
 │   └── tekla/                 # Tekla-specific modules
 │       ├── __init__.py
 │       ├── loader.py          # Tekla DLL loading (pythonnet)
