@@ -11,7 +11,7 @@ from tekla_mcp_server.init import load_dlls
 load_dlls()
 from System.Collections import ArrayList, Hashtable
 from System.Collections.Generic import List
-from Tekla.Structures import Identifier, TeklaStructuresDatabaseTypeEnum, PositionTypeEnum, DetailTypeEnum, AutoDirectionTypeEnum
+from Tekla.Structures import Identifier, TeklaStructuresDatabaseTypeEnum, PositionTypeEnum, DetailTypeEnum, AutoDirectionTypeEnum, TeklaStructuresSettings
 from Tekla.Structures.Geometry3d import AABB, Point, Vector
 from Tekla.Structures.Model import (
     Model,
@@ -63,6 +63,7 @@ __all__ = [
     "PositionTypeEnum",
     "DetailTypeEnum",
     "AutoDirectionTypeEnum",
+    "TeklaStructuresSettings",
     "AABB",
     "Point",
     "Vector",

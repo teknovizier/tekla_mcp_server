@@ -5,7 +5,7 @@ Unit tests for configuration management.
 import pytest
 from unittest.mock import patch
 
-from tekla_mcp_server.config import Config, get_config, _load_json, _load_settings
+from tekla_mcp_server.config import Config, get_config, _load_json, _load_settings, _get_tekla_macro_directories
 
 
 @pytest.fixture(autouse=True)
@@ -13,6 +13,7 @@ def clear_caches():
     """Clear all lru_cache decorators before each test."""
     _load_json.cache_clear()
     _load_settings.cache_clear()
+    _get_tekla_macro_directories.cache_clear()
     yield
 
 
@@ -89,3 +90,24 @@ class TestGetConfigSingleton:
     def test_returns_same_instance(self):
         """Test that get_config returns the same instance."""
         assert callable(get_config)
+
+
+class TestTeklaMacroDirectories:
+    """Test tekla_macro_directories property."""
+
+    def test_returns_empty_when_no_option(self):
+        """Test returns empty list when GetAdvancedOption returns empty."""
+        with patch("tekla_mcp_server.config._get_tekla_macro_directories", return_value=[]):
+            config = Config()
+            assert config.tekla_macro_directories == []
+
+    def test_returns_cached_paths(self, tmp_path):
+        """Test that paths from cached function are returned."""
+        dir1 = tmp_path / "macros1"
+        dir1.mkdir()
+        cached_paths = [str(dir1.resolve())]
+
+        with patch("tekla_mcp_server.config._get_tekla_macro_directories", return_value=cached_paths):
+            config = Config()
+            result = config.tekla_macro_directories
+            assert result == cached_paths

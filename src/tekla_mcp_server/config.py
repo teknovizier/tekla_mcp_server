@@ -59,6 +59,26 @@ def _get_class_to_element() -> dict[int, tuple[str, str]]:
     return result
 
 
+@lru_cache
+def _get_tekla_macro_directories() -> list[str]:
+    """Get macro directories from Tekla's XS_MACRO_DIRECTORY advanced option.
+
+    Returns only valid, existing directory paths.
+    """
+    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
+
+    _, option = TeklaStructuresSettings.GetAdvancedOption("XS_MACRO_DIRECTORY", str())
+    if not option:
+        return []
+
+    paths: list[str] = []
+    for path_str in option.split(";"):
+        path = Path(path_str.strip())
+        if path.is_dir():
+            paths.append(str(path.resolve()))
+    return paths
+
+
 class Config:
     """Centralized configuration manager - thin wrapper around cached functions."""
 
@@ -127,8 +147,12 @@ class Config:
 
     @property
     def tekla_macro_directories(self) -> list[str]:
-        """List of directories to scan for Tekla macros."""
-        return _load_settings().get("tekla_macro_directory", [])
+        """List of directories to scan for Tekla macros.
+
+        Reads from Tekla's XS_MACRO_DIRECTORY advanced option.
+        Returns only valid, existing directory paths.
+        """
+        return _get_tekla_macro_directories()
 
     @property
     def class_to_element(self) -> dict[int, tuple[str, str]]:
