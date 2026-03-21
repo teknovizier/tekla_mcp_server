@@ -38,7 +38,7 @@ from Tekla.Structures.Model import (
     SingleRebar,
 )
 from Tekla.Structures.Model.Operations import Operation
-from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector as ModelObjectSelectorUI, ViewHandler, ModelObjectVisualization, TemporaryTransparency
+from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector as ModelObjectSelectorUI, ViewHandler, ModelObjectVisualization, TemporaryTransparency, View
 from Tekla.Structures.Filtering import (
     BinaryFilterOperatorType,
     BinaryFilterExpressionCollection,
@@ -97,6 +97,7 @@ __all__ = [
     "ViewHandler",
     "ModelObjectVisualization",
     "TemporaryTransparency",
+    "View",
     "BinaryFilterOperatorType",
     "BinaryFilterExpressionCollection",
     "BinaryFilterExpressionItem",

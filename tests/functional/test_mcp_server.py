@@ -38,6 +38,7 @@ from tekla_mcp_server.providers.view_provider import (
     show_only_selected,
     hide_selected,
     color_selected,
+    apply_view_filter,
 )
 from tekla_mcp_server.providers.properties_provider import (
     set_elements_udas,
@@ -420,6 +421,13 @@ def test_redraw_view():
     """Tests redraw_view function."""
     result = redraw_view()
     assert result["status"] == "success"
+
+
+def test_apply_view_filter():
+    """Tests apply_view_filter function."""
+    result = apply_view_filter(filter_name="standard")
+    assert result["status"] == "success"
+    assert result["filter_name"] == "standard"
 
 
 def test_show_only_selected(model_objects):

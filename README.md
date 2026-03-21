@@ -38,6 +38,7 @@ The server provides the following tools:
 | View | `show_only_selected` | Show only the currently selected elements in the currently active rendered view | - |
 | View | `hide_selected` | Hide the currently selected elements in the currently active rendered view | - |
 | View | `color_selected` | Color the currently selected elements in the currently active rendered view with a specified RGB color | `red`, `green`, `blue` (required, 0-255) |
+| View | `apply_view_filter` | Apply a view filter the currently active view in Tekla | `filter_name` (required) |
 | Operations | `cut_elements_with_zero_class_parts` | Performs boolean cuts on selected elements using elements in class 0, with optional deletion of cutting parts | `delete_cutting_parts` |
 | Operations | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts | - |
 | Operations | `run_macro` | Run a Tekla macro with the specified name | `macro_name` (required) |

@@ -17,6 +17,7 @@ from tekla_mcp_server.tools.view import (
     tool_show_only_selected,
     tool_hide_selected,
     tool_color_selected,
+    tool_apply_view_filter,
 )
 from tekla_mcp_server.utils import log_mcp_tool_call
 
@@ -82,6 +83,19 @@ def redraw_view() -> dict[str, Any]:
     - If coloring was just applied, do not trigger a redraw.
     """
     return tool_redraw_view()
+
+
+@view_provider.tool()
+@log_mcp_tool_call
+def apply_view_filter(filter_name: str) -> dict[str, Any]:
+    """
+    Applies a view filter to all visible views in Tekla.
+
+    ## INPUT
+    - `filter_name` [Required]: Name of the view filter to apply.
+      Use tekla://filters/view to discover available filters.
+    """
+    return tool_apply_view_filter(filter_name)
 
 
 @view_provider.tool()

@@ -17,6 +17,7 @@ from tekla_mcp_server.tekla.loader import (
     Operation,
     Point,
     TemporaryTransparency,
+    View,
     ViewHandler,
 )
 from tekla_mcp_server.tekla.model_object import (
@@ -153,6 +154,32 @@ def tool_redraw_view() -> dict[str, Any]:
 
     logger.info("Active views have been redrawn")
     return {"status": "success" if view_redrawn else "error"}
+
+
+@log_function_call
+def tool_apply_view_filter(filter_name: str) -> dict[str, Any]:
+    """
+    Applies a view filter to all visible views in Tekla.
+
+    Args:
+        filter_name: Name of the view filter to apply
+    """
+    from tekla_mcp_server.models import get_filters
+
+    available = get_filters(".VObjGrp")
+    if filter_name not in available:
+        logger.warning("Invalid filter '%s' requested. Available filters: %s", filter_name, available)
+        return {"status": "error", "message": f"Invalid filter '{filter_name}'", "available_filters": available}
+
+    view_enum = ViewHandler.GetVisibleViews()
+
+    while view_enum.MoveNext():
+        view: View = view_enum.Current
+        view.ViewFilter = filter_name
+        view.Modify()
+
+    logger.info("Applied view filter '%s'", filter_name)
+    return {"status": "success", "filter_name": filter_name}
 
 
 @log_function_call

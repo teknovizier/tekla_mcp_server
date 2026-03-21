@@ -241,7 +241,7 @@ def get_filters(file_extension: str) -> list[str]:
     except Exception:
         pass
 
-    filter_names: set[str] = set()
+    filter_names: set[str] = {"standard"}
     for dir_path in paths:
         for file in dir_path.rglob(f"*{file_extension}"):
             filter_names.add(file.stem)
