@@ -12,7 +12,7 @@ from fastmcp.resources import ResourceResult, ResourceContent
 from fastmcp.server.transforms import ResourcesAsTools
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import get_base_components, get_macros
+from tekla_mcp_server.models import get_base_components, get_macros, get_filters
 from tekla_mcp_server.providers import (
     selection_provider,
     view_provider,
@@ -57,15 +57,26 @@ def get_macro_list() -> ResourceResult:
     return ResourceResult(contents=[ResourceContent(content=json.dumps(get_macros()), mime_type="application/json")])
 
 
+@mcp.resource("filters://selection")
+def get_selection_filter_list() -> ResourceResult:
+    """
+    Returns a list of available Tekla selection filter names from .SObjGrp files.
+    """
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_filters(".SObjGrp")), mime_type="application/json")])
+
+
+@mcp.resource("filters://view")
+def get_view_filter_list() -> ResourceResult:
+    """
+    Returns a list of available Tekla view filter names from .VObjGrp files.
+    """
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_filters(".VObjGrp")), mime_type="application/json")])
+
+
 @mcp.resource("info://connection_status")
 def get_connection_status() -> ResourceResult:
     """
     Returns the current Tekla connection status.
-
-    ## RESPONSE
-    - connected: boolean
-    - model_path: str | null
-    - message: str
     """
     from tekla_mcp_server.tekla.model import TeklaModel
 

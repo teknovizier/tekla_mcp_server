@@ -50,7 +50,14 @@ The server exposes the following MCP resources:
 | `component://schema` | Returns the list of Tekla components available in server configuration |
 | `component://schema/{component_key}` | Returns the custom_properties schema for a specific component |
 | `macro://list` | Returns list of available Tekla macros from configured directories |
+| `filters/selection` | Returns list of available Tekla selection filter names from .SObjGrp files |
+| `filters/view` | Returns list of available Tekla view filter names from .VObjGrp files |
 | `info://connection_status` | Returns the current Tekla connection status (connected, model_path, message) |
+
+Filter resources search in:
+- `XS_FIRM` advanced option directories
+- `XS_PROJECT` advanced option directories
+- Model attributes directory (`{ModelPath}/attributes`)
 
 ### Compatibility
 The server was tested to work with **only Tekla 2022** and may not be compatible with other versions of Tekla Structures.
