@@ -190,7 +190,6 @@ tekla_mcp_server/
 ├── config/                    # Configuration JSON files
 │   ├── settings.sample.json
 │   ├── element_types.sample.json
-│   ├── lifting_anchor_types.sample.json
 │   ├── semantic_overrides.sample.json
 │   └── base_components.sample.json
 ├── tests/

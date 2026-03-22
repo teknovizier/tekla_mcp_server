@@ -162,24 +162,17 @@ def test_put_components_invalid_component(model_objects):
 
 
 def test_put_components_with_custom_properties(model_objects):
-    """Tests put_components for Border Rebar with custom properties."""
+    """Tests put_components for Mesh Bars with custom properties."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    result = put_components(component_name="Border Rebar", custom_properties={"SBSize_list": "12", "SBGrade_list": "B500B"})
-    assert result["status"] == "success"
-
-
-def test_put_components(model_objects):
-    """Tests the put_components function."""
-    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    result = put_components(component_name="DIR_ARR")
+    result = put_components(component_name="MeshBars", custom_properties={"TopAsBott": "0"})
     assert result["status"] == "success"
 
 
 def test_remove_components(model_objects):
     """Tests remove_components function."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    put_components(component_name="DIR_ARR")
-    result = remove_components(component_name="DIR_ARR")
+    put_components(component_name="MeshBars")
+    result = remove_components(component_name="MeshBars")
     assert result["status"] == "success"
 
 
@@ -259,8 +252,8 @@ def test_select_elements_by_filter_string_multiple_conditions(model_objects, log
         standard_string_filters={
             "name": {
                 "conditions": [
-                    {"match_type": "Contains", "value": "A"},
-                    {"match_type": "Contains", "value": "B"},
+                    {"match_type": "Contains", "value": "T"},
+                    {"match_type": "Contains", "value": "E"},
                 ],
                 "logic": logic,
             }
@@ -284,7 +277,7 @@ def test_select_elements_by_filter_custom_string_filters(model_objects):
     [
         {"name": "HEIGHT", "match_type": "Greater Than", "value": 2000.0},
         {"name": "WEIGHT", "match_type": "Greater Than", "value": 300.0},
-        {"name": "LENGTH", "match_type": "Greater Than", "value": 2500.0},
+        {"name": "LENGTH", "match_type": "Greater Than", "value": 1500.0},
     ],
 )
 def test_select_elements_by_filter_numeric_single_condition(model_objects, prop):

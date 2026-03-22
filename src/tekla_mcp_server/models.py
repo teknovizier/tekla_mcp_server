@@ -17,8 +17,6 @@ from pydantic_core import PydanticCustomError
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_function_call
-from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
-from tekla_mcp_server.tekla.model import TeklaModel
 
 
 # Enums
@@ -153,8 +151,10 @@ def get_element_type_mapping() -> dict[str, dict[str, list[int]]]:
 
 @lru_cache
 def get_lifting_anchor_types() -> dict[str, Any]:
-    """Returns lifting anchor types from config."""
-    return get_config().lifting_anchor_types
+    """Returns lifting anchor types from base_components.json."""
+    base = get_base_components()
+    lifting = base.get("lifting_anchor", {})
+    return lifting.get("anchor_types", {})
 
 
 @lru_cache
@@ -216,6 +216,9 @@ def get_filters(file_extension: str) -> list[str]:
 
     Returns sorted list of filter names without the extension.
     """
+    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
+    from tekla_mcp_server.tekla.model import TeklaModel
+
     if not file_extension.startswith("."):
         file_extension = f".{file_extension}"
 

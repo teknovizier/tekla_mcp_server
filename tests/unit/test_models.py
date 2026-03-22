@@ -629,16 +629,16 @@ class TestBaseComponentCustomPropertiesValidation:
     def test_valid_custom_properties(self):
         """Valid properties should pass."""
         component = BaseComponent(
-            name="Border Rebar",
-            custom_properties={"SBSize_list": "10", "SBGrade_list": "B500B"},
+            name="MeshBars",
+            custom_properties={"TopAsBott": 0, "BottGradePri": "B500B"},
         )
-        assert component.custom_properties == {"SBSize_list": "10", "SBGrade_list": "B500B"}
+        assert component.custom_properties == {"TopAsBott": 0, "BottGradePri": "B500B"}
 
     def test_unknown_property_raises(self):
         """Unknown property should raise ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
             BaseComponent(
-                name="Border Rebar",
+                name="MeshBars",
                 custom_properties={"unknown_prop": "value"},
             )
         assert "Unknown property: 'unknown_prop'" in str(exc_info.value)
@@ -647,14 +647,14 @@ class TestBaseComponentCustomPropertiesValidation:
         """Wrong type should raise ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
             BaseComponent(
-                name="Border Rebar",
-                custom_properties={"SBEndCondLeft": {"not": "an int"}},  # dict instead of int
+                name="MeshBars",
+                custom_properties={"TopAsBott": {"not": "an int"}},  # dict instead of int
             )
-        assert "Invalid value for 'SBEndCondLeft'" in str(exc_info.value)
+        assert "Invalid value for 'TopAsBott'" in str(exc_info.value)
 
     def test_none_custom_properties(self):
         """None should be allowed."""
-        component = BaseComponent(name="Border Rebar", custom_properties=None)
+        component = BaseComponent(name="MeshBars", custom_properties=None)
         assert component.custom_properties is None
 
     def test_unknown_component_skips_validation(self):

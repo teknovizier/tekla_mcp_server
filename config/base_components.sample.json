@@ -2,55 +2,258 @@
   "lifting_anchor": {
     "tekla_name": "Lifting Anchor",
     "number": 30000080,
-    "safety_margin": 5
+    "description": "A component that adds lifting anchors to walls according to predefined rules",
+    "safety_margin": 5,
+    "anchor_types": {
+      "P1": {
+        "active": true,
+        "type": "long",
+        "element_type": ["CONCRETE_WALL"],
+        "capacity": 1.0,
+        "min_edge_distance": 300.0,
+        "attributes": {
+          "RecessLength": 130.0,
+          "RecessHeight": 110.0,
+          "RecessInnerLength": 25.0,
+          "DistOutOfBeam": -30.0
+        }
+      },
+      "P2": {
+        "active": true,
+        "type": "long",
+        "element_type": ["CONCRETE_WALL"],
+        "capacity": 2.0,
+        "min_edge_distance": 350.0,
+        "attributes": {
+          "RecessLength": 130.0,
+          "RecessHeight": 110.0,
+          "RecessInnerLength": 25.0,
+          "DistOutOfBeam": -30.0
+        }
+      },
+      "P3": {
+        "active": true,
+        "type": "long",
+        "element_type": ["CONCRETE_SANDWICH_WALL"],
+        "capacity": 2.0,
+        "min_edge_distance": 350.0,
+        "attributes": {
+          "RecessLength": 130.0,
+          "RecessHeight": 110.0,
+          "RecessInnerLength": 25.0,
+          "DistOutOfBeam": -30.0
+        }
+      }
+    }
   },
-  "border_rebar": {
-    "tekla_name": "Border Rebar",
-    "number": 150000092,
+  "mesh_bars": {
+    "tekla_name": "MeshBars",
+    "number": -100000,
+    "description": "A component that creates main reinforcement for concrete slabs or walls",
     "custom_properties": {
-      "SBSize_list": {
-        "description": "rebar size",
-        "type": "str"
-      },
-      "SBGrade_list": {
-        "description": "rebar grade",
-        "type": "str"
-      },
-      "SBRadius_list": {
-        "description": "rebar bending radius",
-        "type": "float"
-      },
-      "SBEndCondLeft": {
-        "description": "end conditions left",
+      "TopAsBott": {
+        "description": "top bars use bottom bar properties: 0 = yes, 1 = no",
         "type": "int"
       },
-      "SBEndCondRight": {
-        "description": "end conditions right",
+      "NumberBarsBottSec": {
+        "description": "number of bottom secondary bars",
+        "type": "int"
+      },  
+      "SpacBarsBottSec": {
+        "description": "bottom secondary bars spacing",
+        "type": "float"
+      },
+      "BottGradeSec": {
+        "description": "bottom secondary bars reinforcement grade",
+        "type": "str"
+      },
+      "BottDiaSec": {
+        "description": "bottom secondary bars diameter",
+        "type": "str"
+      },
+      "NumberBarsBottPri": {
+        "description": "number of bottom primary bars",
+        "type": "int"
+      },  
+      "SpacBarsBottPri": {
+        "description": "bottom primary bars spacing",
+        "type": "float"
+      },
+      "BottGradePri": {
+        "description": "bottom primary bars reinforcement grade",
+        "type": "str"
+      },
+      "BottDiaPri": {
+        "description": "bottom primary bars diameter",
+        "type": "str"
+      },
+      "NumberBarsTopSec": {
+        "description": "number of bottom secondary bars",
+        "type": "int"
+      },  
+      "SpacBarsTopSec": {
+        "description": "bottom secondary bars spacing",
+        "type": "float"
+      },
+      "TopGradeSec": {
+        "description": "top secondary bars reinforcement grade",
+        "type": "str"
+      },
+      "TopDiaSec": {
+        "description": "top secondary bars diameter",
+        "type": "str"
+      },
+      "NumberBarsTopPri": {
+        "description": "number of top primary bars",
+        "type": "int"
+      },  
+      "SpacBarsTopPri": {
+        "description": "top primary bars spacing",
+        "type": "float"
+      },
+      "TopGradePri": {
+        "description": "top primary bars reinforcement grade",
+        "type": "str"
+      },
+      "TopDiaPri": {
+        "description": "top primary bars diameter",
+        "type": "str"
+      },
+      "SpacTypBotSec": {
+        "description": "Spacing mode for bottom secondary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
+        "type": "int"
+      }, 
+      "SpacTypBotPri": {
+        "description": "Spacing mode for bottom primary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
+        "type": "int"
+      }, 
+      "SpacTypTopSec": {
+        "description": "Spacing mode for top secondary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
         "type": "int"
       },
-      "SB_y_bot_cc": {
-        "description": "bottom concrete cover",
+      "SpacTypTopPri": {
+        "description": "Spacing mode for top primary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
+        "type": "int"
+      },
+      "BarTypeBott": {
+        "description": "bottom bars creation type: 1 = bar group, 0 = mesh",
+        "type": "int"
+      },
+      "BarTypeTop": {
+        "description": "top bars creation type: 1 = bar group, 0 = mesh",
+        "type": "int"
+      },
+      "BottomDistance": {
+        "description": "concrete cover thickness for the bottom layer",
         "type": "float"
       },
-      "SB_y_bot_L": {
-        "description": "bottom leg length",
+      "TopDistance": {
+        "description": "concrete cover thickness for the top layer",
         "type": "float"
       },
-      "SB_y_top_cc": {
-        "description": "top concrete cover",
+      "BottRebars": {
+        "description": "bottom bars placement: 1 = secondary above primary, 0 = primary above secondary",
+        "type": "int"
+      },
+      "TopRebars": {
+        "description": "top bars placement: 1 = secondary above primary, 0 = primary above secondary",
+        "type": "int"
+      },
+      "MinRebarLength": {
+        "description": "minimum length of primary bar to be created",
         "type": "float"
       },
-      "SB_y_top_L": {
-        "description": "top leg length",
+      "MinRebarLengthSec": {
+        "description": "minimum length of secondary bar to be created",
         "type": "float"
       },
-      "SB_z_bot": {
-        "description": "side bottom concrete cover",
+      "CuttingBars": {
+        "description": "cut bars: 0 = cut, 1 = ignore cuts",
+        "type": "int"
+      },
+      "CoverDoor": {
+        "description": "concrete cover thickness between the bar to the edge of the door opening",
         "type": "float"
       },
-      "SB_z_top": {
-        "description": "side top concrete cover",
+      "DoorSize": {
+        "description": "ignore door openings smaller than this value",
         "type": "float"
+      },
+      "CoverHole": {
+        "description": "concrete cover thickness between the bar to the edge of the window opening",
+        "type": "float"
+      },
+      "OpenSize": {
+        "description": "ignore window openings smaller than this value",
+        "type": "float"
+      },
+      "CoverThickness": {
+        "description": "concrete cover thickness on sides",
+        "type": "float"
+      },
+      "BottSecClass": {
+        "description": "Tekla class of the bottom secondary bars",
+        "type": "str"
+      },
+      "TopSecClass": {
+        "description": "Tekla class of the top secondary bars",
+        "type": "str"
+      },
+      "BottPriClass": {
+        "description": "Tekla class of the bottom primary bars",
+        "type": "str"
+      },
+      "TopPriClass": {
+        "description": "Tekla class of the top primary bars",
+        "type": "str"
+      },
+      "BottSecName": {
+        "description": "name of the bottom secondary bars",
+        "type": "str"
+      },
+      "TopSecName": {
+        "description": "name of the bottom secondary bars",
+        "type": "str"
+      },
+      "BottPriName": {
+        "description": "name of the bottom primary bars",
+        "type": "str"
+      },
+      "TopPriName": {
+        "description": "name of the top primary bars",
+        "type": "str"
+      },
+      "BottSecStart": {
+        "description": "start number for the bottom secondary bars",
+        "type": "str"
+      },
+      "TopSecStart": {
+        "description": "start number for the top secondary bars",
+        "type": "str"
+      },
+      "BottPriStart": {
+        "description": "start number for the bottom primary bars",
+        "type": "str"
+      },
+      "TopPriStart": {
+        "description": "start number for the top primary bars",
+        "type": "str"
+      },
+      "BottSecPrefix": {
+        "description": "prefix for the bottom secondary bars",
+        "type": "str"
+      },
+      "TopSecPrefix": {
+        "description": "prefix for the top secondary bar",
+        "type": "str"
+      },
+      "BottPriPrefix": {
+        "description": "prefix for the bottom primary bar",
+        "type": "str"
+      },
+      "TopPriPrefix": {
+        "description": "prefix for the top primary bar",
+        "type": "str"
       }
     }
   }

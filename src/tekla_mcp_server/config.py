@@ -197,11 +197,6 @@ class Config:
         return _load_json("element_types.json")
 
     @property
-    def lifting_anchor_types(self) -> dict[str, Any]:
-        """Lifting anchor type mappings."""
-        return _load_json("lifting_anchor_types.json")
-
-    @property
     def base_components(self) -> dict[str, Any]:
         """Base component definitions."""
         return _load_json("base_components.json")

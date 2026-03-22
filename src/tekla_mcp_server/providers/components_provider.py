@@ -31,15 +31,15 @@ def put_components(
     Inserts Tekla components into the selected objects.
 
     ## INPUT
-    - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor")
+    - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor", "Mesh Bars")
     - `properties_set` [Optional]: The name of the Tekla component properties set to use (standard by default)
     - `custom_properties` [Optional]: Custom properties to apply to the component (dict)
 
     ## INSTRUCTIONS
     - First read `component://schema` to discover available components.
     - Then read `component://schema/{component_key}` to get custom properties for a specific component.
-    - Use Tekla config keys (e.g., `SBSize_list`, `SBGrade_list`) as property names, NOT user-friendly descriptions.
-    - Example: For "Border Rebar", read the schema to get: `SBSize_list` for "rebar size", `SBGrade_list` for "rebar grade".
+    - Use Tekla config keys (e.g., `SpacBarsBottPri`, `BottGradePri`) as property names, NOT user-friendly descriptions.
+    - Example: For "Mesh Bars", read the schema to get: `SpacBarsBottPri` for "bottom primary bars spacing", `BottGradePri` for "bottom primary bars reinforcement grade".
     """
     try:
         if component_name == "Lifting Anchor":
@@ -59,7 +59,7 @@ def remove_components(component_name: str) -> dict[str, Any]:
     Removes Tekla components from selected objects.
 
     ## INPUT
-    - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor", "Border Rebar")
+    - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor", "Mesh Bars")
     """
     if component_name == "Lifting Anchor":
         component: BaseComponent = LiftingAnchorsComponent()

@@ -6,7 +6,7 @@
 
 # Tekla MCP Server
 
-This server facilitates interaction with **Tekla Structures**, helping users speed up modeling processes. It acts as a bridge between users and Tekla, enabling automated workflows and improving efficiency.
+This server facilitates interaction with **Tekla Structures**, helping users automate and accelerate modeling workflows. It acts as a bridge between AI agents or MCP-compatible clients and Tekla, exposing structured tools for selection, component insertion, property management, and view operations.
 
 > #### 📌 What is MCP?
 >
@@ -119,6 +119,35 @@ If you want to replace the default embedding model with another one - either a H
 | `embeddings.embedding_spread_threshold`          | 0.1 | Minimum stddev of top-k scores for direct resolution. Below this threshold, candidates are returned for LLM to choose from |
 | `embeddings.embedding_minimum_threshold`          | 0.8 | Minimum confidence score (0-1) for direct resolution. Below this threshold, candidates are returned for LLM to choose from |
 
+* Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model
+* Rename `config/semantic_overrides.sample.json` to `config/semantic_overrides.json`, and update the values to match the Tekla attribute names. Only include overrides for common ambiguous or critical attributes - all other queries are handled by the semantic model
+* Rename `config/base_components.sample.json` to `config/base_components.json`, and specify the names and component numbers you'd like to make available to the MCP server. Lifting anchor types are defined within this file under `anchor_types`
+
+### Component System
+
+Components are defined using structured schemas in `config/base_components.json`:
+
+```json
+{
+  "mesh_bars": {
+    "description": "Creates main reinforcement for concrete slabs or walls",
+    "tekla_name": "MeshBars",
+    "number": -100000,
+    "custom_properties": {
+      "TopAsBott": {
+        "description": "Top bars use bottom bar properties: 0 = yes, 1 = no",
+        "type": "int"
+      }
+    }
+  }
+}
+```
+
+**Benefits:**
+- AI understands component and their properties purpose from descriptions
+- Property schemas enable automatic validation
+- Extensible: add new components via config, no code changes
+
 ### Requirements Folder
 
 The `requirements_folder` contains project-specific design requirements in Markdown format. The AI can load this information into context, allowing it to understand and apply your project's design standards when calling MCP tools.
@@ -132,11 +161,6 @@ The `requirements_folder` contains project-specific design requirements in Markd
 - Reinforcement specifications (rebar grades, mesh types, cover requirements)
 - Material standards (concrete classes, steel grades)
 - Project-specific naming conventions
-
-* Rename `config/lifting_anchor_types.sample.json` to `config/lifting_anchor_types.json`, and specify the components for the lifting anchors used in your projects along with their attributes
-* Rename `config/element_types.sample.json` to `config/element_types.json`, and set the values of Tekla classes used in your model
-* Rename `config/base_components.sample.json` to `config/base_components.json`, and specify the names and component numbers you'd like to make available to the MCP server. Components are keyed by snake_case config keys (e.g., `border_rebar`, `lifting_anchor`) with a `tekla_name` field for the Tekla API. Components can optionally include `custom_properties` with descriptions for LLM mapping via MCP resources
-* Rename `config/semantic_overrides.sample.json` to `config/semantic_overrides.json`, and update the values to match the Tekla attribute names. Only include overrides for common ambiguous or critical attributes - all other queries are handled by the semantic model
 
 ### Environment Variables
 
