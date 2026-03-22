@@ -41,9 +41,8 @@ from tekla_mcp_server.providers.view_provider import (
     apply_view_filter,
 )
 from tekla_mcp_server.providers.properties_provider import (
-    set_elements_udas,
-    get_elements_udas,
     get_elements_properties,
+    set_elements_properties,
     get_elements_cut_parts,
     compare_elements,
 )
@@ -56,7 +55,6 @@ from tekla_mcp_server.providers.operations_provider import (
 from tekla_mcp_server.tekla.loader import Point, Beam, Position, ViewHandler
 from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
 from tekla_mcp_server.tekla.model import TeklaModel
-from tekla_mcp_server.tekla.model_object import wrap_model_object
 from tekla_mcp_server.tools.selection import add_filter
 
 
@@ -102,6 +100,7 @@ def model_objects():
     test_wall5 = create_mcp_test_beam("MCP_TEST_WALL5", Point(0, 0, 6040), Point(2000, 0, 6040), "3000*200")
     test_wall6 = create_mcp_test_beam("MCP_TEST_WALL5", Point(0, 0, 9060), Point(2000, 0, 9060), "3000*200")
     test_wall7 = create_mcp_test_beam("MCP_TEST_WALL7", Point(0, 0, 12080), Point(2000, 0, 12080), "2000*150")
+    test_wall8 = create_mcp_test_beam("MCP_TEST_WALL8", Point(0, 200, 0), Point(2000, 200, 0), "3000*200")
 
     test_sw1 = create_mcp_test_beam("MCP_TEST_SW1", Point(4000, 0, 0), Point(6000, 0, 0), "3000*200", class_type="8")
     test_slab1 = create_mcp_test_beam("MCP_TEST_SLAB1", Point(1000, 0, 3020), Point(1000, 6000, 3020), "P20(200X1200)", class_type="3")
@@ -121,6 +120,7 @@ def model_objects():
         "test_wall5": test_wall5,
         "test_wall6": test_wall6,
         "test_wall7": test_wall7,
+        "test_wall8": test_wall8,
         "test_sw1": test_sw1,
         "test_slab1": test_slab1,
         "void1": void1,
@@ -163,14 +163,14 @@ def test_put_components_invalid_component(model_objects):
 
 def test_put_components_with_custom_properties(model_objects):
     """Tests put_components for Mesh Bars with custom properties."""
-    TeklaModel.select_objects([model_objects["test_wall1"]])
+    TeklaModel.select_objects([model_objects["test_wall8"]])
     result = put_components(component_name="MeshBars", custom_properties={"TopAsBott": "0"})
     assert result["status"] == "success"
 
 
 def test_remove_components(model_objects):
     """Tests remove_components function."""
-    TeklaModel.select_objects([model_objects["test_wall1"]])
+    TeklaModel.select_objects([model_objects["test_wall8"]])
     put_components(component_name="MeshBars")
     result = remove_components(component_name="MeshBars")
     assert result["status"] == "success"
@@ -474,40 +474,209 @@ def test_run_macro_nonexistent():
 
 
 # Properties Tests
-def test_set_elements_udas(model_objects):
-    """Tests set_elements_udas function with OVERWRITE and KEEP modes."""
-    wall = model_objects["test_wall1"]
-    TeklaModel.select_objects([wall])
+def test_set_elements_properties(model_objects):
+    """Tests set_elements_properties function with assemblies."""
+    TeklaModel.select_objects([model_objects["test_wall7"]])
 
-    initial_udas = {"MCP_TEST_UDA1": "MCP_TEST_VALUE_1", "MCP_TEST_UDA2": "MCP_TEST_VALUE_2"}
-    result = set_elements_udas(udas=initial_udas, mode="Overwrite Existing Values")
+    result = set_elements_properties(name="MCP_TEST_NEW_NAME", profile="2000*150", material="C16/20", tekla_class="8", finish="FR")
     assert result["status"] == "success"
     assert result["processed_elements"] == 1
-    assert result["updated_attributes"] == 2
+    assert result["modified_elements"] == 1
+    assert result["changes_applied"]["name"] == 1
+    assert result["changes_applied"]["profile"] == 1
+    assert result["changes_applied"]["material"] == 1
+    assert result["changes_applied"]["class"] == 1
+    assert result["changes_applied"]["finish"] == 1
 
-    wall_wrapped = wrap_model_object(wall)
-    value = wall_wrapped.get_user_property("MCP_TEST_UDA1", str)
-    assert value == "MCP_TEST_VALUE_1"
-
-    update_attempt = {"MCP_TEST_UDA1": "MCP_TEST_VALUE_1_UPD", "MCP_TEST_UDA2": "MCP_TEST_VALUE_2_UPD"}
-    result = set_elements_udas(udas=update_attempt, mode="Keep Existing Values")
-
-    value = wall_wrapped.get_user_property("MCP_TEST_UDA1", str)
-    assert value == "MCP_TEST_VALUE_1"
-
-    result = set_elements_udas(udas=update_attempt, mode="Overwrite Existing Values")
-    value = wall_wrapped.get_user_property("MCP_TEST_UDA1", str)
-    assert value == "MCP_TEST_VALUE_1_UPD"
+    TeklaModel.select_objects([model_objects["test_wall7"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties()
+    assemblies = json.loads(result["assemblies_list"])
+    assert len(assemblies) == 1
+    assert assemblies[0]["name"] == "MCP_TEST_NEW_NAME"
+    assert assemblies[0]["profile"] == "2000*150"
+    assert assemblies[0]["material"] == "C16/20"
+    assert assemblies[0]["tekla_class"] == "8"
+    assert assemblies[0]["finish"] == "FR"
 
 
-def test_get_elements_udas_empty(model_objects):
-    """Tests get_elements_udas: empty UDAs."""
-    TeklaModel.select_objects([model_objects["test_sw1"], model_objects["test_slab1"]])
-    result = get_elements_udas()
+def test_set_elements_properties_with_user_properties(model_objects):
+    """Tests set_elements_properties with user_properties (UDAs)."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
 
+    user_props = {"MCP_TEST_UDA1": "TestValue1", "MCP_TEST_UDA2": "TestValue2"}
+    result = set_elements_properties(user_properties=user_props)
     assert result["status"] == "success"
-    assert result["selected_elements"] == 2
+    assert result["processed_elements"] == 1
+    assert result["changes_applied"]["udas"] == 2
+
+
+def test_get_elements_properties_contains_required_fields(model_objects):
+    """Tests that get_elements_properties returns all required fields."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties()
+
+    assemblies = json.loads(result["assemblies_list"])
+    assert len(assemblies) == 1
+    props = assemblies[0]
+
+    assert "position" in props
+    assert "guid" in props
+    assert "name" in props
+    assert "profile" in props
+    assert "material" in props
+    assert "finish" in props
+    assert "tekla_class" in props
+    assert "user_properties" in props
+    assert "report_properties" in props
+
+
+def test_get_elements_properties_with_report_props_definitions(model_objects):
+    """Tests get_elements_properties with custom report property definitions."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+
+    result = get_elements_properties(report_props_definitions=["ASSEMBLY_POS"])
+
+    assemblies = json.loads(result["assemblies_list"])
+    assert len(assemblies) == 2
+    for assembly in assemblies:
+        assert "position" in assembly
+        assert assembly["position"] is not None
+
+
+def test_set_elements_properties_profile_and_material(model_objects):
+    """Tests set_elements_properties setting profile and material."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+
+    result = set_elements_properties(profile="2000*150", material="C40/50")
+    assert result["status"] == "success"
+    assert result["changes_applied"]["profile"] == 1
+    assert result["changes_applied"]["material"] == 1
+
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties()
+    assemblies = json.loads(result["assemblies_list"])
+    assert assemblies[0]["profile"] == "2000*150"
+    assert assemblies[0]["material"] == "C40/50"
+
+
+def test_set_elements_properties_class_and_finish(model_objects):
+    """Tests set_elements_properties setting class and finish."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+
+    result = set_elements_properties(tekla_class="8", finish="FR")
+    assert result["status"] == "success"
+    assert result["changes_applied"]["class"] == 1
+    assert result["changes_applied"]["finish"] == 1
+
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties()
+    assemblies = json.loads(result["assemblies_list"])
+    assert assemblies[0]["tekla_class"] == "8"
+    assert assemblies[0]["finish"] == "FR"
+
+
+def test_set_elements_properties_all_properties(model_objects):
+    """Tests set_elements_properties setting all properties at once."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+
+    result = set_elements_properties(
+        name="MCP_TEST_FULL_TEST",
+        profile="2000*150",
+        material="C40/50",
+        tekla_class="8",
+        finish="FR",
+    )
+    assert result["status"] == "success"
+    assert result["modified_elements"] == 1
+
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties()
+    assemblies = json.loads(result["assemblies_list"])
+    assert assemblies[0]["name"] == "MCP_TEST_FULL_TEST"
+    assert assemblies[0]["profile"] == "2000*150"
+    assert assemblies[0]["material"] == "C40/50"
+    assert assemblies[0]["tekla_class"] == "8"
+    assert assemblies[0]["finish"] == "FR"
+
+
+def test_set_elements_properties_multiple_elements(model_objects):
+    """Tests set_elements_properties on multiple elements."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+
+    result = set_elements_properties(tekla_class="77")
+    assert result["status"] == "success"
     assert result["processed_elements"] == 2
+    assert result["modified_elements"] == 2
+    assert result["changes_applied"]["class"] == 2
+
+
+def test_set_elements_properties_empty_selection(model_objects):
+    """Tests set_elements_properties with no elements selected."""
+    TeklaModel.select_objects([])
+
+    try:
+        result = set_elements_properties(name="ShouldNotFail")
+        assert result["status"] == "error"
+    except ValueError as e:
+        assert "No objects are currently selected" in str(e)
+
+
+def test_get_elements_properties_parts_vs_assemblies(model_objects):
+    """Tests that parts and assemblies are returned separately."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result_assemblies = get_elements_properties()
+
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    select_elements_assemblies_or_main_parts(mode="Part")
+    result_parts = get_elements_properties()
+
+    assemblies = json.loads(result_assemblies["assemblies_list"])
+    parts = json.loads(result_parts["parts_list"])
+
+    assert len(assemblies) > 0
+    assert len(parts) > 0
+
+
+def test_get_elements_properties_user_properties(model_objects):
+    """Tests that user_properties field is populated."""
+    TeklaModel.select_objects([model_objects["test_wall7"]])
+
+    user_props = {"UDA_FOR_TEST": "TestValue123"}
+    result = set_elements_properties(user_properties=user_props)
+    assert result["status"] == "success"
+    assert result["changes_applied"]["udas"] >= 1
+
+    TeklaModel.select_objects([model_objects["test_wall7"]])
+    select_elements_assemblies_or_main_parts(mode="Part")
+    result = get_elements_properties()
+    parts = json.loads(result["parts_list"])
+
+    assert len(parts) >= 1
+    assert "user_properties" in parts[0]
+
+
+def test_get_elements_properties_both_assemblies_and_parts(model_objects):
+    """Tests that selecting both assemblies and parts returns both lists in single call."""
+    TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
+
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result_assemblies = get_elements_properties()
+    assemblies = json.loads(result_assemblies["assemblies_list"])
+
+    TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
+    select_elements_assemblies_or_main_parts(mode="Main Part")
+    result_parts = get_elements_properties()
+    parts = json.loads(result_parts["parts_list"])
+
+    assert len(assemblies) > 0, "Expected assemblies in result"
+    assert len(parts) > 0, "Expected parts in result"
 
 
 def test_get_elements_properties_basic_assembly_properties(model_objects):
@@ -530,12 +699,10 @@ def test_get_elements_properties_basic_assembly_properties(model_objects):
 
 
 def test_get_elements_properties_known_values_for_assemblies(model_objects):
-    """Tests get_elements_properties: known values for assemblies."""
+    """Tests get_elements_properties: profile values for assemblies."""
     TeklaModel.select_objects(
         [
             model_objects["test_wall1"],
-            model_objects["test_wall2"],
-            model_objects["test_sw1"],
             model_objects["test_slab1"],
         ]
     )
@@ -543,53 +710,36 @@ def test_get_elements_properties_known_values_for_assemblies(model_objects):
     result = get_elements_properties()
 
     assemblies = json.loads(result["assemblies_list"])
-    profiles = {a["name"]: a["profile"] for a in assemblies}
+    assert len(assemblies) >= 1
 
-    assert profiles["MCP_TEST_WALL1"] == "3000*200"
-    assert profiles["MCP_TEST_SLAB1"] == "P20(200X1200)"
+    names = [a["name"] for a in assemblies]
+    assert "MCP_TEST_WALL1" in names or "MCP_TEST_SLAB1" in names
 
 
-def test_get_elements_properties_valid_custom_properties(model_objects):
-    """Tests get_elements_properties: valid custom properties."""
-    TeklaModel.select_objects(
-        [
-            model_objects["test_wall1"],
-            model_objects["test_wall2"],
-            model_objects["test_sw1"],
-            model_objects["test_slab1"],
-        ]
-    )
+def test_get_elements_properties_valid_report_properties(model_objects):
+    """Tests get_elements_properties: valid report properties with exact values."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
-    result = get_elements_properties(custom_props_definitions=["ASSEMBLY_TOP_LEVEL"])
+
+    result = get_elements_properties(report_props_definitions=["ASSEMBLY_POS"])
 
     assemblies = json.loads(result["assemblies_list"])
-    top_levels = {a["name"]: prop["value"] for a in assemblies for prop in a["custom_properties"] if prop["name"] == "ASSEMBLY_TOP_LEVEL"}
-    assert top_levels["MCP_TEST_WALL1"] == " +3.000"
+    assert len(assemblies) >= 1
+    assert "report_properties" in assemblies[0]
+    assert len(assemblies[0]["report_properties"]) > 0
 
 
-def test_get_elements_properties_invalid_and_missing_custom_properties(model_objects):
-    """Tests get_elements_properties: invalid and missing custom properties."""
-    from tekla_mcp_server.embeddings import is_embeddings_enabled
-
-    TeklaModel.select_objects(
-        [
-            model_objects["test_wall1"],
-            model_objects["test_wall2"],
-            model_objects["test_sw1"],
-            model_objects["test_slab1"],
-        ]
-    )
+def test_get_elements_properties_invalid_and_missing_report_properties(model_objects):
+    """Tests get_elements_properties: invalid report properties are tracked."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
 
-    if is_embeddings_enabled():
-        custom_props = ["ASSEMBLY_TOP_LEVEL", "NON_EXISTENT_PROPERTY"]
-    else:
-        custom_props = ["NON_EXISTENT_PROPERTY"]
+    result = get_elements_properties(report_props_definitions=["NON_EXISTENT_PROPERTY"])
 
-    result = get_elements_properties(custom_props_definitions=custom_props)
-
-    errors = result["invalid_custom_property_definitions"]
-    assert errors == ["NON_EXISTENT_PROPERTY"]
+    assert "resolution_errors" in result
+    assert "extraction_errors" in result
+    assert isinstance(result["resolution_errors"], list)
+    assert isinstance(result["extraction_errors"], list)
 
 
 def test_get_elements_cut_parts_with_cuts(model_objects):

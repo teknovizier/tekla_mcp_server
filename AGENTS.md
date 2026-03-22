@@ -152,7 +152,7 @@ Tools perform operations that may mutate state:
 |----------|-------|
 | `selection_provider` | `select_elements_by_filter`, `select_elements_by_guid`, etc. |
 | `view_provider` | `draw_elements_labels`, `zoom_to_selection`, etc. |
-| `properties_provider` | `get_elements_properties`, `set_elements_udas`, etc. |
+| `properties_provider` | `get_elements_properties`, `set_elements_properties`, etc. |
 | `components_provider` | `put_components`, `remove_components` |
 | `operations_provider` | `cut_elements_with_zero_class_parts`, `run_macro` |
 

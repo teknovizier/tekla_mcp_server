@@ -29,15 +29,6 @@ class SelectionMode(Enum):
     MAIN_PART = "Main Part"
 
 
-class UDASetMode(Enum):
-    """
-    Defines modes for applying UDAs to Tekla objects.
-    """
-
-    KEEP = "Keep Existing Values"
-    OVERWRITE = "Overwrite Existing Values"
-
-
 class StringMatchType(Enum):
     """
     Represents the matching types for String objects:
@@ -137,7 +128,6 @@ class ElementLabel(Enum):
 
 # Mappings
 SELECTION_MODES = {e.value for e in SelectionMode}
-UDA_SET_MODES = {e.value for e in UDASetMode}
 ELEMENT_TYPES = {e.value for e in ElementType}
 COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
@@ -256,7 +246,7 @@ class EnumWrapper(BaseModel):
     """
     A generic base model for validating string inputs against a predefined set of enum values.
 
-    This class is designed to be subclassed by specific enum models (e.g., SelectionModeModel, UDASetModeModel),
+    This class is designed to be subclassed by specific enum models (e.g., SelectionModeModel),
     allowing consistent validation logic and error handling across multiple enum types.
     """
 
@@ -291,21 +281,6 @@ class SelectionModeModel(EnumWrapper):
         Converts the validated string value to a enum.
         """
         return SelectionMode(self.value)
-
-
-class UDASetModeModel(EnumWrapper):
-    """
-    Represents a validated UDA set mode for Tekla objects.
-    """
-
-    _valid_values = UDA_SET_MODES
-    _error_code = "invalid_uda_set_mode"
-
-    def to_enum(self) -> UDASetMode:
-        """
-        Converts the validated string value to a enum.
-        """
-        return UDASetMode(self.value)
 
 
 class StringFilterCondition(BaseModel):
@@ -764,31 +739,6 @@ class ReportProperty(BaseModel):
         Converts the data_type class object to its name string for JSON output.
         """
         return v.__name__
-
-
-class ElementProperties(BaseModel):
-    """
-    Represents key properties of an Assembly or Part object extracted from Tekla:
-    - Position
-    - GUID
-    - Name
-    - Profile
-    - Material
-    - Finish
-    - Class
-    - Weight in kg
-    - Any available custom properties
-    """
-
-    position: str
-    guid: str
-    name: str
-    profile: str
-    material: str
-    finish: str
-    tekla_class: str
-    weight: float
-    custom_properties: list[ReportProperty] | None
 
 
 class ModelObjectSnapshot(BaseModel):

@@ -8,11 +8,9 @@ from typing import Any
 
 from fastmcp.server.providers import LocalProvider
 
-from tekla_mcp_server.models import UDASetModeModel
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tools.properties import (
-    tool_set_elements_udas,
-    tool_get_elements_udas,
+    tool_set_elements_properties,
     tool_get_elements_properties,
     tool_get_elements_cut_parts,
     tool_compare_elements,
@@ -25,84 +23,101 @@ properties_provider = LocalProvider()
 
 @properties_provider.tool()
 @log_mcp_tool_call
-def set_elements_udas(udas: dict[str, Any], mode: str) -> dict[str, Any]:
+def set_elements_properties(
+    name: str | None = None,
+    profile: str | None = None,
+    material: str | None = None,
+    tekla_class: str | None = None,
+    finish: str | None = None,
+    user_properties: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
-    Sets user-defined attributes (UDAs) on selected elements.
+    Sets properties and user-defined attributes (UDAs) on selected Tekla elements (assemblies or parts).
 
     ## INPUT
-    - `udas` [Required]: Dictionary of attribute names and values to set
-    - `mode` [Required]: How to handle existing values
-
-    ## VALID VALUES
-    - `mode`: Keep Existing Values, Overwrite Existing Values
-    """
-    selected_objects = TeklaModel().get_selected_objects()
-    mode_enum = UDASetModeModel(value=mode).to_enum()
-    return tool_set_elements_udas(selected_objects, udas, mode_enum)
-
-
-@properties_provider.tool()
-@log_mcp_tool_call
-def get_elements_udas() -> dict[str, Any]:
-    """
-    Retrieve all user-defined attributes (UDAs) for selected Tekla elements (assemblies or parts).
-
-    ## INPUT
-    - No additional parameters required.
-
-    ## BEHAVIOR
-    - Extract all available UDAs for each selected element.
-    - Each element is represented as one row in the output table.
-    - Only UDAs that exist for at least one selected element should appear as columns.
+    - `name` [Optional]: Part/Assembly name
+    - `profile` [Optional]: Profile string (e.g., "3000*200", "HEA200")
+    - `material` [Optional]: Material string (e.g., "C25/30", "S355J2")
+    - `tekla_class` [Optional]: Tekla class (e.g., "1", "100", etc.)
+    - `finish` [Optional]: Finish type
+    - `user_properties` [Optional]: Dictionary of user-defined attribute names and values
 
     ## OUTPUT
-    - Table format only; first row = headers, no JSON or extra text.
-    - Leftmost "No" column with sequential row numbers starting from 1.
-
-    ### DEFAULT COLUMNS
-    - Position
-    - GUID
-
-    ### UDA COLUMNS
-    - Each UDA appears as a separate column using its exact property name.
-    - If a UDA value is missing for an element, the cell should be empty.
+    - `status`: "success" if any changes were made, "warning" if no changes
+    - `selected_elements`: Total number of selected elements
+    - `processed_elements`: Elements that were processed
+    - `modified_elements`: Elements that were actually modified
+    - `changes_applied`: Breakdown of changes by property type
     """
     selected_objects = TeklaModel().get_selected_objects()
-    return tool_get_elements_udas(selected_objects)
+    return tool_set_elements_properties(
+        selected_objects,
+        name=name,
+        profile=profile,
+        material=material,
+        tekla_class=tekla_class,
+        finish=finish,
+        user_properties=user_properties,
+    )
 
 
 @properties_provider.tool()
 @log_mcp_tool_call
-def get_elements_properties(custom_props_definitions: list[str] | None = None) -> dict[str, Any]:
+def get_elements_properties(report_props_definitions: list[str] | None = None) -> dict[str, Any]:
     """
     Retrieve key properties for selected Tekla elements (assemblies or parts).
 
     ## INPUT
-    - `custom_props_definitions` [Optional]: List of user-friendly property names.
+    - `report_props_definitions` [Optional]: List of user-friendly property names.
 
     ### BEHAVIOR
     - Extract properties not in default columns; split multi-property phrases into separate items.
     - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
-    - Only resolved custom properties appear in the table; unresolved ones are mentioned after the table.
+    - Only resolved report properties appear in the table; unresolved ones are mentioned after the table.
 
     ## OUTPUT
     - Table format only; first row = headers, no JSON or extra text.
     - Leftmost "No" column with sequential row numbers starting from 1.
+    - All data (including UDAs) MUST be presented in a single unified table.
+    - Do NOT create separate tables for user properties or any other data.
 
     ### DEFAULT COLUMNS
     - Position, GUID
-    - Assemblies: Main Part Name, Profile, Material, Finish, Class
-    - Parts: Name, Profile, Material, Finish, Class
-    - Weight (kg), rounded to 3 decimals
+    - Assemblies:
+        - Main Part Name*, Profile*, Material*, Finish*, Class*
+        - These columns apply ONLY when the element is an assembly.
+    - Parts:
+        - Name*, Profile*, Material*, Finish*, Class*
+        - These columns apply ONLY when the element is an individual part.
+    - Properties marked with * are modifiable via set_elements_properties.
 
-    ### CUSTOM PROPERTIES
+    ### USER PROPERTIES (UDAs)
+    - UDAs MUST be included as additional columns in the SAME table.
+    - Each UDA appears as a separate column using its exact property name.
+    - Do NOT group, nest, or separate UDAs outside the main table.
+    - If a UDA value is missing for an element, the cell should be empty.
+
+    ### REPORT PROPERTIES
+    - Include report properties as additional columns in the SAME table.
     - Use backend-resolved names exactly; append units if provided.
     - Float values should be rounded to 3 decimals.
-    - Missing values = "N/A".
-    - Example: ASSEMBLY_TOP_LEVEL, ASSEMBLY_BOTTOM_LEVEL_UNFORMATTED, WEIGHT_GROSS (kg)
+    - Missing values must be shown as "N/A".
+    - Example of property name: ASSEMBLY_TOP_LEVEL, ASSEMBLY_BOTTOM_LEVEL_UNFORMATTED, WEIGHT_GROSS (kg)
+
+    ### GENERAL RULES
+    - Maintain a single flat table structure at all times.
+    - Each row represents one element.
+    - Each column represents one property (default, UDA, or report).
+
+    ## RETURN KEYS
+    - `status`: "success", "partial" (if some errors occurred), or "error"
+    - `assemblies_list`: JSON array of assembly properties
+    - `parts_list`: JSON array of part properties
+    - `resolution_errors`: List of errors when resolving property names
+    - `extraction_errors`: List of errors when extracting properties from elements
     """
     selected_objects = TeklaModel().get_selected_objects()
-    return tool_get_elements_properties(selected_objects, custom_props_definitions)
+    return tool_get_elements_properties(selected_objects, report_props_definitions)
 
 
 @properties_provider.tool()

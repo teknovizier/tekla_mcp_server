@@ -15,7 +15,6 @@ from pydantic_core import ValidationError
 
 from tekla_mcp_server.models import (
     SelectionModeModel,
-    UDASetModeModel,
     ElementTypeModel,
     ComponentTypeModel,
     ElementLabelModel,
@@ -23,7 +22,6 @@ from tekla_mcp_server.models import (
     BaseComponent,
     LiftingAnchorsComponent,
     ReportProperty,
-    ElementProperties,
     PartSnapshot,
     AssemblySnapshot,
 )
@@ -238,38 +236,6 @@ def test_selection_mode_model_invalid(input_val):
 @pytest.mark.parametrize(
     "input_val,expected_enum",
     [
-        ("Keep Existing Values", "KEEP"),
-        ("Overwrite Existing Values", "OVERWRITE"),
-    ],
-)
-def test_uda_set_mode_model_valid(input_val, expected_enum):
-    """
-    Checks UDASetModeModel accepts valid values and maps to correct enum.
-    """
-    model = UDASetModeModel(value=input_val)
-    assert model.to_enum().name == expected_enum
-
-
-@pytest.mark.parametrize(
-    "input_val",
-    [
-        "Invalid Mode",
-        "",
-        "Keep",
-        "Overwrite",
-    ],
-)
-def test_uda_set_mode_model_invalid(input_val):
-    """
-    Checks UDASetModeModel raises error for invalid values.
-    """
-    with pytest.raises(ValidationError):
-        UDASetModeModel(value=input_val)
-
-
-@pytest.mark.parametrize(
-    "input_val,expected_enum",
-    [
         ("Wall", "CONCRETE_WALL"),
         ("Sandwich Wall", "CONCRETE_SANDWICH_WALL"),
         ("Stair Flight", "CONCRETE_STAIR_FLIGHT"),
@@ -424,32 +390,6 @@ def test_report_property_none_for_optional_fields():
     rp = ReportProperty(name="EMPTY_UNIT", data_type="INTEGER", unit=None, value=None)
     assert rp.unit is None
     assert rp.value is None
-
-
-def test_element_properties_with_custom_properties():
-    """Ensure ElementProperties can contain ReportProperty objects."""
-    custom_props = [
-        ReportProperty(name="AREA", data_type="FLOAT", unit="m2", value=123.4),
-        ReportProperty(name="DESCRIPTION", data_type="CHARACTER", unit=None, value="Test wall"),
-    ]
-    elem = ElementProperties(
-        position="P1",
-        guid="1234-5678",
-        name="Wall",
-        profile="200*3000",
-        material="Concrete",
-        finish="",
-        tekla_class="1",
-        weight=1000.0,
-        custom_properties=custom_props,
-    )
-    assert elem.custom_properties[0].data_type is float
-    assert elem.custom_properties[1].value == "Test wall"
-
-    # Check serialization
-    data = json.loads(elem.model_dump_json())
-    assert data["custom_properties"][0]["data_type"] == "float"
-    assert data["custom_properties"][1]["data_type"] == "str"
 
 
 class TestPartSnapshotNormalize:

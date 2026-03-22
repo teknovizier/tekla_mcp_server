@@ -6,185 +6,138 @@ from collections import Counter
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import (
-    ElementProperties,
-    ReportProperty,
-    UDASetMode,
-)
+from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tekla.loader import BooleanPart, Operation
 from tekla_mcp_server.tekla.model_object import (
     TeklaAssembly,
-    TeklaModelObject,
     TeklaPart,
     wrap_model_object,
     wrap_model_objects,
 )
-from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.utils import log_function_call, serialize_to_json
 
 
 @log_function_call
-def tool_set_elements_udas(selected_objects: Any, udas: dict[str, Any], mode: UDASetMode) -> dict[str, Any]:
+def tool_set_elements_properties(
+    selected_objects: Any,
+    name: str | None = None,
+    profile: str | None = None,
+    material: str | None = None,
+    tekla_class: str | None = None,
+    finish: str | None = None,
+    user_properties: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
-    Applies UDAs to a collection of Tekla model objects.
+    Sets properties and UDAs on a collection of Tekla model objects.
 
     Args:
         selected_objects: Enumerator of selected objects
-        udas: Dictionary of user-defined attributes to set
-        mode: UDASetMode (ADD, OVERWRITE, or REMOVE)
+        name: Name to set
+        profile: Profile to set
+        material: Material to set
+        tekla_class: Class to set
+        finish: Finish to set
+        user_properties: UDAs to set
     """
+    total_changes: dict[str, int] = {
+        "name": 0,
+        "profile": 0,
+        "material": 0,
+        "class": 0,
+        "finish": 0,
+        "udas": 0,
+    }
     processed_elements = 0
-    updated_attributes = 0
-    skipped_attributes = 0
-    for selected_object in wrap_model_objects(selected_objects):
-        for key, value in udas.items():
-            try:
-                _ = selected_object.get_user_property(key, type(value))
-                uda_exists = True
-            except AttributeError:
-                uda_exists = False
+    modified_elements = 0
 
-            if mode == UDASetMode.KEEP and uda_exists:
-                skipped_attributes += 1
-                continue
-            else:
-                if selected_object.set_user_property(key, value):
-                    updated_attributes += 1
+    for selected_object in wrap_model_objects(selected_objects):
+        try:
+            changes = selected_object.set_properties(
+                name=name,
+                profile=profile,
+                material=material,
+                tekla_class=tekla_class,
+                finish=finish,
+                user_properties=user_properties,
+            )
+            for key, value in changes.items():
+                total_changes[key] += value
+            if any(v > 0 for v in changes.values()):
+                modified_elements += 1
+        except Exception as e:
+            logger.warning("Failed to set properties on %s: %s", selected_object.guid, e)
         processed_elements += 1
-    logger.info("Updated %s UDAs in %s element, skipped %s", updated_attributes, processed_elements, skipped_attributes)
+
+    if modified_elements > 0:
+        TeklaModel().commit_changes()
+
+    logger.info(
+        "Set properties on %s elements: %s",
+        modified_elements,
+        total_changes,
+    )
     return {
-        "status": "success" if updated_attributes else "error",
+        "status": "success" if modified_elements > 0 else "warning",
         "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
-        "skipped_attributes": skipped_attributes,
-        "updated_attributes": updated_attributes,
+        "modified_elements": modified_elements,
+        "changes_applied": total_changes,
     }
 
 
 @log_function_call
-def tool_get_elements_udas(selected_objects: Any) -> dict[str, Any]:
-    """
-    Retrieves GUID, position, and all UDAs for a collection of model objects.
-
-    Args:
-        selected_objects: Enumerator of selected objects
-    """
-    processed_elements = 0
-    assemblies: list[dict] = []
-    parts: list[dict] = []
-
-    def extract_metadata(selected_object: TeklaModelObject) -> dict[str, Any]:
-        return {"guid": selected_object.guid, "position": selected_object.position, "udas": selected_object.get_all_user_properties()}
-
-    for selected_object in wrap_model_objects(selected_objects):
-        metadata = extract_metadata(selected_object)
-        if isinstance(selected_object, TeklaAssembly):
-            assemblies.append(metadata)
-        elif isinstance(selected_object, TeklaPart):
-            parts.append(metadata)
-        processed_elements += 1
-    logger.info("Retrieved UDAs for %s elements", processed_elements)
-    return {
-        "status": "success" if assemblies or parts else "error",
-        "selected_elements": selected_objects.GetSize(),
-        "processed_elements": processed_elements,
-        "assemblies": assemblies,
-        "parts": parts,
-    }
-
-
-@log_function_call
-def tool_get_elements_properties(selected_objects: Any, custom_props_definitions: list[str]) -> dict[str, Any]:
+def tool_get_elements_properties(selected_objects: Any, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
     """
     Extracts and serializes key element properties from a collection of model objects.
 
     Args:
         selected_objects: Enumerator of selected objects
-        custom_props_definitions: List of custom property names to extract
+        report_props_definitions: List of report property names to extract
     """
-    from collections import defaultdict
+    from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 
     resolution_errors: list[dict[str, Any]] = []
-    if custom_props_definitions:
-        resolution = TemplateAttributeParser.resolve_attributes(custom_props_definitions)
+    extraction_errors: list[dict[str, Any]] = []
+
+    resolved_props: list[str] = []
+    if report_props_definitions:
+        resolution = TemplateAttributeParser.resolve_attributes(report_props_definitions)
         resolution_errors = resolution.get("errors", [])
-        custom_props_definitions = resolution["resolved"]
+        resolved_props = resolution.get("resolved", [])
 
+    assemblies: list[dict[str, Any]] = []
+    parts: list[dict[str, Any]] = []
     processed_elements = 0
-    assemblies: list[ElementProperties] = []
-    parts: list[ElementProperties] = []
-    custom_props_errors: dict[str, dict[str, str]] = defaultdict(dict)
-
-    parsed_custom_props: list[ReportProperty] = []
-    failed_custom_prop_definitions = []
-    for error_entry in resolution_errors:
-        failed_custom_prop_definitions.append(error_entry["query"])
-    if custom_props_definitions:
-        for attr_name in custom_props_definitions:
-            try:
-                parsed_prop = TemplateAttributeParser.get_attribute(attr_name)
-                parsed_custom_props.append(parsed_prop)
-            except KeyError:
-                failed_custom_prop_definitions.append(attr_name)
-                logger.warning("Attribute not found: '%s'", attr_name)
-
-    def get_single_element_properties(selected_object: TeklaModelObject) -> ElementProperties:
-        try:
-            weight, _ = selected_object.weight
-        except AttributeError:
-            weight = None
-
-        custom_properties = []
-        for custom_property in parsed_custom_props:
-            try:
-                custom_property_copy = custom_property.model_copy(deep=False)
-                custom_property_copy.value = selected_object.get_report_property(custom_property_copy.name)
-                custom_properties.append(custom_property_copy)
-            except Exception as e:
-                custom_props_errors[selected_object.guid][custom_property.name] = str(e)
-                logger.warning(
-                    "Error extracting custom property '%s' for the object %s: %s",
-                    custom_property.name,
-                    selected_object.guid,
-                    e,
-                )
-
-        return ElementProperties(
-            position=selected_object.position,
-            guid=selected_object.guid,
-            name=selected_object.name,
-            profile=selected_object.profile,
-            material=selected_object.material,
-            finish=selected_object.finish,
-            tekla_class=selected_object.tekla_class,
-            weight=weight,
-            custom_properties=custom_properties,
-        )
 
     for selected_object in wrap_model_objects(selected_objects):
-        metadata = get_single_element_properties(selected_object).model_copy(deep=True)
+        try:
+            props = selected_object.get_properties(resolved_props if resolved_props else None)
+        except Exception as e:
+            extraction_errors.append({"guid": selected_object.guid, "error": str(e)})
+            props = selected_object.get_properties(None)
+
         if isinstance(selected_object, TeklaAssembly):
-            assemblies.append(metadata)
+            assemblies.append(props)
         elif isinstance(selected_object, TeklaPart):
-            parts.append(metadata)
+            parts.append(props)
         processed_elements += 1
 
-    serialized_assemblies = serialize_to_json([a.model_dump() for a in assemblies])
-    serialized_parts = serialize_to_json([a.model_dump() for a in parts])
+    serialized_assemblies = serialize_to_json(assemblies)
+    serialized_parts = serialize_to_json(parts)
 
     logger.info("Retrieved properties for %s elements", processed_elements)
     status = "success" if assemblies or parts else "error"
-    if resolution_errors:
+    if resolution_errors or extraction_errors:
         status = "partial"
+
     return {
         "status": status,
         "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
         "assemblies_list": serialized_assemblies,
         "parts_list": serialized_parts,
-        "invalid_custom_property_definitions": failed_custom_prop_definitions,
-        "custom_property_extraction_errors": custom_props_errors,
         "resolution_errors": resolution_errors,
+        "extraction_errors": extraction_errors,
     }
 
 

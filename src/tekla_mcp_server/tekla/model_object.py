@@ -5,6 +5,7 @@ Module for Tekla ModelObject wrappers.
 from __future__ import annotations
 
 from collections.abc import Generator, Iterable
+from typing import Any
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AssemblySnapshot, PartSnapshot
@@ -331,6 +332,98 @@ class TeklaModelObject:
                 result[prop] = None
         return result
 
+    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+        """
+        Gets element properties as dict.
+        Override in subclasses to add type-specific properties.
+        """
+        return {
+            "guid": self.guid,
+            "name": self.name,
+            "profile": self.profile,
+            "material": self.material,
+            "finish": self.finish,
+            "tekla_class": self.tekla_class,
+            "user_properties": self.get_all_user_properties(),
+            "report_properties": self._get_report_properties(report_props_definitions),
+        }
+
+    def _get_report_properties(self, report_props_definitions: list[str] | None = None) -> list[dict[str, Any]]:
+        """
+        Internal method to extract report properties.
+        """
+        if not report_props_definitions:
+            return []
+
+        resolution = TemplateAttributeParser.resolve_attributes(report_props_definitions)
+        resolved = resolution.get("resolved", [])
+
+        result = []
+        for attr_name in resolved:
+            try:
+                parsed_prop = TemplateAttributeParser.get_attribute(attr_name)
+                value = self.get_report_property(attr_name)
+                result.append(
+                    {
+                        "name": parsed_prop.name,
+                        "data_type": parsed_prop.data_type.__name__,
+                        "unit": parsed_prop.unit,
+                        "value": value,
+                    }
+                )
+            except Exception:
+                pass
+        return result
+
+    def set_properties(
+        self,
+        name: str | None = None,
+        profile: str | None = None,
+        material: str | None = None,
+        tekla_class: str | None = None,
+        finish: str | None = None,
+        user_properties: dict[str, Any] | None = None,
+    ) -> dict[str, int]:
+        """
+        Sets properties on the element.
+        Returns a summary of changes made.
+        """
+        changes: dict[str, int] = {
+            "name": 0,
+            "profile": 0,
+            "material": 0,
+            "class": 0,
+            "finish": 0,
+            "udas": 0,
+        }
+
+        if name is not None:
+            self.name = name
+            changes["name"] = 1
+
+        if profile is not None:
+            self.profile = profile
+            changes["profile"] = 1
+
+        if material is not None:
+            self.material = material
+            changes["material"] = 1
+
+        if tekla_class is not None:
+            self.tekla_class = tekla_class
+            changes["class"] = 1
+
+        if finish is not None:
+            self.finish = finish
+            changes["finish"] = 1
+
+        if user_properties:
+            for key, value in user_properties.items():
+                if self.set_user_property(key, value):
+                    changes["udas"] += 1
+
+        return changes
+
     @staticmethod
     def _validate_property_type(property_type: type) -> None:
         """
@@ -362,12 +455,28 @@ class TeklaPart(TeklaModelObject):
         """
         return self.model_object.Name
 
+    @name.setter
+    def name(self, value: str) -> None:
+        """Sets the name of the part."""
+        self.model_object.Name = value
+        self.model_object.Modify()
+        if self.model_object.Name != value:
+            raise ValueError(f"Failed to set name: expected '{value}', got '{self.model_object.Name}'")
+
     @property
     def profile(self) -> str:
         """
         Returns the profile of the part.
         """
         return self.model_object.Profile.ProfileString
+
+    @profile.setter
+    def profile(self, value: str) -> None:
+        """Sets the profile of the part."""
+        self.model_object.Profile.ProfileString = value
+        self.model_object.Modify()
+        if self.model_object.Profile.ProfileString != value:
+            raise ValueError(f"Failed to set profile: expected '{value}', got '{self.model_object.Profile.ProfileString}'")
 
     @property
     def material(self) -> str:
@@ -376,6 +485,14 @@ class TeklaPart(TeklaModelObject):
         """
         return self.model_object.Material.MaterialString
 
+    @material.setter
+    def material(self, value: str) -> None:
+        """Sets the material of the part."""
+        self.model_object.Material.MaterialString = value
+        self.model_object.Modify()
+        if self.model_object.Material.MaterialString != value:
+            raise ValueError(f"Failed to set material: expected '{value}', got '{self.model_object.Material.MaterialString}'")
+
     @property
     def finish(self) -> str:
         """
@@ -383,12 +500,28 @@ class TeklaPart(TeklaModelObject):
         """
         return self.model_object.Finish
 
+    @finish.setter
+    def finish(self, value: str) -> None:
+        """Sets the finish of the part."""
+        self.model_object.Finish = value
+        self.model_object.Modify()
+        if self.model_object.Finish != value:
+            raise ValueError(f"Failed to set finish: expected '{value}', got '{self.model_object.Finish}'")
+
     @property
     def tekla_class(self) -> str:
         """
         Returns the Tekla class of the part.
         """
         return self.model_object.Class
+
+    @tekla_class.setter
+    def tekla_class(self, value: str) -> None:
+        """Sets the Tekla class of the part."""
+        self.model_object.Class = value
+        self.model_object.Modify()
+        if self.model_object.Class != value:
+            raise ValueError(f"Failed to set class: expected '{value}', got '{self.model_object.Class}'")
 
     @property
     def weight(self) -> tuple[float, float]:
@@ -412,6 +545,14 @@ class TeklaPart(TeklaModelObject):
         total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
 
         return total_parts_weight, weight_rebars
+
+    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+        """
+        Gets element properties including position for Part.
+        """
+        props = super().get_properties(report_props_definitions)
+        props["position"] = self.position
+        return props
 
     def has_spatial_overlap(self, other: TeklaModelObject) -> bool:
         """
@@ -638,12 +779,30 @@ class TeklaAssembly(TeklaModelObject):
         """
         return self.main_part.model_object.Name
 
+    @name.setter
+    def name(self, value: str) -> None:
+        """Sets the name of the main part."""
+        main_part = self.main_part
+        main_part.model_object.Name = value
+        main_part.model_object.Modify()
+        if main_part.model_object.Name != value:
+            raise ValueError(f"Failed to set name: expected '{value}', got '{main_part.model_object.Name}'")
+
     @property
     def profile(self) -> str:
         """
         Returns the profile of the main part.
         """
         return self.main_part.model_object.Profile.ProfileString
+
+    @profile.setter
+    def profile(self, value: str) -> None:
+        """Sets the profile of the main part."""
+        main_part = self.main_part
+        main_part.model_object.Profile.ProfileString = value
+        main_part.model_object.Modify()
+        if main_part.model_object.Profile.ProfileString != value:
+            raise ValueError(f"Failed to set profile: expected '{value}', got '{main_part.model_object.Profile.ProfileString}'")
 
     @property
     def material(self) -> str:
@@ -652,6 +811,15 @@ class TeklaAssembly(TeklaModelObject):
         """
         return self.main_part.model_object.Material.MaterialString
 
+    @material.setter
+    def material(self, value: str) -> None:
+        """Sets the material of the main part."""
+        main_part = self.main_part
+        main_part.model_object.Material.MaterialString = value
+        main_part.model_object.Modify()
+        if main_part.model_object.Material.MaterialString != value:
+            raise ValueError(f"Failed to set material: expected '{value}', got '{main_part.model_object.Material.MaterialString}'")
+
     @property
     def finish(self) -> str:
         """
@@ -659,12 +827,30 @@ class TeklaAssembly(TeklaModelObject):
         """
         return self.main_part.model_object.Finish
 
+    @finish.setter
+    def finish(self, value: str) -> None:
+        """Sets the finish of the main part."""
+        main_part = self.main_part
+        main_part.model_object.Finish = value
+        main_part.model_object.Modify()
+        if main_part.model_object.Finish != value:
+            raise ValueError(f"Failed to set finish: expected '{value}', got '{main_part.model_object.Finish}'")
+
     @property
     def tekla_class(self) -> str:
         """
         Returns the Tekla class of the main part.
         """
         return self.main_part.model_object.Class
+
+    @tekla_class.setter
+    def tekla_class(self, value: str) -> None:
+        """Sets the Tekla class of the main part."""
+        main_part = self.main_part
+        main_part.model_object.Class = value
+        main_part.model_object.Modify()
+        if main_part.model_object.Class != value:
+            raise ValueError(f"Failed to set class: expected '{value}', got '{main_part.model_object.Class}'")
 
     @property
     def main_part(self) -> TeklaModelObject:
@@ -803,6 +989,14 @@ class TeklaAssembly(TeklaModelObject):
             secondaries=secondaries,
             subassemblies=subassemblies,
         )
+
+    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+        """
+        Gets element properties including position for Assembly.
+        """
+        props = super().get_properties(report_props_definitions)
+        props["position"] = self.position
+        return props
 
 
 def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
