@@ -32,6 +32,12 @@ This file defines basic rules for AI agents and human contributors working on th
 - All test object names (parts, assemblies, UDAs) MUST start with `MCP_TEST_` prefix
 - This prevents conflicts with existing model objects and makes cleanup easy
 
+## Debug Scripts
+- Use `/debug` folder for temporary scripts, experiments, and test code
+- These scripts are for development/debugging only
+- Do not commit files from this folder to version control
+- Production-ready code must be moved to proper locations
+
 ### Linting & Formatting
 - Check: `uv run ruff check .`
 - Fix: `uv run ruff check --fix .`

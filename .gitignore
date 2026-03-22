@@ -10,10 +10,12 @@ __pycache__/
 # Environment
 .env
 
-# Build
+# Build and Debug
 build/
+debug/
 dist/
 mcp_server.spec
+mcp_server.log
 
 # Config files
 config/*.json
