@@ -123,6 +123,7 @@ class ElementLabel(Enum):
     FINISH = "Finish"
     CLASS = "Class"
     WEIGHT = "Weight"
+    PHASE = "Phase"
     CUSTOM = "Custom"
 
 

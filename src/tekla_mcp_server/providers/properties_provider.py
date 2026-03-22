@@ -33,6 +33,7 @@ def set_elements_properties(
     part_start_number: int | None = None,
     assembly_prefix: str | None = None,
     assembly_start_number: int | None = None,
+    phase: int | None = None,
     user_properties: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
@@ -51,11 +52,13 @@ def set_elements_properties(
     - `part_start_number` [Optional]: Part start number
     - `assembly_prefix` [Optional]: Assembly numbering prefix
     - `assembly_start_number` [Optional]: Assembly start number
+    - `phase` [Optional]: Phase number (1, 2, 3, etc.)
 
     #### For ASSEMBLIES (only these properties apply):
     - `name` [Optional]: Assembly name
     - `assembly_prefix` [Optional]: Assembly numbering prefix
     - `assembly_start_number` [Optional]: Assembly start number
+    - `phase` [Optional]: Phase number (1, 2, 3, etc.)
 
     Note: Assemblies do not have profile, material, finish, tekla_class, or part numbering.
     These properties will only affect parts, not assemblies.
@@ -81,6 +84,7 @@ def set_elements_properties(
         part_start_number=part_start_number,
         assembly_prefix=assembly_prefix,
         assembly_start_number=assembly_start_number,
+        phase=phase,
         user_properties=user_properties,
     )
 
@@ -114,11 +118,11 @@ def get_elements_properties(report_props_definitions: list[str] | None = None) -
     - Position, GUID
 
     - Assemblies:
-        - Assembly Name, Assembly Prefix, Assembly Start Number
+        - Assembly Name, Assembly Prefix, Assembly Start Number, Phase
         - These columns apply ONLY to the assemblies table.
 
     - Parts:
-        - Name, Profile, Material, Finish, Class, Part Prefix, Part Start Number, Assembly Prefix, Assembly Start Number
+        - Name, Profile, Material, Finish, Class, Part Prefix, Part Start Number, Assembly Prefix, Assembly Start Number, Phase
         - These columns apply ONLY to the parts table.
 
     ### USER PROPERTIES (UDAs)

@@ -73,6 +73,7 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
                     ElementLabel.POSITION: selected_object.position,
                     ElementLabel.GUID: selected_object.guid,
                     ElementLabel.NAME: selected_object.name,
+                    ElementLabel.PHASE: str(selected_object.phase),
                     ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
                 }
                 text = assembly_labels.get(label, ElementLabel.NAME)
@@ -84,8 +85,9 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
                     ElementLabel.PROFILE: selected_object.profile,
                     ElementLabel.MATERIAL: selected_object.material,
                     ElementLabel.FINISH: selected_object.finish,
-                    ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
                     ElementLabel.CLASS: selected_object.tekla_class,
+                    ElementLabel.PHASE: str(selected_object.phase),
+                    ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
                 }
                 text = part_labels.get(label, ElementLabel.NAME)
             else:

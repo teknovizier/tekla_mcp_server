@@ -22,6 +22,7 @@ from tekla_mcp_server.tekla.loader import (
     Reinforcement,
     Hashtable,
     BaseRebarGroup,
+    Phase,
     RebarMesh,
     RebarStrand,
     SingleRebar,
@@ -227,6 +228,17 @@ class TeklaModelObject:
         return self.model_object.Identifier.GUID.ToString()
 
     @property
+    def phase(self) -> int:
+        """
+        Returns the phase number of the Tekla model object.
+        """
+        is_ok, phase = self.model_object.GetPhase()
+        if not is_ok:
+            raise AttributeError("Failed to retrieve phase.")
+        
+        return phase.PhaseNumber
+
+    @property
     def cog(self) -> Point:
         """
         Retrieves the center of gravity (COG) point for a given Tekla model object.
@@ -339,6 +351,7 @@ class TeklaModelObject:
         """
         return {
             "guid": self.guid,
+            "phase": self.phase,
             "user_properties": self.get_all_user_properties(),
             "report_properties": self._get_report_properties(report_props_definitions),
         }
@@ -751,6 +764,7 @@ class TeklaPart(TeklaModelObject):
         material: str | None = None,
         tekla_class: str | None = None,
         finish: str | None = None,
+        phase: int | None = None,
         part_prefix: str | None = None,
         part_start_number: int | None = None,
         assembly_prefix: str | None = None,
@@ -767,6 +781,7 @@ class TeklaPart(TeklaModelObject):
             "material": 0,
             "tekla_class": 0,
             "finish": 0,
+            "phase": 0,
             "part_prefix": 0,
             "part_start_number": 0,
             "assembly_prefix": 0,
@@ -813,6 +828,11 @@ class TeklaPart(TeklaModelObject):
             self.model_object.AssemblyNumber.StartNumber = assembly_start_number
             self.model_object.Modify()
             changes["assembly_start_number"] = 1
+
+        if phase is not None:
+            if self.model_object.SetPhase(Phase(phase)):
+                self.model_object.Modify()
+                changes["phase"] = 1
 
         if user_properties:
             for key, value in user_properties.items():
@@ -1018,6 +1038,7 @@ class TeklaAssembly(TeklaModelObject):
         name: str | None = None,
         assembly_prefix: str | None = None,
         assembly_start_number: int | None = None,
+        phase: int | None = None,
         user_properties: dict[str, Any] | None = None,
     ) -> dict[str, int]:
         """
@@ -1028,6 +1049,7 @@ class TeklaAssembly(TeklaModelObject):
             "name": 0,
             "assembly_prefix": 0,
             "assembly_start_number": 0,
+            "phase": 0,
             "udas": 0,
         }
 
@@ -1044,6 +1066,11 @@ class TeklaAssembly(TeklaModelObject):
             self.model_object.AssemblyNumber.StartNumber = assembly_start_number
             self.model_object.Modify()
             changes["assembly_start_number"] = 1
+
+        if phase is not None:
+            if self.model_object.SetPhase(Phase(phase)):
+                self.model_object.Modify()
+                changes["phase"] = 1
 
         if user_properties:
             for key, value in user_properties.items():

@@ -442,5 +442,50 @@ def test_assembly_get_properties(wall1):
     assert "material" not in props
     assert "finish" not in props
     assert "tekla_class" not in props
+
+
+def test_phase_property(wall1):
+    """Checks that the phase property returns an integer."""
+    phase = wall1.phase
+    assert isinstance(phase, int)
+    assert phase >= 0
+
+
+def test_part_get_properties_includes_phase(wall1):
+    """Checks that TeklaPart.get_properties includes phase field."""
+    props = wall1.get_properties()
+    assert "phase" in props
+    assert isinstance(props["phase"], int)
+
+
+def test_assembly_get_properties_includes_phase(wall1):
+    """Checks that TeklaAssembly.get_properties includes phase field."""
+    assembly = wall1.get_top_level_assembly()
+    props = assembly.get_properties()
+    assert "phase" in props
+    assert isinstance(props["phase"], int)
     assert "part_prefix" not in props
     assert "part_start_number" not in props
+
+
+def test_part_set_properties_phase(wall1):
+    """Checks that TeklaPart phase can be changed using set_properties."""
+    original_phase = wall1.phase
+
+    changes = wall1.set_properties(phase=2)
+    assert changes["phase"] == 1
+    assert wall1.phase == 2
+
+    wall1.set_properties(phase=original_phase)
+
+
+def test_assembly_set_properties_phase(wall1):
+    """Checks that TeklaAssembly phase can be changed using set_properties."""
+    assembly = wall1.get_top_level_assembly()
+    original_phase = assembly.phase
+
+    changes = assembly.set_properties(phase=3)
+    assert changes["phase"] == 1
+    assert assembly.phase == 3
+
+    assembly.set_properties(phase=original_phase)

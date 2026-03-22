@@ -523,6 +523,7 @@ def test_get_elements_properties_contains_required_fields(model_objects):
     assert "position" in props
     assert "guid" in props
     assert "name" in props
+    assert "phase" in props
     assert "profile" in props
     assert "material" in props
     assert "finish" in props
@@ -554,7 +555,8 @@ def test_set_elements_properties_all_part_properties(model_objects):
         profile="2500*300",
         material="C50/60",
         tekla_class="9",
-        finish="HDG",
+        finish="R",
+        phase=2,
     )
     assert result["status"] == "success"
     assert result["modified_elements"] == 1
@@ -563,6 +565,7 @@ def test_set_elements_properties_all_part_properties(model_objects):
     assert result["changes_applied"]["material"] == 1
     assert result["changes_applied"]["tekla_class"] == 1
     assert result["changes_applied"]["finish"] == 1
+    assert result["changes_applied"]["phase"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Part")
@@ -573,7 +576,8 @@ def test_set_elements_properties_all_part_properties(model_objects):
     assert parts[0]["profile"] == "2500*300"
     assert parts[0]["material"] == "C50/60"
     assert parts[0]["tekla_class"] == "9"
-    assert parts[0]["finish"] == "HDG"
+    assert parts[0]["finish"] == "R"
+    assert parts[0]["phase"] == 2
 
 
 def test_set_elements_properties_all_assembly_properties(model_objects):
@@ -584,12 +588,14 @@ def test_set_elements_properties_all_assembly_properties(model_objects):
         name="MCP_ASSEMBLY_ALL_TEST",
         assembly_prefix="FULL",
         assembly_start_number=888,
+        phase=3,
     )
     assert result["status"] == "success"
     assert result["modified_elements"] == 1
     assert result["changes_applied"]["name"] == 1
     assert result["changes_applied"]["assembly_prefix"] == 1
     assert result["changes_applied"]["assembly_start_number"] == 1
+    assert result["changes_applied"]["phase"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
@@ -599,6 +605,7 @@ def test_set_elements_properties_all_assembly_properties(model_objects):
     assert assemblies[0]["name"] == "MCP_ASSEMBLY_ALL_TEST"
     assert assemblies[0]["assembly_prefix"] == "FULL"
     assert assemblies[0]["assembly_start_number"] == 888
+    assert assemblies[0]["phase"] == 3
 
 
 def test_parts_and_assemblies_have_different_properties(model_objects):
@@ -690,6 +697,7 @@ def test_get_elements_properties_numbering_fields(model_objects):
     assert "part_start_number" in parts[0]
     assert "assembly_prefix" in parts[0]
     assert "assembly_start_number" in parts[0]
+    assert "phase" in parts[0]
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
@@ -699,6 +707,7 @@ def test_get_elements_properties_numbering_fields(model_objects):
     assert len(assemblies) >= 1
     assert "assembly_prefix" in assemblies[0]
     assert "assembly_start_number" in assemblies[0]
+    assert "phase" in assemblies[0]
     assert "name" in assemblies[0]
     assert "position" in assemblies[0]
     assert "guid" in assemblies[0]
