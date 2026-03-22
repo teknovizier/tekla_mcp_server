@@ -29,17 +29,37 @@ def set_elements_properties(
     material: str | None = None,
     tekla_class: str | None = None,
     finish: str | None = None,
+    part_prefix: str | None = None,
+    part_start_number: int | None = None,
+    assembly_prefix: str | None = None,
+    assembly_start_number: int | None = None,
     user_properties: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Sets properties and user-defined attributes (UDAs) on selected Tekla elements (assemblies or parts).
 
     ## INPUT
-    - `name` [Optional]: Part/Assembly name
+    ### APPLICABLE PROPERTIES BY ELEMENT TYPE
+
+    #### For PARTS (all properties apply):
+    - `name` [Optional]: Part name
     - `profile` [Optional]: Profile string (e.g., "3000*200", "HEA200")
     - `material` [Optional]: Material string (e.g., "C25/30", "S355J2")
     - `tekla_class` [Optional]: Tekla class (e.g., "1", "100", etc.)
     - `finish` [Optional]: Finish type
+    - `part_prefix` [Optional]: Part numbering prefix
+    - `part_start_number` [Optional]: Part start number
+    - `assembly_prefix` [Optional]: Assembly numbering prefix
+    - `assembly_start_number` [Optional]: Assembly start number
+
+    #### For ASSEMBLIES (only these properties apply):
+    - `name` [Optional]: Assembly name
+    - `assembly_prefix` [Optional]: Assembly numbering prefix
+    - `assembly_start_number` [Optional]: Assembly start number
+
+    Note: Assemblies do not have profile, material, finish, tekla_class, or part numbering.
+    These properties will only affect parts, not assemblies.
+
     - `user_properties` [Optional]: Dictionary of user-defined attribute names and values
 
     ## OUTPUT
@@ -57,6 +77,10 @@ def set_elements_properties(
         material=material,
         tekla_class=tekla_class,
         finish=finish,
+        part_prefix=part_prefix,
+        part_start_number=part_start_number,
+        assembly_prefix=assembly_prefix,
+        assembly_start_number=assembly_start_number,
         user_properties=user_properties,
     )
 
@@ -78,36 +102,43 @@ def get_elements_properties(report_props_definitions: list[str] | None = None) -
     ## OUTPUT
     - Table format only; first row = headers, no JSON or extra text.
     - Leftmost "No" column with sequential row numbers starting from 1.
-    - All data (including UDAs) MUST be presented in a single unified table.
-    - Do NOT create separate tables for user properties or any other data.
+
+    - If the result contains ONLY assemblies → return ONE table with assembly columns.
+    - If the result contains ONLY parts → return ONE table with part columns.
+    - If the result contains BOTH assemblies AND parts → return TWO separate tables:
+        1. First table: Assemblies only
+        2. Second table: Parts only
+    - Do NOT mix assemblies and parts in the same table.
 
     ### DEFAULT COLUMNS
     - Position, GUID
+
     - Assemblies:
-        - Main Part Name*, Profile*, Material*, Finish*, Class*
-        - These columns apply ONLY when the element is an assembly.
+        - Assembly Name, Assembly Prefix, Assembly Start Number
+        - These columns apply ONLY to the assemblies table.
+
     - Parts:
-        - Name*, Profile*, Material*, Finish*, Class*
-        - These columns apply ONLY when the element is an individual part.
-    - Properties marked with * are modifiable via set_elements_properties.
+        - Name, Profile, Material, Finish, Class, Part Prefix, Part Start Number, Assembly Prefix, Assembly Start Number
+        - These columns apply ONLY to the parts table.
 
     ### USER PROPERTIES (UDAs)
-    - UDAs MUST be included as additional columns in the SAME table.
+    - UDAs MUST be included as columns in each table.
     - Each UDA appears as a separate column using its exact property name.
-    - Do NOT group, nest, or separate UDAs outside the main table.
+    - Apply UDAs independently for assemblies and parts.
     - If a UDA value is missing for an element, the cell should be empty.
 
     ### REPORT PROPERTIES
-    - Include report properties as additional columns in the SAME table.
+    - Include report properties as additional columns in the SAME table (per type).
     - Use backend-resolved names exactly; append units if provided.
     - Float values should be rounded to 3 decimals.
     - Missing values must be shown as "N/A".
-    - Example of property name: ASSEMBLY_TOP_LEVEL, ASSEMBLY_BOTTOM_LEVEL_UNFORMATTED, WEIGHT_GROSS (kg)
+    - Example: ASSEMBLY_TOP_LEVEL, ASSEMBLY_BOTTOM_LEVEL_UNFORMATTED, WEIGHT_GROSS (kg)
 
     ### GENERAL RULES
-    - Maintain a single flat table structure at all times.
+    - Each table must have a flat structure.
     - Each row represents one element.
     - Each column represents one property (default, UDA, or report).
+    - Do NOT merge or share columns between assemblies and parts tables.
 
     ## RETURN KEYS
     - `status`: "success", "partial" (if some errors occurred), or "error"

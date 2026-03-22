@@ -47,12 +47,8 @@ def get_component_schema(component_key: str) -> ResourceResult:
     if component:
         description = component.get("description", "")
         custom_props = component.get("custom_properties", {})
-        schema = {
-            "description": description,
-            "custom_properties": custom_props
-        }
-        return ResourceResult(contents=[ResourceContent(content=json.dumps(schema), mime_type="application/json")]
-    )
+        schema = {"description": description, "custom_properties": custom_props}
+        return ResourceResult(contents=[ResourceContent(content=json.dumps(schema), mime_type="application/json")])
     return ResourceResult(contents=[])
 
 

@@ -392,6 +392,23 @@ def test_report_property_none_for_optional_fields():
     assert rp.value is None
 
 
+def test_numbering_series():
+    """Test NumberingSeries dataclass."""
+    from tekla_mcp_server.models import NumberingSeries
+
+    ns = NumberingSeries(prefix="P", start_number=1)
+    assert ns.prefix == "P"
+    assert ns.start_number == 1
+
+    ns2 = NumberingSeries(prefix="A", start_number=42)
+    assert ns2.prefix == "A"
+    assert ns2.start_number == 42
+
+    data = ns.model_dump()
+    assert data["prefix"] == "P"
+    assert data["start_number"] == 1
+
+
 class TestPartSnapshotNormalize:
     @pytest.mark.parametrize(
         "input_val,tolerance,expected",

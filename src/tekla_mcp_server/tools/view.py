@@ -68,17 +68,28 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
             value = selected_object.get_report_property(resolved_label)
             text = f"{resolved_label} = {value}{unit}"
         else:
-            labels = {
-                ElementLabel.POSITION: selected_object.position,
-                ElementLabel.GUID: selected_object.guid,
-                ElementLabel.NAME: selected_object.name,
-                ElementLabel.PROFILE: selected_object.profile,
-                ElementLabel.MATERIAL: selected_object.material,
-                ElementLabel.FINISH: selected_object.finish,
-                ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
-                ElementLabel.CLASS: selected_object.tekla_class,
-            }
-            text = labels.get(label, ElementLabel.NAME)
+            if isinstance(selected_object, TeklaAssembly):
+                assembly_labels = {
+                    ElementLabel.POSITION: selected_object.position,
+                    ElementLabel.GUID: selected_object.guid,
+                    ElementLabel.NAME: selected_object.name,
+                    ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
+                }
+                text = assembly_labels.get(label, ElementLabel.NAME)
+            elif isinstance(selected_object, TeklaPart):
+                part_labels = {
+                    ElementLabel.POSITION: selected_object.position,
+                    ElementLabel.GUID: selected_object.guid,
+                    ElementLabel.NAME: selected_object.name,
+                    ElementLabel.PROFILE: selected_object.profile,
+                    ElementLabel.MATERIAL: selected_object.material,
+                    ElementLabel.FINISH: selected_object.finish,
+                    ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
+                    ElementLabel.CLASS: selected_object.tekla_class,
+                }
+                text = part_labels.get(label, ElementLabel.NAME)
+            else:
+                continue
         if drawer.DrawText(selected_object.cog, text, Color(*color_black)):
             drawn_labels += 1
         processed_elements += 1

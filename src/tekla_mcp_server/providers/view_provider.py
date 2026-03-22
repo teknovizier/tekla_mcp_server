@@ -40,9 +40,15 @@ def draw_elements_labels(label: str | None = None, custom_label: str | None = No
     If `custom_label` is provided, use it.
     Otherwise use `label`.
 
-    ## VALID VALUES
-    - `label`: Position, GUID, Name, Profile, Material, Finish, Class, Weight
-    - `custom_label`: Any value
+    ## VALID VALUES BY ELEMENT TYPE
+
+    ### FOR ASSEMBLIES:
+    - Position, GUID, Name, Weight
+
+    ### FOR PARTS:
+    - Position, GUID, Name, Profile, Material, Finish, Class, Weight
+
+    Note: If a label is not applicable to the selected element type, it defaults to Name.
     """
     selected_objects = TeklaModel().get_selected_objects()
 

@@ -26,6 +26,10 @@ def tool_set_elements_properties(
     tekla_class: str | None = None,
     finish: str | None = None,
     user_properties: dict[str, Any] | None = None,
+    part_prefix: str | None = None,
+    part_start_number: int | None = None,
+    assembly_prefix: str | None = None,
+    assembly_start_number: int | None = None,
 ) -> dict[str, Any]:
     """
     Sets properties and UDAs on a collection of Tekla model objects.
@@ -38,13 +42,21 @@ def tool_set_elements_properties(
         tekla_class: Class to set
         finish: Finish to set
         user_properties: UDAs to set
+        part_prefix: Part numbering prefix to set
+        part_start_number: Part start number to set
+        assembly_prefix: Assembly numbering prefix to set
+        assembly_start_number: Assembly start number to set
     """
     total_changes: dict[str, int] = {
         "name": 0,
         "profile": 0,
         "material": 0,
-        "class": 0,
+        "tekla_class": 0,
         "finish": 0,
+        "part_prefix": 0,
+        "part_start_number": 0,
+        "assembly_prefix": 0,
+        "assembly_start_number": 0,
         "udas": 0,
     }
     processed_elements = 0
@@ -52,20 +64,37 @@ def tool_set_elements_properties(
 
     for selected_object in wrap_model_objects(selected_objects):
         try:
-            changes = selected_object.set_properties(
-                name=name,
-                profile=profile,
-                material=material,
-                tekla_class=tekla_class,
-                finish=finish,
-                user_properties=user_properties,
-            )
+            if isinstance(selected_object, TeklaAssembly):
+                changes = selected_object.set_properties(
+                    name=name,
+                    assembly_prefix=assembly_prefix,
+                    assembly_start_number=assembly_start_number,
+                    user_properties=user_properties,
+                )
+            elif isinstance(selected_object, TeklaPart):
+                changes = selected_object.set_properties(
+                    name=name,
+                    profile=profile,
+                    material=material,
+                    tekla_class=tekla_class,
+                    finish=finish,
+                    user_properties=user_properties,
+                    part_prefix=part_prefix,
+                    part_start_number=part_start_number,
+                    assembly_prefix=assembly_prefix,
+                    assembly_start_number=assembly_start_number,
+                )
+            else:
+                logger.warning("Unsupported object type: %s", type(selected_object).__name__)
+                continue
+
             for key, value in changes.items():
-                total_changes[key] += value
+                if key in total_changes:
+                    total_changes[key] += value
             if any(v > 0 for v in changes.values()):
                 modified_elements += 1
-        except Exception as e:
-            logger.warning("Failed to set properties on %s: %s", selected_object.guid, e)
+        except Exception:
+            logger.exception("Failed to set properties on %s", selected_object.guid)
         processed_elements += 1
 
     if modified_elements > 0:

@@ -706,6 +706,19 @@ class LiftingAnchorsComponent(BaseComponent):
         return distance_from_start, distance_from_end, double_anchor_spacing
 
 
+class NumberingSeries(BaseModel):
+    """
+    The NumberingSeries class describes how an object is to be numbered.
+
+    Attributes:
+        prefix: The prefix in numbering.
+        start_number: The start number in numbering.
+    """
+
+    prefix: str
+    start_number: int
+
+
 class ReportProperty(BaseModel):
     """
     Represents key properties of a global attribute in Tekla:

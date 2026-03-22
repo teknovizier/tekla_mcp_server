@@ -28,6 +28,10 @@ This file defines basic rules for AI agents and human contributors working on th
 
 ⚠️ Functional tests modify Tekla models - run only in test environments.
 
+### Test Naming Conventions
+- All test object names (parts, assemblies, UDAs) MUST start with `MCP_TEST_` prefix
+- This prevents conflicts with existing model objects and makes cleanup easy
+
 ### Linting & Formatting
 - Check: `uv run ruff check .`
 - Fix: `uv run ruff check --fix .`

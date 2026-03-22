@@ -244,3 +244,203 @@ def test_assembly_to_snapshot_serializable(wall1):
     assert isinstance(dumped, dict)
     json_str = snapshot.model_dump_json()
     assert isinstance(json_str, str)
+
+
+def test_assembly_set_properties_name(wall1):
+    """Checks that assembly name can be changed using set_properties."""
+    assembly = wall1.get_top_level_assembly()
+    original_name = assembly.name
+
+    changes = assembly.set_properties(name="NEW_ASSEMBLY_NAME")
+
+    assert changes["name"] == 1
+    assert assembly.name == "NEW_ASSEMBLY_NAME"
+
+    assembly.set_properties(name=original_name)
+    assert assembly.name == original_name
+
+
+def test_assembly_set_properties_assembly_numbering(wall1):
+    """Checks that assembly numbering can be changed using set_properties."""
+    assembly = wall1.get_top_level_assembly()
+    original_prefix = assembly.assembly_number.prefix
+    original_start = assembly.assembly_number.start_number
+
+    changes = assembly.set_properties(assembly_prefix="Z", assembly_start_number=999)
+
+    assert changes["assembly_prefix"] == 1
+    assert changes["assembly_start_number"] == 1
+    assert assembly.assembly_number.prefix == "Z"
+    assert assembly.assembly_number.start_number == 999
+
+    assembly.set_properties(assembly_prefix=original_prefix, assembly_start_number=original_start)
+    assert assembly.assembly_number.prefix == original_prefix
+    assert assembly.assembly_number.start_number == original_start
+
+
+def test_part_get_properties(wall1):
+    """Checks that TeklaPart.get_properties returns all expected fields."""
+    props = wall1.get_properties()
+
+    assert "guid" in props
+    assert "name" in props
+    assert "position" in props
+    assert "profile" in props
+    assert "material" in props
+    assert "finish" in props
+    assert "tekla_class" in props
+    assert "part_prefix" in props
+    assert "part_start_number" in props
+    assert "assembly_prefix" in props
+    assert "assembly_start_number" in props
+    assert "user_properties" in props
+    assert "report_properties" in props
+
+    assert props["name"] == "TEST_WALL1"
+    assert props["profile"] == "3000*200"
+    assert props["material"] == "Concrete_Undefined"
+    assert props["tekla_class"] == "1"
+
+
+def test_part_set_properties_profile(wall1):
+    """Checks that TeklaPart profile can be changed using set_properties."""
+    original_profile = wall1.profile
+
+    changes = wall1.set_properties(profile="4000*300")
+    assert changes["profile"] == 1
+    assert wall1.profile == "4000*300"
+
+    wall1.set_properties(profile=original_profile)
+    assert wall1.profile == original_profile
+
+
+def test_part_set_properties_material(wall1):
+    """Checks that TeklaPart material can be changed using set_properties."""
+    original_material = wall1.material
+
+    changes = wall1.set_properties(material="CONCRETE-30")
+    assert changes["material"] == 1
+    assert wall1.material == "CONCRETE-30"
+
+    wall1.set_properties(material=original_material)
+    assert wall1.material == original_material
+
+
+def test_part_set_properties_tekla_class(wall1):
+    """Checks that TeklaPart class can be changed using set_properties."""
+    original_class = wall1.tekla_class
+
+    changes = wall1.set_properties(tekla_class="2")
+    assert changes["tekla_class"] == 1
+    assert wall1.tekla_class == "2"
+
+    wall1.set_properties(tekla_class=original_class)
+    assert wall1.tekla_class == original_class
+
+
+def test_part_set_properties_finish(wall1):
+    """Checks that TeklaPart finish can be changed using set_properties."""
+    original_finish = wall1.finish
+
+    changes = wall1.set_properties(finish="R")
+    assert changes["finish"] == 1
+    assert wall1.finish == "R"
+
+    wall1.set_properties(finish=original_finish)
+    assert wall1.finish == original_finish
+
+
+def test_part_set_properties_part_numbering(wall1):
+    """Checks that TeklaPart part numbering can be changed using set_properties."""
+    original_prefix = wall1.part_number.prefix
+    original_start = wall1.part_number.start_number
+
+    changes = wall1.set_properties(part_prefix="X", part_start_number=500)
+    assert changes["part_prefix"] == 1
+    assert changes["part_start_number"] == 1
+    assert wall1.part_number.prefix == "X"
+    assert wall1.part_number.start_number == 500
+
+    wall1.set_properties(part_prefix=original_prefix, part_start_number=original_start)
+    assert wall1.part_number.prefix == original_prefix
+    assert wall1.part_number.start_number == original_start
+
+
+def test_part_set_properties_assembly_numbering(wall1):
+    """Checks that TeklaPart assembly numbering can be changed using set_properties."""
+    original_prefix = wall1.assembly_number.prefix
+    original_start = wall1.assembly_number.start_number
+
+    changes = wall1.set_properties(assembly_prefix="Y", assembly_start_number=600)
+    assert changes["assembly_prefix"] == 1
+    assert changes["assembly_start_number"] == 1
+    assert wall1.assembly_number.prefix == "Y"
+    assert wall1.assembly_number.start_number == 600
+
+    wall1.set_properties(assembly_prefix=original_prefix, assembly_start_number=original_start)
+    assert wall1.assembly_number.prefix == original_prefix
+    assert wall1.assembly_number.start_number == original_start
+
+
+def test_part_set_properties_user_properties(wall1):
+    """Checks that TeklaPart user properties can be set using set_properties."""
+    changes = wall1.set_properties(user_properties={"TestUDA_Part": "PartValue"})
+    assert changes["udas"] == 1
+    assert wall1.get_user_property("TestUDA_Part", str) == "PartValue"
+
+
+def test_assembly_set_properties_user_properties(wall1):
+    """Checks that TeklaAssembly user properties can be set using set_properties."""
+    assembly = wall1.get_top_level_assembly()
+
+    changes = assembly.set_properties(user_properties={"AssemblyUDA": "AssemblyValue"})
+    assert changes["udas"] == 1
+    assert assembly.get_user_property("AssemblyUDA", str) == "AssemblyValue"
+
+
+def test_assembly_set_properties_multiple(wall1):
+    """Checks that multiple TeklaAssembly properties can be changed at once."""
+    assembly = wall1.get_top_level_assembly()
+    original_name = assembly.name
+    original_prefix = assembly.assembly_number.prefix
+    original_start = assembly.assembly_number.start_number
+
+    changes = assembly.set_properties(
+        name="MCP_WALL_MULTI_ASSEMBLY_TEST",
+        assembly_prefix="MULTI",
+        assembly_start_number=999,
+    )
+
+    assert changes["name"] == 1
+    assert changes["assembly_prefix"] == 1
+    assert changes["assembly_start_number"] == 1
+    assert assembly.name == "MCP_WALL_MULTI_ASSEMBLY_TEST"
+    assert assembly.assembly_number.prefix == "MULTI"
+    assert assembly.assembly_number.start_number == 999
+
+    assembly.set_properties(
+        name=original_name,
+        assembly_prefix=original_prefix,
+        assembly_start_number=original_start,
+    )
+
+
+def test_assembly_get_properties(wall1):
+    """Checks that TeklaAssembly.get_properties returns correct fields for assembly."""
+    assembly = wall1.get_top_level_assembly()
+    props = assembly.get_properties()
+
+    assert "guid" in props
+    assert "name" in props
+    assert "position" in props
+    assert "assembly_prefix" in props
+    assert "assembly_start_number" in props
+    assert "user_properties" in props
+    assert "report_properties" in props
+
+    assert "profile" not in props
+    assert "material" not in props
+    assert "finish" not in props
+    assert "tekla_class" not in props
+    assert "part_prefix" not in props
+    assert "part_start_number" not in props

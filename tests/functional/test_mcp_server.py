@@ -485,19 +485,18 @@ def test_set_elements_properties(model_objects):
     assert result["changes_applied"]["name"] == 1
     assert result["changes_applied"]["profile"] == 1
     assert result["changes_applied"]["material"] == 1
-    assert result["changes_applied"]["class"] == 1
+    assert result["changes_applied"]["tekla_class"] == 1
     assert result["changes_applied"]["finish"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall7"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
     result = get_elements_properties()
-    assemblies = json.loads(result["assemblies_list"])
-    assert len(assemblies) == 1
-    assert assemblies[0]["name"] == "MCP_TEST_NEW_NAME"
-    assert assemblies[0]["profile"] == "2000*150"
-    assert assemblies[0]["material"] == "C16/20"
-    assert assemblies[0]["tekla_class"] == "8"
-    assert assemblies[0]["finish"] == "FR"
+    parts = json.loads(result["parts_list"])
+    assert len(parts) == 1
+    assert parts[0]["name"] == "MCP_TEST_NEW_NAME"
+    assert parts[0]["profile"] == "2000*150"
+    assert parts[0]["material"] == "C16/20"
+    assert parts[0]["tekla_class"] == "8"
+    assert parts[0]["finish"] == "FR"
 
 
 def test_set_elements_properties_with_user_properties(model_objects):
@@ -512,14 +511,14 @@ def test_set_elements_properties_with_user_properties(model_objects):
 
 
 def test_get_elements_properties_contains_required_fields(model_objects):
-    """Tests that get_elements_properties returns all required fields."""
+    """Tests that get_elements_properties returns all required fields for parts."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_elements_assemblies_or_main_parts(mode="Part")
     result = get_elements_properties()
 
-    assemblies = json.loads(result["assemblies_list"])
-    assert len(assemblies) == 1
-    props = assemblies[0]
+    parts = json.loads(result["parts_list"])
+    assert len(parts) >= 1
+    props = parts[0]
 
     assert "position" in props
     assert "guid" in props
@@ -546,63 +545,98 @@ def test_get_elements_properties_with_report_props_definitions(model_objects):
         assert assembly["position"] is not None
 
 
-def test_set_elements_properties_profile_and_material(model_objects):
-    """Tests set_elements_properties setting profile and material."""
-    TeklaModel.select_objects([model_objects["test_wall1"]])
-
-    result = set_elements_properties(profile="2000*150", material="C40/50")
-    assert result["status"] == "success"
-    assert result["changes_applied"]["profile"] == 1
-    assert result["changes_applied"]["material"] == 1
-
-    TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
-    result = get_elements_properties()
-    assemblies = json.loads(result["assemblies_list"])
-    assert assemblies[0]["profile"] == "2000*150"
-    assert assemblies[0]["material"] == "C40/50"
-
-
-def test_set_elements_properties_class_and_finish(model_objects):
-    """Tests set_elements_properties setting class and finish."""
-    TeklaModel.select_objects([model_objects["test_wall1"]])
-
-    result = set_elements_properties(tekla_class="8", finish="FR")
-    assert result["status"] == "success"
-    assert result["changes_applied"]["class"] == 1
-    assert result["changes_applied"]["finish"] == 1
-
-    TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
-    result = get_elements_properties()
-    assemblies = json.loads(result["assemblies_list"])
-    assert assemblies[0]["tekla_class"] == "8"
-    assert assemblies[0]["finish"] == "FR"
-
-
-def test_set_elements_properties_all_properties(model_objects):
-    """Tests set_elements_properties setting all properties at once."""
+def test_set_elements_properties_all_part_properties(model_objects):
+    """Tests setting ALL part properties and verifying all are read back correctly."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
 
     result = set_elements_properties(
-        name="MCP_TEST_FULL_TEST",
-        profile="2000*150",
-        material="C40/50",
-        tekla_class="8",
-        finish="FR",
+        name="MCP_PART_ALL_TEST",
+        profile="2500*300",
+        material="C50/60",
+        tekla_class="9",
+        finish="HDG",
     )
     assert result["status"] == "success"
     assert result["modified_elements"] == 1
+    assert result["changes_applied"]["name"] == 1
+    assert result["changes_applied"]["profile"] == 1
+    assert result["changes_applied"]["material"] == 1
+    assert result["changes_applied"]["tekla_class"] == 1
+    assert result["changes_applied"]["finish"] == 1
+
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Part")
+    result = get_elements_properties()
+    parts = json.loads(result["parts_list"])
+    assert len(parts) >= 1
+    assert parts[0]["name"] == "MCP_PART_ALL_TEST"
+    assert parts[0]["profile"] == "2500*300"
+    assert parts[0]["material"] == "C50/60"
+    assert parts[0]["tekla_class"] == "9"
+    assert parts[0]["finish"] == "HDG"
+
+
+def test_set_elements_properties_all_assembly_properties(model_objects):
+    """Tests setting ALL assembly properties and verifying all are read back correctly."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+
+    result = set_elements_properties(
+        name="MCP_ASSEMBLY_ALL_TEST",
+        assembly_prefix="FULL",
+        assembly_start_number=888,
+    )
+    assert result["status"] == "success"
+    assert result["modified_elements"] == 1
+    assert result["changes_applied"]["name"] == 1
+    assert result["changes_applied"]["assembly_prefix"] == 1
+    assert result["changes_applied"]["assembly_start_number"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
     result = get_elements_properties()
     assemblies = json.loads(result["assemblies_list"])
-    assert assemblies[0]["name"] == "MCP_TEST_FULL_TEST"
-    assert assemblies[0]["profile"] == "2000*150"
-    assert assemblies[0]["material"] == "C40/50"
-    assert assemblies[0]["tekla_class"] == "8"
-    assert assemblies[0]["finish"] == "FR"
+    assert len(assemblies) >= 1
+    assert assemblies[0]["name"] == "MCP_ASSEMBLY_ALL_TEST"
+    assert assemblies[0]["assembly_prefix"] == "FULL"
+    assert assemblies[0]["assembly_start_number"] == 888
+
+
+def test_parts_and_assemblies_have_different_properties(model_objects):
+    """Tests that parts and assemblies have different property sets - no cross-contamination."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+
+    set_elements_properties(
+        name="MCP_TEST_CROSS_TEST",
+        profile="3000*400",
+        material="C30/37",
+    )
+
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Part")
+    result_parts = get_elements_properties()
+    parts = json.loads(result_parts["parts_list"])
+
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result_assemblies = get_elements_properties()
+    assemblies = json.loads(result_assemblies["assemblies_list"])
+
+    assert len(parts) >= 1
+    assert len(assemblies) >= 1
+
+    assert parts[0]["name"] == "MCP_TEST_CROSS_TEST"
+    assert parts[0]["profile"] == "3000*400"
+    assert parts[0]["material"] == "C30/37"
+    assert "assembly_prefix" in parts[0]
+    assert "assembly_start_number" in parts[0]
+
+    assert assemblies[0]["name"] == "MCP_TEST_CROSS_TEST"
+    assert "profile" not in assemblies[0]
+    assert "material" not in assemblies[0]
+    assert "tekla_class" not in assemblies[0]
+    assert "finish" not in assemblies[0]
+    assert "assembly_prefix" in assemblies[0]
+    assert "assembly_start_number" in assemblies[0]
 
 
 def test_set_elements_properties_multiple_elements(model_objects):
@@ -613,7 +647,7 @@ def test_set_elements_properties_multiple_elements(model_objects):
     assert result["status"] == "success"
     assert result["processed_elements"] == 2
     assert result["modified_elements"] == 2
-    assert result["changes_applied"]["class"] == 2
+    assert result["changes_applied"]["tekla_class"] == 2
 
 
 def test_set_elements_properties_empty_selection(model_objects):
@@ -642,6 +676,52 @@ def test_get_elements_properties_parts_vs_assemblies(model_objects):
 
     assert len(assemblies) > 0
     assert len(parts) > 0
+
+
+def test_get_elements_properties_numbering_fields(model_objects):
+    """Tests that get_elements_properties returns numbering fields for parts and assemblies."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Part")
+    result_parts = get_elements_properties()
+    parts = json.loads(result_parts["parts_list"])
+
+    assert len(parts) >= 1
+    assert "part_prefix" in parts[0]
+    assert "part_start_number" in parts[0]
+    assert "assembly_prefix" in parts[0]
+    assert "assembly_start_number" in parts[0]
+
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result_assemblies = get_elements_properties()
+    assemblies = json.loads(result_assemblies["assemblies_list"])
+
+    assert len(assemblies) >= 1
+    assert "assembly_prefix" in assemblies[0]
+    assert "assembly_start_number" in assemblies[0]
+    assert "name" in assemblies[0]
+    assert "position" in assemblies[0]
+    assert "guid" in assemblies[0]
+
+
+def test_set_elements_properties_numbering(model_objects):
+    """Tests set_elements_properties with numbering parameters."""
+    TeklaModel.select_objects([model_objects["test_wall7"]])
+
+    result = set_elements_properties(
+        assembly_prefix="TEST",
+        assembly_start_number=100,
+    )
+    assert result["status"] == "success"
+    assert result["changes_applied"]["assembly_prefix"] == 1
+    assert result["changes_applied"]["assembly_start_number"] == 1
+
+    TeklaModel.select_objects([model_objects["test_wall7"]])
+    select_elements_assemblies_or_main_parts(mode="Assembly")
+    result = get_elements_properties()
+    assemblies = json.loads(result["assemblies_list"])
+    assert assemblies[0]["assembly_prefix"] == "TEST"
+    assert assemblies[0]["assembly_start_number"] == 100
 
 
 def test_get_elements_properties_user_properties(model_objects):

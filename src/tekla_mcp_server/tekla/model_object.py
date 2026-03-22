@@ -8,7 +8,7 @@ from collections.abc import Generator, Iterable
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import AssemblySnapshot, PartSnapshot
+from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot
 from tekla_mcp_server.utils import log_function_call
 
 from tekla_mcp_server.tekla.loader import (
@@ -339,11 +339,6 @@ class TeklaModelObject:
         """
         return {
             "guid": self.guid,
-            "name": self.name,
-            "profile": self.profile,
-            "material": self.material,
-            "finish": self.finish,
-            "tekla_class": self.tekla_class,
             "user_properties": self.get_all_user_properties(),
             "report_properties": self._get_report_properties(report_props_definitions),
         }
@@ -374,55 +369,6 @@ class TeklaModelObject:
             except Exception:
                 pass
         return result
-
-    def set_properties(
-        self,
-        name: str | None = None,
-        profile: str | None = None,
-        material: str | None = None,
-        tekla_class: str | None = None,
-        finish: str | None = None,
-        user_properties: dict[str, Any] | None = None,
-    ) -> dict[str, int]:
-        """
-        Sets properties on the element.
-        Returns a summary of changes made.
-        """
-        changes: dict[str, int] = {
-            "name": 0,
-            "profile": 0,
-            "material": 0,
-            "class": 0,
-            "finish": 0,
-            "udas": 0,
-        }
-
-        if name is not None:
-            self.name = name
-            changes["name"] = 1
-
-        if profile is not None:
-            self.profile = profile
-            changes["profile"] = 1
-
-        if material is not None:
-            self.material = material
-            changes["material"] = 1
-
-        if tekla_class is not None:
-            self.tekla_class = tekla_class
-            changes["class"] = 1
-
-        if finish is not None:
-            self.finish = finish
-            changes["finish"] = 1
-
-        if user_properties:
-            for key, value in user_properties.items():
-                if self.set_user_property(key, value):
-                    changes["udas"] += 1
-
-        return changes
 
     @staticmethod
     def _validate_property_type(property_type: type) -> None:
@@ -524,6 +470,36 @@ class TeklaPart(TeklaModelObject):
             raise ValueError(f"Failed to set class: expected '{value}', got '{self.model_object.Class}'")
 
     @property
+    def part_number(self) -> NumberingSeries:
+        """
+        Returns the part numbering series.
+        """
+        ns = self.model_object.PartNumber
+        return NumberingSeries(prefix=ns.Prefix, start_number=ns.StartNumber)
+
+    @part_number.setter
+    def part_number(self, value: NumberingSeries) -> None:
+        """Sets the part numbering series."""
+        self.model_object.PartNumber.Prefix = value.prefix
+        self.model_object.PartNumber.StartNumber = value.start_number
+        self.model_object.Modify()
+
+    @property
+    def assembly_number(self) -> NumberingSeries:
+        """
+        Returns the assembly numbering series.
+        """
+        ns = self.model_object.AssemblyNumber
+        return NumberingSeries(prefix=ns.Prefix, start_number=ns.StartNumber)
+
+    @assembly_number.setter
+    def assembly_number(self, value: NumberingSeries) -> None:
+        """Sets the assembly numbering series."""
+        self.model_object.AssemblyNumber.Prefix = value.prefix
+        self.model_object.AssemblyNumber.StartNumber = value.start_number
+        self.model_object.Modify()
+
+    @property
     def weight(self) -> tuple[float, float]:
         """
         Calculate the weight breakdown of a given part.
@@ -552,6 +528,15 @@ class TeklaPart(TeklaModelObject):
         """
         props = super().get_properties(report_props_definitions)
         props["position"] = self.position
+        props["name"] = self.name
+        props["profile"] = self.profile
+        props["material"] = self.material
+        props["finish"] = self.finish
+        props["tekla_class"] = self.tekla_class
+        props["part_prefix"] = self.part_number.prefix
+        props["part_start_number"] = self.part_number.start_number
+        props["assembly_prefix"] = self.assembly_number.prefix
+        props["assembly_start_number"] = self.assembly_number.start_number
         return props
 
     def has_spatial_overlap(self, other: TeklaModelObject) -> bool:
@@ -759,6 +744,83 @@ class TeklaPart(TeklaModelObject):
             welds=welds,
         )
 
+    def set_properties(
+        self,
+        name: str | None = None,
+        profile: str | None = None,
+        material: str | None = None,
+        tekla_class: str | None = None,
+        finish: str | None = None,
+        part_prefix: str | None = None,
+        part_start_number: int | None = None,
+        assembly_prefix: str | None = None,
+        assembly_start_number: int | None = None,
+        user_properties: dict[str, Any] | None = None,
+    ) -> dict[str, int]:
+        """
+        Sets properties on the part.
+        Returns a summary of changes made.
+        """
+        changes: dict[str, int] = {
+            "name": 0,
+            "profile": 0,
+            "material": 0,
+            "tekla_class": 0,
+            "finish": 0,
+            "part_prefix": 0,
+            "part_start_number": 0,
+            "assembly_prefix": 0,
+            "assembly_start_number": 0,
+            "udas": 0,
+        }
+
+        if name is not None:
+            self.name = name
+            changes["name"] = 1
+
+        if profile is not None:
+            self.profile = profile
+            changes["profile"] = 1
+
+        if material is not None:
+            self.material = material
+            changes["material"] = 1
+
+        if tekla_class is not None:
+            self.tekla_class = tekla_class
+            changes["tekla_class"] = 1
+
+        if finish is not None:
+            self.finish = finish
+            changes["finish"] = 1
+
+        if part_prefix is not None:
+            self.model_object.PartNumber.Prefix = part_prefix
+            self.model_object.Modify()
+            changes["part_prefix"] = 1
+
+        if part_start_number is not None:
+            self.model_object.PartNumber.StartNumber = part_start_number
+            self.model_object.Modify()
+            changes["part_start_number"] = 1
+
+        if assembly_prefix is not None:
+            self.model_object.AssemblyNumber.Prefix = assembly_prefix
+            self.model_object.Modify()
+            changes["assembly_prefix"] = 1
+
+        if assembly_start_number is not None:
+            self.model_object.AssemblyNumber.StartNumber = assembly_start_number
+            self.model_object.Modify()
+            changes["assembly_start_number"] = 1
+
+        if user_properties:
+            for key, value in user_properties.items():
+                if self.set_user_property(key, value):
+                    changes["udas"] += 1
+
+        return changes
+
 
 class TeklaAssembly(TeklaModelObject):
     """
@@ -775,82 +837,32 @@ class TeklaAssembly(TeklaModelObject):
     @property
     def name(self) -> str:
         """
-        Returns the name of the main part.
+        Returns the name of the assembly.
         """
-        return self.main_part.model_object.Name
+        return self.model_object.Name
 
     @name.setter
     def name(self, value: str) -> None:
-        """Sets the name of the main part."""
-        main_part = self.main_part
-        main_part.model_object.Name = value
-        main_part.model_object.Modify()
-        if main_part.model_object.Name != value:
-            raise ValueError(f"Failed to set name: expected '{value}', got '{main_part.model_object.Name}'")
+        """Sets the name of the assembly."""
+        self.model_object.Name = value
+        self.model_object.Modify()
+        if self.model_object.Name != value:
+            raise ValueError(f"Failed to set name: expected '{value}', got '{self.model_object.Name}'")
 
     @property
-    def profile(self) -> str:
+    def assembly_number(self) -> NumberingSeries:
         """
-        Returns the profile of the main part.
+        Returns the assembly numbering series.
         """
-        return self.main_part.model_object.Profile.ProfileString
+        ns = self.model_object.AssemblyNumber
+        return NumberingSeries(prefix=ns.Prefix, start_number=ns.StartNumber)
 
-    @profile.setter
-    def profile(self, value: str) -> None:
-        """Sets the profile of the main part."""
-        main_part = self.main_part
-        main_part.model_object.Profile.ProfileString = value
-        main_part.model_object.Modify()
-        if main_part.model_object.Profile.ProfileString != value:
-            raise ValueError(f"Failed to set profile: expected '{value}', got '{main_part.model_object.Profile.ProfileString}'")
-
-    @property
-    def material(self) -> str:
-        """
-        Returns the material of the main part.
-        """
-        return self.main_part.model_object.Material.MaterialString
-
-    @material.setter
-    def material(self, value: str) -> None:
-        """Sets the material of the main part."""
-        main_part = self.main_part
-        main_part.model_object.Material.MaterialString = value
-        main_part.model_object.Modify()
-        if main_part.model_object.Material.MaterialString != value:
-            raise ValueError(f"Failed to set material: expected '{value}', got '{main_part.model_object.Material.MaterialString}'")
-
-    @property
-    def finish(self) -> str:
-        """
-        Returns the finish of the main part.
-        """
-        return self.main_part.model_object.Finish
-
-    @finish.setter
-    def finish(self, value: str) -> None:
-        """Sets the finish of the main part."""
-        main_part = self.main_part
-        main_part.model_object.Finish = value
-        main_part.model_object.Modify()
-        if main_part.model_object.Finish != value:
-            raise ValueError(f"Failed to set finish: expected '{value}', got '{main_part.model_object.Finish}'")
-
-    @property
-    def tekla_class(self) -> str:
-        """
-        Returns the Tekla class of the main part.
-        """
-        return self.main_part.model_object.Class
-
-    @tekla_class.setter
-    def tekla_class(self, value: str) -> None:
-        """Sets the Tekla class of the main part."""
-        main_part = self.main_part
-        main_part.model_object.Class = value
-        main_part.model_object.Modify()
-        if main_part.model_object.Class != value:
-            raise ValueError(f"Failed to set class: expected '{value}', got '{main_part.model_object.Class}'")
+    @assembly_number.setter
+    def assembly_number(self, value: NumberingSeries) -> None:
+        """Sets the assembly numbering series."""
+        self.model_object.AssemblyNumber.Prefix = value.prefix
+        self.model_object.AssemblyNumber.StartNumber = value.start_number
+        self.model_object.Modify()
 
     @property
     def main_part(self) -> TeklaModelObject:
@@ -992,11 +1004,53 @@ class TeklaAssembly(TeklaModelObject):
 
     def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
         """
-        Gets element properties including position for Assembly.
+        Gets element properties for Assembly.
         """
         props = super().get_properties(report_props_definitions)
         props["position"] = self.position
+        props["name"] = self.name
+        props["assembly_prefix"] = self.assembly_number.prefix
+        props["assembly_start_number"] = self.assembly_number.start_number
         return props
+
+    def set_properties(
+        self,
+        name: str | None = None,
+        assembly_prefix: str | None = None,
+        assembly_start_number: int | None = None,
+        user_properties: dict[str, Any] | None = None,
+    ) -> dict[str, int]:
+        """
+        Sets properties on the assembly.
+        Returns a summary of changes made.
+        """
+        changes: dict[str, int] = {
+            "name": 0,
+            "assembly_prefix": 0,
+            "assembly_start_number": 0,
+            "udas": 0,
+        }
+
+        if name is not None:
+            self.name = name
+            changes["name"] = 1
+
+        if assembly_prefix is not None:
+            self.model_object.AssemblyNumber.Prefix = assembly_prefix
+            self.model_object.Modify()
+            changes["assembly_prefix"] = 1
+
+        if assembly_start_number is not None:
+            self.model_object.AssemblyNumber.StartNumber = assembly_start_number
+            self.model_object.Modify()
+            changes["assembly_start_number"] = 1
+
+        if user_properties:
+            for key, value in user_properties.items():
+                if self.set_user_property(key, value):
+                    changes["udas"] += 1
+
+        return changes
 
 
 def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
