@@ -18,14 +18,33 @@ load_dotenv()
 
 @lru_cache
 def _get_config_dir() -> Path:
-    """Get config directory, supporting TEKLA_MCP_CONFIG_DIR env var."""
+    """
+    Get the configuration directory path.
+
+    Supports TEKLA_MCP_CONFIG_DIR environment variable override.
+
+    Returns:
+        Path to the configuration directory
+    """
     env_dir = os.getenv("TEKLA_MCP_CONFIG_DIR", "config")
     return Path(env_dir)
 
 
 @lru_cache(maxsize=8)
 def _load_json(filename: str) -> dict[str, Any]:
-    """Load a JSON config file with caching."""
+    """
+    Load a JSON config file with caching.
+
+    Args:
+        filename: Name of the JSON configuration file
+
+    Returns:
+        Dictionary containing the parsed JSON data
+
+    Raises:
+        FileNotFoundError: If the configuration file does not exist
+        json.JSONDecodeError: If the file contains invalid JSON
+    """
     config_dir = _get_config_dir()
     file_path = config_dir / filename
     if not file_path.exists():
@@ -39,7 +58,15 @@ def _load_json(filename: str) -> dict[str, Any]:
 
 @lru_cache
 def _load_settings() -> dict[str, Any]:
-    """Load settings.json with validation."""
+    """
+    Load and validate settings.json configuration.
+
+    Returns:
+        Dictionary containing the validated settings
+
+    Raises:
+        ValueError: If required keys are missing from the settings
+    """
     settings = _load_json("settings.json")
     required_keys = ["tekla_path"]
     for key in required_keys:
@@ -50,7 +77,12 @@ def _load_settings() -> dict[str, Any]:
 
 @lru_cache
 def _get_class_to_element() -> dict[int, tuple[str, str]]:
-    """Lazy-loaded class to element mapping."""
+    """
+    Get the lazy-loaded class to element type mapping.
+
+    Returns:
+        Dictionary mapping Tekla class numbers to (material, element_type) tuples
+    """
     element_types = _load_json("element_types.json")
     result: dict[int, tuple[str, str]] = {}
     for material, types in element_types.items():
@@ -64,7 +96,9 @@ def _get_class_to_element() -> dict[int, tuple[str, str]]:
 def _get_tekla_macro_directories() -> list[str]:
     """
     Get macro directories from Tekla's XS_MACRO_DIRECTORY advanced option.
-    Returns only valid, existing directory paths.
+
+    Returns:
+        List of valid, existing directory paths from the macro directory setting
     """
     from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
 
@@ -82,12 +116,25 @@ def _get_tekla_macro_directories() -> list[str]:
 
 @lru_cache
 def _get_contentattributes_file_paths() -> list[str]:
-    """Get all contentattributes file paths from tpled.ini INCLUDE statements.
-    Returns list of paths to all .lst files referenced in the main contentattributes file.
+    """
+    Get all contentattributes file paths from tpled.ini INCLUDE statements.
+
+    Returns:
+        List of paths to all .lst files referenced in the main contentattributes file
     """
 
     def resolve_path(raw_path: str, base: Path, tekla_base: Path) -> Path:
-        """Resolve a raw path relative to base or tekla_base."""
+        """
+        Resolve a raw path relative to base or tekla_base.
+
+        Args:
+            raw_path: The raw path string to resolve
+            base: Base path for resolution
+            tekla_base: Tekla base path for resolution
+
+        Returns:
+            Resolved Path object
+        """
         if raw_path.startswith("@") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):
             return base.parent / raw_path[2:]
         if raw_path.startswith(".") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):

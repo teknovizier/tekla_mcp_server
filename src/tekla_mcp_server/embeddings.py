@@ -14,7 +14,12 @@ _embedding_model: "SentenceTransformer | None" = None
 
 
 def get_compute_device() -> str:
-    """Safely determine compute device (CPU or CUDA)."""
+    """
+    Safely determine the compute device (CPU or CUDA).
+
+    Returns:
+        "cuda" if CUDA is available, "cpu" otherwise
+    """
     try:
         import torch
 
@@ -25,13 +30,23 @@ def get_compute_device() -> str:
 
 
 def is_embeddings_enabled() -> bool:
-    """Check if embeddings/semantic search is enabled in config."""
+    """
+    Check if embeddings/semantic search is enabled in config.
+
+    Returns:
+        True if embeddings are enabled, False otherwise
+    """
     config = get_config()
     return config.embeddings_enabled
 
 
 def _ensure_loaded() -> None:
-    """Lazily load the embedding model."""
+    """
+    Lazily load the embedding model.
+
+    Raises:
+        ImportError: If the embedding model configuration is missing
+    """
     global _embedding_model
     if _embedding_model is None:
         logger.info("Importing SentenceTransformer...")
@@ -47,7 +62,15 @@ def _ensure_loaded() -> None:
 
 
 def get_embedding_model() -> "SentenceTransformer":
-    """Returns cached embedding model."""
+    """
+    Get the cached embedding model.
+
+    Returns:
+        The SentenceTransformer model instance
+
+    Raises:
+        ImportError: If the embedding model cannot be loaded
+    """
     _ensure_loaded()
     assert _embedding_model is not None
     return _embedding_model

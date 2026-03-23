@@ -37,7 +37,12 @@ class TemplateAttributeParser:
 
     @classmethod
     def preload(cls) -> None:
-        """Load attributes and embeddings if not already loaded."""
+        """
+        Load attributes and embeddings if not already loaded.
+
+        This method is called to ensure attributes and their embeddings
+        are preloaded into cache for faster subsequent queries.
+        """
         cls._load_attributes()
         if cls._semantic_loaded or not is_embeddings_enabled():
             return
@@ -56,7 +61,11 @@ class TemplateAttributeParser:
 
     @classmethod
     def _load_attributes(cls) -> None:
-        """Load attribute definitions from all Tekla contentattributes files into cache."""
+        """
+        Load attribute definitions from all Tekla contentattributes files into cache.
+
+        This is a lazy loader that only loads once and caches the results.
+        """
         if cls._loaded:
             return
 
@@ -72,7 +81,12 @@ class TemplateAttributeParser:
 
     @classmethod
     def _load_attributes_from_file(cls, file_path: str) -> None:
-        """Load attribute definitions from a single contentattributes file."""
+        """
+        Load attribute definitions from a single contentattributes file.
+
+        Args:
+            file_path: Path to the contentattributes file to load
+        """
         try:
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
@@ -107,7 +121,11 @@ class TemplateAttributeParser:
         2. Semantic overrides
         3. MiniLM embeddings with spread-based confidence and minimum threshold
 
-        Returns resolved names and ambiguous queries with candidates for LLM.
+        Args:
+            queries: List of attribute name queries to resolve
+
+        Returns:
+            Dictionary with 'resolved' list of matched names and 'errors' list of unresolved queries
         """
         cls.preload()
         spread_threshold = get_config().embedding_spread_threshold
@@ -135,7 +153,15 @@ class TemplateAttributeParser:
 
     @classmethod
     def _override_match(cls, user_input: str) -> str | None:
-        """Match user input against configured semantic overrides."""
+        """
+        Match user input against configured semantic overrides.
+
+        Args:
+            user_input: The user input string to match
+
+        Returns:
+            The override value if a match is found, None otherwise
+        """
         overrides = get_config().semantic_overrides
         query = user_input.lower().strip()
         query_tokens = set(re.findall(r"\w+", query))
@@ -152,7 +178,15 @@ class TemplateAttributeParser:
 
     @classmethod
     def _compute_similarity(cls, query: str) -> tuple[list[str], list[float]]:
-        """Compute cosine similarity between query and all cached attributes."""
+        """
+        Compute cosine similarity between query and all cached attributes.
+
+        Args:
+            query: The query string to compute similarity for
+
+        Returns:
+            Tuple of (attribute_names, similarity_scores) sorted by score descending
+        """
         if not cls._embeddings_cache:
             return [], []
 
@@ -174,8 +208,18 @@ class TemplateAttributeParser:
     def _get_candidates(cls, query: str, spread_threshold: float, min_threshold: float, top_k: int = 10) -> str | list[str]:
         """
         Compute top-k candidates using MiniLM embeddings.
+
         If spread of top-k scores exceeds threshold AND top score >= min_threshold,
         returns top candidate (string). Otherwise, returns list of candidates for LLM fallback.
+
+        Args:
+            query: The query string to find candidates for
+            spread_threshold: Minimum standard deviation of top-k scores
+            min_threshold: Minimum confidence score for top candidate
+            top_k: Number of top candidates to consider (default 10)
+
+        Returns:
+            Top candidate name if confident match, otherwise list of candidate names
         """
         names, scores = cls._compute_similarity(query)
         if not names:

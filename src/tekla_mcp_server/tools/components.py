@@ -32,6 +32,7 @@ from tekla_mcp_server.tekla.utils import (
     get_wall_pairs,
     insert_component,
     insert_detail,
+    iterate_boolean_parts,
 )
 from tekla_mcp_server.utils import log_function_call
 
@@ -94,7 +95,7 @@ def process_detail_or_component(
         status = "warning"
     return {
         "status": status,
-        "total_elements": selected_objects.GetSize(),
+        "selected_elements": selected_objects.GetSize(),
         "processed_elements": processed_elements,
         "processed_components": processed_components,
         "custom_properties_errors": errors,
@@ -235,26 +236,23 @@ def process_lifting_anchor_recesses(selected_object: ModelObject, local_cog: Any
     Iterates through all boolean parts within the element, identifies the recesses for lifting anchors,
     and creates additional cuts where needed.
     """
-    boolean_part_enum = selected_object.GetBooleans()
-    while boolean_part_enum.MoveNext():
-        boolean_part = boolean_part_enum.Current
-        if isinstance(boolean_part, BooleanPart):
-            operative_part = boolean_part.OperativePart
+    for boolean_part in iterate_boolean_parts(selected_object):
+        operative_part = boolean_part.OperativePart
 
-            if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Class == "0" and operative_part.Name == "" and operative_part.Profile.ProfileString.startswith("PRMD"):
-                solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
-                default_offset = 0.0
-                default_cut_length = 300.0
-                min_ledge_height = 100.0
-                magic_offset = 0.99
-                ledge_height = solid.MaximumPoint.Y - operative_part.StartPoint.Y
-                if ledge_height > min_ledge_height:
-                    create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, default_offset, default_cut_length)
-                elif ledge_height:
-                    match = re.search(r"PRMD(\d+)", operative_part.Profile.ProfileString)
-                    if match:
-                        cut_length = float(match.group(1)) + magic_offset
-                        create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, default_offset, cut_length)
+        if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Class == "0" and operative_part.Name == "" and operative_part.Profile.ProfileString.startswith("PRMD"):
+            solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
+            default_offset = 0.0
+            default_cut_length = 300.0
+            min_ledge_height = 100.0
+            magic_offset = 0.99
+            ledge_height = solid.MaximumPoint.Y - operative_part.StartPoint.Y
+            if ledge_height > min_ledge_height:
+                create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, default_offset, default_cut_length)
+            elif ledge_height:
+                match = re.search(r"PRMD(\d+)", operative_part.Profile.ProfileString)
+                if match:
+                    cut_length = float(match.group(1)) + magic_offset
+                    create_boolean_cut(selected_object, operative_part.StartPoint.X, operative_part.StartPoint.Y, ledge_height, default_offset, cut_length)
 
 
 def create_boolean_cut(selected_object: ModelObject, x_position: float, y_position: float, cut_height: float, depth_offset: float, cut_length: float) -> bool:
@@ -306,14 +304,10 @@ def tool_remove_components(model: TeklaModel, component: BaseComponent, *selecte
     is_lifting_anchor = isinstance(component, LiftingAnchorsComponent)
     if is_lifting_anchor:
         for selected_object in selected_objects:
-            boolean_part_enum = selected_object.GetBooleans()
-            while boolean_part_enum.MoveNext():
-                boolean_part = boolean_part_enum.Current
-                if isinstance(boolean_part, BooleanPart):
-                    operative_part = boolean_part.OperativePart
-                    if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and operative_part.Name == "LIFTING_ANCHOR_RECESS":
-                        if boolean_part.Delete():
-                            counter += 1
+            for boolean_part in iterate_boolean_parts(selected_object):
+                if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT and boolean_part.OperativePart.Name == "LIFTING_ANCHOR_RECESS":
+                    if boolean_part.Delete():
+                        counter += 1
         logger.debug("Total lifting anchor recess boolean cuts removed: %s", counter)
 
     for comp in selected_objects[0].GetComponents():

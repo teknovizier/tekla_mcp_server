@@ -235,7 +235,7 @@ class TeklaModelObject:
         is_ok, phase = self.model_object.GetPhase()
         if not is_ok:
             raise AttributeError("Failed to retrieve phase.")
-        
+
         return phase.PhaseNumber
 
     @property
@@ -394,6 +394,21 @@ class TeklaModelObject:
         if property_type not in (str, int, float):
             raise TypeError("Property type must be one of: str, int, float.")
 
+    def _set_property(self, prop_name: str, value: str) -> None:
+        """
+        Helper to set a property on the model object.
+
+        Args:
+            prop_name: Name of the property (supports dotted paths like "Profile.ProfileString")
+            value: Value to set
+        """
+        if "." in prop_name:
+            parts = prop_name.split(".")
+            setattr(getattr(self.model_object, parts[0]), parts[1], value)
+        else:
+            setattr(self.model_object, prop_name, value)
+        self.model_object.Modify()
+
 
 class TeklaPart(TeklaModelObject):
     """
@@ -417,10 +432,7 @@ class TeklaPart(TeklaModelObject):
     @name.setter
     def name(self, value: str) -> None:
         """Sets the name of the part."""
-        self.model_object.Name = value
-        self.model_object.Modify()
-        if self.model_object.Name != value:
-            raise ValueError(f"Failed to set name: expected '{value}', got '{self.model_object.Name}'")
+        self._set_property("Name", value)
 
     @property
     def profile(self) -> str:
@@ -432,10 +444,7 @@ class TeklaPart(TeklaModelObject):
     @profile.setter
     def profile(self, value: str) -> None:
         """Sets the profile of the part."""
-        self.model_object.Profile.ProfileString = value
-        self.model_object.Modify()
-        if self.model_object.Profile.ProfileString != value:
-            raise ValueError(f"Failed to set profile: expected '{value}', got '{self.model_object.Profile.ProfileString}'")
+        self._set_property("Profile.ProfileString", value)
 
     @property
     def material(self) -> str:
@@ -447,10 +456,7 @@ class TeklaPart(TeklaModelObject):
     @material.setter
     def material(self, value: str) -> None:
         """Sets the material of the part."""
-        self.model_object.Material.MaterialString = value
-        self.model_object.Modify()
-        if self.model_object.Material.MaterialString != value:
-            raise ValueError(f"Failed to set material: expected '{value}', got '{self.model_object.Material.MaterialString}'")
+        self._set_property("Material.MaterialString", value)
 
     @property
     def finish(self) -> str:
@@ -462,10 +468,7 @@ class TeklaPart(TeklaModelObject):
     @finish.setter
     def finish(self, value: str) -> None:
         """Sets the finish of the part."""
-        self.model_object.Finish = value
-        self.model_object.Modify()
-        if self.model_object.Finish != value:
-            raise ValueError(f"Failed to set finish: expected '{value}', got '{self.model_object.Finish}'")
+        self._set_property("Finish", value)
 
     @property
     def tekla_class(self) -> str:
@@ -477,10 +480,7 @@ class TeklaPart(TeklaModelObject):
     @tekla_class.setter
     def tekla_class(self, value: str) -> None:
         """Sets the Tekla class of the part."""
-        self.model_object.Class = value
-        self.model_object.Modify()
-        if self.model_object.Class != value:
-            raise ValueError(f"Failed to set class: expected '{value}', got '{self.model_object.Class}'")
+        self._set_property("Class", value)
 
     @property
     def part_number(self) -> NumberingSeries:
@@ -864,10 +864,7 @@ class TeklaAssembly(TeklaModelObject):
     @name.setter
     def name(self, value: str) -> None:
         """Sets the name of the assembly."""
-        self.model_object.Name = value
-        self.model_object.Modify()
-        if self.model_object.Name != value:
-            raise ValueError(f"Failed to set name: expected '{value}', got '{self.model_object.Name}'")
+        self._set_property("Name", value)
 
     @property
     def assembly_number(self) -> NumberingSeries:

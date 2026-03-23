@@ -14,6 +14,7 @@ from tekla_mcp_server.tekla.model_object import (
     wrap_model_object,
     wrap_model_objects,
 )
+from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 from tekla_mcp_server.utils import log_function_call, serialize_to_json
 
 
@@ -187,14 +188,10 @@ def tool_get_elements_cut_parts(selected_objects: Any) -> dict[str, Any]:
     cut_parts_by_profile: Counter[str] = Counter()
 
     for selected_object in selected_objects:
-        boolean_part_enum = selected_object.GetBooleans()
-        while boolean_part_enum.MoveNext():
-            boolean_part = boolean_part_enum.Current
-            if isinstance(boolean_part, BooleanPart):
-                operative_part = boolean_part.OperativePart
-                if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT:
-                    profile = operative_part.Profile.ProfileString
-                    cut_parts_by_profile[profile] += 1
+        for boolean_part in iterate_boolean_parts(selected_object):
+            if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT:
+                profile = boolean_part.OperativePart.Profile.ProfileString
+                cut_parts_by_profile[profile] += 1
         processed_elements += 1
 
     sorted_profiles = sorted(cut_parts_by_profile.items(), key=lambda x: x[0])

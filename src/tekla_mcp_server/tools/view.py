@@ -10,8 +10,6 @@ from tekla_mcp_server.tekla.loader import (
     AABB,
     Color,
     GraphicsDrawer,
-    List,
-    ModelObject,
     ModelObjectEnumerator,
     ModelObjectVisualization,
     Operation,
@@ -19,12 +17,8 @@ from tekla_mcp_server.tekla.loader import (
     TemporaryTransparency,
     ViewHandler,
 )
-from tekla_mcp_server.tekla.utils import get_active_views
-from tekla_mcp_server.tekla.model_object import (
-    TeklaAssembly,
-    TeklaPart,
-    wrap_model_objects,
-)
+from tekla_mcp_server.tekla.utils import get_active_views, collect_children
+from tekla_mcp_server.tekla.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.utils import log_function_call
 
@@ -216,20 +210,10 @@ def tool_hide_selected(selected_objects: ModelObjectEnumerator) -> dict[str, Any
     Args:
         selected_objects: Enumerator of selected objects to hide
     """
-    objects_to_hide = []
-
-    for obj in wrap_model_objects(selected_objects):
-        if isinstance(obj, TeklaAssembly):
-            objects_to_hide.extend(obj.get_all_children())
-        elif isinstance(obj, TeklaPart):
-            objects_to_hide.extend(obj.get_all_children(include_all=False))
-
-    tekla_list = List[ModelObject]()
-    for model_object in objects_to_hide:
-        tekla_list.Add(model_object)
+    tekla_list = collect_children(selected_objects)
     ModelObjectVisualization.SetTransparency(tekla_list, TemporaryTransparency.HIDDEN)
 
-    return {"status": "success", "hidden_elements": len(objects_to_hide)}
+    return {"status": "success", "hidden_elements": tekla_list.Count}
 
 
 @log_function_call
@@ -244,18 +228,8 @@ def tool_color_selected(selected_objects: ModelObjectEnumerator, red: int, green
         green: Green component of RGB color (0-255)
         blue: Blue component of RGB color (0-255)
     """
-    objects_to_color = []
-
-    for obj in wrap_model_objects(selected_objects):
-        if isinstance(obj, TeklaAssembly):
-            objects_to_color.extend(obj.get_all_children())
-        elif isinstance(obj, TeklaPart):
-            objects_to_color.extend(obj.get_all_children(include_all=False))
-
-    tekla_list = List[ModelObject]()
-    for model_object in objects_to_color:
-        tekla_list.Add(model_object)
+    tekla_list = collect_children(selected_objects)
     color = Color(red / 255.0, green / 255.0, blue / 255.0)
     ModelObjectVisualization.SetTemporaryState(tekla_list, color)
 
-    return {"status": "success", "colored_elements": len(objects_to_color)}
+    return {"status": "success", "colored_elements": tekla_list.Count}

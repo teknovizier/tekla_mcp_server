@@ -31,8 +31,10 @@ from tekla_mcp_server.tekla.loader import (
     ViewHandler,
     View,
     TeklaStructuresInfo,
+    List,
 )
 from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 
 from tekla_mcp_server.utils import log_function_call
 
@@ -62,8 +64,13 @@ NUMERIC_MATCH_TYPE_MAPPING = {
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
     """
-    Sets the transformation plane before execution and restores it after.
-    Supports functions with either one or two selected objects.
+    Decorator that sets the transformation plane before execution and restores it after.
+
+    Args:
+        func: The function to decorate
+
+    Returns:
+        Wrapped function that handles transformation plane context
     """
 
     @wraps(func)
@@ -178,18 +185,26 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
     """
     Identifies and pairs walls based on their (X, Y) coordinates and Z-levels within a specified tolerance.
 
-    The function:
-    - Filters out non-wall objects.
-    - Validates that there are exactly two floors.
-    - Sorts the walls based on (X, Y, Z) coordinates.
-    - Pairs walls into (bottom_wall, top_wall) if their X and Y coordinates match within precision.
+    The function filters out non-wall objects, validates that there are exactly two floors,
+    sorts the walls based on (X, Y, Z) coordinates, and pairs walls into (bottom_wall, top_wall)
+    if their X and Y coordinates match within precision.
+
+    Args:
+        selected_objects: Enumerator of selected model objects (Beams expected)
+
+    Returns:
+        List of tuples containing (bottom_wall, top_wall) pairs
+
+    Raises:
+        ValueError: If fewer than two elements are selected
+        ValueError: If more than two floors are detected
     """
     # 50 mm tolerance
     tolerance = 50.0
 
     def is_within_tolerance(value1: float, value2: float, tolerance: float) -> bool:
         """
-        Returns True if values are within the defined tolerance range.
+        Check if two values are within the defined tolerance range.
 
         Args:
             value1: First value to compare
@@ -197,7 +212,7 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
             tolerance: Maximum allowed difference
 
         Returns:
-            True if absolute difference <= tolerance
+            True if absolute difference <= tolerance, False otherwise
         """
         return abs(value1 - value2) <= tolerance
 
@@ -270,7 +285,7 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
 
 def get_tekla_major_version() -> int:
     """
-    Returns the Tekla major version.
+    Get the Tekla Structures major version from the current program version.
 
     Returns:
         Major version number (e.g., 2022, 2024).
@@ -285,13 +300,13 @@ def get_tekla_major_version() -> int:
 
 def get_active_views() -> list[View]:
     """
-    Returns the currently active views.
+    Get the currently active views in the model.
 
     Uses ViewHandler.GetActiveView() for Tekla 2024+,
     falls back to ViewHandler.GetVisibleViews() for earlier versions.
 
     Returns:
-        List of View objects that are currently active/visible.
+        List of View objects that are currently active/visible
     """
     views: list[View] = []
 
@@ -305,3 +320,46 @@ def get_active_views() -> list[View]:
             views.append(view_enum.Current)
 
     return views
+
+
+def collect_children(selected_objects: ModelObjectEnumerator) -> List[ModelObject]:
+    """
+    Collect child objects from selected parts/assemblies into a Tekla List.
+
+    Args:
+        selected_objects: Enumerator of selected objects
+
+    Returns:
+        List of ModelObjects containing all children from assemblies and parts
+    """
+    children: list[ModelObject] = []
+    for obj in wrap_model_objects(selected_objects):
+        if isinstance(obj, TeklaAssembly):
+            children.extend(obj.get_all_children())
+        elif isinstance(obj, TeklaPart):
+            children.extend(obj.get_all_children(include_all=False))
+
+    tekla_list = List[ModelObject]()
+    for child in children:
+        tekla_list.Add(child)
+    return tekla_list
+
+
+def iterate_boolean_parts(model_object: ModelObject) -> list[ModelObject]:
+    """
+    Iterate over boolean parts attached to a model object.
+
+    Args:
+        model_object: The Tekla model object to get booleans from
+
+    Returns:
+        List of BooleanPart objects attached to the model object
+    """
+    from tekla_mcp_server.tekla.loader import BooleanPart
+
+    boolean_parts: list[ModelObject] = []
+    boolean_enum = model_object.GetBooleans()
+    while boolean_enum.MoveNext():
+        if isinstance(boolean_enum.Current, BooleanPart):
+            boolean_parts.append(boolean_enum.Current)
+    return boolean_parts

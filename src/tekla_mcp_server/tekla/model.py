@@ -51,21 +51,30 @@ class TeklaModel:
     @property
     def model(self) -> Model:
         """
-        Returns the underlying Model instance.
+        Get the underlying Tekla Model instance.
+
+        Returns:
+            The Model instance for interacting with Tekla Structures
         """
         return self._model
 
     @log_function_call
     def commit_changes(self) -> bool:
         """
-        Commits the changes made to the model.
+        Commit the changes made to the model.
+
+        Returns:
+            True if the commit was successful, False otherwise
         """
         return self.model.CommitChanges()
 
     @log_function_call
     def get_all_objects(self) -> ModelObjectEnumerator:
         """
-        Returns all objects in the model.
+        Get all objects in the model.
+
+        Returns:
+            ModelObjectEnumerator containing all objects in the model
         """
         selector = ModelObjectSelector()
         return selector.GetAllObjects()

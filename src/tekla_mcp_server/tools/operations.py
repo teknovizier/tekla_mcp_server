@@ -5,9 +5,10 @@ Operations tools for Tekla model operations.
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.tekla.loader import BooleanPart, Operation
+from tekla_mcp_server.tekla.loader import Operation
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tekla.model_object import wrap_model_objects
+from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 from tekla_mcp_server.utils import log_function_call
 
 
@@ -58,13 +59,9 @@ def tool_convert_cut_parts_to_real_parts(model: TeklaModel, selected_objects: An
     processed_elements = 0
     inserted_booleans = 0
     for selected_object in selected_objects:
-        boolean_part_enum = selected_object.GetBooleans()
-        while boolean_part_enum.MoveNext():
-            boolean_part = boolean_part_enum.Current
-            if isinstance(boolean_part, BooleanPart):
-                operative_part = boolean_part.OperativePart
-                if operative_part.Insert():
-                    inserted_booleans += 1
+        for boolean_part in iterate_boolean_parts(selected_object):
+            if boolean_part.OperativePart.Insert():
+                inserted_booleans += 1
         processed_elements += 1
     if inserted_booleans > 0:
         model.commit_changes()
