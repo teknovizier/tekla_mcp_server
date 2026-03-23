@@ -1,8 +1,8 @@
 """
-Unit tests for core models and anchor placement logic.
+Unit tests for core models.
 
-This module verifies the correctness of data models, validation logic, and anchor placement
-calculations used in Tekla component operations.
+This module verifies the correctness of data models and validation logic
+used in Tekla component operations.
 
 Tested modules:
 - models.py
@@ -18,33 +18,11 @@ from tekla_mcp_server.models import (
     ElementTypeModel,
     ComponentTypeModel,
     ElementLabelModel,
-    ElementType,
     BaseComponent,
-    LiftingAnchorsComponent,
     ReportProperty,
     PartSnapshot,
     AssemblySnapshot,
 )
-
-
-@pytest.fixture
-def anchor_types():
-    """
-    Fixture: anchor types.
-    """
-    return {
-        "A": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 1.5},
-        "B": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 2.0},
-        "C": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 0.5},
-    }
-
-
-@pytest.fixture
-def element_type():
-    """
-    Fixture: default element type.
-    """
-    return ElementType.CONCRETE_WALL
 
 
 @pytest.mark.parametrize(
@@ -84,125 +62,6 @@ def test_get_element_type_by_class_raises(input_val, expected_exception):
     """
     with pytest.raises(expected_exception):
         ElementTypeModel.get_element_type_by_class(input_val)
-
-
-def test_get_required_anchors_valid(anchor_types, element_type):
-    """
-    Tests `get_required_anchors()` with valid anchor types.
-
-    Steps:
-    - Calls `get_required_anchors()` with weight and thickness parameters.
-    - Ensures at least two valid anchors are selected.
-    """
-    n, valid = LiftingAnchorsComponent.get_required_anchors(element_type.name, 2000, 10, anchor_types)
-    assert "A" in valid
-    assert n == 2
-
-
-def test_get_required_anchors_try_four(element_type):
-    """
-    Tests `get_required_anchors()` when four anchors are required.
-
-    Steps:
-    - Uses an anchor type with **capacity=1.0** per anchor.
-    - Calls the function with **element_weight=3600**.
-    - Ensures the system correctly assigns four anchors.
-    """
-    anchor_types = {"A": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 1.0}}
-    n, valid = LiftingAnchorsComponent.get_required_anchors(element_type.name, 3600, 10, anchor_types)
-    assert n == 4
-    assert "A" in valid
-
-
-def test_get_required_anchors_not_valid(element_type):
-    """
-    Tests `get_required_anchors()` when no valid anchors exist.
-
-    Steps:
-    - Uses anchor types with insufficient capacity (**capacity=0.1** per anchor).
-    - Calls the function with **element_weight=10000**.
-    - Ensures a `ValueError` is raised due to inability to support the load.
-    """
-    anchor_types = {"A": {"element_type": ["CONCRETE_WALL"], "active": True, "capacity": 0.1}}
-    with pytest.raises(ValueError):
-        LiftingAnchorsComponent.get_required_anchors(element_type.name, 10000, 10, anchor_types)
-
-
-def test_calculate_anchor_placement_valid():
-    """
-    Tests `calculate_anchor_placement()` with a valid case.
-
-    Steps:
-    - Calls the function with **element_length=2000**, **cog_x=1000**, **min_edge_distance=50** and **two anchors**.
-    - Validates correct distance from start and end.
-    - Ensures anchors are placed symmetrically.
-    """
-    res = LiftingAnchorsComponent.calculate_anchor_placement(
-        min_edge_distance=50,
-        element_length=2000,
-        cog_x=1000,
-        number_of_anchors=2,
-    )
-    distance_from_start, distance_from_end, double_anchor_spacing = res
-    assert distance_from_start == 500
-    assert distance_from_end == 500
-    assert double_anchor_spacing == 50
-
-
-def test_calculate_anchor_placement_too_short():
-    """
-    Tests `calculate_anchor_placement()` when the element length is too short.
-
-    Steps:
-    - Calls the function with **element_length=1000**, **cog_x=500**, **min_edge_distance=900** and **four anchors**.
-    - Ensures a `ValueError` is raised due to insufficient space for anchors.
-    """
-    with pytest.raises(ValueError):
-        LiftingAnchorsComponent.calculate_anchor_placement(
-            min_edge_distance=900,
-            element_length=1000,
-            cog_x=500,
-            number_of_anchors=4,
-        )
-
-
-def test_calculate_anchor_placement_four_anchors_requested():
-    """
-    Tests `calculate_anchor_placement()` with an explicit request for four anchors.
-
-    Steps:
-    - Calls the function with **element_length=6000** and **cog_x=3000**.
-    - Validates correct anchor spacing and positioning.
-    """
-    res = LiftingAnchorsComponent.calculate_anchor_placement(
-        min_edge_distance=50,
-        element_length=6000,
-        cog_x=3000,
-        number_of_anchors=4,
-    )
-    distance_from_start, distance_from_end, double_anchor_spacing = res
-    assert distance_from_start == 1000
-    assert distance_from_end == 1000
-    assert double_anchor_spacing == 1000
-
-
-def test_calculate_anchor_placement_distances_are_multiples_of_5():
-    """
-    Tests `calculate_anchor_placement()` to ensure placement distances are multiples of 5.
-
-    Steps:
-    - Calls the function with **element_length=4012**, **cog_x=2006**, **min_edge_distance=50** and **two anchors**.
-    - Validates that both `distance_from_start` and `distance_from_end` are multiples of 5.
-    """
-    res = LiftingAnchorsComponent.calculate_anchor_placement(
-        min_edge_distance=50,
-        element_length=4012,
-        cog_x=2006,
-        number_of_anchors=2,
-    )
-    distance_from_start, distance_from_end, _ = res
-    assert distance_from_start % 5 == 0
-    assert distance_from_end % 5 == 0
 
 
 @pytest.mark.parametrize(

@@ -1,11 +1,8 @@
 """
 This module defines core data structures, enumerations, and models used in the project.
-It includes classes representing different elements, component types, lifting anchors,
-and wall joint configurations.
 """
 
 import json
-import math
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
@@ -15,8 +12,6 @@ from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_seria
 from pydantic_core import PydanticCustomError
 
 from tekla_mcp_server.config import get_config
-from tekla_mcp_server.init import logger
-from tekla_mcp_server.utils import log_function_call
 
 
 # Enums
@@ -138,14 +133,6 @@ ELEMENT_LABELS = {e.value for e in ElementLabel}
 def get_element_type_mapping() -> dict[str, dict[str, list[int]]]:
     """Returns element type mapping from config."""
     return get_config().element_types
-
-
-@lru_cache
-def get_lifting_anchor_types() -> dict[str, Any]:
-    """Returns lifting anchor types from base_components.json."""
-    base = get_base_components()
-    lifting = base.get("lifting_anchor", {})
-    return lifting.get("anchor_types", {})
 
 
 @lru_cache
@@ -583,128 +570,6 @@ class BaseComponent(BaseModel):
         if self._properties is None:
             self._properties = {}
         self._properties.update(updates)
-
-
-class LiftingAnchorsComponent(BaseComponent):
-    """
-    Specialized component for Lifting Anchor with intelligent behavior.
-    """
-
-    _config_key: ClassVar[str] = "lifting_anchor"
-
-    name: str = Field(default="Lifting Anchor", init=False, description="The name of the Tekla component.")
-
-    # Private attributes
-    _safety_margin: int = PrivateAttr()
-
-    def __init__(self, **data):
-        data["name"] = "Lifting Anchor"
-        super().__init__(**data)
-
-    def model_post_init(self, __context):
-        component = get_base_components().get(self._config_key)
-        self._safety_margin = component.get("safety_margin", 5) if component else 5
-        super().model_post_init(__context)
-
-    # Getters
-    @property
-    def safety_margin(self) -> int:
-        """Returns `_safety_margin`"""
-        return self._safety_margin
-
-    @staticmethod
-    @log_function_call
-    def get_required_anchors(element_type: str, element_weight: float, safety_margin: int, anchor_types: dict | None = None) -> tuple[int, dict]:
-        """
-        Determines the required number of lifting anchors for an element based on its weight and safety margin.
-
-        This function iteratively tries to find suitable lifting anchors, starting with 2 and increasing to 4
-        if necessary. It adjusts the required lifting capacity by applying the specified safety margin and
-        selects anchors from the provided anchor types that meet the capacity requirement.
-        """
-        kg_to_ton = 1000
-        percent = 100
-
-        if anchor_types is None:
-            anchor_types = get_lifting_anchor_types()
-        valid_anchors = None
-        n = 2  # Start with 2 anchors
-        while n <= 4:
-            required_capacity = element_weight / n / kg_to_ton
-
-            # Adjust the capacity to account for reserve margin
-            required_capacity += required_capacity * safety_margin / percent
-
-            # Find anchors that meet the capacity requirement
-            valid_anchors = {key: value for key, value in anchor_types.items() if value["capacity"] >= required_capacity and element_type in value["element_type"] and value["active"]}
-
-            if valid_anchors:
-                logger.debug("Found valid anchors for n=%s: %s", n, list(valid_anchors.keys()))
-                break  # Stop if valid anchors are found
-
-            n += 2  # Try with 4 anchors next
-
-        # If no valid anchors found, raise an exception
-        if not valid_anchors:
-            raise ValueError(f"No lifting anchors found for the element with total weight: {element_weight}.")
-
-        return n, valid_anchors
-
-    @staticmethod
-    @log_function_call
-    def calculate_anchor_placement(min_edge_distance: float, element_length: float, cog_x: float, number_of_anchors: int) -> tuple[float, float, float]:
-        """
-        Calculates the placement of lifting anchors while ensuring minimum edge distance constraints.
-
-        This function determines the correct distances for placing anchors relative to the center of gravity (COG).
-        It ensures that the distances are multiples of 5 and adjusts them dynamically to meet
-        the minimum edge distance constraints. Additionally, it verifies that the required anchor distances
-        do not exceed the total element length.
-        """
-        double_anchor_spacing_long_wall = 1000.0  # Double anchor spacing for long walls
-        double_anchor_spacing_shorter_wall = 500.0  # Double anchor spacing for shorter walls
-        rounding_multiple = 5
-
-        # By default, place anchors at L/4 from COG
-        distance_from_cog = element_length / 4
-        distance_from_start: float = math.floor((cog_x - distance_from_cog) / rounding_multiple) * rounding_multiple
-        distance_from_end: float = math.floor((element_length - cog_x - distance_from_cog) / rounding_multiple) * rounding_multiple
-
-        required_length = distance_from_start + 2 * distance_from_cog + distance_from_end
-        double_anchor_spacing = min_edge_distance  # Assume the distance between anchors to be equal to the minimum edge distance
-
-        if number_of_anchors == 4:
-            if (element_length - distance_from_start - distance_from_end - double_anchor_spacing_long_wall * 2) >= double_anchor_spacing_long_wall:
-                double_anchor_spacing = double_anchor_spacing_long_wall
-            elif (element_length - distance_from_start - distance_from_end - double_anchor_spacing_shorter_wall * 2) >= double_anchor_spacing_shorter_wall:
-                double_anchor_spacing = double_anchor_spacing_shorter_wall
-
-            # Ensure distance_from_start is not less than min_edge_distance
-            if distance_from_start - double_anchor_spacing / 2 > min_edge_distance:
-                distance_from_start -= double_anchor_spacing / 2
-
-            # Ensure distance_from_end is not less than min_edge_distance
-            if distance_from_end - double_anchor_spacing / 2 > min_edge_distance:
-                distance_from_end -= double_anchor_spacing / 2
-
-            required_length = distance_from_start + double_anchor_spacing * 3 + distance_from_end
-
-        if required_length > element_length:
-            logger.debug("Required anchor distances exceed element length: element_length=%s, required_length=%s. Adjusting distances.", element_length, required_length)
-            # Reduce the distance from COG, but do not allow the distance between anchors be smaller than min_edge_distance
-            while distance_from_start < min_edge_distance and distance_from_end < min_edge_distance:
-                # Recalculate distances
-                distance_from_start += rounding_multiple
-                distance_from_end += rounding_multiple
-
-                # Check the minimum distance between anchors
-                gap = element_length - distance_from_start - distance_from_end
-                if number_of_anchors == 4:
-                    gap -= 2 * double_anchor_spacing
-                if gap < double_anchor_spacing:
-                    raise ValueError("Cannot place the anchors in the wall while keeping all the required distances. The element is too short.")
-
-        return distance_from_start, distance_from_end, double_anchor_spacing
 
 
 class NumberingSeries(BaseModel):

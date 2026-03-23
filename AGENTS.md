@@ -81,6 +81,7 @@ from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tekla.model_object import TeklaModelObject
 from tekla_mcp_server.tekla.utils import wrap_model_objects
 from tekla_mcp_server.tekla.loader import Point, Beam, Identifier, Model
+from tekla_mcp_server.tekla.component_handlers import HandlerRegistry, LiftingAnchorsHandler
 
 # Providers (MCP tool definitions)
 from tekla_mcp_server.providers.selection_provider import select_elements_by_filter
@@ -196,7 +197,8 @@ tekla_mcp_server/
 │       ├── model.py           # Tekla Model wrapper (singleton via lru_cache)
 │       ├── model_object.py    # Tekla ModelObject wrappers
 │       ├── utils.py           # Tekla API helpers
-│       └── template_attrs_parser.py  # Template attribute parsing with semantic search
+│       ├── template_attrs_parser.py  # Template attribute parsing with semantic search
+│       └── component_handlers.py     # Component handler plugins (LiftingAnchorsHandler, etc.)
 ├── config/                    # Configuration JSON files
 │   ├── settings.sample.json
 │   ├── element_types.sample.json
@@ -211,7 +213,8 @@ tekla_mcp_server/
 │   │   ├── test_utils.py
 │   │   ├── test_tekla_model_object.py
 │   │   ├── test_tekla_template_attrs_parser.py
-│   │   └── test_tekla_utils.py
+│   │   ├── test_tekla_utils.py
+│   │   └── test_component_handlers.py
 │   └── functional/            # Functional tests
 │       ├── __init__.py
 │       └── test_mcp_server.py
@@ -232,6 +235,46 @@ tekla_mcp_server/
 - Test files mirror module structure: `test_<module_name>.py`
 - Use `@pytest.mark.parametrize` for multiple test cases
 - Avoid Tekla imports in unit tests - use mocks
+
+## Component Handler System
+The component handler system provides a plugin-like architecture for specialized Tekla components.
+
+### Handler Structure
+- Handlers are defined in `tekla/component_handlers.py`
+- Base handler class: None (duck typing with `tekla_name` property)
+- Registry auto-discovers handlers from `config/base_components.json`
+
+### Adding a New Handler
+1. Create handler class with `tekla_name` property:
+```python
+@register_handler
+class MyComponentHandler:
+    @property
+    def tekla_name(self) -> str:
+        return "My Component"
+    
+    def pre_process(self, component, selected_object) -> dict:
+        # Called before component insertion
+        return {"context": "data"}
+    
+    def post_process(self, component, selected_object, count, context) -> int:
+        # Called after component insertion
+        return count
+```
+
+2. Register in config:
+```json
+{
+  "my_component": {
+    "tekla_name": "My Component",
+    "number": -1,
+    "handler": {
+      "name": "MyComponentHandler",
+      "config": { "setting": "value" }
+    }
+  }
+}
+```
 
 ## Before Committing
 1. Check: `uv run ruff check .`

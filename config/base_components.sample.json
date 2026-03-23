@@ -3,45 +3,51 @@
     "tekla_name": "Lifting Anchor",
     "number": 30000080,
     "description": "A component that adds lifting anchors to walls according to predefined rules",
-    "safety_margin": 5,
-    "anchor_types": {
-      "P1": {
-        "active": true,
-        "type": "long",
-        "element_type": ["CONCRETE_WALL"],
-        "capacity": 1.0,
-        "min_edge_distance": 300.0,
-        "attributes": {
-          "RecessLength": 130.0,
-          "RecessHeight": 110.0,
-          "RecessInnerLength": 25.0,
-          "DistOutOfBeam": -30.0
-        }
-      },
-      "P2": {
-        "active": true,
-        "type": "long",
-        "element_type": ["CONCRETE_WALL"],
-        "capacity": 2.0,
-        "min_edge_distance": 350.0,
-        "attributes": {
-          "RecessLength": 130.0,
-          "RecessHeight": 110.0,
-          "RecessInnerLength": 25.0,
-          "DistOutOfBeam": -30.0
-        }
-      },
-      "P3": {
-        "active": true,
-        "type": "long",
-        "element_type": ["CONCRETE_SANDWICH_WALL"],
-        "capacity": 2.0,
-        "min_edge_distance": 350.0,
-        "attributes": {
-          "RecessLength": 130.0,
-          "RecessHeight": 110.0,
-          "RecessInnerLength": 25.0,
-          "DistOutOfBeam": -30.0
+    "custom_properties": {},
+    "handler": {
+      "name": "LiftingAnchorsHandler",
+      "config": {
+        "safety_margin": 5,
+        "anchor_types": {
+          "P1": {
+            "active": true,
+            "type": "long",
+            "element_type": ["CONCRETE_WALL"],
+            "capacity": 1.0,
+            "min_edge_distance": 300.0,
+            "attributes": {
+              "RecessLength": 130.0,
+              "RecessHeight": 110.0,
+              "RecessInnerLength": 25.0,
+              "DistOutOfBeam": -30.0
+            }
+          },
+          "P2": {
+            "active": true,
+            "type": "long",
+            "element_type": ["CONCRETE_WALL"],
+            "capacity": 2.0,
+            "min_edge_distance": 350.0,
+            "attributes": {
+              "RecessLength": 130.0,
+              "RecessHeight": 110.0,
+              "RecessInnerLength": 25.0,
+              "DistOutOfBeam": -30.0
+            }
+          },
+          "P3": {
+            "active": true,
+            "type": "long",
+            "element_type": ["CONCRETE_SANDWICH_WALL"],
+            "capacity": 2.0,
+            "min_edge_distance": 350.0,
+            "attributes": {
+              "RecessLength": 130.0,
+              "RecessHeight": 110.0,
+              "RecessInnerLength": 25.0,
+              "DistOutOfBeam": -30.0
+            }
+          }
         }
       }
     }
@@ -58,7 +64,7 @@
       "NumberBarsBottSec": {
         "description": "number of bottom secondary bars",
         "type": "int"
-      },  
+      },
       "SpacBarsBottSec": {
         "description": "bottom secondary bars spacing",
         "type": "float"
@@ -74,7 +80,7 @@
       "NumberBarsBottPri": {
         "description": "number of bottom primary bars",
         "type": "int"
-      },  
+      },
       "SpacBarsBottPri": {
         "description": "bottom primary bars spacing",
         "type": "float"
@@ -88,11 +94,11 @@
         "type": "str"
       },
       "NumberBarsTopSec": {
-        "description": "number of bottom secondary bars",
+        "description": "number of top secondary bars",
         "type": "int"
-      },  
+      },
       "SpacBarsTopSec": {
-        "description": "bottom secondary bars spacing",
+        "description": "top secondary bars spacing",
         "type": "float"
       },
       "TopGradeSec": {
@@ -106,7 +112,7 @@
       "NumberBarsTopPri": {
         "description": "number of top primary bars",
         "type": "int"
-      },  
+      },
       "SpacBarsTopPri": {
         "description": "top primary bars spacing",
         "type": "float"
@@ -122,11 +128,11 @@
       "SpacTypBotSec": {
         "description": "Spacing mode for bottom secondary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
         "type": "int"
-      }, 
+      },
       "SpacTypBotPri": {
         "description": "Spacing mode for bottom primary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
         "type": "int"
-      }, 
+      },
       "SpacTypTopSec": {
         "description": "Spacing mode for top secondary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
         "type": "int"
@@ -212,7 +218,7 @@
         "type": "str"
       },
       "TopSecName": {
-        "description": "name of the bottom secondary bars",
+        "description": "name of the top secondary bars",
         "type": "str"
       },
       "BottPriName": {
@@ -244,15 +250,15 @@
         "type": "str"
       },
       "TopSecPrefix": {
-        "description": "prefix for the top secondary bar",
+        "description": "prefix for the top secondary bars",
         "type": "str"
       },
       "BottPriPrefix": {
-        "description": "prefix for the bottom primary bar",
+        "description": "prefix for the bottom primary bars",
         "type": "str"
       },
       "TopPriPrefix": {
-        "description": "prefix for the top primary bar",
+        "description": "prefix for the top primary bars",
         "type": "str"
       }
     }

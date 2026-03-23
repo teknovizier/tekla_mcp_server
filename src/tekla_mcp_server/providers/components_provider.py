@@ -8,7 +8,7 @@ from typing import Any
 
 from fastmcp.server.providers import LocalProvider
 
-from tekla_mcp_server.models import BaseComponent, LiftingAnchorsComponent
+from tekla_mcp_server.models import BaseComponent
 from tekla_mcp_server.tools.components import (
     manage_components_on_selected_objects,
     tool_put_components,
@@ -42,10 +42,7 @@ def put_components(
     - Example: For "Mesh Bars", read the schema to get: `SpacBarsBottPri` for "bottom primary bars spacing", `BottGradePri` for "bottom primary bars reinforcement grade".
     """
     try:
-        if component_name == "Lifting Anchor":
-            component: BaseComponent = LiftingAnchorsComponent(properties_set=properties_set, custom_properties=custom_properties)
-        else:
-            component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=custom_properties)
+        component: BaseComponent = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=custom_properties)
     except ValueError as e:
         return {"status": "error", "message": "Invalid custom_properties", "errors": str(e)}
 
@@ -61,8 +58,5 @@ def remove_components(component_name: str) -> dict[str, Any]:
     ## INPUT
     - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor", "Mesh Bars")
     """
-    if component_name == "Lifting Anchor":
-        component: BaseComponent = LiftingAnchorsComponent()
-    else:
-        component = BaseComponent(name=component_name)
+    component: BaseComponent = BaseComponent(name=component_name)
     return manage_components_on_selected_objects(tool_remove_components, component)

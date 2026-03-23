@@ -25,7 +25,7 @@ The server provides the following tools:
 | Selection | `select_elements_by_filter_name` | Select elements in Tekla model based on a predefined filter | `filter_name` (required) |
 | Selection | `select_elements_by_guid` | Select elements in Tekla model by their GUID | `guids` (required) |
 | Selection | `select_elements_assemblies_or_main_parts` | Get assemblies or main parts for the selected elements and select them | `mode` (required): Assembly or Main Part |
-| Components | `put_components` | Insert Tekla components with optional semantic attribute mapping that converts user-friendly names (e.g., "rebar size") to config keys (e.g., "SBSize_list"). Supports intelligent components like `Lifting Anchor` with automatic placement calculations | `component_name` (required), `properties_set`, `custom_properties` |
+| Components | `put_components` | Insert Tekla components with optional semantic attribute mapping that converts user-friendly names (e.g., "concrete cover thickness") to config keys (e.g., "CoverThickness"). Supports intelligent components like `Lifting Anchor` with automatic placement calculations | `component_name` (required), `properties_set`, `custom_properties` |
 | Components | `remove_components` | Remove Tekla components with specified name from the selected elements | `component_name` (required) |
 | Properties | `get_elements_properties` | Retrieve structured data about selected elements. Returns two tables: one for assemblies (name, assembly numbering) and one for parts (name, profile, material, finish, class, part/assembly numbering). UDAs and report properties are included | `report_props_definitions` |
 | Properties | `set_elements_properties` | Set properties on selected elements. **For parts:** name, profile, material, finish, class, part/assembly numbering, phase. **For assemblies:** name, assembly numbering, phase. UDAs supported | `name`, `profile`, `material`, `tekla_class`, `finish`, `part_prefix`, `part_start_number`, `assembly_prefix`, `assembly_start_number`, `phase`, `user_properties` |
@@ -129,9 +129,9 @@ Components are defined using structured schemas in `config/base_components.json`
 ```json
 {
   "mesh_bars": {
-    "description": "Creates main reinforcement for concrete slabs or walls",
     "tekla_name": "MeshBars",
     "number": -100000,
+    "description": "Creates main reinforcement for concrete slabs or walls",
     "custom_properties": {
       "TopAsBott": {
         "description": "Top bars use bottom bar properties: 0 = yes, 1 = no",
@@ -142,10 +142,39 @@ Components are defined using structured schemas in `config/base_components.json`
 }
 ```
 
+**Note:** Both `tekla_name` and `number` are required for each component.
+
 **Benefits:**
 - AI understands component and their properties purpose from descriptions
 - Property schemas enable automatic validation
 - Extensible: add new components via config, no code changes
+
+### Component Handler Plugin System
+
+For components that require specialized behavior (like intelligent placement calculations), the server uses a **plugin-like handler system**. Handlers are defined in `tekla/component_handlers.py` and auto-discovered from the config.
+
+**Adding a new handler:**
+1. Create a handler class with the `@register_handler` decorator
+2. Define `tekla_name` property matching the component name and `number` (equals to -1 for custom components)
+3. Implement optional hooks: `pre_process`, `post_process`, `pre_remove`
+4. Register the handler in `config/base_components.json`:
+
+```json
+{
+  "my_component": {
+    "tekla_name": "My Component",
+    "number": -1,
+    "handler": {
+      "name": "MyComponentHandler",
+      "config": {
+        "setting": "value"
+      }
+    }
+  }
+}
+```
+
+The `Lifting Anchor` component demonstrates this system with automatic anchor placement calculations based on element weight, center of gravity, and edge distances.
 
 ### Requirements Folder
 
@@ -215,6 +244,7 @@ The project includes a comprehensive test suite:
 - `test_tekla_utils.py`: Tekla API wrapper tests
 - `test_tekla_model_object.py`: Tekla ModelObject wrappers
 - `test_tekla_template_attrs_parser.py`: Template attribute parsing
+- `test_component_handlers.py`: Component handler plugins
 
 ### Functional Tests (`tests/functional/`)
 - `test_mcp_server.py`: End-to-end MCP tool integration tests
