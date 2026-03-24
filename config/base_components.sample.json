@@ -69,6 +69,10 @@
         "description": "bottom secondary bars spacing",
         "type": "float"
       },
+      "BotSecSpacingList": {
+        "description": "bottom secondary bars exact spacings (e.g., 2*500.00 500.00 2*500.00)",
+        "type": "str"
+      },
       "BottGradeSec": {
         "description": "bottom secondary bars reinforcement grade",
         "type": "str"
@@ -84,6 +88,10 @@
       "SpacBarsBottPri": {
         "description": "bottom primary bars spacing",
         "type": "float"
+      },
+      "BotPriSpacingList": {
+        "description": "bottom primary bars exact spacings (e.g., 2*500.00 500.00 2*500.00)",
+        "type": "str"
       },
       "BottGradePri": {
         "description": "bottom primary bars reinforcement grade",
@@ -101,6 +109,10 @@
         "description": "top secondary bars spacing",
         "type": "float"
       },
+      "TopSecSpacingList": {
+        "description": "top secondary bars exact spacings (e.g., 2*500.00 500.00 2*500.00)",
+        "type": "str"
+      },
       "TopGradeSec": {
         "description": "top secondary bars reinforcement grade",
         "type": "str"
@@ -117,6 +129,10 @@
         "description": "top primary bars spacing",
         "type": "float"
       },
+      "TopPriSpacingList": {
+        "description": "top primary bars exact spacings (e.g., 2*500.00 500.00 2*500.00)",
+        "type": "str"
+      },
       "TopGradePri": {
         "description": "top primary bars reinforcement grade",
         "type": "str"
@@ -126,19 +142,19 @@
         "type": "str"
       },
       "SpacTypBotSec": {
-        "description": "Spacing mode for bottom secondary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
+        "description": "spacing mode for bottom secondary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
         "type": "int"
       },
       "SpacTypBotPri": {
-        "description": "Spacing mode for bottom primary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
+        "description": "spacing mode for bottom primary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
         "type": "int"
       },
       "SpacTypTopSec": {
-        "description": "Spacing mode for top secondary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
+        "description": "spacing mode for top secondary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
         "type": "int"
       },
       "SpacTypTopPri": {
-        "description": "Spacing mode for top primary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
+        "description": "spacing mode for top primary rebars: 0 = by spacing, 1 = by number of bars, 2 = by exact spacings",
         "type": "int"
       },
       "BarTypeBott": {
@@ -165,6 +181,18 @@
         "description": "top bars placement: 1 = secondary above primary, 0 = primary above secondary",
         "type": "int"
       },
+      "PrimaryBarDir": {
+        "description": "the direction of the primary bars: 0 = auto (along the two longest parallel sides of a slab), 1 = along slab x direction, 2 = along slab y direction, 3 = along global x direction, 4 = along global y direction, 5 = by direct modification error (90 degree angle), 6 = by direct modification error (flexible angle)",
+        "type": "int"
+      }, 
+      "UpDirection": {
+        "description": "defines which side of the slab is treated as the top: 0 = the side with the greatest area, 1 = -z direction, 2 = +z direction, 3 = -y direction, 4 = +y direction, 5 = -x direction, 6 = +x direction",
+        "type": "int"
+      },      
+      "GridOption": {
+        "description": "distribution of bars that are created as bar groups: 0 = without grid, 1 = by grid",
+        "type": "int"
+      }, 
       "MinRebarLength": {
         "description": "minimum length of primary bar to be created",
         "type": "float"
@@ -173,28 +201,160 @@
         "description": "minimum length of secondary bar to be created",
         "type": "float"
       },
-      "CuttingBars": {
-        "description": "cut bars: 0 = cut, 1 = ignore cuts",
+      "DistanceType": {
+        "description": "how the distances between the bars are measured: 0 = from center of bar, 1 = from edge of bar",
         "type": "int"
       },
-      "CoverDoor": {
-        "description": "concrete cover thickness between the bar to the edge of the door opening",
+      "OverhangType": {
+        "description": "whether the distances between the bars are the same or different: 0 = same for top and bottom, 1 = different for top and bottom",
+        "type": "int"
+      },
+      "OverhangPrimStart": {
+        "description": "without grid: top overhang for the start of the primary bars",
         "type": "float"
+      },
+      "OverhangPrimBotStart": {
+        "description": "without grid: bottom overhang for the start of the primary bars",
+        "type": "float"
+      },  
+      "OverhangPrimEnd": {
+        "description": "without grid: top overhang for the end of the primary bars",
+        "type": "float"
+      },
+      "OverhangPrimBotEnd": {
+        "description": "without grid: bottom overhang for the end of the primary bars",
+        "type": "float"
+      },
+      "OverhangSecStart": {
+        "description": "without grid: overhang for the start of the secondary bars",
+        "type": "float"
+      },
+      "OverhangSecBotStart": {
+        "description": "without grid: bottom overhang for the start of the secondary bars",
+        "type": "float"
+      },
+      "OverhangSecEnd": {
+        "description": "without grid: top overhang for the end of the secondary bars",
+        "type": "float"
+      },
+      "OverhangSecBotEnd": {
+        "description": "without grid: bottom overhang for the end of the secondary bars",
+        "type": "float"
+      },
+      "MinOverhangStartL": {
+        "description": "by grid: minimum overhang for the start of the longitudinal bars",
+        "type": "float"
+      },
+      "MinOverhangEndL": {
+        "description": "by grid: minimum overhang for the end of the longitudinal bars",
+        "type": "float"
+      },
+      "MinSpaceLong": {
+        "description": "by grid: minimum spacing for the longitudinal bars",
+        "type": "float"
+      },   
+      "GridSizeLong": {
+        "description": "by grid: longitudinal grid size",
+        "type": "float"
+      },      
+      "MinOverhangStartC": {
+        "description": "by grid: minimum overhang for the start of the crossing bars",
+        "type": "float"
+      },
+      "MinOverhangEndC": {
+        "description": "by grid: minimum overhang for the end of the crossing bars",
+        "type": "float"
+      },
+      "MinSpaceCross": {
+        "description": "by grid: minimum spacing for the crossing bars",
+        "type": "float"
+      },   
+      "GridSizeCross": {
+        "description": "by grid: crossing grid size",
+        "type": "float"
+      },   
+      "GroupTapered": {
+        "description": "whether tapered bars are grouped: 0 = yes, 1 = no",
+        "type": "int"
+      }, 
+      "RoundTolerance": {
+        "description": "maximum allowed shortening of tapered bars",
+        "type": "float"
+      }, 
+      "TaperedGroup": {
+        "description": "how the bars along the tapered edge are handled: 0 = normally, 1 = create as many bars as possible with same length",
+        "type": "int"
+      },       
+      "CuttingBars": {
+        "description": "how bars next to openings are handled: 0 = cut bars, 1 = ignore cuts, 2 = ignore cuts by name, 3 = ignore cuts by class, 4 = ignore cuts by filter",
+        "type": "int"
+      },
+      "CutNameFilter": {
+        "description": "ignore cuts by specified part name",
+        "type": "str"
+      },
+      "CutClassFilter": {
+        "description": "ignore cuts by specified part class",
+        "type": "str"
+      },      
+      "CutObjFilter": {
+        "description": "ignore cuts by specified selection filter",
+        "type": "str"
       },
       "DoorSize": {
         "description": "ignore door openings smaller than this value",
         "type": "float"
       },
-      "CoverHole": {
-        "description": "concrete cover thickness between the bar to the edge of the window opening",
+      "CoverDoor": {
+        "description": "concrete cover thickness between the bar to the edge of the door opening",
         "type": "float"
       },
       "OpenSize": {
         "description": "ignore window openings smaller than this value",
         "type": "float"
       },
+      "CoverHole": {
+        "description": "concrete cover thickness between the bar to the edge of the window opening",
+        "type": "float"
+      },
+      "CutBarsForParts": {
+        "description": "whether the bars are cut by the parts that clash with the reinforced part: 0 = yes, 1 = no",
+        "type": "int"
+      },
+      "EmbedFilter": {
+        "description": "selection filter for cutting parts around which cuts have to be created",
+        "type": "str"
+      },
+      "SupportBars": {
+        "description": "whether additional support bars are created for the loose bars in the mesh: 0 = no, 1 = yes, without extended support bars, 2 = yes, with extended support bars",
+        "type": "int"
+      },
+      "Overlap": {
+        "description": "overlap length for the support bars",
+        "type": "float"
+      },      
+      "SupportBarsXY": {
+        "description": "which support bars are created: 0 = both, 1 = primary only, 2 = secondary only",
+        "type": "int"
+      },
       "CoverThickness": {
         "description": "concrete cover thickness on sides",
+        "type": "float"
+      },
+      "CoverType": {
+        "description": "whether concrete cover thickness on sides is different: 0 = same all sides, 1 = different each side",
+        "type": "int"
+      },
+      "CreateHooks": {
+        "description": "whether the same bar end conditions are used around the openings as at part edges: 0 = yes, 1 = no",
+        "type": "int"
+      },
+      "CutByNeighbor": {
+        "description": "whether the bars that protrude from the selected concrete parts are cut at the openings of neighbor parts: 0 = no, 1 = yes",
+        "type": "int"
+      },
+      "CoverForNeighbor": {
+        "description": "concrete cover thickness for neighbor parts",
         "type": "float"
       },
       "BottSecClass": {
@@ -231,19 +391,19 @@
       },
       "BottSecStart": {
         "description": "start number for the bottom secondary bars",
-        "type": "str"
+        "type": "int"
       },
       "TopSecStart": {
         "description": "start number for the top secondary bars",
-        "type": "str"
+        "type": "int"
       },
       "BottPriStart": {
         "description": "start number for the bottom primary bars",
-        "type": "str"
+        "type": "int"
       },
       "TopPriStart": {
         "description": "start number for the top primary bars",
-        "type": "str"
+        "type": "int"
       },
       "BottSecPrefix": {
         "description": "prefix for the bottom secondary bars",
@@ -260,6 +420,42 @@
       "TopPriPrefix": {
         "description": "prefix for the top primary bars",
         "type": "str"
+      },
+      "CreateAssembly": {
+        "description": "create all reinforcement as one rebar assembly: 0 = no, 1 = yes",
+        "type": "int"
+      },
+      "AssTypeTop": {
+        "description": "rebar assembly type for the top bars: 0 = default, 1 = cage, 2 = mesh, 3 = bent mesh, 4 = braced girder, 5 = embed, 6 = roll mat",
+        "type": "int"
+      },
+      "AssNameTop": {
+        "description": "rebar assembly name for the top bars",
+        "type": "str"
+      },
+      "AssPrefixTop": {
+        "description": "rebar assembly prefix for the top bars",
+        "type": "str"
+      },
+      "AssNumTop": {
+        "description": "rebar assembly start number for the top bars",
+        "type": "int"
+      },
+      "AssTypeBot": {
+        "description": "rebar assembly type for the bottom bars: 0 = default, 1 = cage, 2 = mesh, 3 = bent mesh, 4 = braced girder, 5 = embed, 6 = roll mat",
+        "type": "int"
+      },
+      "AssNameBot": {
+        "description": "rebar assembly name for the bottom bars",
+        "type": "str"
+      },
+      "AssPrefixBot": {
+        "description": "rebar assembly prefix for the bottom bars",
+        "type": "str"
+      },
+      "AssNumBot": {
+        "description": "rebar assembly start number for the bottom bars",
+        "type": "int"
       }
     }
   }
