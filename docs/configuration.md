@@ -103,14 +103,17 @@ The `component_key` is the internal identifier for a component. Use lowercase na
 ### Optional Fields
 The `description` and `custom_properties` fields are optional and contain data for the LLM to understand component capabilities and available properties. These are exposed via the `tekla://components/{component_key}` MCP resource.
 
-By default, settings for two Tekla components are included:
+By default, settings for three Tekla components are included:
 
 #### `Lifting Anchor`
-No custom properties are supported. The placement of the component is performed by custom handlers (see below).
+No properties are supported. The placement of the component is performed by custom handlers (see below).
 
 #### `Mesh Bars`
 Only supports straight rebars with same properties on all sides.
 Does not support splicing and setting custom UDA for reinforcing bars.
+
+#### `Edge and Corner`
+Supports all properties.
 
 ### Component Handlers
 

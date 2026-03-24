@@ -458,5 +458,364 @@
         "type": "int"
       }
     }
+  },
+  "edge_and_corner": {
+    "tekla_name": "Edge and Corner",
+    "number": 140000062,
+    "description": "A component that creates edge and corner reinforcement for concrete slabs or walls",
+    "custom_properties": {
+      "Picture_CornerBotRight": {
+        "description": "bottom right corner: 0 = bottom and side bars continuous around corner with L-shaped overlap, 1 = straight bottom bars, bent side bars, 2 = straight side bars, bent bottom bars",
+        "type": "int"
+      },
+      "Picture_CornerBotLeft": {
+        "description": "bottom left corner: 0 = bottom and side bars continuous around corner with L-shaped overlap, 1 = straight bottom bars, bent side bars, 2 = straight side bars, bent bottom bars",
+        "type": "int"
+      },
+      "Picture_CornerTopRight": {
+        "description": "top right corner: 0 = top and side bars continuous around corner with L-shaped overlap, 1 = straight top bars, bent side bars, 2 = straight side bars, bent top bars",
+        "type": "int"
+      },      
+      "Picture_CornerTopLeft": {
+        "description": "top left corner: 0 = top and side bars continuous around corner with L-shaped overlap, 1 = straight top bars, bent side bars, 2 = straight side bars, bent top bars",
+        "type": "int"
+      },      
+      "Picture_CornerInside": {
+        "description": "diagonal corner bars are created to an opening: 0 = yes, 1 = no",
+        "type": "int"
+      }, 
+      "Picture_CutOut": {
+        "description": "creation of edge bars near cutouts: 0 = do not create, 1 = create above the cutout for the defined length, 2 = create above the cutout, 3 = create to the cutout",
+        "type": "int"
+      }, 
+      "Picture_ReinforceOpenings": {
+        "description": "reinforce openings: 0 = only edges are reinforced, 1 = edges and openings are reinforced, 2 = only openings are reinforced",
+        "type": "int"
+      }, 
+      "P_MaxBlockOut": {
+        "description": "minimum cutout size required for creating edge, corner and diagonal bars reinforcement",
+        "type": "float"
+      }, 
+      "Picture_MaxCornerCutOut": {
+        "description": "creation of edge bars near corner cutouts: 0 = both edge bars are bent, 1 = both edge bars and U bars are moved from the cutout, 2 = no bars are moved, edge bars are created as if no cutout exists",
+        "type": "int"
+      }, 
+      "P_MaxCornerCutOut": {
+        "description": "minimum cutout size required for creating corner reinforcement",
+        "type": "float"
+      }, 
+      "P_MinHoleSize": {
+        "description": "minimum hole size required for creating reinforcement around holes",
+        "type": "float"
+      },
+      "EB_Prefix": {
+        "description": "prefix for the edge bars",
+        "type": "str"
+      },
+      "EB_StartNo": {
+        "description": "start number for the edge bars",
+        "type": "int"
+      },
+      "EB_Name": {
+        "description": "name of the edge bars",
+        "type": "str"
+      },
+      "EB_Size": {
+        "description": "edge bars diameter",
+        "type": "str"
+      },
+      "EB_Grade": {
+        "description": "edge bars reinforcement grade",
+        "type": "str"
+      },
+      "EB_Radius": {
+        "description": "bending radius of the edge bars",
+        "type": "float"
+      },
+      "EB_Class": {
+        "description": "Tekla class of the edge bars",
+        "type": "int"
+      },
+      "EB_L1": {
+        "description": "L1 - bent edge bars overlapping length",
+        "type": "float"
+      },
+      "EB_L2": {
+        "description": "L2 - overlapping length for L-shaped bars in vertical direction",
+        "type": "float"
+      },
+      "EB_L3": {
+        "description": "L3 - overlapping length for L-shaped bars in horizontal direction",
+        "type": "float"
+      },
+      "EB_L4": {
+        "description": "L4 - anchoring length of the vertical edge bars in the inner corner",
+        "type": "float"
+      },
+      "EB_L5": {
+        "description": "L5 - anchoring length of the horizontal edge bars in the inner corner",
+        "type": "float"
+      },
+      "EB_BarsNumber": {
+        "description": "number of edge bars in the reinforcing bar group",
+        "type": "int"
+      },
+      "EB_CreateAsGroup": {
+        "description": "create identical edge bars as a group: -2147483648 = default (yes), 0 = no, 1 = yes",
+        "type": "int"
+      },
+      "EB_C1": {
+        "description": "C1 - top concrete cover thickness for edge bars",
+        "type": "float"
+      },
+      "EB_C2": {
+        "description": "C2 - bottom concrete cover thickness for edge bars",
+        "type": "float"
+      },
+      "EB_C3": {
+        "description": "C3 - side concrete cover thickness for edge bars",
+        "type": "float"
+      },
+      "minLength": {
+        "description": "minimum length of the edge bars",
+        "type": "float"
+      },     
+      "edgeBarNextOpt": {
+        "description": "create additional secondary edge bars, 0 = no, 1 = yes",
+        "type": "int"
+      },
+      "edgeBarNextDist": {
+        "description": "offset for the additional bars",
+        "type": "float"
+      },
+      "DB_Prefix": {
+        "description": "prefix for the diagonal bars",
+        "type": "str"
+      },
+      "DB_StartNo": {
+        "description": "start number for the diagonal bars",
+        "type": "int"
+      },
+      "DB_Name": {
+        "description": "name of the diagonal bars",
+        "type": "str"
+      },
+      "DB_Size": {
+        "description": "diagonal bars diameter",
+        "type": "str"
+      },
+      "DB_Grade": {
+        "description": "diagonal bars reinforcement grade",
+        "type": "str"
+      },
+      "DB_Class": {
+        "description": "Tekla class of the diagonal bars",
+        "type": "int"
+      },
+      "DB_L1": {
+        "description": "L1 - top overlapping length for diagonal bars",
+        "type": "float"
+      },
+      "DB_L2": {
+        "description": "L2 - bottom overlapping length for diagonal bars",
+        "type": "float"
+      },
+      "DB_BarsNumber": {
+        "description": "number of diagonal bars in the reinforcing bar group",
+        "type": "int"
+      },
+      "DB_CreateAsGroup": {
+        "description": "create identical diagonal bars as a group: -2147483648 = default (yes), 0 = no, 1 = yes",
+        "type": "int"
+      },
+      "DB_C1": {
+        "description": "C1 - top concrete cover thickness for diagonal bars",
+        "type": "float"
+      },
+      "DB_C2": {
+        "description": "C2 - bottom concrete cover thickness for diagonal bars",
+        "type": "float"
+      },
+      "DB_C3": {
+        "description": "C3 - concrete cover thickness from corner to the diagonal bars",
+        "type": "float"
+      },
+      "DB_C4": {
+        "description": "C4 - concrete cover thickness from element edge to the diagonal bars",
+        "type": "float"
+      },
+      "Create_U_bar": {
+        "description": "create horizontal U-bars: -2147483648 = default (no), 0 = no, 1 = yes",
+        "type": "int"
+      },
+      "UB_Prefix": {
+        "description": "prefix for the horizontal U-bars",
+        "type": "str"
+      },
+      "UB_StartNo": {
+        "description": "start number for the horizontal U-bars",
+        "type": "int"
+      },
+      "UB_Name": {
+        "description": "name of the horizontal U-bars",
+        "type": "str"
+      },
+      "UB_Size": {
+        "description": "horizontal U-bars diameter",
+        "type": "str"
+      },
+      "UB_Grade": {
+        "description": "horizontal U-bars reinforcement grade",
+        "type": "str"
+      },
+      "UB_Class": {
+        "description": "Tekla class of the horizontal U-bars",
+        "type": "int"
+      },
+      "UB_Radius": {
+        "description": "bending radius of the horizontal U-bars",
+        "type": "float"
+      },
+      "UB_CoverBottom": {
+        "description": "bottom concrete cover thickness for the horizontal U-bars",
+        "type": "float"
+      },
+      "UB_CoverTop": {
+        "description": "top concrete cover thickness for the horizontal U-bars",
+        "type": "float"
+      },
+      "UB_CoverSide": {
+        "description": "side concrete cover thickness for the horizontal U-bars",
+        "type": "float"
+      },
+      "UB_L1": {
+        "description": "L1 - horizontal U-bars bottom leg length",
+        "type": "float"
+      },
+      "UB_L2": {
+        "description": "L2 - horizontal U-bars top leg length",
+        "type": "float"
+      },
+      "minCut": {
+        "description": "minimum cut size required for creating horizontal U-bars around",
+        "type": "float"
+      },
+      "UB_CM_H": {
+        "description": "horizontal U-bars creation method: -2147483648 = default, 0 = equal distribution by number, 1 = equal distribution by target spacing, 2 = by exact spacing with flexible first space, 3 = by exact spacing with flexible last space, 4 = by exact spacing with flexible middle space, 5 = by exact spacing with flexible first and last space, 6 = by exact spacing values",
+        "type": "int"
+      },
+      "UB_NumberBars_H": {
+        "description": "number of horizontal U-bars",
+        "type": "int"
+      },
+      "UB_TargetSpacing_H": {
+        "description": "target spacing values for horizontal U-bars",
+        "type": "float"
+      },
+      "UB_ExactSpacing_H": {
+        "description": "exact spacing value between horizontal U-bars",
+        "type": "float"
+      },
+      "UB_Spacings_H": {
+        "description": "exact spacings between horizontal U-bars (e.g., 2*500.00 500.00 2*500.00)",
+        "type": "str"
+      },
+      "UB_C3": {
+        "description": "horizontal U-bar distance from the panel or the slab end",
+        "type": "float"
+      },
+      "stirrupsType": {
+        "description": "stirrups to be created instead of horizontal U-bars in case of small distance between the the edges: 0 = with 135-degree hooks, 1 = with 90-degree hooks, 2 - open stirrups",
+        "type": "int"
+      },
+      "UB_OffsetOutlinePol": {
+        "description": "horizontal U-bars offset",
+        "type": "float"
+      },
+      "Create_U_bar_V": {
+        "description": "create vertical U-bars: -2147483648 = default (no), 0 = no, 1 = yes, 2 = same as horizontal U-bars and inside, 3 = same as horizontal U-bars and outside",
+        "type": "int"
+      },
+      "UB_Prefix_V": {
+        "description": "prefix for the vertical U-bars",
+        "type": "str"
+      },
+      "UB_StartNo_V": {
+        "description": "start number for the vertical U-bars",
+        "type": "int"
+      },
+      "UB_Name_V": {
+        "description": "name of the vertical U-bars",
+        "type": "str"
+      },
+      "UB_Size_V": {
+        "description": "vertical U-bars diameter",
+        "type": "str"
+      },
+      "UB_Grade_V": {
+        "description": "vertical U-bars reinforcement grade",
+        "type": "str"
+      },
+      "UB_Class_V": {
+        "description": "Tekla class of the vertical U-bars",
+        "type": "int"
+      },
+      "UB_Radius_V": {
+        "description": "bending radius of the vertical U-bars",
+        "type": "float"
+      },
+      "UB_CoverBottom_V": {
+        "description": "bottom concrete cover thickness for the vertical U-bars",
+        "type": "float"
+      },
+      "UB_CoverTop_V": {
+        "description": "top concrete cover thickness for the vertical U-bars",
+        "type": "float"
+      },
+      "UB_CoverSide_V": {
+        "description": "side concrete cover thickness for the vertical U-bars",
+        "type": "float"
+      },
+      "UB_L1_V": {
+        "description": "L1 - vertical U-bars bottom leg length",
+        "type": "float"
+      },
+      "UB_L2_V": {
+        "description": "L2 - vertical U-bars top leg length",
+        "type": "float"
+      },
+      "minCut_V": {
+        "description": "minimum cut size required for creating vertical U-bars around",
+        "type": "float"
+      },
+      "UB_CM_V": {
+        "description": "vertical U-bars creation method: -2147483648 = default, 0 = equal distribution by number, 1 = equal distribution by target spacing, 2 = by exact spacing with flexible first space, 3 = by exact spacing with flexible last space, 4 = by exact spacing with flexible middle space, 5 = by exact spacing with flexible first and last space, 6 = by exact spacing values",
+        "type": "int"
+      },
+      "UB_NumberBars_V": {
+        "description": "number of vertical U-bars",
+        "type": "int"
+      },
+      "UB_TargetSpacing_V": {
+        "description": "target spacing values for vertical U-bars",
+        "type": "float"
+      },
+      "UB_ExactSpacing_V": {
+        "description": "exact spacing value between vertical U-bars",
+        "type": "float"
+      },
+      "UB_Spacings_V": {
+        "description": "exact spacings between vertical U-bars (e.g., 2*500.00 500.00 2*500.00)",
+        "type": "str"
+      },
+      "UB_C3_V": {
+        "description": "vertical U-bar distance from the panel or the slab end",
+        "type": "float"
+      },
+      "stirrupsType_V": {
+        "description": "stirrups to be created instead of vertical U-bars in case of small distance between the the edges: 0 = with 135-degree hooks, 1 = with 90-degree hooks, 2 - open stirrups",
+        "type": "int"
+      }
+    }
   }
 }
