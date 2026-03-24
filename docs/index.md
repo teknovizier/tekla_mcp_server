@@ -7,7 +7,7 @@
 ## Getting Started
 
 - [Quickstart](quickstart.md) - Setup and first steps. Python 3.11+, install dependencies, configure settings
-- [Configuration](configuration.md) - Config files (`settings.json`, `element_types.json`, `semantic_overrides.json`, `base_components.json`) and environment variables
+- [Configuration](configuration.md) - Config files and environment variables
 
 ## Development
 

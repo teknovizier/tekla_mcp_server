@@ -74,20 +74,43 @@ Define available Tekla components:
 ```json
 {
   "component_key": {
-    "tekla_name": "Component Name",
-    "number": -100000,
-    "description": "Description for AI",
+    "tekla_name": "Component name",
+    "number": -1,
+    "description": "Component description for LLM",
     "custom_properties": {
       "PropertyName": {
-        "description": "Property description",
+        "description": "Property description for LLM",
         "type": "int|float|str"
       }
     }
   }
 }
 ```
+### Component Key Naming
+The `component_key` is the internal identifier for a component. Use lowercase name without spaces:
+```json
+{
+  "lifting_anchor": { ... },      // ✓ lowercase, no spaces
+  "mesh_bars": { ... },           // ✓ lowercase, no spaces  
+  "My Component": { ... }         // ✗ avoid - spaces, capital letters
+}
+```
 
-Both `tekla_name` and `number` are required.
+### Required Fields
+- `tekla_name`: The name of the component.
+- `number`: The number of the component. For custom components the number is -1, for plug-ins the number is -100000. Tekla system components have specific numbers.
+
+### Optional Fields
+The `description` and `custom_properties` fields are optional and contain data for the LLM to understand component capabilities and available properties. These are exposed via the `tekla://components/{component_key}` MCP resource.
+
+By default, settings for two Tekla components are included:
+
+#### `Lifting Anchor`
+No custom properties are supported. The placement of the component is performed by custom handlers (see below).
+
+#### `Mesh Bars`
+Only supports straight rebars with same properties on all sides.
+Does not support splicing and setting custom UDA for reinforcing bars.
 
 ### Component Handlers
 
@@ -102,7 +125,7 @@ For specialized components, add a handler:
       "name": "LiftingAnchorsHandler",
       "config": {
         "safety_margin": 5,
-        "anchor_types": {}
+        "anchor_types": { ... }
       }
     }
   }
@@ -111,9 +134,36 @@ For specialized components, add a handler:
 
 Handlers are defined in `tekla/component_handlers.py` and use the `@register_handler` decorator.
 
-There is one built-in handler for `Lifting Anchor` component (`LiftingAnchorsHandler`) that automatically calculates anchor positions.
+#### Built-in Handlers
+
+##### `LiftingAnchorsHandler`
+Automatically selects lifting anchors based on element weight, calculates anchor positions and places them with recesses according to predefined settings.
+
+**Configuration:**
+```json
+{
+  "safety_margin": 5,
+  "anchor_types": {
+    "P1": {
+      "active": true,
+      "type": "long",
+      "element_type": ["CONCRETE_WALL"],
+      "capacity": 1.0,
+      "min_edge_distance": 300.0,
+      "attributes": {
+        "RecessLength": 130.0,
+        "RecessHeight": 110.0,
+        "RecessInnerLength": 25.0,
+        "DistOutOfBeam": -30.0
+      }
+    }
+  }
+}
+```
 
 ## Environment Variables
+
+MCP servers receive environment variables from the client. The Tekla MCP Server supports the following:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -121,4 +171,35 @@ There is one built-in handler for `Lifting Anchor` component (`LiftingAnchorsHan
 | `TEKLA_MCP_LOG_FILE_PATH` | Log file path | `mcp_server.log` |
 | `TEKLA_MCP_CONFIG_DIR` | Config directory | `config` |
 
-For local development, use `.env` file (copy from `.env.example`).
+For example, in Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "tekla-mcp": {
+      "command": "python",
+      "args": ["src/tekla_mcp_server/mcp_server.py"],
+      "env": {
+        "TEKLA_MCP_LOG_LEVEL": "DEBUG",
+        "TEKLA_MCP_LOG_FILE_PATH": "mcp_server.log",
+        "TEKLA_MCP_CONFIG_DIR": "config"
+      }
+    }
+  }
+}
+```
+
+### Logging Levels
+
+| Level | Use Case |
+|-------|----------|
+| `DEBUG` | Detailed diagnostic information, development |
+| `INFO` | General operational events, default for production |
+| `WARNING` | Potential issues that don't prevent operation |
+| `ERROR` | Serious problems affecting functionality |
+| `CRITICAL` | Critical errors causing shutdown |
+
+
+### Local Development
+
+For local development, copy `.env.example` to `.env` and configure values there. The server reads these at startup.

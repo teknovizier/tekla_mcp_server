@@ -12,8 +12,6 @@ For development:
 uv pip install -r requirements-dev.txt
 ```
 
-⚠️ *Note:* You may experience a naming conflict with the `clr` package. Solution: rename or delete `C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\site-packages\clr`.
-
 ## Configuration
 
 1. **settings.json**: Copy `config/settings.sample.json` to `config/settings.json`
@@ -43,9 +41,28 @@ Configure `mcp_server.py` as a custom server in your MCP client:
       "args": ["src/tekla_mcp_server/mcp_server.py"],
       "env": {
         "TEKLA_MCP_LOG_LEVEL": "INFO",
+        "TEKLA_MCP_LOG_FILE_PATH": "mcp_server.log",
         "TEKLA_MCP_CONFIG_DIR": "config"
       }
     }
   }
 }
 ```
+
+## Troubleshooting
+
+### Python Package Conflict
+You may experience a naming conflict with the `clr` package. Solution: rename or delete `C:\Users\User\AppData\Local\Programs\Python\Python313\Lib\site-packages\clr`.
+
+### Tekla Connection Issues
+- Ensure Tekla Structures is running and model is open before using MCP tools
+- Check `tekla_path` in `settings.json` points to correct Tekla binary directory
+
+### Configuration Not Loading
+- Check log file for configuration errors
+- Ensure all required JSON files exist in config directory
+- Validate JSON syntax
+
+### Embedding Model Issues
+- If semantic mapping fails, set `embeddings.enabled: false` in `settings.json`
+- Model downloads automatically on first use (~120MB)

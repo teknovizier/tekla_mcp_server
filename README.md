@@ -27,15 +27,15 @@
 
 # Tekla MCP Server
 
-This server facilitates interaction with **Tekla Structures**, helping users automate and accelerate modeling workflows. It acts as a bridge between AI agents or MCP-compatible clients and Tekla, exposing resources and tools for selection, component insertion, property management, and view operations.
+This server facilitates interaction with **Tekla Structures**, helping users automate and accelerate modeling workflows. It acts as a bridge between AI agents or MCP-compatible clients and Tekla, exposing resources and tools for selection, component insertion, property management and view operations.
 
 > #### 📌 What is MCP?
 >
 > *MCP* stands for **Model Context Protocol**, and it is a communication protocol introduced by Anthropic to enable more efficient and secure interactions between large language models and other systems, such as human users or other AI agents.
 >
-> **Tekla MCP Server** uses AI-powered natural language processing to make interactions more human-readable, allowing you to work with a set of tools using plain text.
+> **Tekla MCP Server** uses AI-powered natural language processing to make interactions more intuitive, allowing user to work with tools using plain text.
 
-To use this server, users must first install and configure an MCP client.
+To use this server, one must first install and configure an MCP client.
 
 ### Features
 
@@ -43,7 +43,7 @@ To use this server, users must first install and configure an MCP client.
 
 - **Resource Discovery**: Auto‑detection of available filters, macros, components, and custom requirements and instructions.
 
-- **Component Handler Plugin System**: Flexible plugin model for Tekla components with lifecycle hooks, e.g., Lifting Anchors component auto‑calculates placement based on weight and center of gravity.
+- **Component Handler Plugin System**: Flexible plugin model for Tekla components with lifecycle hooks, e.g., `Lifting Anchors` component select anchors based on element weight and auto‑calculates anchor placement according to center of gravity.
 
 - **LLM‑Powered Component Property Understanding**: Natural language mapping like "concrete cover thickness" → actual Tekla component property.
 
