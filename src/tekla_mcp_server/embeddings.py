@@ -72,5 +72,6 @@ def get_embedding_model() -> "SentenceTransformer":
         ImportError: If the embedding model cannot be loaded
     """
     _ensure_loaded()
-    assert _embedding_model is not None
+    if _embedding_model is None:
+        raise RuntimeError("Initialization failed. Embedding model not loaded.")
     return _embedding_model

@@ -134,6 +134,8 @@ class LiftingAnchorsHandler:
             raise ValueError(f"Unsupported material type: {material}. Only concrete elements are supported.")
 
         assembly = wrap_model_object(selected_object.GetAssembly())
+        if assembly is None:
+            raise ValueError(f"Could not wrap assembly for selected object '{selected_object.Identifier.ID}'.")
         solid = selected_object.GetSolid(Solid.SolidCreationTypeEnum.RAW)
         length = abs(solid.MaximumPoint.X - solid.MinimumPoint.X)
         width = abs(solid.MaximumPoint.Z - solid.MinimumPoint.Z)
@@ -306,6 +308,10 @@ class LiftingAnchorsHandler:
         if cutting_part.Insert():
             target_object = wrap_model_object(selected_object)
             cutter_object = wrap_model_object(cutting_part)
+            if target_object is None:
+                raise ValueError(f"Could not wrap target object for boolean cut (ID: {selected_object.Identifier.ID}).")
+            if cutter_object is None:
+                raise ValueError(f"Could not wrap cutting part for boolean cut (ID: {cutting_part.Identifier.ID}).")
             return target_object.add_cut(cutter_object, True)
         logger.warning("Failed to insert boolean cut part")
         return False

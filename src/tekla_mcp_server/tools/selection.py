@@ -245,6 +245,8 @@ def tool_select_elements_by_filter(
 
     string_resolution_errors: list[dict[str, Any]] = []
     numeric_resolution_errors: list[dict[str, Any]] = []
+    resolved_string_attrs: dict[str, str | None] = {}
+    resolved_numeric_attrs: dict[str, str | None] = {}
 
     if custom_string_filters:
         string_queries = list(custom_string_filters.keys())
@@ -252,7 +254,6 @@ def tool_select_elements_by_filter(
             resolution = TemplateAttributeParser.resolve_attributes(string_queries)
             errors = resolution.get("errors", [])
             string_resolution_errors = errors
-            resolved_string_attrs: dict[str, str | None] = {}
             for query, resolved in zip(string_queries, resolution["resolved"]):
                 if any(e["query"] == query for e in errors):
                     resolved_string_attrs[query] = None
@@ -272,7 +273,6 @@ def tool_select_elements_by_filter(
             resolution = TemplateAttributeParser.resolve_attributes(numeric_queries)
             errors = resolution.get("errors", [])
             numeric_resolution_errors = errors
-            resolved_numeric_attrs: dict[str, str | None] = {}
             for query, resolved in zip(numeric_queries, resolution["resolved"]):
                 if any(e["query"] == query for e in errors):
                     resolved_numeric_attrs[query] = None
