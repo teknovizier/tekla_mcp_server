@@ -14,6 +14,7 @@ from tekla_mcp_server.tools.properties import (
     tool_get_elements_properties,
     tool_get_elements_cut_parts,
     tool_compare_elements,
+    tool_clear_elements_udas,
 )
 from tekla_mcp_server.utils import log_mcp_tool_call
 
@@ -40,6 +41,7 @@ def set_elements_properties(
     Sets properties and user-defined attributes (UDAs) on selected Tekla elements (assemblies or parts).
 
     ## INPUT
+
     ### APPLICABLE PROPERTIES BY ELEMENT TYPE
 
     #### For PARTS (all properties apply):
@@ -211,3 +213,29 @@ def compare_elements(ignore_numbering: bool = False) -> dict[str, Any]:
     """
     selected_objects = TeklaModel().get_selected_objects()
     return tool_compare_elements(selected_objects, ignore_numbering)
+
+
+@properties_provider.tool()
+@log_mcp_tool_call
+def clear_elements_udas(uda_names: list[str] | None = None) -> dict[str, Any]:
+    """
+    Clears user-defined attributes (UDAs) from selected Tekla parts and assemblies.
+
+    ## INPUT
+    - `uda_names` [Optional]: List of specific UDA names to clear. If not provided, clears all UDAs.
+
+    ## EXAMPLES
+    # Clear all UDAs from selected elements
+    clear_elements_udas()
+
+    # Clear only specific UDAs
+    clear_elements_udas(uda_names=["STATUS", "APPROVED_BY"])
+
+    ## OUTPUT
+    - `status`: "success" if UDAs were cleared, "warning" if no UDAs found
+    - `cleared_udas`: Total number of UDAs cleared
+    - `modified_parts`: Number of parts modified
+    - `modified_assemblies`: Number of assemblies modified
+    """
+    selected_objects = TeklaModel().get_selected_objects()
+    return tool_clear_elements_udas(selected_objects, uda_names=uda_names)

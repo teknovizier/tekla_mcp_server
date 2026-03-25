@@ -211,6 +211,65 @@ def tool_get_elements_cut_parts(selected_objects: Any) -> dict[str, Any]:
 
 
 @log_function_call
+def tool_clear_elements_udas(selected_objects: Any, uda_names: list[str] | None = None) -> dict[str, Any]:
+    """
+    Clears user-defined attributes (UDAs) from selected Tekla parts and assemblies.
+
+    Args:
+        selected_objects: Enumerator of selected objects
+        uda_names: Optional list of UDA names to clear. If None, clears all UDAs.
+    """
+    cleared_udas = 0
+    modified_parts = 0
+    modified_assemblies = 0
+
+    for selected_object in wrap_model_objects(selected_objects):
+        try:
+            user_props = selected_object.get_all_user_properties()
+            if not user_props:
+                continue
+
+            if uda_names is not None:
+                target_keys = [k for k in uda_names if k in user_props]
+            else:
+                target_keys = list(user_props.keys())
+
+            if not target_keys:
+                continue
+
+            for key in target_keys:
+                value = user_props[key]
+                if isinstance(value, str):
+                    selected_object.set_user_property(key, "")
+                elif isinstance(value, int):
+                    selected_object.set_user_property(key, -2147483648)
+                elif isinstance(value, float):
+                    selected_object.set_user_property(key, float(-2147483648))
+
+                cleared_udas += 1
+
+            selected_object.model_object.Modify()
+
+            if isinstance(selected_object, TeklaPart):
+                modified_parts += 1
+            elif isinstance(selected_object, TeklaAssembly):
+                modified_assemblies += 1
+        except Exception:
+            logger.exception("Failed to clear UDAs on %s", selected_object.guid)
+
+    if cleared_udas > 0:
+        TeklaModel().commit_changes()
+
+    logger.info("Cleared %s UDAs from %s parts and %s assemblies", cleared_udas, modified_parts, modified_assemblies)
+    return {
+        "status": "success" if cleared_udas > 0 else "warning",
+        "cleared_udas": cleared_udas,
+        "modified_parts": modified_parts,
+        "modified_assemblies": modified_assemblies,
+    }
+
+
+@log_function_call
 def tool_compare_elements(selected_objects: Any, ignore_numbering: bool = False, tolerance: float = 0.01) -> dict[str, Any]:
     """
     Compares two selected Tekla parts or assemblies and returns the differences.
