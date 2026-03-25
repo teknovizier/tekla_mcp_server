@@ -140,6 +140,7 @@ def tool_function(...):
 - Use `TeklaModelObject` from `tekla/model_object.py` for individual objects
 - Always `model.commit_changes()` after modifications
 - Use `wrap_model_objects()` from `tekla/utils.py` for conversion
+- Use `SnapshotBuilder` from `tekla/snapshot_builder.py` for building snapshots (delegates from `to_snapshot()`)
 
 ### MCP Server Architecture
 - **Providers** (`providers/`) - MCP tool definitions with docstrings
@@ -196,6 +197,7 @@ tekla_mcp_server/
 │       ├── loader.py          # Tekla DLL loading (pythonnet)
 │       ├── model.py           # Tekla Model wrapper (singleton via lru_cache)
 │       ├── model_object.py    # Tekla ModelObject wrappers
+│       ├── snapshot_builder.py # Snapshot extraction (builds PartSnapshot/AssemblySnapshot)
 │       ├── utils.py           # Tekla API helpers
 │       ├── template_attrs_parser.py  # Template attribute parsing with semantic search
 │       └── component_handlers.py     # Component handler plugins (LiftingAnchorsHandler, etc.)
