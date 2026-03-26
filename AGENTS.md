@@ -153,10 +153,14 @@ def tool_function(...):
 Resources provide discovery/metadata, not actions:
 | Resource | Purpose |
 |----------|---------|
-| `component://schema` | List all available components |
-| `component://schema/{key}` | Get properties for a component |
-| `macro://list` | List available Tekla macros |
-| `info://connection_status` | Current Tekla connection status |
+| `tekla://components` | List all available components |
+| `tekla://components/{key}` | Get properties for a component |
+| `tekla://macros` | List available Tekla macros |
+| `tekla://phases` | List all phases in the model |
+| `tekla://filters/selection` | List available selection filters |
+| `tekla://filters/view` | List available view filters |
+| `tekla://connection_status` | Current Tekla connection status |
+| `project://requirements` | Project requirements and conventions |
 
 ### MCP Tools (Actions)
 Tools perform operations that may mutate state:

@@ -76,6 +76,40 @@ def get_view_filter_list() -> ResourceResult:
     return ResourceResult(contents=[ResourceContent(content=json.dumps(get_filters(".VObjGrp")), mime_type="application/json")])
 
 
+@mcp.resource("tekla://phases")
+def get_phase_list() -> ResourceResult:
+    """
+    Returns a list of all phases in the current Tekla model.
+    """
+    from tekla_mcp_server.tekla.model import TeklaModel
+
+    tekla_model = TeklaModel()
+    phases = tekla_model.model.GetPhases()
+
+    phase_list = []
+    current_phase = None
+    for phase in phases:
+        is_current = phase.IsCurrentPhase
+        if is_current == 1:
+            current_phase = phase.PhaseNumber
+        phase_list.append(
+            {
+                "phase_number": phase.PhaseNumber,
+                "phase_name": phase.PhaseName,
+                "phase_comment": phase.PhaseComment,
+            }
+        )
+
+    return ResourceResult(
+        contents=[
+            ResourceContent(
+                content=json.dumps({"phases": phase_list, "current_phase": current_phase}),
+                mime_type="application/json",
+            )
+        ]
+    )
+
+
 @mcp.resource("tekla://connection_status")
 def get_connection_status() -> ResourceResult:
     """
