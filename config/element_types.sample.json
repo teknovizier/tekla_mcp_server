@@ -1,5 +1,5 @@
 {
-    "Concrete": {
+    "MATERIAL_CONCRETE": {
         "CONCRETE_WALL": [1],
         "CONCRETE_SANDWICH_WALL": [2, 3],
         "CONCRETE_STAIR_FLIGHT": [4],
@@ -15,7 +15,7 @@
         "CONCRETE_STAIR_LANDING": [17],
         "CONCRETE_CURVED_STAIR": [18]
     },
-    "Steel": {
+    "MATERIAL_STEEL": {
         "STEEL_BEAM": [100],
         "STEEL_COLUMN": [101],
         "STEEL_TRUSS": [102],

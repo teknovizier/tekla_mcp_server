@@ -130,7 +130,7 @@ class LiftingAnchorsHandler:
         recess_width_offset = 100.0
 
         material, element_type = ElementTypeModel.get_element_type_by_class(selected_object.Class)
-        if material != "Concrete":
+        if material != "MATERIAL_CONCRETE":
             raise ValueError(f"Unsupported material type: {material}. Only concrete elements are supported.")
 
         assembly = wrap_model_object(selected_object.GetAssembly())

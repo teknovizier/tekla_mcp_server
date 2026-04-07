@@ -46,11 +46,11 @@ Map element type names to Tekla class numbers:
 
 ```json
 {
-    "Concrete": {
+    "MATERIAL_CONCRETE": {
         "CONCRETE_WALL": [1],
         "CONCRETE_SANDWICH_WALL": [2, 3]
     },
-    "Steel": {
+    "MATERIAL_STEEL": {
         "STEEL_BEAM": [100]
     }
 }

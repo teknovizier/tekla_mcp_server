@@ -28,10 +28,10 @@ from tekla_mcp_server.models import (
 @pytest.mark.parametrize(
     "input_val,expected",
     [
-        ("1", ("Concrete", "CONCRETE_WALL")),
-        ("100", ("Steel", "STEEL_BEAM")),
-        ("101", ("Steel", "STEEL_COLUMN")),
-        (1, ("Concrete", "CONCRETE_WALL")),
+        ("1", ("MATERIAL_CONCRETE", "CONCRETE_WALL")),
+        ("100", ("MATERIAL_STEEL", "STEEL_BEAM")),
+        ("101", ("MATERIAL_STEEL", "STEEL_COLUMN")),
+        (1, ("MATERIAL_CONCRETE", "CONCRETE_WALL")),
     ],
 )
 def test_get_element_type_by_class_valid(input_val, expected):
