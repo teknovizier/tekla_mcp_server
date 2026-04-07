@@ -9,6 +9,8 @@ from functools import wraps
 from typing import Any
 from collections.abc import Callable
 
+from functools import lru_cache
+
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringMatchType, NumericMatchType, BaseComponent
 
@@ -32,6 +34,9 @@ from tekla_mcp_server.tekla.loader import (
     View,
     TeklaStructuresInfo,
     List,
+    CatalogHandler,
+    ProfileItem,
+    MaterialItem,
 )
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tekla.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
@@ -363,3 +368,51 @@ def iterate_boolean_parts(model_object: ModelObject) -> list[ModelObject]:
         if isinstance(boolean_enum.Current, BooleanPart):
             boolean_parts.append(boolean_enum.Current)
     return boolean_parts
+
+
+@lru_cache
+def get_all_profiles() -> list[dict[str, str]]:
+    """
+    Get all profiles from Tekla catalog. Lazy loaded on first access.
+    """
+    catalog = CatalogHandler()
+    if not catalog.GetConnectionStatus():
+        return []
+    profiles = catalog.GetLibraryProfileItems()
+    result = []
+    while profiles.MoveNext():
+        prof = profiles.Current
+        if isinstance(prof, ProfileItem):
+            prof_type = getattr(prof, "ProfileItemType", None)
+            prof_subtype = getattr(prof, "ProfileItemSubType", None)
+            result.append(
+                {
+                    "name": prof.ProfileName,
+                    "type": prof_type.ToString() if prof_type else "UNKNOWN",
+                    "sub_type": prof_subtype.ToString() if prof_subtype else "UNKNOWN",
+                }
+            )
+    return result
+
+
+@lru_cache
+def get_all_materials() -> list[dict[str, str]]:
+    """
+    Get all materials from Tekla catalog. Lazy loaded on first access.
+    """
+    catalog = CatalogHandler()
+    if not catalog.GetConnectionStatus():
+        return []
+    materials = catalog.GetMaterialItems()
+    result = []
+    while materials.MoveNext():
+        mat = materials.Current
+        if isinstance(mat, MaterialItem):
+            mat_type = getattr(mat, "Type", None)
+            result.append(
+                {
+                    "name": mat.MaterialName,
+                    "type": mat_type.ToString() if mat_type else "UNKNOWN",
+                }
+            )
+    return result

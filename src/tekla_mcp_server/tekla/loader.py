@@ -53,6 +53,7 @@ from Tekla.Structures.Filtering import (
     FilterExpression,
 )
 from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
+from Tekla.Structures.Catalogs import CatalogHandler, MaterialItem, MaterialItemEnumerator, ProfileItem, ProfileItemEnumerator
 
 
 # Export everything
@@ -115,4 +116,9 @@ __all__ = [
     "PartFilterExpressions",
     "ObjectFilterExpressions",
     "TemplateFilterExpressions",
+    "CatalogHandler",
+    "MaterialItem",
+    "MaterialItemEnumerator",
+    "ProfileItem",
+    "ProfileItemEnumerator",
 ]
