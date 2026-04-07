@@ -61,6 +61,10 @@
         "description": "top bars use bottom bar properties: 0 = yes, 1 = no",
         "type": "int"
       },
+      "DefineSecBott": {
+        "description": "bottom secondary bars use bottom primary bar properties: 0 = no, 1 = yes",
+        "type": "int"
+      },
       "NumberBarsBottSec": {
         "description": "number of bottom secondary bars",
         "type": "int"
@@ -100,6 +104,10 @@
       "BottDiaPri": {
         "description": "bottom primary bars diameter",
         "type": "str"
+      },
+      "DefineSecTop": {
+        "description": "top secondary bars use bottom primary bar properties: 0 = no, 1 = yes",
+        "type": "int"
       },
       "NumberBarsTopSec": {
         "description": "number of top secondary bars",
