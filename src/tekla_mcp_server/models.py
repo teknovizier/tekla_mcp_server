@@ -14,6 +14,10 @@ from pydantic_core import PydanticCustomError
 from tekla_mcp_server.config import get_config
 
 
+TYPE_MAP = {"str": str, "int": int, "float": float}
+TYPE_DEFAULTS = {"str": str(), "int": int(), "float": float()}
+
+
 # Enums
 class SelectionMode(Enum):
     """
@@ -484,7 +488,6 @@ class BaseComponent(BaseModel):
             return v
 
         errors = []
-        TYPE_MAP = {"str": str, "int": int, "float": float}
 
         for key, value in v.items():
             if key not in schema:
