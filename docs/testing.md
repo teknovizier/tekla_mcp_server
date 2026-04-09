@@ -15,7 +15,13 @@ The project includes unit tests and functional tests.
 - `test_component_handlers.py`: Component handler plugins
 
 ### Functional Tests (`tests/functional/`)
-- `test_mcp_server.py`: End-to-end MCP tool integration tests
+- `conftest.py`: Shared fixtures and utilities
+- `test_components.py`: Component placement, removal, modification
+- `test_selection.py`: Element selection by filter, GUID, assembly
+- `test_view.py`: View operations (labels, zoom, filters)
+- `test_operations.py`: Boolean cuts, cut part conversion, macros
+- `test_properties.py`: Property get/set, UDAs, numbering, comparison
+- `test_drawings.py`: Drawing retrieval and properties
 
 ## Running Tests
 

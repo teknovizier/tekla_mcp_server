@@ -228,7 +228,13 @@ tekla_mcp_server/
 │   │   └── test_component_handlers.py
 │   └── functional/            # Functional tests
 │       ├── __init__.py
-│       └── test_mcp_server.py
+│       ├── conftest.py          # Shared fixtures and utilities
+│       ├── test_components.py   # Component operations
+│       ├── test_selection.py    # Selection operations
+│       ├── test_view.py        # View operations
+│       ├── test_operations.py  # Boolean cuts, macros
+│       ├── test_properties.py   # Property operations
+│       └── test_drawings.py     # Drawing operations
 ├── .env.example               # Environment variables template
 ├── pyproject.toml
 ├── requirements.txt
