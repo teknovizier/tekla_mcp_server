@@ -16,6 +16,16 @@ from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tools.selection import add_filter
 
 
+@pytest.fixture(scope="session", autouse=True)
+def init_tekla():
+    """Initialize Tekla DLLs once at session start to speed up test execution."""
+    from tekla_mcp_server.init import load_dlls
+
+    load_dlls()
+    TeklaModel()
+    yield
+
+
 def create_mcp_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):
     """Utility function to create a beam."""
     beam = Beam()
