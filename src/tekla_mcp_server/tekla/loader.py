@@ -54,6 +54,7 @@ from Tekla.Structures.Filtering import (
 )
 from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
 from Tekla.Structures.Catalogs import CatalogHandler, MaterialItem, MaterialItemEnumerator, ProfileItem, ProfileItemEnumerator
+from Tekla.Structures.Drawing import DrawingHandler, Drawing, DrawingEnumerator
 
 
 # Export everything
@@ -121,4 +122,7 @@ __all__ = [
     "MaterialItemEnumerator",
     "ProfileItem",
     "ProfileItemEnumerator",
+    "DrawingHandler",
+    "Drawing",
+    "DrawingEnumerator",
 ]

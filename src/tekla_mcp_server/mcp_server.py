@@ -20,6 +20,7 @@ from tekla_mcp_server.providers import (
     properties_provider,
     operations_provider,
     components_provider,
+    drawings_provider,
 )
 
 
@@ -163,6 +164,7 @@ mcp.add_provider(view_provider)
 mcp.add_provider(properties_provider)
 mcp.add_provider(operations_provider)
 mcp.add_provider(components_provider)
+mcp.add_provider(drawings_provider)
 
 
 # Run the MCP server locally

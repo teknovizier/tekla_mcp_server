@@ -56,6 +56,15 @@ class NumericMatchType(Enum):
     GREATER_OR_EQUAL = "Greater Or Equal"
 
 
+class DrawingType(Enum):
+    GA = "GA"
+    ASSEMBLY = "Assembly"
+    SINGLE_PART = "SinglePart"
+    CAST_UNIT = "CastUnit"
+    MULTIDRAWING = "MultiDrawing"
+    UNKNOWN = "Unknown"
+
+
 class StandardStringFilterKey(str, Enum):
     """
     Valid keys for standard string filters.
@@ -128,6 +137,8 @@ class ElementLabel(Enum):
 
 # Mappings
 SELECTION_MODES = {e.value for e in SelectionMode}
+
+DRAWING_TYPES = {e.value for e in DrawingType}
 ELEMENT_TYPES = {e.value for e in ElementType}
 COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
@@ -273,6 +284,21 @@ class SelectionModeModel(EnumWrapper):
         Converts the validated string value to a enum.
         """
         return SelectionMode(self.value)
+
+
+class DrawingTypeModel(EnumWrapper):
+    """
+    Represents a validated drawing type for Tekla drawings.
+    """
+
+    _valid_values = DRAWING_TYPES
+    _error_code = "invalid_drawing_type"
+
+    def to_enum(self) -> DrawingType:
+        """
+        Converts the validated string value to an enum.
+        """
+        return DrawingType(self.value)
 
 
 class StringFilterCondition(BaseModel):

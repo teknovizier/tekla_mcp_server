@@ -89,6 +89,7 @@ from tekla_mcp_server.providers.view_provider import draw_elements_labels
 from tekla_mcp_server.providers.properties_provider import get_elements_properties
 from tekla_mcp_server.providers.components_provider import put_components
 from tekla_mcp_server.providers.operations_provider import cut_elements_with_zero_class_parts
+from tekla_mcp_server.providers.drawings_provider import get_drawings, get_drawing_properties
 
 # Tools modules (actual implementations)
 from tekla_mcp_server.tools.selection import tool_select_elements_by_filter
@@ -171,6 +172,7 @@ Tools perform operations that may mutate state:
 | `properties_provider` | `get_elements_properties`, `set_elements_properties`, etc. |
 | `components_provider` | `put_components`, `remove_components` |
 | `operations_provider` | `cut_elements_with_zero_class_parts`, `run_macro` |
+| `drawings_provider` | `get_drawings`, `get_drawing_properties` |
 
 ## Project Structure
 ```
@@ -189,13 +191,15 @@ tekla_mcp_server/
 │   │   ├── view_provider.py
 │   │   ├── properties_provider.py
 │   │   ├── components_provider.py
-│   │   └── operations_provider.py
+│   │   ├── operations_provider.py
+│   │   └── drawings_provider.py
 │   ├── tools/                 # Tool implementations (business logic)
 │   │   ├── selection.py       # Selection logic
 │   │   ├── components.py      # Component operations
 │   │   ├── properties.py      # Property operations
 │   │   ├── view.py           # View operations
-│   │   └── operations.py     # Boolean cuts, macros
+│   │   ├── operations.py     # Boolean cuts, macros
+│   │   └── drawing.py        # Drawing operations
 │   └── tekla/                 # Tekla-specific modules
 │       ├── __init__.py
 │       ├── loader.py          # Tekla DLL loading (pythonnet)
@@ -204,7 +208,8 @@ tekla_mcp_server/
 │       ├── snapshot_builder.py # Snapshot extraction (builds PartSnapshot/AssemblySnapshot)
 │       ├── utils.py           # Tekla API helpers
 │       ├── template_attrs_parser.py  # Template attribute parsing with semantic search
-│       └── component_handlers.py     # Component handler plugins (LiftingAnchorsHandler, etc.)
+│       ├── component_handlers.py     # Component handler plugins (LiftingAnchorsHandler, etc.)
+│       └── drawing.py         # Tekla Drawing wrapper
 ├── config/                    # Configuration JSON files
 │   ├── settings.sample.json
 │   ├── element_types.sample.json

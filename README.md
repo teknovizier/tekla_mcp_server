@@ -39,7 +39,7 @@ To use this server, one must first install and configure an MCP client.
 
 ### Features
 
-- **Modular Architecture**: Powered by FastMCP 3.0, with toolset organization through modular providers (Selection, View, Properties, Components, Operations).
+- **Modular Architecture**: Powered by FastMCP 3.0, with toolset organization through modular providers (Selection, View, Properties, Components, Operations, Drawing).
 
 - **Resource Discovery**: Auto‑detection of available filters, macros, components, and custom requirements and instructions.
 
