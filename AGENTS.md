@@ -157,6 +157,7 @@ Resources provide discovery/metadata, not actions:
 | `tekla://components` | List all available components |
 | `tekla://components/{key}` | Get properties for a component |
 | `tekla://macros` | List available Tekla macros |
+| `tekla://element_types` | List element types with class numbers |
 | `tekla://phases` | List all phases in the model |
 | `tekla://filters/selection` | List available selection filters |
 | `tekla://filters/view` | List available view filters |

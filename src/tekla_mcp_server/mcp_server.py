@@ -13,7 +13,7 @@ from fastmcp.server.transforms import ResourcesAsTools
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import get_base_components, get_macros, get_filters
+from tekla_mcp_server.models import get_base_components, get_macros, get_filters, get_element_types_list
 from tekla_mcp_server.providers import (
     selection_provider,
     view_provider,
@@ -59,6 +59,16 @@ def get_macro_list() -> ResourceResult:
     Returns a list of available Tekla macros from configured directories.
     """
     return ResourceResult(contents=[ResourceContent(content=json.dumps(get_macros()), mime_type="application/json")])
+
+
+@mcp.resource("tekla://element_types")
+def get_element_types() -> ResourceResult:
+    """
+    Returns element types from element_types.json config as flat list.
+
+    Useful for getting correct class numbers for different element types.
+    """
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_element_types_list()), mime_type="application/json")])
 
 
 @mcp.resource("tekla://filters/selection")

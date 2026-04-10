@@ -40,6 +40,7 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | `tekla://components` | Returns the list of Tekla components available in server configuration |
 | `tekla://components/{component_key}` | Returns the custom_properties schema for a specific component |
 | `tekla://macros` | Returns list of available Tekla macros from configured directories |
+| `tekla://element_types` | Returns element types from `element_types.json` config as flat list |
 | `tekla://filters/selection` | Returns list of available Tekla selection filter names from `.SObjGrp` files |
 | `tekla://filters/view` | Returns list of available Tekla view filter names from `.VObjGrp` files |
 | `tekla://phases` | Returns list of all phases in the current Tekla model |

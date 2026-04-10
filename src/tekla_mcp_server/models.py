@@ -162,6 +162,25 @@ def get_class_to_element() -> dict[int, tuple[str, str]]:
     return get_config().class_to_element
 
 
+@lru_cache
+def get_element_types_list() -> list[dict[str, Any]]:
+    """
+    Returns element types as flat list from config.
+
+    Example:
+        [
+            {"material": "CONCRETE", "type": "CONCRETE_WALL", "class_numbers": [1]},
+            {"material": "STEEL", "type": "STEEL_BEAM", "class_numbers": [100]}
+        ]
+    """
+    result = []
+    element_types = get_config().element_types
+    for material, types in element_types.items():
+        for type_name, class_numbers in types.items():
+            result.append({"material": material, "type": type_name, "class_numbers": class_numbers})
+    return result
+
+
 @lru_cache(maxsize=32)
 def get_custom_properties_schema(component_key: str) -> dict[str, dict[str, str]] | None:
     """
