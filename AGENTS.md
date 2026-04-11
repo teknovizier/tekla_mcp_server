@@ -83,7 +83,8 @@ from tekla_mcp_server.tekla.utils import wrap_model_objects
 from tekla_mcp_server.tekla.loader import Point, Beam, Identifier, Model
 from tekla_mcp_server.tekla.component_handlers import HandlerRegistry, LiftingAnchorsHandler
 
-# Providers (MCP tool definitions)
+# Providers (MCP resources & tool definitions)
+from tekla_mcp_server.providers.resources_provider import resources_provider
 from tekla_mcp_server.providers.selection_provider import select_elements_by_filter
 from tekla_mcp_server.providers.view_provider import draw_elements_labels
 from tekla_mcp_server.providers.properties_provider import get_elements_properties
@@ -144,9 +145,10 @@ def tool_function(...):
 - Use `SnapshotBuilder` from `tekla/snapshot_builder.py` for building snapshots (delegates from `to_snapshot()`)
 
 ### MCP Server Architecture
-- **Providers** (`providers/`) - MCP tool definitions with docstrings
+- **Providers** (`providers/`) - MCP tool definitions and resources with docstrings
 - **Tools** (`tools/`) - Actual implementation logic
 - Use `LocalProvider` for organizing tools into modules
+- Use `LocalProvider` for resources via `@provider.resource()` decorator
 - Tool functions accept `dict[str, Any]` inputs (MCP sends JSON)
 - Use `_to_filter_option()` helper to convert dicts to Pydantic models
 
@@ -188,11 +190,13 @@ tekla_mcp_server/
 │   ├── utils.py               # Decorators and utilities (response helpers)
 │   ├── providers/             # MCP tool definitions (docstrings + orchestration)
 │   │   ├── __init__.py
+│   │   ├── resources_provider.py
 │   │   ├── selection_provider.py
 │   │   ├── view_provider.py
 │   │   ├── properties_provider.py
 │   │   ├── components_provider.py
 │   │   ├── operations_provider.py
+│   │   ├── modeling_provider.py
 │   │   └── drawings_provider.py
 │   ├── tools/                 # Tool implementations (business logic)
 │   │   ├── selection.py       # Selection logic
