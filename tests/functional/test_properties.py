@@ -13,7 +13,7 @@ from tekla_mcp_server.providers.properties_provider import (
     compare_elements,
 )
 from tekla_mcp_server.providers.selection_provider import select_elements_assemblies_or_main_parts
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
 def test_set_elements_properties(model_objects):

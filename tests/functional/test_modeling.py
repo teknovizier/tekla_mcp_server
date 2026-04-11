@@ -14,7 +14,7 @@ def cleanup_modeling_test_objects():
     """Clean up test objects created by modeling tests."""
     from tekla_mcp_server.models import StringMatchType
     from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
-    from tekla_mcp_server.tekla.model import TeklaModel
+    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
     from tekla_mcp_server.tools.selection import add_filter
 
     model = TeklaModel()
@@ -256,7 +256,7 @@ def test_place_panel_none_list():
 
 def test_delete_selected_no_selection():
     """Tests delete_selected with no selection returns error."""
-    from tekla_mcp_server.tekla.model import TeklaModel
+    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
     TeklaModel.clear_selection()
     result = delete_selected()

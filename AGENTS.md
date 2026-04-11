@@ -77,8 +77,8 @@ from tekla_mcp_server.models import ReportProperty
 from tekla_mcp_server.utils import log_function_call, log_mcp_tool_call
 from tekla_mcp_server.embeddings import get_embedding_model, find_normalized_match
 from tekla_mcp_server.config import get_config
-from tekla_mcp_server.tekla.model import TeklaModel
-from tekla_mcp_server.tekla.model_object import TeklaModelObject
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject
 from tekla_mcp_server.tekla.utils import wrap_model_objects
 from tekla_mcp_server.tekla.loader import Point, Beam, Identifier, Model
 from tekla_mcp_server.tekla.component_handlers import HandlerRegistry, LiftingAnchorsHandler
@@ -137,10 +137,10 @@ def tool_function(...):
 - Configure via env vars: `TEKLA_MCP_LOG_LEVEL`, `TEKLA_MCP_LOG_FILE_PATH`
 
 ### Tekla API Patterns
-- Use `TeklaModel` class from `tekla/model.py` (singleton pattern via `lru_cache`)
-- Use `TeklaModelObject` from `tekla/model_object.py` for individual objects
+- Use `TeklaModel` class from `tekla/wrappers/model.py` (singleton pattern via `lru_cache`)
+- Use `TeklaModelObject` from `tekla/wrappers/model_object.py` for individual objects
 - Always `model.commit_changes()` after modifications
-- Use `wrap_model_objects()` from `tekla/utils.py` for conversion
+- Use `wrap_model_objects()` from `tekla/wrappers/model_object.py` for conversion
 - Use `SnapshotBuilder` from `tekla/snapshot_builder.py` for building snapshots (delegates from `to_snapshot()`)
 
 ### MCP Server Architecture
@@ -204,13 +204,16 @@ tekla_mcp_server/
 │   └── tekla/                 # Tekla-specific modules
 │       ├── __init__.py
 │       ├── loader.py          # Tekla DLL loading (pythonnet)
-│       ├── model.py           # Tekla Model wrapper (singleton via lru_cache)
-│       ├── model_object.py    # Tekla ModelObject wrappers
+│       ├── wrappers/       # Tekla wrapper classes
+│       │   ├── __init__.py
+│       │   ├── model.py          # TeklaModel wrapper
+│       │   ├── model_object.py # TeklaModelObject, TeklaPart, TeklaAssembly wrappers
+│       │   ├── beam.py          # TeklaBeam wrapper
+│       │   └── drawing.py      # TeklaDrawing wrapper
 │       ├── snapshot_builder.py # Snapshot extraction (builds PartSnapshot/AssemblySnapshot)
 │       ├── utils.py           # Tekla API helpers
 │       ├── template_attrs_parser.py  # Template attribute parsing with semantic search
 │       ├── component_handlers.py     # Component handler plugins (LiftingAnchorsHandler, etc.)
-│       └── drawing.py         # Tekla Drawing wrapper
 ├── config/                    # Configuration JSON files
 │   ├── settings.sample.json
 │   ├── element_types.sample.json

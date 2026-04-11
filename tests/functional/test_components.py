@@ -5,7 +5,7 @@ Tests component placement, removal, modification, and retrieval operations.
 """
 
 from tekla_mcp_server.providers.components_provider import put_components, remove_components, get_components, modify_components
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
 def test_put_lifting_anchors_walls(model_objects):

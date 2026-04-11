@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from tekla_mcp_server.models import BeamType, PointInput, PositionInput
 from tekla_mcp_server.tekla.loader import Beam, Point, Position
-from tekla_mcp_server.tekla.model_object import TeklaPart
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaPart
 from tekla_mcp_server.tekla.utils import POSITION_PLANE_MAP, POSITION_DEPTH_MAP, POSITION_ROTATION_MAP
 
 

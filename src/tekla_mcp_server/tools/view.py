@@ -18,7 +18,7 @@ from tekla_mcp_server.tekla.loader import (
     ViewHandler,
 )
 from tekla_mcp_server.tekla.utils import get_active_views, collect_children
-from tekla_mcp_server.tekla.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.utils import log_function_call
 

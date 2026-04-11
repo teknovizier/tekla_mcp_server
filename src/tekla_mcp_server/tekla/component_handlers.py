@@ -124,7 +124,7 @@ class LiftingAnchorsHandler:
         """
         from tekla_mcp_server.models import ElementTypeModel
         from tekla_mcp_server.tekla.loader import Solid, TransformationPlane
-        from tekla_mcp_server.tekla.model_object import wrap_model_object
+        from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
         weight_factor = 1.05
         recess_width_offset = 100.0
@@ -285,7 +285,7 @@ class LiftingAnchorsHandler:
     ) -> bool:
         """Creates a boolean cut on the selected object."""
         from tekla_mcp_server.tekla.loader import Beam, Point, Position, Solid
-        from tekla_mcp_server.tekla.model_object import wrap_model_object
+        from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
         z_offset = 25.0
         logger.debug("Creating boolean cut at X=%s, Y=%s, height=%s, length=%s", x_position, y_position, cut_height, cut_length)

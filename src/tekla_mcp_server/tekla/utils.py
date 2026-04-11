@@ -39,8 +39,8 @@ from tekla_mcp_server.tekla.loader import (
     MaterialItem,
     Position,
 )
-from tekla_mcp_server.tekla.model import TeklaModel
-from tekla_mcp_server.tekla.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 
 from tekla_mcp_server.utils import log_function_call
 

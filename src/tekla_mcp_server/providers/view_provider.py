@@ -9,7 +9,7 @@ from typing import Any
 from fastmcp.server.providers import LocalProvider
 
 from tekla_mcp_server.models import ElementLabelModel
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tools.view import (
     tool_draw_elements_labels,
     tool_zoom_to_selection,

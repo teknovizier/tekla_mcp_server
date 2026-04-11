@@ -13,7 +13,7 @@ from tekla_mcp_server.models import (
     SelectionModeModel,
     ElementType,
 )
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tools.selection import (
     tool_select_elements_by_filter,
     tool_select_elements_by_filter_name,

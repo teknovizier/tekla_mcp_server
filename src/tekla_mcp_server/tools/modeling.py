@@ -16,8 +16,8 @@ from tekla_mcp_server.models import (
     BatchPlacementResult,
     PointInput,
 )
-from tekla_mcp_server.tekla.beam import TeklaBeam
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.beam import TeklaBeam
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.utils import log_function_call
 
 

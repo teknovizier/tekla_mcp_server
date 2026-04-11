@@ -207,7 +207,7 @@ class SnapshotBuilder:
 
     @staticmethod
     def build_assembly_snapshot(assembly: Any) -> AssemblySnapshot:
-        from tekla_mcp_server.tekla.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
+        from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 
         report_properties = SnapshotBuilder._build_report_properties(assembly, ASSEMBLY_REPORT_PROPS)
         user_properties = SnapshotBuilder._build_sorted_user_properties(assembly)
@@ -274,7 +274,7 @@ class SnapshotBuilder:
 
     @staticmethod
     def _build_reinforcements(part: Any) -> list[dict[str, Any]]:
-        from tekla_mcp_server.tekla.model_object import TeklaModelObject, wrap_model_object
+        from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, wrap_model_object
 
         reinforcements = []
         reinf_enum = part.model_object.GetReinforcements()
@@ -308,7 +308,7 @@ class SnapshotBuilder:
 
     @staticmethod
     def _build_welds(part: Any) -> list[dict[str, Any]]:
-        from tekla_mcp_server.tekla.model_object import wrap_model_object
+        from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
         welds = []
         weld_enum = part.model_object.GetWelds()
@@ -326,7 +326,7 @@ class SnapshotBuilder:
                     "relative_pos": relative_pos,
                 }
             )
-        return sorted(welds, key=lambda w: (w["id"]))
+        return sorted(welds, key=lambda w: w["id"])
 
     @staticmethod
     def _build_relative_position(child: Any, parent: Any) -> dict[str, float] | None:

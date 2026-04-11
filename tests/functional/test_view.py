@@ -14,7 +14,7 @@ from tekla_mcp_server.providers.view_provider import (
     apply_view_filter,
 )
 from tekla_mcp_server.tekla.loader import ViewHandler
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
 def test_draw_elements_labels(model_objects):

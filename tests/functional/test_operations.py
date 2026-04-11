@@ -9,7 +9,7 @@ from tekla_mcp_server.providers.operations_provider import (
     convert_cut_parts_to_real_parts,
     run_macro,
 )
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
 def test_cut_elements_with_zero_class_parts(model_objects):

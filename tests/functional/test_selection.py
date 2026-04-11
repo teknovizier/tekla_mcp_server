@@ -12,7 +12,7 @@ from tekla_mcp_server.providers.selection_provider import (
     select_elements_by_guid,
     select_elements_assemblies_or_main_parts,
 )
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
 def test_select_elements_by_filter_name(model_objects):

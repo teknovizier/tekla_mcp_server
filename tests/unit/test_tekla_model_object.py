@@ -18,7 +18,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from tekla_mcp_server.tekla.loader import Beam, Position, Point
-from tekla_mcp_server.tekla.model_object import wrap_model_object, TeklaPart
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaPart
 
 
 created_elements: Any = []
@@ -159,15 +159,13 @@ def test_has_spatial_overlap_no_overlap(wall1):
 
 def test_wrap_model_object_returns_tekla_part(wall1):
     """Checks that wrap_model_object returns TeklaPart for a Beam."""
-    from tekla_mcp_server.tekla.model_object import wrap_model_object, TeklaPart
-
     wrapped = wrap_model_object(wall1.model_object)
     assert isinstance(wrapped, TeklaPart)
 
 
 def test_wrap_model_object_returns_none_for_unsupported():
     """Checks that wrap_model_object returns None for unsupported types."""
-    from tekla_mcp_server.tekla.model_object import wrap_model_object
+    from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
     mock_obj = MagicMock()
     mock_obj.GetTypeName.return_value = "UnsupportedType"
@@ -177,7 +175,7 @@ def test_wrap_model_object_returns_none_for_unsupported():
 
 def test_wrap_model_objects_generator():
     """Checks that wrap_model_objects yields wrapped objects."""
-    from tekla_mcp_server.tekla.model_object import wrap_model_objects, TeklaPart
+    from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, TeklaPart
 
     mock_beam1 = mock_beam(0, 0, 0, "TEST_WALL_GEN1")
     mock_beam2 = mock_beam(5000, 0, 0, "TEST_WALL_GEN2")

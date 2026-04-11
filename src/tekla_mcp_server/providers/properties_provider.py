@@ -8,7 +8,7 @@ from typing import Any
 
 from fastmcp.server.providers import LocalProvider
 
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tools.properties import (
     tool_set_elements_properties,
     tool_get_elements_properties,

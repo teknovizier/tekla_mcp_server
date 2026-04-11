@@ -6,9 +6,9 @@ from collections import Counter
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.tekla.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import BooleanPart, Operation
-from tekla_mcp_server.tekla.model_object import (
+from tekla_mcp_server.tekla.wrappers.model_object import (
     TeklaAssembly,
     TeklaPart,
     wrap_model_object,

@@ -93,7 +93,7 @@ def get_phase_list() -> ResourceResult:
     """
     Returns a list of all phases in the current Tekla model.
     """
-    from tekla_mcp_server.tekla.model import TeklaModel
+    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
     tekla_model = TeklaModel()
     phases = tekla_model.model.GetPhases()
@@ -127,7 +127,7 @@ def get_connection_status() -> ResourceResult:
     """
     Returns the current Tekla connection status.
     """
-    from tekla_mcp_server.tekla.model import TeklaModel
+    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
     try:
         model = TeklaModel()

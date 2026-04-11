@@ -6,7 +6,7 @@ from typing import Any
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType
-from tekla_mcp_server.tekla.drawing import wrap_drawings
+from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings
 from tekla_mcp_server.tekla.loader import DrawingHandler
 from tekla_mcp_server.utils import log_function_call
 

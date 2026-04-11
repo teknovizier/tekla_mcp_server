@@ -9,8 +9,8 @@ from tekla_mcp_server.tekla.component_handlers import HandlerRegistry
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import BaseComponent, ComponentType, get_base_components, TYPE_DEFAULTS
 from tekla_mcp_server.tekla.loader import ModelObjectEnumerator
-from tekla_mcp_server.tekla.model import TeklaModel
-from tekla_mcp_server.tekla.model_object import wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.utils import ensure_transformation_plane, get_wall_pairs, insert_component, insert_detail
 from tekla_mcp_server.utils import log_function_call
 
