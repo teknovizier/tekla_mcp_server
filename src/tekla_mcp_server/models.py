@@ -940,8 +940,7 @@ class PlacementResult(BaseModel):
 
     success: bool
     guid: str | None = None
-    message: str
-
+    message: str | None = None
 
 class BatchPlacementResult(BaseModel):
     """Result model for batch element placement."""

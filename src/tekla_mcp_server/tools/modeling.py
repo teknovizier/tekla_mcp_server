@@ -82,7 +82,7 @@ def _place_elements(
         failed=len(inputs) - succeeded,
         results=results,
         message=f"Placed {succeeded} of {len(inputs)} {element_type.value.lower()}s",
-    ).model_dump(mode="json")
+    ).model_dump(mode="json", exclude_none=True)
 
 
 @log_function_call
