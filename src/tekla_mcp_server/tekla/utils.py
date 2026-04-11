@@ -37,6 +37,7 @@ from tekla_mcp_server.tekla.loader import (
     CatalogHandler,
     ProfileItem,
     MaterialItem,
+    Position,
 )
 from tekla_mcp_server.tekla.model import TeklaModel
 from tekla_mcp_server.tekla.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
@@ -64,6 +65,23 @@ NUMERIC_MATCH_TYPE_MAPPING = {
     NumericMatchType.SMALLER_OR_EQUAL: NumericOperatorType.SMALLER_OR_EQUAL,
     NumericMatchType.GREATER_THAN: NumericOperatorType.GREATER_THAN,
     NumericMatchType.GREATER_OR_EQUAL: NumericOperatorType.GREATER_OR_EQUAL,
+}
+
+
+POSITION_PLANE_MAP = {
+    "LEFT": Position.PlaneEnum.LEFT,
+    "MIDDLE": Position.PlaneEnum.MIDDLE,
+    "RIGHT": Position.PlaneEnum.RIGHT,
+}
+POSITION_DEPTH_MAP = {
+    "FRONT": Position.DepthEnum.FRONT,
+    "MIDDLE": Position.DepthEnum.MIDDLE,
+    "BEHIND": Position.DepthEnum.BEHIND,
+}
+POSITION_ROTATION_MAP = {
+    "FRONT": Position.RotationEnum.FRONT,
+    "TOP": Position.RotationEnum.TOP,
+    "BACK": Position.RotationEnum.BACK,
 }
 
 

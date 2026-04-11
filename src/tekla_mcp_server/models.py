@@ -18,6 +18,14 @@ TYPE_MAP = {"str": str, "int": int, "float": float}
 TYPE_DEFAULTS = {"str": str(), "int": int(), "float": float()}
 
 
+class BeamType(Enum):
+    """Enum for beam element types."""
+
+    BEAM = "Beam"
+    COLUMN = "Column"
+    PANEL = "Panel"
+
+
 # Enums
 class SelectionMode(Enum):
     """
@@ -820,3 +828,110 @@ class AssemblySnapshot(ModelObjectSnapshot):
             "secondaries": [s.to_diff_view() for s in self.secondaries],
             "subassemblies": [s.to_diff_view() for s in self.subassemblies],
         }
+
+
+# Placement Models
+class PointInput(BaseModel):
+    """Input model for 3D point coordinates."""
+
+    x: float
+    y: float
+    z: float
+
+
+class PositionInput(BaseModel):
+    """Input model for beam position settings."""
+
+    plane: str = "MIDDLE"
+    plane_offset: float = 0.0
+    depth: str = "MIDDLE"
+    depth_offset: float = 0.0
+    rotation: str = "FRONT"
+    rotation_offset: float = 0.0
+
+    @field_validator("plane", mode="before")
+    @classmethod
+    def validate_plane(cls, v: str) -> str:
+        from tekla_mcp_server.tekla.utils import POSITION_PLANE_MAP
+
+        valid = ", ".join(sorted(POSITION_PLANE_MAP.keys()))
+        if v.upper() not in POSITION_PLANE_MAP:
+            raise PydanticCustomError("invalid_plane", f"Invalid plane '{v}'. Must be one of: {valid}")
+        return v.upper()
+
+    @field_validator("depth", mode="before")
+    @classmethod
+    def validate_depth(cls, v: str) -> str:
+        from tekla_mcp_server.tekla.utils import POSITION_DEPTH_MAP
+
+        valid = ", ".join(sorted(POSITION_DEPTH_MAP.keys()))
+        if v.upper() not in POSITION_DEPTH_MAP:
+            raise PydanticCustomError("invalid_depth", f"Invalid depth '{v}'. Must be one of: {valid}")
+        return v.upper()
+
+    @field_validator("rotation", mode="before")
+    @classmethod
+    def validate_rotation(cls, v: str) -> str:
+        from tekla_mcp_server.tekla.utils import POSITION_ROTATION_MAP
+
+        valid = ", ".join(sorted(POSITION_ROTATION_MAP.keys()))
+        if v.upper() not in POSITION_ROTATION_MAP:
+            raise PydanticCustomError("invalid_rotation", f"Invalid rotation '{v}'. Must be one of: {valid}")
+        return v.upper()
+
+
+class TeklaBeamInput(BaseModel):
+    """Base input model for beam-like elements (beam, column, panel)."""
+
+    profile: str
+    material: str
+    class_number: int
+    name: str | None = None
+    position: PositionInput | None = None
+
+
+class BeamInput(TeklaBeamInput):
+    """Input model for a single beam definition."""
+
+    start: PointInput
+    end: PointInput
+
+
+class ColumnInput(TeklaBeamInput):
+    """Input model for a single column definition."""
+
+    base: PointInput
+    height: float
+
+    @field_validator("height", mode="before")
+    @classmethod
+    def validate_height(cls, v: float) -> float:
+        if v <= 0:
+            raise PydanticCustomError("invalid_height", f"Height must be > 0, got {v}")
+        return v
+
+
+class PanelInput(TeklaBeamInput):
+    """Input model for a single panel definition."""
+
+    start: PointInput
+    end: PointInput
+
+
+class PlacementResult(BaseModel):
+    """Result model for a single element placement."""
+
+    success: bool
+    guid: str | None = None
+    message: str
+
+
+class BatchPlacementResult(BaseModel):
+    """Result model for batch element placement."""
+
+    success: bool
+    total: int
+    succeeded: int
+    failed: int
+    results: list[PlacementResult]
+    message: str

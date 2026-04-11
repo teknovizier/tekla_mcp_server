@@ -187,3 +187,14 @@ class TeklaModel:
             array_list.Add(model_object)
 
         return selector.Select(array_list)
+
+    @staticmethod
+    def clear_selection() -> bool:
+        """
+        Clears the current selection in the model.
+
+        Returns:
+            True if selection was cleared successfully
+        """
+        selector = ModelObjectSelectorUI()
+        return selector.Select(ArrayList())

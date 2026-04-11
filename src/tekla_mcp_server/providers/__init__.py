@@ -10,6 +10,7 @@ from tekla_mcp_server.providers.properties_provider import properties_provider
 from tekla_mcp_server.providers.operations_provider import operations_provider
 from tekla_mcp_server.providers.components_provider import components_provider
 from tekla_mcp_server.providers.drawings_provider import drawings_provider
+from tekla_mcp_server.providers.modeling_provider import modeling_provider
 
 __all__ = [
     "selection_provider",
@@ -18,4 +19,5 @@ __all__ = [
     "operations_provider",
     "components_provider",
     "drawings_provider",
+    "modeling_provider",
 ]

@@ -31,6 +31,10 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | Operations | `run_macro` | Run a Tekla macro with the specified name | `macro_name` (required) |
 | Drawing | `get_drawings` | Get drawings from Tekla model with optional filtering by type, name, mark, title1/2/3 | `drawing_type`, `name_filter`, `mark_filter`, `title1_filter`, `title2_filter`, `title3_filter` |
 | Drawing | `get_drawing_properties` | Get properties of drawings by their marks or currently selected drawings in Tekla | `marks` |
+| Modeling | `place_beams` | Place one or more beams in the Tekla model | `beams` (list with start, end, profile, material, class_number, name, position) |
+| Modeling | `place_columns` | Place one or more columns in the Tekla model | `columns` (list with base, height, profile, material, class_number, name, position) |
+| Modeling | `place_panels` | Place one or more wall panels in the Tekla model | `panels` (list with start, end, profile, material, class_number, name, position) |
+| Modeling | `delete_selected` | Delete all currently selected elements in Tekla | - |
 
 ## Resources
 
