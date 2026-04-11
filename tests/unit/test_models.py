@@ -480,3 +480,344 @@ class TestBaseComponentCustomPropertiesValidation:
             custom_properties={"any_prop": "any_value"},
         )
         assert component.custom_properties == {"any_prop": "any_value"}
+
+
+class TestGetNumberingForClass:
+    """Tests for get_default_numbering_for_class function."""
+
+    @pytest.mark.parametrize(
+        "tekla_class, expected_keys",
+        [
+            (1, ["assembly_number"]),  # CONCRETE_WALL - only assembly
+            (100, ["assembly_number", "part_number"]),  # STEEL_BEAM - both
+            (101, ["assembly_number", "part_number"]),  # STEEL_COLUMN - both
+            (999, None),  # Unknown class - should return None
+        ],
+    )
+    def test_get_default_numbering_for_class_returns_expected_keys(self, tekla_class, expected_keys):
+        """Test that get_default_numbering_for_class returns correct keys based on class."""
+        from tekla_mcp_server.models import get_default_numbering_for_class
+
+        result = get_default_numbering_for_class(tekla_class)
+
+        if expected_keys is None:
+            assert result is None
+        else:
+            assert result is not None
+            for key in expected_keys:
+                assert key in result
+
+    def test_concrete_wall_numbering_only_has_assembly(self):
+        """Concrete wall should only have assembly_number, no part_number."""
+        from tekla_mcp_server.models import get_default_numbering_for_class
+
+        result = get_default_numbering_for_class(1)
+        assert result is not None
+        assert "assembly_number" in result
+        assert "part_number" not in result
+        assert result["assembly_number"].prefix == "W"
+        assert result["assembly_number"].start_number == 1
+
+    def test_steel_beam_numbering_has_both(self):
+        """Steel beam should have both part_number and assembly_number."""
+        from tekla_mcp_server.models import get_default_numbering_for_class
+
+        result = get_default_numbering_for_class(100)
+        assert result is not None
+        assert "assembly_number" in result
+        assert "part_number" in result
+        assert result["assembly_number"].prefix == "SBA"
+        assert result["assembly_number"].start_number == 1
+        assert result["part_number"].prefix == "SB"
+        assert result["part_number"].start_number == 1
+
+    def test_unknown_class_returns_none(self):
+        """Unknown class should return None."""
+        from tekla_mcp_server.models import get_default_numbering_for_class
+
+        result = get_default_numbering_for_class(9999)
+        assert result is None
+
+
+class TestTeklaBeamInputNumbering:
+    """Tests for TeklaBeamInput numbering fields."""
+
+    def test_beam_input_with_numbering_series(self):
+        """Test BeamInput accepts NumberingSeries."""
+        from tekla_mcp_server.models import BeamInput, NumberingSeries, PointInput
+
+        part_number = NumberingSeries(prefix="B", start_number=1)
+        assembly_number = NumberingSeries(prefix="BA", start_number=1)
+
+        beam = BeamInput(
+            start=PointInput(x=0, y=0, z=0),
+            end=PointInput(x=5000, y=0, z=0),
+            profile="HEA200",
+            material="S235JR",
+            tekla_class=100,
+            part_number=part_number,
+            assembly_number=assembly_number,
+        )
+
+        assert beam.part_number.prefix == "B"
+        assert beam.part_number.start_number == 1
+        assert beam.assembly_number.prefix == "BA"
+        assert beam.assembly_number.start_number == 1
+
+    def test_beam_input_without_numbering(self):
+        """Test BeamInput works without numbering (None defaults)."""
+        from tekla_mcp_server.models import BeamInput, PointInput
+
+        beam = BeamInput(
+            start=PointInput(x=0, y=0, z=0),
+            end=PointInput(x=5000, y=0, z=0),
+            profile="HEA200",
+            material="S235JR",
+            tekla_class=100,
+        )
+
+        assert beam.part_number is None
+        assert beam.assembly_number is None
+
+    def test_column_input_with_numbering(self):
+        """Test ColumnInput accepts NumberingSeries."""
+        from tekla_mcp_server.models import ColumnInput, NumberingSeries, PointInput
+
+        part_number = NumberingSeries(prefix="C", start_number=1)
+
+        column = ColumnInput(
+            base=PointInput(x=0, y=0, z=0),
+            height=3000,
+            profile="400*400",
+            material="C30/37",
+            tekla_class=10,
+            part_number=part_number,
+        )
+
+        assert column.part_number.prefix == "C"
+        assert column.assembly_number is None
+
+    def test_panel_input_with_assembly_numbering(self):
+        """Test PanelInput accepts assembly numbering (concrete)."""
+        from tekla_mcp_server.models import NumberingSeries, PanelInput, PointInput
+
+        assembly_number = NumberingSeries(prefix="W", start_number=1)
+
+        panel = PanelInput(
+            start=PointInput(x=0, y=0, z=0),
+            end=PointInput(x=3000, y=0, z=0),
+            profile="3000*200",
+            material="C30/37",
+            tekla_class=1,
+            assembly_number=assembly_number,
+        )
+
+        assert panel.part_number is None
+        assert panel.assembly_number.prefix == "W"
+
+
+class TestGetElementTypesList:
+    """Tests for get_element_types_list function."""
+
+    def test_returns_minimal_format(self):
+        """Test that get_element_types_list returns minimal format for discovery."""
+        from tekla_mcp_server.models import get_element_types_list
+
+        result = get_element_types_list()
+        assert isinstance(result, list)
+        assert len(result) > 0
+
+        concrete_wall = next((e for e in result if e["type"] == "CONCRETE_WALL"), None)
+        assert concrete_wall is not None
+        assert "material" in concrete_wall
+        assert "type" in concrete_wall
+        assert "tekla_classes" in concrete_wall
+        assert "assembly_prefix" not in concrete_wall
+        assert "name" not in concrete_wall
+
+        steel_beam = next((e for e in result if e["type"] == "STEEL_BEAM"), None)
+        assert steel_beam is not None
+        assert "material" in steel_beam
+        assert "type" in steel_beam
+        assert "tekla_classes" in steel_beam
+        assert "part_prefix" not in steel_beam
+        assert "name" not in steel_beam
+
+
+class TestNumberingAutoDetectionLogic:
+    """Tests for numbering auto-detection logic without Tekla API."""
+
+    def test_user_provides_only_assembly_gets_part_from_config(self):
+        """When user provides assembly but no part, part should come from config."""
+        from tekla_mcp_server.models import get_default_numbering_for_class, NumberingSeries
+
+        user_part = None
+        user_assembly = NumberingSeries(prefix="MYA", start_number=99)
+        tekla_class = 100  # STEEL_BEAM
+
+        numbering = get_default_numbering_for_class(tekla_class)
+        assert numbering is not None
+
+        resolved_part = user_part
+        resolved_assembly = user_assembly
+        if resolved_assembly is None or resolved_part is None:
+            if resolved_assembly is None:
+                resolved_assembly = numbering.get("assembly_number")
+            if resolved_part is None:
+                resolved_part = numbering.get("part_number")
+
+        assert resolved_part is not None
+        assert resolved_part.prefix == "SB"
+        assert resolved_assembly.prefix == "MYA"
+        assert resolved_assembly.start_number == 99
+
+    def test_user_provides_only_part_gets_assembly_from_config(self):
+        """When user provides part but no assembly, assembly should come from config."""
+        from tekla_mcp_server.models import get_default_numbering_for_class, NumberingSeries
+
+        user_part = NumberingSeries(prefix="MY-P", start_number=88)
+        user_assembly = None
+        tekla_class = 100
+
+        numbering = get_default_numbering_for_class(tekla_class)
+        assert numbering is not None
+
+        resolved_part = user_part
+        resolved_assembly = user_assembly
+        if resolved_assembly is None or resolved_part is None:
+            if resolved_assembly is None:
+                resolved_assembly = numbering.get("assembly_number")
+            if resolved_part is None:
+                resolved_part = numbering.get("part_number")
+
+        assert resolved_part.prefix == "MY-P"
+        assert resolved_part.start_number == 88
+        assert resolved_assembly is not None
+        assert resolved_assembly.prefix == "SBA"
+
+    def test_user_provides_both_uses_user_values(self):
+        """When user provides both, config values are ignored."""
+        from tekla_mcp_server.models import get_default_numbering_for_class, NumberingSeries
+
+        user_part = NumberingSeries(prefix="MY-P", start_number=10)
+        user_assembly = NumberingSeries(prefix="MYA", start_number=20)
+        tekla_class = 100
+
+        numbering = get_default_numbering_for_class(tekla_class)
+        assert numbering is not None
+
+        resolved_part = user_part
+        resolved_assembly = user_assembly
+        if resolved_assembly is None or resolved_part is None:
+            if resolved_assembly is None:
+                resolved_assembly = numbering.get("assembly_number")
+            if resolved_part is None:
+                resolved_part = numbering.get("part_number")
+
+        assert resolved_part.prefix == "MY-P"
+        assert resolved_part.start_number == 10
+        assert resolved_assembly.prefix == "MYA"
+        assert resolved_assembly.start_number == 20
+
+    def test_user_provides_neither_gets_config(self):
+        """When user provides neither, both come from config."""
+        from tekla_mcp_server.models import get_default_numbering_for_class
+
+        user_part = None
+        user_assembly = None
+        tekla_class = 100
+
+        numbering = get_default_numbering_for_class(tekla_class)
+        assert numbering is not None
+
+        resolved_part = user_part
+        resolved_assembly = user_assembly
+        if resolved_assembly is None or resolved_part is None:
+            if resolved_assembly is None:
+                resolved_assembly = numbering.get("assembly_number")
+            if resolved_part is None:
+                resolved_part = numbering.get("part_number")
+
+        assert resolved_part.prefix == "SB"
+        assert resolved_assembly.prefix == "SBA"
+
+    def test_unknown_class_returns_none_no_override(self):
+        """When class not in config, returns None and no override happens."""
+        from tekla_mcp_server.models import get_default_numbering_for_class
+
+        tekla_class = 9999
+
+        numbering = get_default_numbering_for_class(tekla_class)
+        assert numbering is None
+
+
+class TestGetDefaultNameForClass:
+    """Tests for get_default_name_for_class function."""
+
+    def test_concrete_wall_returns_name(self):
+        """Concrete wall class should return default name."""
+        from tekla_mcp_server.models import get_default_name_for_class
+
+        result = get_default_name_for_class(1)
+        assert result == "WALL"
+
+    def test_steel_beam_returns_name(self):
+        """Steel beam class should return default name."""
+        from tekla_mcp_server.models import get_default_name_for_class
+
+        result = get_default_name_for_class(100)
+        assert result == "STEEL_BEAM"
+
+    def test_steel_column_returns_name(self):
+        """Steel column class should return default name."""
+        from tekla_mcp_server.models import get_default_name_for_class
+
+        result = get_default_name_for_class(101)
+        assert result == "STEEL_COLUMN"
+
+    def test_unknown_class_returns_none(self):
+        """Unknown class should return None."""
+        from tekla_mcp_server.models import get_default_name_for_class
+
+        result = get_default_name_for_class(9999)
+        assert result is None
+
+
+class TestNameAutoDetectionLogic:
+    """Tests for name auto-detection logic without Tekla API."""
+
+    def test_user_provides_name_uses_user_name(self):
+        """When user provides name, it should be used."""
+        from tekla_mcp_server.models import get_default_name_for_class
+
+        user_name = "MY_CUSTOM_NAME"
+        tekla_class = 100
+
+        default_name = get_default_name_for_class(tekla_class)
+        resolved_name = user_name if user_name else default_name
+
+        assert resolved_name == "MY_CUSTOM_NAME"
+
+    def test_user_provides_none_gets_default(self):
+        """When user provides no name, default from config should be used."""
+        from tekla_mcp_server.models import get_default_name_for_class
+
+        user_name = None
+        tekla_class = 100
+
+        default_name = get_default_name_for_class(tekla_class)
+        resolved_name = user_name if user_name else default_name
+
+        assert resolved_name == "STEEL_BEAM"
+
+    def test_unknown_class_no_override(self):
+        """When class not in config, no name override should happen."""
+        from tekla_mcp_server.models import get_default_name_for_class
+
+        user_name = None
+        tekla_class = 9999
+
+        default_name = get_default_name_for_class(tekla_class)
+        resolved_name = user_name if user_name else default_name
+
+        assert resolved_name is None

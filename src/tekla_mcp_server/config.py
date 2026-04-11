@@ -86,8 +86,8 @@ def _get_class_to_element() -> dict[int, tuple[str, str]]:
     element_types = _load_json("element_types.json")
     result: dict[int, tuple[str, str]] = {}
     for material, types in element_types.items():
-        for element_type, class_numbers in types.items():
-            for cn in class_numbers:
+        for element_type, config in types.items():
+            for cn in config.get("tekla_classes", []):
                 result[cn] = (material, element_type)
     return result
 

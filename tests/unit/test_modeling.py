@@ -92,22 +92,22 @@ class TestTeklaBeamInput:
 
     def test_valid_base_inputs(self):
         """Test creating base input with common fields."""
-        beam_input = TeklaBeamInput(profile="300*600", material="C30/37", class_number=11)
+        beam_input = TeklaBeamInput(profile="300*600", material="C30/37", tekla_class=11)
         assert beam_input.profile == "300*600"
         assert beam_input.material == "C30/37"
-        assert beam_input.class_number == 11
+        assert beam_input.tekla_class == 11
         assert beam_input.name is None
         assert beam_input.position is None
 
     def test_base_with_name(self):
         """Test base input with optional name."""
-        beam_input = TeklaBeamInput(profile="HEA200", material="S235JR", class_number=100, name="MyBeam")
+        beam_input = TeklaBeamInput(profile="HEA200", material="S235JR", tekla_class=100, name="MyBeam")
         assert beam_input.name == "MyBeam"
 
     def test_base_with_position(self):
         """Test base input with position."""
         pos = PositionInput(plane="LEFT", depth="FRONT")
-        beam_input = TeklaBeamInput(profile="HEA200", material="S235JR", class_number=100, position=pos)
+        beam_input = TeklaBeamInput(profile="HEA200", material="S235JR", tekla_class=100, position=pos)
         assert beam_input.position.plane == "LEFT"
 
 
@@ -118,7 +118,7 @@ class TestBeamInput:
         """Test creating a valid beam input."""
         start = PointInput(x=0, y=0, z=0)
         end = PointInput(x=5000, y=0, z=0)
-        beam = BeamInput(start=start, end=end, profile="300*600", material="C30/37", class_number=11)
+        beam = BeamInput(start=start, end=end, profile="300*600", material="C30/37", tekla_class=11)
         assert beam.start.x == 0
         assert beam.end.x == 5000
 
@@ -129,7 +129,7 @@ class TestBeamInput:
             end=PointInput(x=1000, y=0, z=0),
             profile="HEA200",
             material="S235JR",
-            class_number=100,
+            tekla_class=100,
             name="TestBeam",
         )
         assert beam.name == "TestBeam"
@@ -145,7 +145,7 @@ class TestColumnInput:
             height=3000,
             profile="400*400",
             material="C30/37",
-            class_number=10,
+            tekla_class=10,
         )
         assert col.base.x == 0
         assert col.height == 3000
@@ -158,7 +158,7 @@ class TestColumnInput:
                 height=0,
                 profile="400*400",
                 material="C30/37",
-                class_number=10,
+                tekla_class=10,
             )
 
     @pytest.mark.parametrize("height", [-100, -0.1, -3000])
@@ -170,7 +170,7 @@ class TestColumnInput:
                 height=height,
                 profile="400*400",
                 material="C30/37",
-                class_number=10,
+                tekla_class=10,
             )
 
 
@@ -184,7 +184,7 @@ class TestPanelInput:
             end=PointInput(x=3000, y=0, z=3000),
             profile="3000*200",
             material="C30/37",
-            class_number=1,
+            tekla_class=1,
         )
         assert panel.start.x == 0
         assert panel.end.z == 3000

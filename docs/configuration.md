@@ -42,19 +42,43 @@ Set `embeddings.embedding_model` to HuggingFace ID or local path:
 
 ## Element Types (`element_types.json`)
 
-Map element type names to Tekla class numbers:
+Map element type names to Tekla class numbers and numbering settings:
 
 ```json
 {
     "MATERIAL_CONCRETE": {
-        "CONCRETE_WALL": [1],
-        "CONCRETE_SANDWICH_WALL": [2, 3]
+        "CONCRETE_WALL": {
+            "tekla_classes": [1],
+            "name": "WALL",
+            "assembly_prefix": "W",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_SANDWICH_WALL": {
+            "tekla_classes": [2, 3],
+            "name": "SANDWICH_WALL",
+            "assembly_prefix": "SW",
+            "assembly_start_number": 1
+        }
     },
     "MATERIAL_STEEL": {
-        "STEEL_BEAM": [100]
+        "STEEL_BEAM": {
+            "tekla_classes": [100],
+            "name": "BEAM",
+            "part_prefix": "SB",
+            "part_start_number": 1,
+            "assembly_prefix": "SBA",
+            "assembly_start_number": 1
+        }
     }
 }
 ```
+
+**Fields:**
+- `tekla_classes`: Array of Tekla class numbers for this element type
+- `assembly_prefix`: Prefix for assembly numbering (required for all materials)
+- `assembly_start_number`: Starting number for assembly numbering (default: 1)
+- `part_prefix`: Prefix for part numbering (steel only - concrete typically uses assembly-only)
+- `part_start_number`: Starting number for part numbering (steel only)
 
 ## Semantic Overrides (`semantic_overrides.json`)
 

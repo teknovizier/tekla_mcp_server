@@ -65,9 +65,7 @@ def get_macro_list() -> ResourceResult:
 @mcp.resource("tekla://element_types")
 def get_element_types() -> ResourceResult:
     """
-    Returns element types from element_types.json config as flat list.
-
-    Useful for getting correct class numbers for different element types.
+    Returns a list of available Tekla element types and their corresponding class numbers.
     """
     return ResourceResult(contents=[ResourceContent(content=json.dumps(get_element_types_list()), mime_type="application/json")])
 

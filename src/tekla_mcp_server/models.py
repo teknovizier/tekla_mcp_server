@@ -170,26 +170,79 @@ def get_class_to_element() -> dict[int, tuple[str, str]]:
     return get_config().class_to_element
 
 
+def get_default_numbering_for_class(tekla_class: int) -> dict[str, "NumberingSeries"] | None:
+    """
+    Returns numbering configuration for a given class number.
+
+    Args:
+        tekla_class: Tekla class number
+
+    Returns:
+        Dict with "part_number" and/or "assembly_number" NumberingSeries, or None
+    """
+    element_types = get_config().element_types
+    for _, types in element_types.items():
+        for _, config in types.items():
+            if tekla_class in config.get("tekla_classes", []):
+                result: dict[str, "NumberingSeries"] = {}
+                if config.get("assembly_prefix"):
+                    result["assembly_number"] = NumberingSeries(
+                        prefix=config["assembly_prefix"],
+                        start_number=config["assembly_start_number"],
+                    )
+                if config.get("part_prefix"):
+                    result["part_number"] = NumberingSeries(
+                        prefix=config["part_prefix"],
+                        start_number=config["part_start_number"],
+                    )
+                return result if result else None
+    return None
+
+
+def get_default_name_for_class(tekla_class: int) -> str | None:
+    """
+    Returns default name for a given class number.
+
+    Args:
+        tekla_class: Tekla class number
+
+    Returns:
+        Default name from config or None
+    """
+    element_types = get_config().element_types
+    for _, types in element_types.items():
+        for _, config in types.items():
+            if tekla_class in config.get("tekla_classes", []):
+                return config.get("name")
+    return None
+
+
 @lru_cache
 def get_element_types_list() -> list[dict[str, Any]]:
     """
-    Returns element types as flat list from config.
+    Returns element types as flat list from config (minimal format for discovery).
 
     Example:
         [
-            {"material": "CONCRETE", "type": "CONCRETE_WALL", "class_numbers": [1]},
-            {"material": "STEEL", "type": "STEEL_BEAM", "class_numbers": [100]}
+            {"material": "MATERIAL_CONCRETE", "type": "CONCRETE_WALL", "tekla_classes": [1]},
+            {"material": "MATERIAL_STEEL", "type": "STEEL_BEAM", "tekla_classes": [100]}
         ]
     """
     result = []
     element_types = get_config().element_types
     for material, types in element_types.items():
-        for type_name, class_numbers in types.items():
-            result.append({"material": material, "type": type_name, "class_numbers": class_numbers})
+        for type_name, config in types.items():
+            result.append(
+                {
+                    "material": material,
+                    "type": type_name,
+                    "tekla_classes": config.get("tekla_classes", []),
+                }
+            )
     return result
 
 
-@lru_cache(maxsize=32)
+@lru_cache
 def get_custom_properties_schema(component_key: str) -> dict[str, dict[str, str]] | None:
     """
     Returns the custom_properties schema for a component config key.
@@ -459,15 +512,15 @@ class ElementTypeModel(EnumWrapper):
         return ElementType(self.value)
 
     @staticmethod
-    def get_element_type_by_class(class_number: str | int) -> tuple[str, str]:
+    def get_element_type_by_class(tekla_class: str | int) -> tuple[str, str]:
         """
         Returns (material, element type name) for a given class number using the mapping.
         """
-        if isinstance(class_number, str):
-            class_number = int(class_number)
-        result = get_class_to_element().get(class_number)
+        if isinstance(tekla_class, str):
+            tekla_class = int(tekla_class)
+        result = get_class_to_element().get(tekla_class)
         if result is None:
-            raise ValueError(f"Class number {class_number} not found in the list of allowed classes.")
+            raise ValueError(f"Class number {tekla_class} not found in the list of allowed classes.")
         return result
 
 
@@ -885,9 +938,11 @@ class TeklaBeamInput(BaseModel):
 
     profile: str
     material: str
-    class_number: int
+    tekla_class: int
     name: str | None = None
     position: PositionInput | None = None
+    part_number: NumberingSeries | None = None
+    assembly_number: NumberingSeries | None = None
 
 
 class BeamInput(TeklaBeamInput):

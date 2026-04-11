@@ -45,7 +45,7 @@ def beam_input():
         end=PointInput(x=2000, y=0, z=0),
         profile="300*600",
         material="C30/37",
-        class_number=11,
+        tekla_class=11,
         name="MCP_TEST_BEAM",
     )
 
@@ -58,7 +58,7 @@ def column_input():
         height=3000,
         profile="400*400",
         material="C30/37",
-        class_number=10,
+        tekla_class=10,
         name="MCP_TEST_COLUMN",
     )
 
@@ -71,7 +71,7 @@ def panel_input():
         end=PointInput(x=3000, y=0, z=0),
         profile="3000*200",
         material="C30/37",
-        class_number=1,
+        tekla_class=1,
         name="MCP_TEST_PANEL",
     )
 
@@ -92,7 +92,7 @@ def test_place_multiple_beams():
             end=PointInput(x=2000, y=0, z=3000),
             profile="300*600",
             material="C30/37",
-            class_number=11,
+            tekla_class=11,
             name="MCP_TEST_BEAM_1",
         ),
         BeamInput(
@@ -100,7 +100,7 @@ def test_place_multiple_beams():
             end=PointInput(x=4000, y=0, z=3000),
             profile="300*600",
             material="C30/37",
-            class_number=11,
+            tekla_class=11,
             name="MCP_TEST_BEAM_2",
         ),
     ]
@@ -116,7 +116,7 @@ def test_place_beam_with_position():
         end=PointInput(x=2000, y=0, z=0),
         profile="HEA200",
         material="S235JR",
-        class_number=100,
+        tekla_class=100,
         position=PositionInput(plane="LEFT", depth="MIDDLE"),
         name="MCP_TEST_BEAM_POS",
     )
@@ -151,7 +151,7 @@ def test_place_multiple_columns():
             height=3000,
             profile="400*400",
             material="C30/37",
-            class_number=10,
+            tekla_class=10,
             name="MCP_TEST_COL_1",
         ),
         ColumnInput(
@@ -159,7 +159,7 @@ def test_place_multiple_columns():
             height=3000,
             profile="400*400",
             material="C30/37",
-            class_number=10,
+            tekla_class=10,
             name="MCP_TEST_COL_2",
         ),
     ]
@@ -175,7 +175,7 @@ def test_place_column_with_position():
         height=3000,
         profile="HEA300",
         material="S235JR",
-        class_number=101,
+        tekla_class=101,
         position=PositionInput(plane="MIDDLE", depth="MIDDLE"),
         name="MCP_TEST_COLUMN_POS",
     )
@@ -210,7 +210,7 @@ def test_place_multiple_panels():
             end=PointInput(x=3000, y=0, z=0),
             profile="3000*200",
             material="C30/37",
-            class_number=1,
+            tekla_class=1,
             name="MCP_TEST_PANEL_1",
         ),
         PanelInput(
@@ -218,7 +218,7 @@ def test_place_multiple_panels():
             end=PointInput(x=6000, y=0, z=0),
             profile="3000*200",
             material="C30/37",
-            class_number=1,
+            tekla_class=1,
             name="MCP_TEST_PANEL_2",
         ),
     ]
@@ -234,7 +234,7 @@ def test_place_panel_with_position():
         end=PointInput(x=3000, y=0, z=0),
         profile="3000*200",
         material="C30/37",
-        class_number=1,
+        tekla_class=1,
         position=PositionInput(plane="MIDDLE", depth="FRONT"),
         name="MCP_TEST_PANEL_POS",
     )

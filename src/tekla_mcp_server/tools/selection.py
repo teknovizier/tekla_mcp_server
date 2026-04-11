@@ -207,9 +207,10 @@ def tool_select_elements_by_filter(
     if element_type:
         element_type_classes: list[int] = []
         if isinstance(element_type, ElementType):
-            for mapping in get_element_type_mapping().values():
-                if element_type.name in mapping:
-                    element_type_classes.extend(mapping[element_type.name])
+            for material_types in get_element_type_mapping().values():
+                for type_name, config in material_types.items():
+                    if element_type.name.replace(" ", "_").upper() in type_name.upper() or type_name.upper() in element_type.name.upper():
+                        element_type_classes.extend(config.get("tekla_classes", []))
         else:
             raise ValueError("Invalid element_type.")
         type_sub = BinaryFilterExpressionCollection()

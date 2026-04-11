@@ -1,24 +1,122 @@
 {
     "MATERIAL_CONCRETE": {
-        "CONCRETE_WALL": [1],
-        "CONCRETE_SANDWICH_WALL": [2, 3],
-        "CONCRETE_STAIR_FLIGHT": [4],
-        "CONCRETE_HCS": [5, 6, 7, 8],
-        "CONCRETE_MASSIVE_SLAB": [9],
-        "CONCRETE_COLUMN": [10],
-        "CONCRETE_BEAM": [11],
-        "CONCRETE_FILIGREE_WALL": [12],
-        "CONCRETE_FILIGREE_SLAB": [13],
-        "CONCRETE_TRIBUNE": [14],
-        "CONCRETE_TT_SLAB": [15],
-        "CONCRETE_BALCONY_SLAB": [16],
-        "CONCRETE_STAIR_LANDING": [17],
-        "CONCRETE_CURVED_STAIR": [18]
+        "CONCRETE_WALL": {
+            "tekla_classes": [1],
+            "name": "WALL",
+            "assembly_prefix": "W",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_SANDWICH_WALL": {
+            "tekla_classes": [2, 3],
+            "name": "SANDWICH_WALL",
+            "assembly_prefix": "SW",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_STAIR_FLIGHT": {
+            "tekla_classes": [4],
+            "name": "STAIR_FLIGHT",
+            "assembly_prefix": "SF",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_HCS": {
+            "tekla_classes": [5, 6, 7, 8],
+            "name": "HCS",
+            "assembly_prefix": "HCS",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_MASSIVE_SLAB": {
+            "tekla_classes": [9],
+            "name": "SLAB",
+            "assembly_prefix": "MS",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_COLUMN": {
+            "tekla_classes": [10],
+            "name": "COLUMN",
+            "assembly_prefix": "C",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_BEAM": {
+            "tekla_classes": [11],
+            "name": "BEAM",
+            "assembly_prefix": "B",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_FILIGREE_WALL": {
+            "tekla_classes": [12],
+            "name": "FILIGREE_WALL",
+            "assembly_prefix": "FW",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_FILIGREE_SLAB": {
+            "tekla_classes": [13],
+            "name": "FILIGREE_SLAB",
+            "assembly_prefix": "FS",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_TRIBUNE": {
+            "tekla_classes": [14],
+            "name": "TRIBUNE",
+            "assembly_prefix": "TR",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_TT_SLAB": {
+            "tekla_classes": [15],
+            "name": "TT_SLAB",
+            "assembly_prefix": "TT",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_BALCONY_SLAB": {
+            "tekla_classes": [16],
+            "name": "BALCONY_SLAB",
+            "assembly_prefix": "BS",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_STAIR_LANDING": {
+            "tekla_classes": [17],
+            "name": "STAIR_LANDING",
+            "assembly_prefix": "SL",
+            "assembly_start_number": 1
+        },
+        "CONCRETE_CURVED_STAIR": {
+            "tekla_classes": [18],
+            "name": "CURVED_STAIR",
+            "assembly_prefix": "CS",
+            "assembly_start_number": 1
+        }
     },
     "MATERIAL_STEEL": {
-        "STEEL_BEAM": [100],
-        "STEEL_COLUMN": [101],
-        "STEEL_TRUSS": [102],
-        "STEEL_BRACE": [103]
+        "STEEL_BEAM": {
+            "tekla_classes": [100],
+            "name": "BEAM",
+            "part_prefix": "SB",
+            "part_start_number": 1,
+            "assembly_prefix": "SBA",
+            "assembly_start_number": 1
+        },
+        "STEEL_COLUMN": {
+            "tekla_classes": [101],
+            "name": "COLUMN",
+            "part_prefix": "SC",
+            "part_start_number": 1,
+            "assembly_prefix": "SCA",
+            "assembly_start_number": 1
+        },
+        "STEEL_TRUSS": {
+            "tekla_classes": [102],
+            "name": "TRUSS",
+            "part_prefix": "ST",
+            "part_start_number": 1,
+            "assembly_prefix": "STA",
+            "assembly_start_number": 1
+        },
+        "STEEL_BRACE": {
+            "tekla_classes": [103],
+            "name": "BRACE",
+            "part_prefix": "SBB",
+            "part_start_number": 1,
+            "assembly_prefix": "SBBA",
+            "assembly_start_number": 1
+        }
     }
 }

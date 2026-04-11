@@ -25,7 +25,7 @@ uv pip install -r requirements-dev.txt
 | `embeddings.embedding_spread_threshold` | `0.1` | Min stddev for auto-resolution (0-1) |
 | `embeddings.embedding_minimum_threshold` | `0.8` | Min confidence score (0-1) |
 
-2. **element_types.json**: Copy `config/element_types.sample.json` to `config/element_types.json` and set Tekla classes.
+2. **element_types.json**: Copy `config/element_types.sample.json` to `config/element_types.json` and set Tekla classes and numbering prefixes.
 3. **semantic_overrides.json**: Copy `config/semantic_overrides.sample.json` to `config/semantic_overrides.json` for attribute name overrides.
 4. **base_components.json**: Copy `config/base_components.sample.json` to `config/base_components.json` and configure available components.
 

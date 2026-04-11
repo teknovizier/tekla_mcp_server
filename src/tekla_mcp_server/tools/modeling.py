@@ -15,6 +15,8 @@ from tekla_mcp_server.models import (
     PlacementResult,
     BatchPlacementResult,
     PointInput,
+    get_default_numbering_for_class,
+    get_default_name_for_class,
 )
 from tekla_mcp_server.tekla.wrappers.beam import TeklaBeam
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -34,19 +36,37 @@ def _place_elements(
     for input_obj in inputs:
         try:
             start, end = get_geometry(input_obj)
+
+            part_number = input_obj.part_number
+            assembly_number = input_obj.assembly_number
+            name = input_obj.name
+
+            if assembly_number is None or part_number is None:
+                numbering = get_default_numbering_for_class(input_obj.tekla_class)
+                if numbering:
+                    if assembly_number is None:
+                        assembly_number = numbering.get("assembly_number")
+                    if part_number is None:
+                        part_number = numbering.get("part_number")
+
+            if name is None:
+                name = get_default_name_for_class(input_obj.tekla_class)
+
             tekla_obj = TeklaBeam.create(
                 start=start,
                 end=end,
                 profile=input_obj.profile,
                 material=input_obj.material,
-                class_number=input_obj.class_number,
-                name=input_obj.name,
+                tekla_class=input_obj.tekla_class,
+                name=name,
                 position=input_obj.position,
                 beam_type=element_type,
+                part_number=part_number,
+                assembly_number=assembly_number,
             )
             if tekla_obj is not None:
                 succeeded += 1
-                results.append(PlacementResult(success=True, guid=tekla_obj.guid, message="Inserted successfully"))
+                results.append(PlacementResult(success=True, guid=tekla_obj.guid))
             else:
                 results.append(PlacementResult(success=False, message="Insert() returned false"))
         except Exception as e:
