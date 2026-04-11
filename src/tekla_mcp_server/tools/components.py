@@ -5,9 +5,10 @@ Component tools for Tekla model operations.
 from collections.abc import Callable
 from typing import Any
 
+from tekla_mcp_server.config import get_config
 from tekla_mcp_server.tekla.component_handlers import HandlerRegistry
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import BaseComponent, ComponentType, get_base_components, TYPE_DEFAULTS
+from tekla_mcp_server.models import BaseComponent, ComponentType, TYPE_DEFAULTS
 from tekla_mcp_server.tekla.loader import ModelObjectEnumerator
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
@@ -214,7 +215,7 @@ def tool_get_components() -> dict[str, Any]:
     """
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
-    base_components = get_base_components()
+    base_components = get_config().base_components
 
     components_by_tekla_name: dict[str, dict[str, Any]] = {}
     for config_key, comp_def in base_components.items():

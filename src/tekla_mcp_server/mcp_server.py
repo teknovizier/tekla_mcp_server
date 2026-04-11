@@ -13,7 +13,7 @@ from fastmcp.server.transforms import ResourcesAsTools
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import get_base_components, get_macros, get_filters, get_element_types_list
+from tekla_mcp_server.models import get_macros, get_filters, get_element_types_list
 from tekla_mcp_server.providers import (
     selection_provider,
     view_provider,
@@ -36,7 +36,7 @@ def get_component_list() -> ResourceResult:
     Use this to find the config key for a component, then call
     tekla://components/{component_key} to get the property schema.
     """
-    data = {comp.get("tekla_name"): key for key, comp in get_base_components().items() if comp.get("tekla_name")}
+    data = {comp.get("tekla_name"): key for key, comp in get_config().base_components.items() if comp.get("tekla_name")}
     return ResourceResult(contents=[ResourceContent(content=json.dumps(data), mime_type="application/json")])
 
 
@@ -45,7 +45,7 @@ def get_component_schema(component_key: str) -> ResourceResult:
     """
     Returns the custom_properties schema for a specific component.
     """
-    component = get_base_components().get(component_key)
+    component = get_config().base_components.get(component_key)
     if component:
         description = component.get("description", "")
         custom_props = component.get("custom_properties", {})

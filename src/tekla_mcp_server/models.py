@@ -152,93 +152,52 @@ COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
 
 
-@lru_cache
-def get_element_type_mapping() -> dict[str, dict[str, list[int]]]:
-    """Returns element type mapping from config."""
-    return get_config().element_types
-
-
-@lru_cache
-def get_base_components() -> dict[str, Any]:
-    """Returns base components from config."""
-    return get_config().base_components
-
-
-@lru_cache
 def get_class_to_element() -> dict[int, tuple[str, str]]:
-    """Returns class to element mapping."""
-    return get_config().class_to_element
+    """Returns class to element mapping: tekla_class -> (material, type_name)."""
+    return {tekla_class: (material, type_name) for material, types in get_config().element_types.items() for type_name, config in types.items() for tekla_class in config.get("tekla_classes", [])}
 
 
 def get_default_numbering_for_class(tekla_class: int) -> dict[str, "NumberingSeries"] | None:
-    """
-    Returns numbering configuration for a given class number.
-
-    Args:
-        tekla_class: Tekla class number
-
-    Returns:
-        Dict with "part_number" and/or "assembly_number" NumberingSeries, or None
-    """
-    element_types = get_config().element_types
-    for _, types in element_types.items():
-        for _, config in types.items():
-            if tekla_class in config.get("tekla_classes", []):
-                result: dict[str, "NumberingSeries"] = {}
-                if config.get("assembly_prefix"):
-                    result["assembly_number"] = NumberingSeries(
-                        prefix=config["assembly_prefix"],
-                        start_number=config["assembly_start_number"],
-                    )
-                if config.get("part_prefix"):
-                    result["part_number"] = NumberingSeries(
-                        prefix=config["part_prefix"],
-                        start_number=config["part_start_number"],
-                    )
-                return result if result else None
-    return None
+    """Returns numbering configuration for a given class number."""
+    config = _get_element_types_flat().get(tekla_class)
+    if not config:
+        return None
+    result: dict[str, "NumberingSeries"] = {}
+    if config.get("assembly_prefix"):
+        result["assembly_number"] = NumberingSeries(
+            prefix=config["assembly_prefix"],
+            start_number=config["assembly_start_number"],
+        )
+    if config.get("part_prefix"):
+        result["part_number"] = NumberingSeries(
+            prefix=config["part_prefix"],
+            start_number=config["part_start_number"],
+        )
+    return result if result else None
 
 
 def get_default_name_for_class(tekla_class: int) -> str | None:
-    """
-    Returns default name for a given class number.
-
-    Args:
-        tekla_class: Tekla class number
-
-    Returns:
-        Default name from config or None
-    """
-    element_types = get_config().element_types
-    for _, types in element_types.items():
-        for _, config in types.items():
-            if tekla_class in config.get("tekla_classes", []):
-                return config.get("name")
-    return None
+    """Returns default name for a given class number."""
+    config = _get_element_types_flat().get(tekla_class)
+    return config.get("name") if config else None
 
 
 @lru_cache
 def get_element_types_list() -> list[dict[str, Any]]:
-    """
-    Returns element types as flat list from config (minimal format for discovery).
+    """Returns element types as flat list from config."""
+    return [
+        {"material": material, "type": type_name, "tekla_classes": config.get("tekla_classes", [])} for material, types in get_config().element_types.items() for type_name, config in types.items()
+    ]
 
-    Example:
-        [
-            {"material": "MATERIAL_CONCRETE", "type": "CONCRETE_WALL", "tekla_classes": [1]},
-            {"material": "MATERIAL_STEEL", "type": "STEEL_BEAM", "tekla_classes": [100]}
-        ]
-    """
-    result = []
-    element_types = get_config().element_types
-    for material, types in element_types.items():
-        for type_name, config in types.items():
-            result.append(
-                {
-                    "material": material,
-                    "type": type_name,
-                    "tekla_classes": config.get("tekla_classes", []),
-                }
-            )
+
+@lru_cache
+def _get_element_types_flat() -> dict[int, dict[str, Any]]:
+    """Cached: tekla_class -> full config. Built once, used by numbering/name functions."""
+    result: dict[int, dict[str, Any]] = {}
+    for types in get_config().element_types.values():
+        for config in types.values():
+            for tekla_class in config.get("tekla_classes", []):
+                result[tekla_class] = config
     return result
 
 
@@ -253,7 +212,7 @@ def get_custom_properties_schema(component_key: str) -> dict[str, dict[str, str]
     Returns:
         Dictionary of custom properties with their descriptions and types, or None if not defined
     """
-    component = get_base_components().get(component_key)
+    component = get_config().base_components.get(component_key)
     if component:
         return component.get("custom_properties")
     return None
@@ -261,7 +220,10 @@ def get_custom_properties_schema(component_key: str) -> dict[str, dict[str, str]
 
 @lru_cache
 def get_macros() -> list[str]:
-    """Returns list of available Tekla macros from configured directories."""
+    """
+    Returns sorted list of available Tekla macros.
+    Searches in XS_MACRO_DIRECTORY.
+    """
     directories = get_config().tekla_macro_directories
     macro_names: list[str] = []
 
@@ -587,7 +549,7 @@ class BaseComponent(BaseModel):
         if not name:
             raise ValueError("'name' required for custom_properties validation")
 
-        base_components = get_base_components()
+        base_components = get_config().base_components
         component_def = next((c for c in base_components.values() if c.get("tekla_name") == name), None)
         schema = component_def.get("custom_properties") if component_def else None
         if not schema:
@@ -617,7 +579,7 @@ class BaseComponent(BaseModel):
         """
         Initializes private attributes after model creation.
         """
-        base_components = get_base_components()
+        base_components = get_config().base_components
         component_def = None
         for key, comp in base_components.items():
             if comp.get("tekla_name") == self.name:

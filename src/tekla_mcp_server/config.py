@@ -76,23 +76,6 @@ def _load_settings() -> dict[str, Any]:
 
 
 @lru_cache
-def _get_class_to_element() -> dict[int, tuple[str, str]]:
-    """
-    Get the lazy-loaded class to element type mapping.
-
-    Returns:
-        Dictionary mapping Tekla class numbers to (material, element_type) tuples
-    """
-    element_types = _load_json("element_types.json")
-    result: dict[int, tuple[str, str]] = {}
-    for material, types in element_types.items():
-        for element_type, config in types.items():
-            for cn in config.get("tekla_classes", []):
-                result[cn] = (material, element_type)
-    return result
-
-
-@lru_cache
 def _get_tekla_macro_directories() -> list[str]:
     """
     Get macro directories from Tekla's XS_MACRO_DIRECTORY advanced option.
@@ -257,11 +240,6 @@ class Config:
     def tekla_macro_directories(self) -> list[str]:
         """List of directories to scan for Tekla macros."""
         return _get_tekla_macro_directories()
-
-    @property
-    def class_to_element(self) -> dict[int, tuple[str, str]]:
-        """Returns class to element mapping."""
-        return _get_class_to_element()
 
     @property
     def requirements_folder(self) -> Path:

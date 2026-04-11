@@ -4,6 +4,7 @@ Selection tools for Tekla model operations.
 
 from typing import Any
 
+from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import (
     ElementType,
@@ -13,7 +14,6 @@ from tekla_mcp_server.models import (
     StringFilterOption,
     StringMatchType,
     NumericFilterOption,
-    get_element_type_mapping,
 )
 from tekla_mcp_server.tekla.loader import (
     ArrayList,
@@ -207,7 +207,7 @@ def tool_select_elements_by_filter(
     if element_type:
         element_type_classes: list[int] = []
         if isinstance(element_type, ElementType):
-            for material_types in get_element_type_mapping().values():
+            for material_types in get_config().element_types.values():
                 for type_name, config in material_types.items():
                     if element_type.name.replace(" ", "_").upper() in type_name.upper() or type_name.upper() in element_type.name.upper():
                         element_type_classes.extend(config.get("tekla_classes", []))
