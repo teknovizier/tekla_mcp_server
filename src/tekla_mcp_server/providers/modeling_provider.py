@@ -128,7 +128,7 @@ def place_panels(panels: list[PanelInput] | None = None) -> dict[str, Any]:
     ```json
     {
       "panels": [
-        {"start": {"x": 0, "y": 0, "z": 0}, "end": {"x": 3000, "y": 0, "z": 3000}, "profile": "3000*200", "material": "C30/37", "class_number": 1}
+        {"start": {"x": 0, "y": 0, "z": 0}, "end": {"x": 3000, "y": 0, "z": 0}, "profile": "3000*200", "material": "C30/37", "class_number": 1}
       ]
     }
     ```
