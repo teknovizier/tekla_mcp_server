@@ -38,6 +38,7 @@ from Tekla.Structures.Model import (
     RebarMesh,
     RebarStrand,
     SingleRebar,
+    Grid,
 )
 from Tekla.Structures.Model.Operations import Operation
 from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector as ModelObjectSelectorUI, ViewHandler, ModelObjectVisualization, TemporaryTransparency, View
@@ -125,4 +126,5 @@ __all__ = [
     "DrawingHandler",
     "Drawing",
     "DrawingEnumerator",
+    "Grid",
 ]

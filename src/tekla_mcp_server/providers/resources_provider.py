@@ -11,6 +11,8 @@ from fastmcp.server.providers import LocalProvider
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.models import get_macros, get_filters, get_element_types_list
+from tekla_mcp_server.tekla.loader import Grid
+from tekla_mcp_server.utils import parse_coordinate_string, parse_label_string
 
 
 resources_provider = LocalProvider()
@@ -102,6 +104,57 @@ def get_phase_list() -> ResourceResult:
         contents=[
             ResourceContent(
                 content=json.dumps({"phases": phase_list, "current_phase": current_phase}),
+                mime_type="application/json",
+            )
+        ]
+    )
+
+
+@resources_provider.resource("tekla://grids")
+def get_grid_list() -> ResourceResult:
+    """
+    Returns rectangular grid data from the current Tekla model.
+    """
+    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+
+    tekla_model = TeklaModel()
+    enumerator = tekla_model.model.GetModelObjectSelector().GetAllObjectsWithType(Grid.ModelObjectEnum.GRID)
+    grid_data = []
+    while enumerator.MoveNext():
+        grid = enumerator.Current
+
+        # Tekla may have more labels than axis coordinates, extra labels are ignored
+        x_coords = parse_coordinate_string(grid.CoordinateX)
+        x_labels = parse_label_string(grid.LabelX)
+        y_coords = parse_coordinate_string(grid.CoordinateY)
+        y_labels = parse_label_string(grid.LabelY)
+        z_coords = parse_coordinate_string(grid.CoordinateZ)
+        z_labels = parse_label_string(grid.LabelZ)
+
+        grid_data.append(
+            {
+                "guid": grid.Identifier.GUID.ToString(),
+                "name": grid.Name,
+                "axes": {
+                    "x": {
+                        "coords": list(x_coords)[: len(x_labels)],
+                        "labels": list(x_labels)[: len(x_coords)],
+                    },
+                    "y": {
+                        "coords": list(y_coords)[: len(y_labels)],
+                        "labels": list(y_labels)[: len(y_coords)],
+                    },
+                    "z": {
+                        "coords": list(z_coords)[: len(z_labels)],
+                        "labels": list(z_labels)[: len(z_coords)],
+                    },
+                },
+            }
+        )
+    return ResourceResult(
+        contents=[
+            ResourceContent(
+                content=json.dumps({"grids": grid_data}),
                 mime_type="application/json",
             )
         ]

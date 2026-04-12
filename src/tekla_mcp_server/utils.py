@@ -117,3 +117,44 @@ def log_mcp_tool_call(func: Callable) -> Callable:
             return {"status": "error", "error_type": type(e).__name__, "message": str(e)}
 
     return wrapper
+
+
+def parse_coordinate_string(coord_str: str) -> list[float]:
+    """Parse coordinate string like '0.0 4900.0 400.0 4900.0' into list of floats.
+
+    First value is kept as-is. Second+ values are added to accumulated total.
+    Supports 'N*VALUE' syntax to repeat a value N times.
+    """
+    if not coord_str:
+        return []
+
+    def expand_parts(coord_str: str) -> list[float]:
+        parts = coord_str.strip().split()
+        result = []
+        for part in parts:
+            if "*" in part:
+                count_str, value_str = part.split("*", 1)
+                count = int(count_str)
+                value = float(value_str)
+                result.extend([value] * count)
+            else:
+                result.append(float(part))
+        return result
+
+    expanded = expand_parts(coord_str)
+    if not expanded:
+        return []
+
+    accumulated = expanded[0]
+    result = [accumulated]
+    for value in expanded[1:]:
+        accumulated += value
+        result.append(accumulated)
+    return result
+
+
+def parse_label_string(label_str: str) -> list[str]:
+    """Parse label string like 'A B C D' into list of strings."""
+    if not label_str:
+        return []
+    return [label.strip() for label in label_str.strip().split() if label.strip()]

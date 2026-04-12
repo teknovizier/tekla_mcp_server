@@ -48,6 +48,7 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | `tekla://filters/selection` | Returns list of available Tekla selection filter names from `.SObjGrp` files |
 | `tekla://filters/view` | Returns list of available Tekla view filter names from `.VObjGrp` files |
 | `tekla://phases` | Returns list of all phases in the current Tekla model |
+| `tekla://grids` | Returns rectangular grid data from the current Tekla model (guid, name, axes with coordinates and labels) |
 | `tekla://connection_status` | Returns the current Tekla connection status (connected, model_path, message) |
 
 Filter resources search in:

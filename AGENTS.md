@@ -161,6 +161,7 @@ Resources provide discovery/metadata, not actions:
 | `tekla://macros` | List available Tekla macros |
 | `tekla://element_types` | List element types with class numbers |
 | `tekla://phases` | List all phases in the model |
+| `tekla://grids` | List all rectangular grids in the model (axes with coordinates and labels) |
 | `tekla://filters/selection` | List available selection filters |
 | `tekla://filters/view` | List available view filters |
 | `tekla://connection_status` | Current Tekla connection status |
