@@ -8,6 +8,8 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import ElementLabel, get_filters
 from tekla_mcp_server.tekla.loader import (
     AABB,
+    Assembly,
+    Part,
     Color,
     GraphicsDrawer,
     ModelObjectEnumerator,
@@ -119,7 +121,15 @@ def tool_zoom_to_selection(selected_objects: ModelObjectEnumerator) -> dict[str,
     max_x = max_y = max_z = float("-inf")
 
     for selected_object in selected_objects:
-        solid = selected_object.GetSolid()
+        part = None
+        if isinstance(selected_object, Part):
+            part = selected_object
+        elif isinstance(selected_object, Assembly):
+            part = selected_object.GetMainPart()
+        if part is None:
+            continue
+
+        solid = part.GetSolid()
         if solid is None:
             continue
 
