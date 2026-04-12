@@ -107,6 +107,30 @@ from tekla_mcp_server.tools.operations import tool_cut_elements_with_zero_class_
 - Indentation: 4 spaces
 - Don't reformat existing code unless asked
 
+### Docstrings
+All tool functions must use **Google-style** docstrings with:
+- Summary line
+- `Args:` section for parameters
+- `Returns:` section for return values
+- `Raises:` section for exceptions
+
+```python
+def tool_example(param: str, count: int) -> dict[str, Any]:
+    """
+    Do something with the parameter.
+
+    Args:
+        param: Description of parameter
+        count: Number of items to process
+
+    Returns:
+        dict with status and processed count
+
+    Raises:
+        ValueError: If count is negative
+    """
+```
+
 ### Naming
 - Variables/functions: `snake_case`
 - Classes: `PascalCase`

@@ -43,7 +43,16 @@ from tekla_mcp_server.utils import log_function_call
 
 
 def _to_filter_option(val: Any, model_class: type[StringFilterOption] | type[NumericFilterOption]) -> StringFilterOption | NumericFilterOption:
-    """Convert dict input to Pydantic model if needed."""
+    """
+    Convert dict input to Pydantic model if needed.
+
+    Args:
+        val: Input value (dict or model instance)
+        model_class: Pydantic model class to validate against
+
+    Returns:
+        StringFilterOption or NumericFilterOption instance
+    """
     if isinstance(val, dict):
         return model_class.model_validate(val)
     return val
@@ -87,6 +96,9 @@ def add_filter(
         value: The value to filter by
         match_type: Enum for match type (StringMatchType, NumericMatchType, or NumericOperatorType)
         operator: Boolean operator to combine with previous filter (default BOOLEAN_AND)
+    
+    Raises:
+        ValueError: If value provided is not supported
     """
     if not isinstance(value, (str, int, float)):
         expr = BinaryFilterExpression(filter_expression, NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(value))
@@ -148,6 +160,12 @@ def tool_select_elements_by_filter(
         custom_string_filters: Dict of custom string property names to StringFilterOption
         custom_numeric_filters: Dict of custom numeric property names to NumericFilterOption
         combine_with: How to combine filter groups - "AND" or "OR", default "AND"
+
+    Returns:
+        dict with status, count of selected elements, and any resolution errors for custom attributes
+
+    Raises:
+        ValueError: If element_type is invalid or no filter provided
     """
     if combine_with not in {"AND", "OR"}:
         raise ValueError(f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'.")
@@ -318,6 +336,9 @@ def tool_select_elements_by_filter_name(model: TeklaModel, filter_name: str) -> 
     Args:
         model: TeklaModel instance
         filter_name: Name of the filter to use
+
+    Returns:
+        dict with status and selected element count
     """
     objects_to_select = model.get_objects_by_filter(filter_name)
     TeklaModel.select_objects(objects_to_select)
@@ -336,6 +357,9 @@ def tool_select_elements_by_guid(model: TeklaModel, guids: list[str]) -> dict[st
     Args:
         model: TeklaModel instance
         guids: List of GUIDs to select
+
+    Returns:
+        dict with status and selected element count
     """
     objects_to_select = model.get_objects_by_guid(guids)
     TeklaModel.select_objects(objects_to_select)
@@ -354,6 +378,9 @@ def tool_select_elements_assemblies_or_main_parts(selected_objects: ModelObjectE
     Args:
         selected_objects: Enumerator of selected objects
         mode: Selection mode (Assembly or MainPart)
+
+    Returns:
+        dict with status and selected count
     """
     processed_elements = 0
     selected_object_types = ""

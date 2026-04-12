@@ -22,6 +22,9 @@ def tool_cut_elements_with_zero_class_parts(model: TeklaModel, selected_objects:
         selected_objects: Enumerator of objects to cut
         delete_cutting_parts: Whether to delete cutting parts after operation (default False)
         tekla_class: Tekla class number for cutting parts (default 0)
+
+    Returns:
+        dict with status, element counts, and performed cuts count
     """
     processed_elements = 0
     performed_cuts = 0
@@ -55,6 +58,9 @@ def tool_convert_cut_parts_to_real_parts(model: TeklaModel, selected_objects: An
     Args:
         model: Tekla model instance
         selected_objects: Enumerator of selected objects
+
+    Returns:
+        dict with status, element counts, and converted boolean count
     """
     processed_elements = 0
     inserted_booleans = 0
@@ -81,6 +87,9 @@ def tool_run_macro(macro_name: str) -> dict[str, Any]:
 
     Args:
         macro_name: Name of the macro to run (e.g., "MyMacro.cs")
+
+    Returns:
+        dict with status and macro name
     """
     if Operation.IsMacroRunning():
         logger.warning("Cannot run macro '%s': Tekla is busy running another macro", macro_name)

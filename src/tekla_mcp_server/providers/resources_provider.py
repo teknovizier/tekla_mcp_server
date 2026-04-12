@@ -10,8 +10,8 @@ from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers import LocalProvider
 
 from tekla_mcp_server.config import get_config
-from tekla_mcp_server.models import get_macros, get_filters, get_element_types_list
 from tekla_mcp_server.tekla.loader import Grid
+from tekla_mcp_server.tekla.utils import get_macros, get_filters
 from tekla_mcp_server.utils import parse_coordinate_string, parse_label_string
 
 
@@ -57,7 +57,7 @@ def get_element_types() -> ResourceResult:
     """
     Returns a list of available Tekla element types and their corresponding class numbers.
     """
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_element_types_list()), mime_type="application/json")])
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_config().get_element_types_list()), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://filters/selection")
@@ -204,5 +204,5 @@ def get_project_requirements() -> ResourceResult:
     expected practices that should be followed throughout the project,
     helping the AI understand the project scope and design conventions.
     """
-    content = get_config()._load_requirements()
+    content = get_config().load_requirements()
     return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/markdown")])

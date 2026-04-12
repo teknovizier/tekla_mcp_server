@@ -4,8 +4,6 @@ This module defines core data structures, enumerations, and models used in the p
 
 import json
 from enum import Enum
-from functools import lru_cache
-from pathlib import Path
 from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
@@ -150,140 +148,6 @@ DRAWING_TYPES = {e.value for e in DrawingType}
 ELEMENT_TYPES = {e.value for e in ElementType}
 COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
-
-
-def get_class_to_element() -> dict[int, tuple[str, str]]:
-    """Returns class to element mapping: tekla_class -> (material, type_name)."""
-    return {tekla_class: (material, type_name) for material, types in get_config().element_types.items() for type_name, config in types.items() for tekla_class in config.get("tekla_classes", [])}
-
-
-def get_default_numbering_for_class(tekla_class: int) -> dict[str, "NumberingSeries"] | None:
-    """Returns numbering configuration for a given class number."""
-    config = _get_element_types_flat().get(tekla_class)
-    if not config:
-        return None
-    result: dict[str, "NumberingSeries"] = {}
-    if config.get("assembly_prefix"):
-        result["assembly_number"] = NumberingSeries(
-            prefix=config["assembly_prefix"],
-            start_number=config["assembly_start_number"],
-        )
-    if config.get("part_prefix"):
-        result["part_number"] = NumberingSeries(
-            prefix=config["part_prefix"],
-            start_number=config["part_start_number"],
-        )
-    return result if result else None
-
-
-def get_default_name_for_class(tekla_class: int) -> str | None:
-    """Returns default name for a given class number."""
-    config = _get_element_types_flat().get(tekla_class)
-    return config.get("name") if config else None
-
-
-@lru_cache
-def get_element_types_list() -> list[dict[str, Any]]:
-    """Returns element types as flat list from config."""
-    return [
-        {"material": material, "type": type_name, "tekla_classes": config.get("tekla_classes", [])} for material, types in get_config().element_types.items() for type_name, config in types.items()
-    ]
-
-
-@lru_cache
-def _get_element_types_flat() -> dict[int, dict[str, Any]]:
-    """Cached: tekla_class -> full config. Built once, used by numbering/name functions."""
-    result: dict[int, dict[str, Any]] = {}
-    for types in get_config().element_types.values():
-        for config in types.values():
-            for tekla_class in config.get("tekla_classes", []):
-                result[tekla_class] = config
-    return result
-
-
-@lru_cache
-def get_custom_properties_schema(component_key: str) -> dict[str, dict[str, str]] | None:
-    """
-    Returns the custom_properties schema for a component config key.
-
-    Args:
-        component_key: The config key (e.g., "lifting_anchor", "border_rebar")
-
-    Returns:
-        Dictionary of custom properties with their descriptions and types, or None if not defined
-    """
-    component = get_config().base_components.get(component_key)
-    if component:
-        return component.get("custom_properties")
-    return None
-
-
-@lru_cache
-def get_macros() -> list[str]:
-    """
-    Returns sorted list of available Tekla macros.
-    Searches in XS_MACRO_DIRECTORY.
-    """
-    directories = get_config().tekla_macro_directories
-    macro_names: list[str] = []
-
-    for directory in directories:
-        dir_path = Path(directory)
-        if dir_path.is_dir():
-            for file in dir_path.rglob("*.cs"):
-                macro_names.append(file.name)
-
-    return sorted(macro_names)
-
-
-@lru_cache
-def get_filters(file_extension: str) -> list[str]:
-    """
-    Returns list of available Tekla filter names from files with the specified extension.
-
-    Searches in:
-    - XS_FIRM
-    - XS_PROJECT
-    - ModelPath/attributes directory
-
-    Args:
-        file_extension: File extension to search for (e.g., ".SObjGrp", ".VObjGrp")
-
-    Returns sorted list of filter names without the extension.
-    """
-    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
-    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-
-    if not file_extension.startswith("."):
-        file_extension = f".{file_extension}"
-
-    paths: list[Path] = []
-
-    for option_name in ("XS_FIRM", "XS_PROJECT"):
-        _, option = TeklaStructuresSettings.GetAdvancedOption(option_name, str())
-        if not option:
-            continue
-        for path_str in option.split(";"):
-            path = Path(path_str.strip())
-            if path.is_dir():
-                paths.append(path.resolve())
-
-    try:
-        model = TeklaModel()
-        model_path = model.model.GetInfo().ModelPath
-        if model_path:
-            attributes_dir = Path(model_path) / "attributes"
-            if attributes_dir.is_dir():
-                paths.append(attributes_dir.resolve())
-    except Exception:
-        pass
-
-    filter_names: set[str] = {"standard"}
-    for dir_path in paths:
-        for file in dir_path.rglob(f"*{file_extension}"):
-            filter_names.add(file.stem)
-
-    return sorted(filter_names)
 
 
 # Classes
@@ -474,16 +338,52 @@ class ElementTypeModel(EnumWrapper):
         return ElementType(self.value)
 
     @staticmethod
+    def get_class_mapping() -> dict[int, tuple[str, str]]:
+        """
+        Returns class to element mapping: tekla_class -> (material, type_name).
+        """
+        return {tekla_class: (material, type_name) for material, types in get_config().element_types.items() for type_name, config in types.items() for tekla_class in config.get("tekla_classes", [])}
+
+    @staticmethod
     def get_element_type_by_class(tekla_class: str | int) -> tuple[str, str]:
         """
         Returns (material, element type name) for a given class number using the mapping.
         """
         if isinstance(tekla_class, str):
             tekla_class = int(tekla_class)
-        result = get_class_to_element().get(tekla_class)
+        result = ElementTypeModel.get_class_mapping().get(tekla_class)
         if result is None:
             raise ValueError(f"Class number {tekla_class} not found in the list of allowed classes.")
         return result
+
+    @staticmethod
+    def get_default_numbering(tekla_class: int) -> dict[str, "NumberingSeries"] | None:
+        """
+        Returns numbering configuration for a given class number.
+        """
+        config = get_config().get_element_types_flat().get(tekla_class)
+        if not config:
+            return None
+        result: dict[str, "NumberingSeries"] = {}
+        if config.get("assembly_prefix"):
+            result["assembly_number"] = NumberingSeries(
+                prefix=config["assembly_prefix"],
+                start_number=config["assembly_start_number"],
+            )
+        if config.get("part_prefix"):
+            result["part_number"] = NumberingSeries(
+                prefix=config["part_prefix"],
+                start_number=config["part_start_number"],
+            )
+        return result if result else None
+
+    @staticmethod
+    def get_default_name(tekla_class: int) -> str | None:
+        """
+        Returns default name for a given class number.
+        """
+        config = get_config().get_element_types_flat().get(tekla_class)
+        return config.get("name") if config else None
 
 
 class ComponentTypeModel(EnumWrapper):
@@ -941,6 +841,7 @@ class PlacementResult(BaseModel):
     success: bool
     guid: str | None = None
     message: str | None = None
+
 
 class BatchPlacementResult(BaseModel):
     """Result model for batch element placement."""

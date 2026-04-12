@@ -8,6 +8,7 @@ from typing import Any
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import BooleanPart, Operation
+from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.wrappers.model_object import (
     TeklaAssembly,
     TeklaPart,
@@ -49,6 +50,9 @@ def tool_set_elements_properties(
         assembly_prefix: Assembly numbering prefix to set
         assembly_start_number: Assembly start number to set
         phase: Phase number to set
+
+    Returns:
+        dict with status, elements count, and total changes by property
     """
     total_changes: dict[str, int] = {
         "name": 0,
@@ -128,9 +132,10 @@ def tool_get_elements_properties(selected_objects: Any, report_props_definitions
     Args:
         selected_objects: Enumerator of selected objects
         report_props_definitions: List of report property names to extract
-    """
-    from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 
+    Returns:
+        dict with status, parts list, assemblies list, and any errors
+    """
     resolution_errors: list[dict[str, Any]] = []
     extraction_errors: list[dict[str, Any]] = []
 
@@ -183,6 +188,9 @@ def tool_get_elements_cut_parts(selected_objects: Any) -> dict[str, Any]:
 
     Args:
         selected_objects: Enumerator of selected objects
+
+    Returns:
+        dict with status, elements count, and cut parts grouped by profile
     """
     processed_elements = 0
     cut_parts_by_profile: Counter[str] = Counter()
@@ -218,6 +226,9 @@ def tool_clear_elements_udas(selected_objects: Any, uda_names: list[str] | None 
     Args:
         selected_objects: Enumerator of selected objects
         uda_names: Optional list of UDA names to clear. If None, clears all UDAs.
+
+    Returns:
+        dict with status, cleared count, and modified elements
     """
     cleared_udas = 0
     modified_parts = 0
@@ -278,6 +289,9 @@ def tool_compare_elements(selected_objects: Any, ignore_numbering: bool = False,
         selected_objects: ModelObjectEnumerator with at least two parts selected
         ignore_numbering: If False, returns error when numbering is not up-to-date (default False)
         tolerance: Tolerance for comparing floating-point numbers (default 0.01)
+
+    Returns:
+        dict with status, comparison results, and any differences found
     """
     from tekla_mcp_server.tools.selection import validate_exactly_two_selected
 

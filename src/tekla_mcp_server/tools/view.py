@@ -5,7 +5,8 @@ View tools for Tekla model operations.
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import ElementLabel, get_filters
+from tekla_mcp_server.models import ElementLabel
+from tekla_mcp_server.tekla.utils import get_filters
 from tekla_mcp_server.tekla.loader import (
     AABB,
     Assembly,
@@ -34,6 +35,9 @@ def tool_draw_elements_labels(selected_objects: ModelObjectEnumerator, label: El
         selected_objects: Enumerator of selected objects
         label: ElementLabel type to draw
         custom_label: Custom label template string (required if label is CUSTOM)
+
+    Returns:
+        dict with status, labeled count, and any resolution errors
     """
     resolved_label = None
     unit = None
@@ -114,6 +118,9 @@ def tool_zoom_to_selection(selected_objects: ModelObjectEnumerator) -> dict[str,
 
     Args:
         selected_objects: Enumerator of selected objects to zoom to
+
+    Returns:
+        dict with status and count of zoomed elements
     """
     processed_elements = 0
 
@@ -160,7 +167,10 @@ def tool_zoom_to_selection(selected_objects: ModelObjectEnumerator) -> dict[str,
 @log_function_call
 def tool_redraw_view() -> dict[str, Any]:
     """
-    Redraws the currently active view in Tekla.
+    Redraws the currently active views in Tekla.
+
+    Returns:
+        dict with status and count of redrawn views
     """
     views = get_active_views()
     views_redrawn = 0
@@ -180,6 +190,9 @@ def tool_apply_view_filter(filter_name: str) -> dict[str, Any]:
 
     Args:
         filter_name: Name of the view filter to apply
+
+    Returns:
+        dict with status, filter name, and views modified count
     """
     available = get_filters(".VObjGrp")
     if filter_name not in available:
@@ -202,6 +215,9 @@ def tool_show_only_selected(selected_objects: ModelObjectEnumerator) -> dict[str
 
     Args:
         selected_objects: Enumerator of selected objects to show
+
+    Returns:
+        dict with status and selected element count
     """
     Operation.ShowOnlySelected(Operation.UnselectedModeEnum.Hidden)
     logger.info("Hidden all the elements except the selected ones")
@@ -219,6 +235,9 @@ def tool_hide_selected(selected_objects: ModelObjectEnumerator) -> dict[str, Any
 
     Args:
         selected_objects: Enumerator of selected objects to hide
+
+    Returns:
+        dict with status and hidden element count
     """
     tekla_list = collect_children(selected_objects)
     ModelObjectVisualization.SetTransparency(tekla_list, TemporaryTransparency.HIDDEN)
@@ -237,6 +256,9 @@ def tool_color_selected(selected_objects: ModelObjectEnumerator, red: int, green
         red: Red component of RGB color (0-255)
         green: Green component of RGB color (0-255)
         blue: Blue component of RGB color (0-255)
+
+    Returns:
+        dict with status and colored element count
     """
     tekla_list = collect_children(selected_objects)
     color = Color(red / 255.0, green / 255.0, blue / 255.0)

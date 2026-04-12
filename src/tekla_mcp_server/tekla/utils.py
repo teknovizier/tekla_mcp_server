@@ -5,12 +5,13 @@ Module for utility functions used for geometry manipulations.
 from __future__ import annotations
 
 import re
-from functools import wraps
+from functools import wraps, lru_cache
 from typing import Any
 from collections.abc import Callable
+from pathlib import Path
 
-from functools import lru_cache
 
+from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringMatchType, NumericMatchType, BaseComponent
 
@@ -38,6 +39,8 @@ from tekla_mcp_server.tekla.loader import (
     ProfileItem,
     MaterialItem,
     Position,
+    TeklaStructuresSettings,
+    BooleanPart,
 )
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
@@ -378,8 +381,6 @@ def iterate_boolean_parts(model_object: ModelObject) -> list[ModelObject]:
     Returns:
         List of BooleanPart objects attached to the model object
     """
-    from tekla_mcp_server.tekla.loader import BooleanPart
-
     boolean_parts: list[ModelObject] = []
     boolean_enum = model_object.GetBooleans()
     while boolean_enum.MoveNext():
@@ -434,3 +435,70 @@ def get_all_materials() -> list[dict[str, str]]:
                 }
             )
     return result
+
+
+@lru_cache
+def get_macros() -> list[str]:
+    """
+    Returns sorted list of available Tekla macros.
+    Searches in XS_MACRO_DIRECTORY.
+    """
+
+    directories = get_config().tekla_macro_directories
+    macro_names: list[str] = []
+
+    for directory in directories:
+        dir_path = Path(directory)
+        if dir_path.is_dir():
+            for file in dir_path.rglob("*.cs"):
+                macro_names.append(file.name)
+
+    return sorted(macro_names)
+
+
+@lru_cache
+def get_filters(file_extension: str) -> list[str]:
+    """
+    Returns list of available Tekla filter names from files with the specified extension.
+
+    Searches in:
+    - XS_FIRM
+    - XS_PROJECT
+    - ModelPath/attributes directory
+
+    Args:
+        file_extension: File extension to search for (e.g., ".SObjGrp", ".VObjGrp")
+
+    Returns sorted list of filter names without the extension.
+    """
+
+    if not file_extension.startswith("."):
+        file_extension = f".{file_extension}"
+
+    paths: list[Path] = []
+
+    for option_name in ("XS_FIRM", "XS_PROJECT"):
+        _, option = TeklaStructuresSettings.GetAdvancedOption(option_name, str())
+        if not option:
+            continue
+        for path_str in option.split(";"):
+            path = Path(path_str.strip())
+            if path.is_dir():
+                paths.append(path.resolve())
+
+    try:
+        model = TeklaModel()
+        model_path = model.model.GetInfo().ModelPath
+        if model_path:
+            attributes_dir = Path(model_path) / "attributes"
+            if attributes_dir.is_dir():
+                paths.append(attributes_dir.resolve())
+    except Exception:
+        pass
+
+    filter_names: set[str] = {"standard"}
+    for dir_path in paths:
+        for file in dir_path.rglob(f"*{file_extension}"):
+            filter_names.add(file.stem)
+
+    return sorted(filter_names)

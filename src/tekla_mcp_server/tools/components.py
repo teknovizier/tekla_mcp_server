@@ -33,6 +33,9 @@ def manage_components_on_selected_objects(
         custom_properties_errors: List to collect custom property errors
         *args: Additional positional arguments for callback
         **kwargs: Additional keyword arguments for callback
+
+    Returns:
+        dict with status, count of processed objects, and custom property errors
     """
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
@@ -66,6 +69,9 @@ def process_detail_or_component(
         custom_properties_errors: List to collect custom property errors
         *args: Additional positional arguments for callback
         **kwargs: Additional keyword arguments for callback
+
+    Returns:
+        dict with status, count of processed objects, and custom property errors
     """
     from tekla_mcp_server.tekla.loader import Beam
 
@@ -115,6 +121,9 @@ def process_seam_or_connection(
         custom_properties_errors: List to collect custom property errors
         *args: Additional positional arguments for callback
         **kwargs: Additional keyword arguments for callback
+
+    Returns:
+        dict with status, count of processed objects, and custom property errors
     """
     from tekla_mcp_server.tools.selection import validate_exactly_two_selected
 
@@ -154,6 +163,9 @@ def tool_put_components(model: TeklaModel, component: BaseComponent, selected_ob
         model: Tekla model instance
         component: Component to insert
         selected_object: Target object for the component
+
+    Returns:
+        Number of components inserted
     """
     handler = HandlerRegistry.get(component.name)
 
@@ -184,6 +196,9 @@ def tool_remove_components(model: TeklaModel, component: BaseComponent, *selecte
         model: Tekla model instance
         component: Component to remove
         *selected_objects: Objects to remove component from
+
+    Returns:
+        Number of components removed
     """
     if not selected_objects:
         raise ValueError("No elements selected. Please select at least one element.")
@@ -211,7 +226,7 @@ def tool_get_components() -> dict[str, Any]:
     its schema (if supported), and actual attribute values from the component instance.
 
     Returns:
-        Dictionary with status and component details per element
+        dict with status and component details per element
     """
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()

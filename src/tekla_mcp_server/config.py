@@ -253,7 +253,7 @@ class Config:
         return path
 
     @lru_cache
-    def _load_requirements(self) -> str:
+    def load_requirements(self) -> str:
         """Load and combine all markdown files from requirements folder."""
         folder = self.requirements_folder
         if not folder.exists():
@@ -265,6 +265,28 @@ class Config:
         for f in files:
             contents.append(f.read_text(encoding="utf-8"))
         return "\n\n---\n\n".join(contents)
+
+    @lru_cache
+    def get_element_types_list(self) -> list[dict[str, Any]]:
+        """Returns element types as flat list."""
+        return [{"material": material, "type": type_name, "tekla_classes": config.get("tekla_classes", [])} for material, types in self.element_types.items() for type_name, config in types.items()]
+
+    @lru_cache
+    def get_element_types_flat(self) -> dict[int, dict[str, Any]]:
+        """Returns tekla_class -> full config mapping."""
+        result: dict[int, dict[str, Any]] = {}
+        for types in self.element_types.values():
+            for config in types.values():
+                for tekla_class in config.get("tekla_classes", []):
+                    result[tekla_class] = config
+        return result
+
+    def get_custom_properties_schema(self, component_key: str) -> dict[str, dict[str, str]] | None:
+        """Returns custom_properties schema for a component."""
+        component = self.base_components.get(component_key)
+        if component:
+            return component.get("custom_properties")
+        return None
 
 
 @lru_cache
