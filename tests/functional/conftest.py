@@ -10,10 +10,11 @@ if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
 from tekla_mcp_server.models import StringMatchType
-from tekla_mcp_server.tekla.loader import Point, Beam, Position
 from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tools.selection import add_filter
+from tekla_mcp_server.providers.modeling_provider import place_panels, place_beams
+from tekla_mcp_server.models import BeamInput, PanelInput, PointInput
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -24,20 +25,6 @@ def init_tekla():
     load_dlls()
     TeklaModel()
     yield
-
-
-def create_mcp_test_beam(name, start_point, end_point, profile, material="Concrete_Undefined", depth_enum=Position.DepthEnum.FRONT, class_type="1"):
-    """Utility function to create a beam."""
-    beam = Beam()
-    beam.Profile.ProfileString = profile
-    beam.Material.MaterialString = material
-    beam.Class = class_type
-    beam.Name = name
-    beam.Position.Depth = depth_enum
-    beam.StartPoint = start_point
-    beam.EndPoint = end_point
-    beam.Insert()
-    return beam
 
 
 def cleanup_mcp_test_objects():
@@ -58,41 +45,54 @@ def cleanup_mcp_test_objects():
 
 @pytest.fixture(scope="module")
 def model_objects():
-    """Fixture: Test setup and teardown."""
+    """Fixture: Test setup and teardown using place_panels and place_beams."""
     model = TeklaModel()
-    test_wall1 = create_mcp_test_beam("MCP_TEST_WALL1", Point(0, 0, 0), Point(2000, 0, 0), "3000*200")
-    test_wall2 = create_mcp_test_beam("MCP_TEST_WALL2", Point(0, 0, 3020), Point(2000, 0, 3020), "3000*200")
-    test_wall3 = create_mcp_test_beam("MCP_TEST_WALL3", Point(2000, 0, 0), Point(4000, 0, 0), "3000*200")
-    test_wall4 = create_mcp_test_beam("MCP_TEST_WALL4", Point(2000, 0, 3020), Point(4000, 0, 3020), "3000*200")
 
-    test_wall5 = create_mcp_test_beam("MCP_TEST_WALL5", Point(0, 0, 6040), Point(2000, 0, 6040), "3000*200")
-    test_wall6 = create_mcp_test_beam("MCP_TEST_WALL5", Point(0, 0, 9060), Point(2000, 0, 9060), "3000*200")
-    test_wall7 = create_mcp_test_beam("MCP_TEST_WALL7", Point(0, 0, 12080), Point(2000, 0, 12080), "2000*150")
-    test_wall8 = create_mcp_test_beam("MCP_TEST_WALL8", Point(0, 200, 0), Point(2000, 200, 0), "3000*200")
+    panels = [
+        PanelInput(start=PointInput(x=0, y=0, z=0), end=PointInput(x=2000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL1"),
+        PanelInput(start=PointInput(x=0, y=0, z=3020), end=PointInput(x=2000, y=0, z=3020), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL2"),
+        PanelInput(start=PointInput(x=2000, y=0, z=0), end=PointInput(x=4000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL3"),
+        PanelInput(start=PointInput(x=2000, y=0, z=3020), end=PointInput(x=4000, y=0, z=3020), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL4"),
+        PanelInput(start=PointInput(x=0, y=0, z=6040), end=PointInput(x=2000, y=0, z=6040), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),
+        PanelInput(start=PointInput(x=0, y=0, z=9060), end=PointInput(x=2000, y=0, z=9060), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),
+        PanelInput(start=PointInput(x=0, y=0, z=12080), end=PointInput(x=2000, y=0, z=12080), profile="2000*150", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL7"),
+        PanelInput(start=PointInput(x=0, y=200, z=0), end=PointInput(x=2000, y=200, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL8"),
+        PanelInput(start=PointInput(x=4000, y=0, z=0), end=PointInput(x=6000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=8, name="MCP_TEST_SW1"),
+    ]
 
-    test_sw1 = create_mcp_test_beam("MCP_TEST_SW1", Point(4000, 0, 0), Point(6000, 0, 0), "3000*200", class_type="8")
-    test_slab1 = create_mcp_test_beam("MCP_TEST_SLAB1", Point(1000, 0, 3020), Point(1000, 6000, 3020), "P20(200X1200)", class_type="3")
+    slabs = [
+        BeamInput(start=PointInput(x=1000, y=0, z=3020), end=PointInput(x=1000, y=6000, z=3020), profile="P20(200X1200)", material="Concrete_Undefined", tekla_class=3, name="MCP_TEST_SLAB1"),
+    ]
 
-    void1 = create_mcp_test_beam("MCP_TEST_VOID_WALL3", Point(3000, 0, 1000), Point(3000, 200, 1000), "D400", class_type="0")
-    void2 = create_mcp_test_beam("MCP_TEST_VOID_FLOATING", Point(3000, 0, 10000), Point(3000, 200, 10000), "D400", class_type="0")
+    voids = [
+        BeamInput(start=PointInput(x=3000, y=0, z=1000), end=PointInput(x=3000, y=200, z=1000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_WALL3"),
+        BeamInput(start=PointInput(x=3000, y=0, z=10000), end=PointInput(x=3000, y=200, z=10000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_FLOATING"),
+    ]
 
-    model.commit_changes()
+    result_panels = place_panels(panels=panels)
+    result_slabs = place_beams(beams=slabs)
+    result_voids = place_beams(beams=voids)
 
+    def get_single_object(guid: str):
+        objects = model.get_objects_by_guid([guid])
+        return objects[0] if objects else None
+
+    panel_guids = [r["guid"] for r in result_panels["results"]]
     yield {
         "model": model,
-        "walls": [test_wall1, test_wall2, test_wall3, test_wall4],
-        "test_wall1": test_wall1,
-        "test_wall2": test_wall2,
-        "test_wall3": test_wall3,
-        "test_wall4": test_wall4,
-        "test_wall5": test_wall5,
-        "test_wall6": test_wall6,
-        "test_wall7": test_wall7,
-        "test_wall8": test_wall8,
-        "test_sw1": test_sw1,
-        "test_slab1": test_slab1,
-        "void1": void1,
-        "void2": void2,
+        "walls": [get_single_object(g) for g in panel_guids[:4]],
+        "test_wall1": get_single_object(panel_guids[0]),
+        "test_wall2": get_single_object(panel_guids[1]),
+        "test_wall3": get_single_object(panel_guids[2]),
+        "test_wall4": get_single_object(panel_guids[3]),
+        "test_wall5": get_single_object(panel_guids[4]),
+        "test_wall6": get_single_object(panel_guids[5]),
+        "test_wall7": get_single_object(panel_guids[6]),
+        "test_wall8": get_single_object(panel_guids[7]),
+        "test_sw1": get_single_object(panel_guids[8]),
+        "test_slab1": get_single_object(result_slabs["results"][0]["guid"]),
+        "void1": get_single_object(result_voids["results"][0]["guid"]),
+        "void2": get_single_object(result_voids["results"][1]["guid"]),
     }
 
     cleanup_mcp_test_objects()
