@@ -15,7 +15,7 @@ def cleanup_modeling_test_objects():
     from tekla_mcp_server.models import StringMatchType
     from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
     from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-    from tekla_mcp_server.tools.selection import add_filter
+    from tekla_mcp_server.providers.selection_provider import add_filter
 
     model = TeklaModel()
     filter_collection = BinaryFilterExpressionCollection()

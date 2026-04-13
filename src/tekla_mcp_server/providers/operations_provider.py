@@ -8,13 +8,12 @@ from typing import Any
 
 from fastmcp.server.providers import LocalProvider
 
-from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tools.operations import (
-    tool_cut_elements_with_zero_class_parts,
-    tool_convert_cut_parts_to_real_parts,
-    tool_run_macro,
-)
+from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_mcp_tool_call
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
+from tekla_mcp_server.tekla.loader import Operation
+from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 
 
 operations_provider = LocalProvider()
@@ -29,9 +28,31 @@ def cut_elements_with_zero_class_parts(delete_cutting_parts: bool = False) -> di
     ## INPUT
     - `delete_cutting_parts` [Optional]: If True, removes cutting parts after cuts are applied (default: False)
     """
-    tekla_model = TeklaModel()
-    selected_objects = tekla_model.get_selected_objects()
-    return tool_cut_elements_with_zero_class_parts(tekla_model, selected_objects, delete_cutting_parts)
+    model = TeklaModel()
+    selected_objects = model.get_selected_objects()
+
+    processed_elements = 0
+    performed_cuts = 0
+    objects_to_select = model.get_objects_by_class(0)
+    cutters = list(wrap_model_objects(objects_to_select))
+    if cutters:
+        for selected_object in wrap_model_objects(selected_objects):
+            element_had_cut = False
+            for cutter in cutters:
+                if selected_object.add_cut(cutter, delete_cutting_parts):
+                    performed_cuts += 1
+                    element_had_cut = True
+            if element_had_cut:
+                processed_elements += 1
+        if performed_cuts:
+            model.commit_changes()
+    logger.info("Performed %s cuts on %s elements", performed_cuts, processed_elements)
+    return {
+        "status": "success" if performed_cuts else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "performed_cuts": performed_cuts,
+    }
 
 
 @operations_provider.tool()
@@ -43,9 +64,25 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
     ## INPUT
     - No additional parameters required.
     """
-    tekla_model = TeklaModel()
-    selected_objects = tekla_model.get_selected_objects()
-    return tool_convert_cut_parts_to_real_parts(tekla_model, selected_objects)
+    model = TeklaModel()
+    selected_objects = model.get_selected_objects()
+
+    processed_elements = 0
+    inserted_booleans = 0
+    for selected_object in selected_objects:
+        for boolean_part in iterate_boolean_parts(selected_object):
+            if boolean_part.OperativePart.Insert():
+                inserted_booleans += 1
+        processed_elements += 1
+    if inserted_booleans > 0:
+        model.commit_changes()
+    logger.info("Inserted %s boolean parts as real parts", inserted_booleans)
+    return {
+        "status": "success" if inserted_booleans else "error",
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "converted_booleans": inserted_booleans,
+    }
 
 
 @operations_provider.tool()
@@ -63,4 +100,17 @@ def run_macro(macro_name: str) -> dict[str, Any]:
     ## OUTPUT
     Returns status indicating whether the macro ran successfully.
     """
-    return tool_run_macro(macro_name)
+    if Operation.IsMacroRunning():
+        logger.warning("Cannot run macro '%s': Tekla is busy running another macro", macro_name)
+        return {
+            "status": "error",
+            "message": "Tekla is busy running another macro",
+        }
+
+    result = Operation.RunMacro(macro_name)
+
+    logger.info("Ran macro '%s'", macro_name)
+    return {
+        "status": "success" if result else "error",
+        "macro_name": macro_name,
+    }

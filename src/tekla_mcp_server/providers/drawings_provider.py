@@ -8,12 +8,61 @@ from typing import Any
 
 from fastmcp.server.providers import LocalProvider
 
-from tekla_mcp_server.models import DrawingTypeModel, StringFilterOption
-from tekla_mcp_server.tools.drawing import tool_get_drawings, tool_get_drawing_properties
+from tekla_mcp_server.init import logger
+from tekla_mcp_server.models import DrawingTypeModel, StringFilterOption, StringMatchType
 from tekla_mcp_server.utils import log_mcp_tool_call
+from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings
+from tekla_mcp_server.tekla.loader import DrawingHandler
 
 
 drawings_provider = LocalProvider()
+
+
+def _parse_filter(filter_option: Any) -> StringFilterOption | None:
+    if isinstance(filter_option, dict):
+        return StringFilterOption.model_validate(filter_option)
+    return filter_option
+
+
+def _matches_string_filter(value: str, filter_option: Any) -> bool:
+    if not filter_option:
+        return True
+
+    conditions = filter_option.conditions
+    if not isinstance(conditions, list):
+        conditions = [conditions]
+
+    logic = filter_option.logic or "AND"
+    results = []
+
+    for cond in conditions:
+        match_type = StringMatchType(cond.match_type)
+        filter_value = cond.value
+
+        if match_type == StringMatchType.IS_EQUAL:
+            matches = value == filter_value
+        elif match_type == StringMatchType.IS_NOT_EQUAL:
+            matches = value != filter_value
+        elif match_type == StringMatchType.CONTAINS:
+            matches = filter_value.lower() in value.lower()
+        elif match_type == StringMatchType.NOT_CONTAINS:
+            matches = filter_value.lower() not in value.lower()
+        elif match_type == StringMatchType.STARTS_WITH:
+            matches = value.lower().startswith(filter_value.lower())
+        elif match_type == StringMatchType.NOT_STARTS_WITH:
+            matches = not value.lower().startswith(filter_value.lower())
+        elif match_type == StringMatchType.ENDS_WITH:
+            matches = value.lower().endswith(filter_value.lower())
+        elif match_type == StringMatchType.NOT_ENDS_WITH:
+            matches = not value.lower().endswith(filter_value.lower())
+        else:
+            matches = False
+
+        results.append(matches)
+
+    if logic == "OR":
+        return any(results)
+    return all(results)
 
 
 @drawings_provider.tool()
@@ -69,15 +118,63 @@ def get_drawings(
         }
     }
     """
-    drawing_type_enum = DrawingTypeModel(value=drawing_type).to_enum() if drawing_type else None
-    return tool_get_drawings(
-        drawing_type=drawing_type_enum,
-        name_filter=name_filter,
-        mark_filter=mark_filter,
-        title1_filter=title1_filter,
-        title2_filter=title2_filter,
-        title3_filter=title3_filter,
-    )
+    name_filter = _parse_filter(name_filter)
+    mark_filter = _parse_filter(mark_filter)
+    title1_filter = _parse_filter(title1_filter)
+    title2_filter = _parse_filter(title2_filter)
+    title3_filter = _parse_filter(title3_filter)
+
+    normalized_type = DrawingTypeModel(value=drawing_type).to_enum().value if drawing_type else None
+
+    try:
+        drawing_handler = DrawingHandler()
+
+        if not drawing_handler.GetConnectionStatus():
+            return {
+                "status": "error",
+                "message": "Not connected to Tekla",
+            }
+
+        drawings_enum = drawing_handler.GetDrawings()
+
+        all_drawings = wrap_drawings(drawings_enum)
+
+        filtered_drawings = all_drawings
+
+        if normalized_type:
+            filtered_drawings = [d for d in filtered_drawings if d.drawing_type == normalized_type]
+
+        if name_filter:
+            filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.name, name_filter)]
+
+        if mark_filter:
+            filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.mark, mark_filter)]
+
+        if title1_filter:
+            filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.title1, title1_filter)]
+
+        if title2_filter:
+            filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.title2, title2_filter)]
+
+        if title3_filter:
+            filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.title3, title3_filter)]
+
+        marks = [d.mark for d in filtered_drawings]
+
+        logger.info("Found %s drawings matching filters", len(marks))
+
+        return {
+            "status": "success",
+            "matched_count": len(marks),
+            "marks": marks,
+        }
+
+    except Exception:
+        logger.exception("Failed to get drawings")
+        return {
+            "status": "error",
+            "message": "Failed to get drawings",
+        }
 
 
 @drawings_provider.tool()
@@ -116,4 +213,47 @@ def get_drawing_properties(
     # Get properties of specific drawings
     {"marks": ["[HCS-1001 - 1]", "[HCS-1002 - 1]"]}
     """
-    return tool_get_drawing_properties(marks=marks)
+    try:
+        drawing_handler = DrawingHandler()
+
+        if not drawing_handler.GetConnectionStatus():
+            return {
+                "status": "error",
+                "message": "Not connected to Tekla",
+            }
+
+        if marks is None or marks == []:
+            selector = drawing_handler.GetDrawingSelector()
+            selected_drawings_enum = selector.GetSelected()
+
+            drawings = wrap_drawings(selected_drawings_enum)
+        else:
+            drawings_enum = drawing_handler.GetDrawings()
+            all_drawings = wrap_drawings(drawings_enum)
+
+            drawings = [d for d in all_drawings if d.mark in marks]
+
+        if not drawings:
+            return {
+                "status": "warning",
+                "message": "No drawings found",
+                "selected_count": 0,
+                "drawings": [],
+            }
+
+        drawings_data = [d.to_dict() for d in drawings]
+
+        logger.info("Retrieved properties for %s drawings", len(drawings_data))
+
+        return {
+            "status": "success",
+            "selected_count": len(drawings_data),
+            "drawings": drawings_data,
+        }
+
+    except Exception:
+        logger.exception("Failed to get drawing properties")
+        return {
+            "status": "error",
+            "message": "Failed to get drawing properties",
+        }

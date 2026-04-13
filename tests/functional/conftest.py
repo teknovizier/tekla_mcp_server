@@ -12,7 +12,7 @@ if os.getenv("CI") == "true":
 from tekla_mcp_server.models import StringMatchType
 from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tools.selection import add_filter
+from tekla_mcp_server.providers.selection_provider import add_filter
 from tekla_mcp_server.providers.modeling_provider import place_panels, place_beams
 from tekla_mcp_server.models import BeamInput, PanelInput, PointInput
 

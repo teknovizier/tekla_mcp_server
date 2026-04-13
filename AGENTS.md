@@ -77,7 +77,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 
 # Local application
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.tools.selection import tool_select_elements_by_filter
+from tekla_mcp_server.providers.selection_provider import add_filter
 ```
 
 ### Inline Imports
@@ -164,10 +164,9 @@ def tool_function(...):
 # Part 3: MCP Architecture
 
 ## MCP Server Architecture
-- **Providers** (`providers/`) - MCP tool definitions and resources with docstrings
-- **Tools** (`tools/`) - Actual implementation logic
+- **Providers** (`providers/`) - MCP tool definitions with inline implementations
 - Use `LocalProvider` for organizing tools into modules
-- Tool functions accept `dict[str, Any]` inputs (MCP sends JSON)
+- Tool functions accept model inputs and return dict[str, Any]
 - Use `_to_filter_option()` helper to convert dicts to Pydantic models
 
 ## MCP Resources (Read-Only Data)
@@ -191,41 +190,32 @@ Resources provide discovery/metadata, not actions:
 
 ## How to Add a Tool
 
-### 1. Add Implementation (tools/*.py)
-
-```python
-from tekla_mcp_server.utils import log_function_call
-
-@log_function_call
-def tool_my_new_feature(param: str) -> dict[str, Any]:
-    """
-    Description of what the tool does.
-
-    Args:
-        param: Description of parameter
-
-    Returns:
-        dict with status and result
-    """
-    # Implementation here
-    return {"status": "success", "result": param}
-```
-
-### 2. Add MCP Interface (providers/*.py)
+### 1. Add MCP Tool (providers/*.py)
 
 ```python
 from fastmcp.server.providers import LocalProvider
 from tekla_mcp_server.models import MyInputModel
-from tekla_mcp_server.tools.my_module import tool_my_new_feature
 from tekla_mcp_server.utils import log_mcp_tool_call
 
 my_provider = LocalProvider()
 
 @my_provider.tool()
 @log_mcp_tool_call
-def my_new_feature(input: MyInputModel) -> dict[str, Any]:
+def my_new_feature(param: str) -> dict[str, Any]:
     """Tool description for MCP users."""
-    return tool_my_new_feature(input.param)
+    # Implementation here
+    return {"status": "success", "result": param}
+```
+
+### 2. Add Helper Functions (if needed)
+
+Use underscore prefix for reusable helper functions:
+
+```python
+def _helper_function(param: str) -> dict[str, Any]:
+    """Helper description."""
+    # Helper logic here
+    return {"status": "success"}
 ```
 
 ### 3. Add to Documentation
@@ -332,7 +322,6 @@ tekla_mcp_server/
 │   ├── models.py              # Data models, enums
 │   ├── utils.py               # Decorators and utilities
 │   ├── providers/             # MCP tool definitions
-│   ├── tools/                 # Tool implementations
 │   └── tekla/                 # Tekla-specific modules
 │       ├── loader.py          # DLL loading (pythonnet)
 │       ├── wrappers/       # Tekla wrapper classes
@@ -352,7 +341,7 @@ tekla_mcp_server/
 | File Type | Location |
 |-----------|----------|
 | MCP tool definition | `providers/*.py` |
-| Tool implementation | `tools/*.py` |
+| Helper function | `providers/*.py` (prefix with `_`) |
 | Pydantic model | `models.py` |
 | Tekla wrapper | `tekla/wrappers/*.py` |
 | Tekla-specific utility | `tekla/utils.py` |
