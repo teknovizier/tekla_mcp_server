@@ -46,7 +46,7 @@ def place_beams(beams: list[BeamInput] | None = None) -> dict[str, Any]:
             - `plane_offset`: Offset in mm along plane axis
             - `depth`: "FRONT", "MIDDLE", "BEHIND" (default: "MIDDLE")
             - `depth_offset`: Offset in mm along depth axis
-            - `rotation`: "FRONT", "TOP", "BACK", "BOTTOM" (default: "FRONT")
+            - `rotation`: "FRONT", "TOP", "BACK", "BELOW" (default: "FRONT")
             - `rotation_offset`: Rotation offset in degrees
         - `part_number` [Optional]: Part numbering as {prefix, start_number} (e.g., {"prefix": "SB", "start_number": 1})
         - `assembly_number` [Optional]: Assembly numbering as {prefix, start_number} (e.g., {"prefix": "SBA", "start_number": 1})

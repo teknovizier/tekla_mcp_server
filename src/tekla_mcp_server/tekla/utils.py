@@ -42,10 +42,26 @@ from tekla_mcp_server.tekla.loader import (
     TeklaStructuresSettings,
     BooleanPart,
 )
-from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 
 from tekla_mcp_server.utils import log_function_call
+
+
+POSITION_PLANE_MAP = {
+    "LEFT": Position.PlaneEnum.LEFT,
+    "MIDDLE": Position.PlaneEnum.MIDDLE,
+    "RIGHT": Position.PlaneEnum.RIGHT,
+}
+POSITION_DEPTH_MAP = {
+    "FRONT": Position.DepthEnum.FRONT,
+    "MIDDLE": Position.DepthEnum.MIDDLE,
+    "BEHIND": Position.DepthEnum.BEHIND,
+}
+POSITION_ROTATION_MAP = {
+    "FRONT": Position.RotationEnum.FRONT,
+    "TOP": Position.RotationEnum.TOP,
+    "BACK": Position.RotationEnum.BACK,
+    "BELOW": Position.RotationEnum.BELOW,
+}
 
 
 # Mappings
@@ -71,21 +87,8 @@ NUMERIC_MATCH_TYPE_MAPPING = {
 }
 
 
-POSITION_PLANE_MAP = {
-    "LEFT": Position.PlaneEnum.LEFT,
-    "MIDDLE": Position.PlaneEnum.MIDDLE,
-    "RIGHT": Position.PlaneEnum.RIGHT,
-}
-POSITION_DEPTH_MAP = {
-    "FRONT": Position.DepthEnum.FRONT,
-    "MIDDLE": Position.DepthEnum.MIDDLE,
-    "BEHIND": Position.DepthEnum.BEHIND,
-}
-POSITION_ROTATION_MAP = {
-    "FRONT": Position.RotationEnum.FRONT,
-    "TOP": Position.RotationEnum.TOP,
-    "BACK": Position.RotationEnum.BACK,
-}
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
