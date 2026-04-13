@@ -2,26 +2,12 @@
 Module for utility functions.
 """
 
-import json
 import re
 from functools import wraps
 from collections.abc import Callable
 from typing import Any
 
 from tekla_mcp_server.init import logger
-
-
-def serialize_to_json(data: Any) -> str:
-    """
-    Serializes data to a JSON string with consistent formatting.
-
-    Args:
-        data: Data to serialize
-
-    Returns:
-        JSON string with consistent formatting
-    """
-    return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 def normalize_attribute_name(name: str) -> str:

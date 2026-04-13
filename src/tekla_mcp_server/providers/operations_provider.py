@@ -20,7 +20,7 @@ from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 operations_provider = LocalProvider()
 
 
-@operations_provider.tool()
+@operations_provider.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def cut_elements_with_zero_class_parts(delete_cutting_parts: Annotated[bool, Field(description="Remove cutting parts after cuts are applied")] = False) -> dict[str, Any]:
     """
@@ -53,7 +53,7 @@ def cut_elements_with_zero_class_parts(delete_cutting_parts: Annotated[bool, Fie
     }
 
 
-@operations_provider.tool()
+@operations_provider.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def convert_cut_parts_to_real_parts() -> dict[str, Any]:
     """
@@ -80,7 +80,7 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
     }
 
 
-@operations_provider.tool()
+@operations_provider.tool(annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def run_macro(macro_name: Annotated[str, Field(description="Name of the macro file to run (e.g., 'MyMacro.cs'")]) -> dict[str, Any]:
     """

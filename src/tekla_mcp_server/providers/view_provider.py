@@ -33,7 +33,7 @@ from tekla_mcp_server.tekla.loader import (
 view_provider = LocalProvider()
 
 
-@view_provider.tool(tags={"view"})
+@view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @log_mcp_tool_call
 def draw_elements_labels(
     label: Annotated[str | None, Field(description="Type of label to draw")] = None,
@@ -138,7 +138,7 @@ def draw_elements_labels(
     }
 
 
-@view_provider.tool(tags={"view"})
+@view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @log_mcp_tool_call
 def zoom_to_selection() -> dict[str, Any]:
     """
@@ -189,7 +189,7 @@ def zoom_to_selection() -> dict[str, Any]:
     }
 
 
-@view_provider.tool(tags={"view"})
+@view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @log_mcp_tool_call
 def redraw_view() -> dict[str, Any]:
     """
@@ -210,7 +210,7 @@ def redraw_view() -> dict[str, Any]:
     return {"status": "success", "views_redrawn": views_redrawn, "total_views": len(views)}
 
 
-@view_provider.tool(tags={"view"})
+@view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @log_mcp_tool_call
 def apply_view_filter(
     filter_name: Annotated[str, Field(description="Name of the view filter to apply")],
@@ -234,7 +234,7 @@ def apply_view_filter(
     return {"status": "success", "filter_name": filter_name, "views_modified": len(views)}
 
 
-@view_provider.tool(tags={"view"})
+@view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @log_mcp_tool_call
 def show_only_selected() -> dict[str, Any]:
     """
@@ -249,7 +249,7 @@ def show_only_selected() -> dict[str, Any]:
     }
 
 
-@view_provider.tool(tags={"view"})
+@view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @log_mcp_tool_call
 def hide_selected() -> dict[str, Any]:
     """
@@ -262,7 +262,7 @@ def hide_selected() -> dict[str, Any]:
     return {"status": "success", "hidden_elements": tekla_list.Count}
 
 
-@view_provider.tool(tags={"view"})
+@view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @log_mcp_tool_call
 def color_selected(
     red: Annotated[int, Field(description="Red component (0-255)")],

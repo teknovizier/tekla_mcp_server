@@ -47,8 +47,8 @@ class TestGetDrawingProperties:
         """Call get_drawing_properties without arguments (no selection)."""
         result = get_drawing_properties()
 
-        assert result["selected_count"] == 0
-        assert result["drawings"] == []
+        assert result.structured_content["status"] == "warning"
+        assert result.structured_content["message"] == "No drawings found"
 
     def test_get_drawing_properties_with_mark(self):
         """Get a GA drawing and check its properties."""
@@ -60,6 +60,6 @@ class TestGetDrawingProperties:
 
         result = get_drawing_properties(marks=[marks[0]])
 
-        assert result["selected_count"] == 1
-        assert len(result["drawings"]) == 1
-        assert result["drawings"][0]["drawing_type"] == "GA"
+        assert result.structured_content["selected_count"] == 1
+        assert len(result.structured_content["drawings"]) == 1
+        assert result.structured_content["drawings"][0]["drawing_type"] == "GA"

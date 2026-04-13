@@ -4,8 +4,6 @@ Functional tests for properties_provider.
 Tests getting and setting element properties, UDAs, numbering, cut parts, and comparison.
 """
 
-import json
-
 from tekla_mcp_server.providers.properties_provider import (
     get_elements_properties,
     set_elements_properties,
@@ -32,7 +30,7 @@ def test_set_elements_properties(model_objects):
 
     TeklaModel.select_objects([model_objects["test_wall7"]])
     result = get_elements_properties()
-    parts = json.loads(result["parts_list"])
+    parts = result.structured_content["parts"]
     assert len(parts) == 1
     assert parts[0]["name"] == "MCP_TEST_NEW_NAME"
     assert parts[0]["profile"] == "2000*150"
@@ -58,7 +56,7 @@ def test_get_elements_properties_contains_required_fields(model_objects):
     select_elements_assemblies_or_main_parts(mode="Main Part")
     result = get_elements_properties()
 
-    parts = json.loads(result["parts_list"])
+    parts = result.structured_content["parts"]
     assert len(parts) >= 1
     props = parts[0]
 
@@ -81,7 +79,7 @@ def test_get_elements_properties_with_report_props_definitions(model_objects):
 
     result = get_elements_properties(report_props_definitions=["ASSEMBLY_POS"])
 
-    assemblies = json.loads(result["assemblies_list"])
+    assemblies = result.structured_content["assemblies"]
     assert len(assemblies) == 2
     for assembly in assemblies:
         assert "position" in assembly
@@ -112,7 +110,7 @@ def test_set_elements_properties_all_part_properties(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Main Part")
     result = get_elements_properties()
-    parts = json.loads(result["parts_list"])
+    parts = result.structured_content["parts"]
     assert len(parts) >= 1
     assert parts[0]["name"] == "MCP_PART_ALL_TEST"
     assert parts[0]["profile"] == "2500*300"
@@ -142,7 +140,7 @@ def test_set_elements_properties_all_assembly_properties(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
     result = get_elements_properties()
-    assemblies = json.loads(result["assemblies_list"])
+    assemblies = result.structured_content["assemblies"]
     assert len(assemblies) >= 1
     assert assemblies[0]["name"] == "MCP_ASSEMBLY_ALL_TEST"
     assert assemblies[0]["assembly_prefix"] == "FULL"
@@ -163,12 +161,12 @@ def test_parts_and_assemblies_have_different_properties(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Main Part")
     result_parts = get_elements_properties()
-    parts = json.loads(result_parts["parts_list"])
+    parts = result_parts.structured_content["parts"]
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
     result_assemblies = get_elements_properties()
-    assemblies = json.loads(result_assemblies["assemblies_list"])
+    assemblies = result_assemblies.structured_content["assemblies"]
 
     assert len(parts) >= 1
     assert len(assemblies) >= 1
@@ -220,8 +218,8 @@ def test_get_elements_properties_parts_vs_assemblies(model_objects):
     select_elements_assemblies_or_main_parts(mode="Main Part")
     result_parts = get_elements_properties()
 
-    assemblies = json.loads(result_assemblies["assemblies_list"])
-    parts = json.loads(result_parts["parts_list"])
+    assemblies = result_assemblies.structured_content["assemblies"]
+    parts = result_parts.structured_content["parts"]
 
     assert len(assemblies) > 0
     assert len(parts) > 0
@@ -232,7 +230,7 @@ def test_get_elements_properties_numbering_fields(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Main Part")
     result_parts = get_elements_properties()
-    parts = json.loads(result_parts["parts_list"])
+    parts = result_parts.structured_content["parts"]
 
     assert len(parts) >= 1
     assert "part_prefix" in parts[0]
@@ -244,7 +242,7 @@ def test_get_elements_properties_numbering_fields(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
     result_assemblies = get_elements_properties()
-    assemblies = json.loads(result_assemblies["assemblies_list"])
+    assemblies = result_assemblies.structured_content["assemblies"]
 
     assert len(assemblies) >= 1
     assert "assembly_prefix" in assemblies[0]
@@ -270,7 +268,7 @@ def test_set_elements_properties_numbering(model_objects):
     TeklaModel.select_objects([model_objects["test_wall7"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
     result = get_elements_properties()
-    assemblies = json.loads(result["assemblies_list"])
+    assemblies = result.structured_content["assemblies"]
     assert assemblies[0]["assembly_prefix"] == "TEST"
     assert assemblies[0]["assembly_start_number"] == 100
 
@@ -287,7 +285,7 @@ def test_get_elements_properties_user_properties(model_objects):
     TeklaModel.select_objects([model_objects["test_wall7"]])
     select_elements_assemblies_or_main_parts(mode="Main Part")
     result = get_elements_properties()
-    parts = json.loads(result["parts_list"])
+    parts = result.structured_content["parts"]
 
     assert len(parts) >= 1
     assert "user_properties" in parts[0]
@@ -299,12 +297,12 @@ def test_get_elements_properties_both_assemblies_and_parts(model_objects):
 
     select_elements_assemblies_or_main_parts(mode="Assembly")
     result_assemblies = get_elements_properties()
-    assemblies = json.loads(result_assemblies["assemblies_list"])
+    assemblies = result_assemblies.structured_content["assemblies"]
 
     TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
     select_elements_assemblies_or_main_parts(mode="Main Part")
     result_parts = get_elements_properties()
-    parts = json.loads(result_parts["parts_list"])
+    parts = result_parts.structured_content["parts"]
 
     assert len(assemblies) > 0, "Expected assemblies in result"
     assert len(parts) > 0, "Expected parts in result"
@@ -323,8 +321,8 @@ def test_get_elements_properties_basic_assembly_properties(model_objects):
     select_elements_assemblies_or_main_parts(mode="Assembly")
     result = get_elements_properties()
 
-    assert result["status"] == "success"
-    assemblies = json.loads(result["assemblies_list"])
+    assert result.structured_content["status"] == "success"
+    assemblies = result.structured_content["assemblies"]
     assert isinstance(assemblies, list)
     assert len(assemblies) == 4
 
@@ -340,7 +338,7 @@ def test_get_elements_properties_known_values_for_assemblies(model_objects):
     select_elements_assemblies_or_main_parts(mode="Assembly")
     result = get_elements_properties()
 
-    assemblies = json.loads(result["assemblies_list"])
+    assemblies = result.structured_content["assemblies"]
     assert len(assemblies) >= 1
 
     names = [a["name"] for a in assemblies]
@@ -354,7 +352,7 @@ def test_get_elements_properties_valid_report_properties(model_objects):
 
     result = get_elements_properties(report_props_definitions=["ASSEMBLY_POS"])
 
-    assemblies = json.loads(result["assemblies_list"])
+    assemblies = result.structured_content["assemblies"]
     assert len(assemblies) >= 1
     assert "report_properties" in assemblies[0]
     assert len(assemblies[0]["report_properties"]) > 0
@@ -367,10 +365,10 @@ def test_get_elements_properties_invalid_and_missing_report_properties(model_obj
 
     result = get_elements_properties(report_props_definitions=["NON_EXISTENT_PROPERTY"])
 
-    assert "resolution_errors" in result
-    assert "extraction_errors" in result
-    assert isinstance(result["resolution_errors"], list)
-    assert isinstance(result["extraction_errors"], list)
+    assert "resolution_errors" in result.structured_content
+    assert "extraction_errors" in result.structured_content
+    assert isinstance(result.structured_content["resolution_errors"], list)
+    assert isinstance(result.structured_content["extraction_errors"], list)
 
 
 def test_get_elements_cut_parts_with_cuts(model_objects):
@@ -383,8 +381,8 @@ def test_get_elements_cut_parts_with_cuts(model_objects):
     TeklaModel.select_objects([model_objects["test_wall3"]])
     result = get_elements_cut_parts()
 
-    assert result["status"] == "success"
-    assert result["selected_elements"] == 1
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_elements"] == 1
 
 
 def test_get_elements_cut_parts_without_cuts(model_objects):
@@ -392,9 +390,9 @@ def test_get_elements_cut_parts_without_cuts(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
     result = get_elements_cut_parts()
 
-    assert result["status"] == "warning"
-    assert result["selected_elements"] == 1
-    assert result["total_cut_parts"] == 0
+    assert result.structured_content["status"] == "warning"
+    assert result.structured_content["selected_elements"] == 1
+    assert result.structured_content["total_cut_parts"] == 0
 
 
 def test_compare_elements_numbering_not_up_to_date(model_objects):

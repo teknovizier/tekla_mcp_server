@@ -28,7 +28,7 @@ from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 modeling_provider = LocalProvider()
 
 
-@modeling_provider.tool(tags={"modeling"})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List of beam definitions")] = None) -> dict[str, Any]:
     """
@@ -110,7 +110,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
     ).model_dump(mode="json", exclude_none=True)
 
 
-@modeling_provider.tool(tags={"modeling"})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description="List of column definitions")] = None) -> dict[str, Any]:
     """
@@ -193,7 +193,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
     ).model_dump(mode="json", exclude_none=True)
 
 
-@modeling_provider.tool(tags={"modeling"})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="List of wall panels definitions")] = None) -> dict[str, Any]:
     """
@@ -274,7 +274,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
     ).model_dump(mode="json", exclude_none=True)
 
 
-@modeling_provider.tool(tags={"modeling"})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def delete_selected() -> dict[str, Any]:
     """

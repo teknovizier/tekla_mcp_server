@@ -6,18 +6,19 @@ Uses LocalProvider for modular organization and callable decorator pattern.
 
 from collections import Counter
 from typing import Any, Annotated
-from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
+from fastmcp.tools import ToolResult
+from pydantic import Field
+from tabulate import tabulate
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.utils import log_mcp_tool_call, serialize_to_json
+from tekla_mcp_server.utils import log_mcp_tool_call
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_object, wrap_model_objects
-from tekla_mcp_server.tekla.loader import BooleanPart, Operation
+from tekla_mcp_server.tekla.loader import Part, BooleanPart, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts
-
 
 properties_provider = LocalProvider()
 
@@ -31,7 +32,7 @@ def _validate_exactly_two_selected(count: int) -> None:
         raise ValueError(f"More than two elements selected. Expected 2, got {count}.")
 
 
-@properties_provider.tool(tags={"properties"})
+@properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def set_elements_properties(
     name: Annotated[str | None, Field(description="Part name")] = None,
@@ -120,66 +121,22 @@ def set_elements_properties(
     }
 
 
-@properties_provider.tool(tags={"properties"})
+@properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @log_mcp_tool_call
 def get_elements_properties(
     report_props_definitions: Annotated[list[str] | None, Field(description="List of user-friendly property names")] = None,
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Retrieve key properties for selected Tekla elements (assemblies or parts).
 
     ### BEHAVIOR
     - Extract properties not in default columns; split multi-property phrases into separate items.
     - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
-    - Only resolved report properties appear in the table; unresolved ones are mentioned after the table.
 
     ## OUTPUT
-    - Table format only; first row = headers, no JSON or extra text.
-    - Leftmost "No" column with sequential row numbers starting from 1.
-
-    - If the result contains ONLY assemblies → return ONE table with assembly columns.
-    - If the result contains ONLY parts → return ONE table with part columns.
-    - If the result contains BOTH assemblies AND parts → return TWO separate tables:
-        1. First table: Assemblies only
-        2. Second table: Parts only
-    - Do NOT mix assemblies and parts in the same table.
-
-    ### DEFAULT COLUMNS
-    - Position, GUID
-
-    - Assemblies:
-        - Assembly Name, Assembly Prefix, Assembly Start Number, Phase
-        - These columns apply ONLY to the assemblies table.
-
-    - Parts:
-        - Name, Profile, Material, Finish, Class, Part Prefix, Part Start Number, Assembly Prefix, Assembly Start Number, Phase
-        - These columns apply ONLY to the parts table.
-
-    ### USER PROPERTIES (UDAs)
-    - UDAs MUST be included as columns in each table.
-    - Each UDA appears as a separate column using its exact property name.
-    - Apply UDAs independently for assemblies and parts.
-    - If a UDA value is missing for an element, the cell should be empty.
-
-    ### REPORT PROPERTIES
-    - Include report properties as additional columns in the SAME table (per type).
-    - Use backend-resolved names exactly; append units if provided.
-    - Float values should be rounded to 3 decimals.
-    - Missing values must be shown as "N/A".
-    - Example: ASSEMBLY_TOP_LEVEL, ASSEMBLY_BOTTOM_LEVEL_UNFORMATTED, WEIGHT_GROSS (kg)
-
-    ### GENERAL RULES
-    - Each table must have a flat structure.
-    - Each row represents one element.
-    - Each column represents one property (default, UDA, or report).
-    - Do NOT merge or share columns between assemblies and parts tables.
-
-    ## RETURN KEYS
-    - `status`: "success", "partial" (if some errors occurred), or "error"
-    - `assemblies_list`: JSON array of assembly properties
-    - `parts_list`: JSON array of part properties
-    - `resolution_errors`: List of errors when resolving property names
-    - `extraction_errors`: List of errors when extracting properties from elements
+    - Return the result tables EXACTLY as provided by the tool.
+    - DO NOT reformat, summarize, or explain.
+    - DO NOT modify spacing, columns, or headers.
     """
     selected_objects = TeklaModel().get_selected_objects()
 
@@ -209,42 +166,112 @@ def get_elements_properties(
             parts.append(props)
         processed_elements += 1
 
-    serialized_assemblies = serialize_to_json(assemblies)
-    serialized_parts = serialize_to_json(parts)
-
     logger.info("Retrieved properties for %s elements", processed_elements)
     status = "success" if assemblies or parts else "error"
     if resolution_errors or extraction_errors:
         status = "partial"
 
-    return {
-        "status": status,
-        "selected_elements": selected_objects.GetSize(),
-        "processed_elements": processed_elements,
-        "assemblies_list": serialized_assemblies,
-        "parts_list": serialized_parts,
-        "resolution_errors": resolution_errors,
-        "extraction_errors": extraction_errors,
-    }
+    def _flatten_properties(props: dict[str, Any]) -> dict[str, Any]:
+        """Flatten properties for table rendering."""
+        result: dict[str, Any] = {}
+
+        result["GUID"] = props.get("guid", "")
+
+        standard_fields = ["position", "name", "profile", "material", "finish", "tekla_class", "part_prefix", "part_start_number", "assembly_prefix", "assembly_start_number"]
+        for field in standard_fields:
+            if field in props:
+                result[field.replace("_", " ").title()] = props[field]
+
+        result["Phase"] = props.get("phase", "")
+
+        return result
+
+    def _build_table(items: list[dict[str, Any]]) -> str:
+        """Build markdown table from properties list."""
+        if not items:
+            return ""
+
+        standard_keys = list(_flatten_properties(items[0]).keys())
+
+        all_user_keys: set[str] = set()
+        all_report_keys: set[str] = set()
+        for item in items:
+            if user_props := item.get("user_properties"):
+                all_user_keys.update(user_props.keys())
+            if report_props := item.get("report_properties"):
+                for rp in report_props:
+                    name = rp.get("name", "")
+                    unit = rp.get("unit", "")
+                    header = f"{name} ({unit})" if unit else name
+                    all_report_keys.add(header)
+
+        user_keys_sorted = [k.replace("_", " ").title() for k in sorted(all_user_keys)]
+        report_keys_sorted = [k.replace("_", " ").title() for k in sorted(all_report_keys)]
+
+        headers = ["No"] + standard_keys + user_keys_sorted + report_keys_sorted
+
+        flat_items = []
+        for item in items:
+            flat = _flatten_properties(item)
+            row = {**flat}
+
+            if user_props := item.get("user_properties"):
+                row.update(user_props)
+
+            if report_props := item.get("report_properties"):
+                for rp in report_props:
+                    name = rp.get("name", "")
+                    value = rp.get("value")
+                    unit = rp.get("unit", "")
+                    header = f"{name} ({unit})" if unit else name
+                    if value is not None:
+                        row[header] = round(value, 3) if isinstance(value, float) else value
+                    else:
+                        row[header] = "N/A"
+
+            flat_items.append(row)
+
+        data = [[i + 1] + [row.get(h, "") for h in headers[1:]] for i, row in enumerate(flat_items)]
+        return tabulate(data, headers=headers, tablefmt="github")
+
+    content_parts: list[str] = []
+
+    if assemblies:
+        assembly_table = _build_table(assemblies)
+        content_parts.append(f"## Assemblies\n{assembly_table}\n")
+
+    if parts:
+        parts_table = _build_table(parts)
+        content_parts.append(f"## Parts\n{parts_table}\n")
+
+    content = "\n\n".join(content_parts) if content_parts else "No elements found!"
+
+    logger.info("Retrieved properties for %s elements", processed_elements)
+
+    return ToolResult(
+        content=content,
+        structured_content={
+            "status": status,
+            "selected_elements": selected_objects.GetSize(),
+            "processed_elements": processed_elements,
+            "assemblies": assemblies,
+            "parts": parts,
+            "resolution_errors": resolution_errors,
+            "extraction_errors": extraction_errors,
+        },
+    )
 
 
-@properties_provider.tool(tags={"properties"})
+@properties_provider.tool(tags={"catalog"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @log_mcp_tool_call
-def get_elements_cut_parts() -> dict[str, Any]:
+def get_elements_cut_parts() -> ToolResult:
     """
     Find all cut parts in the selected Tekla elements and return a summary grouped by profile.
 
     ## OUTPUT
-    - Table format only; first row = headers, no JSON or extra text.
-    - Leftmost "No" column with sequential row numbers starting from 1.
-
-    ### TABLE COLUMNS
-    - Profile
-    - Count
-
-    ### SUMMARY
-    - Show the total number of cut parts found across all profiles.
-    - Show the total number of processed elements.
+    - Return the result table EXACTLY as provided by the tool.
+    - DO NOT reformat, summarize, or explain.
+    - DO NOT modify spacing, columns, or headers.
     """
     selected_objects = TeklaModel().get_selected_objects()
 
@@ -252,6 +279,9 @@ def get_elements_cut_parts() -> dict[str, Any]:
     cut_parts_by_profile: Counter[str] = Counter()
 
     for selected_object in selected_objects:
+        if not isinstance(selected_object, Part):
+            logger.warning("Skipping non-Part object: %s", selected_object.GetType())
+            continue
         for boolean_part in iterate_boolean_parts(selected_object):
             if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT:
                 profile = boolean_part.OperativePart.Profile.ProfileString
@@ -259,21 +289,24 @@ def get_elements_cut_parts() -> dict[str, Any]:
         processed_elements += 1
 
     sorted_profiles = sorted(cut_parts_by_profile.items(), key=lambda x: x[0])
-    cut_parts_list = [{"profile": profile, "count": count} for profile, count in sorted_profiles]
-    serialized_cut_parts = serialize_to_json(cut_parts_list)
+    table_data = [[i + 1, profile, count] for i, (profile, count) in enumerate(sorted_profiles)]
+    cut_parts_table = tabulate(table_data, headers=["No", "Profile", "Count"], tablefmt="github")
 
     total_cut_parts = sum(cut_parts_by_profile.values())
     logger.info("Found %s cut parts across %s profiles in %s elements", total_cut_parts, len(sorted_profiles), processed_elements)
-    return {
-        "status": "success" if cut_parts_list else "warning",
-        "selected_elements": selected_objects.GetSize(),
-        "processed_elements": processed_elements,
-        "total_cut_parts": total_cut_parts,
-        "cut_parts_list": serialized_cut_parts,
-    }
+    return ToolResult(
+        content=f"## Cut Parts\n{cut_parts_table}\n",
+        structured_content={
+            "status": "success" if sorted_profiles else "warning",
+            "selected_elements": selected_objects.GetSize(),
+            "processed_elements": processed_elements,
+            "total_cut_parts": total_cut_parts,
+            "cut_parts_list": sorted_profiles,
+        },
+    )
 
 
-@properties_provider.tool(tags={"properties"})
+@properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @log_mcp_tool_call
 def compare_elements(
     ignore_numbering: Annotated[bool, Field(description="Skip numbering check")] = False,
@@ -378,7 +411,7 @@ def compare_elements(
     }
 
 
-@properties_provider.tool(tags={"properties"})
+@properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def clear_elements_udas(
     uda_names: Annotated[list[str] | None, Field(description="List of specific UDA names to clear")] = None,

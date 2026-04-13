@@ -8,6 +8,8 @@ from typing import Any, Annotated
 from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
+from fastmcp.tools import ToolResult
+from tabulate import tabulate
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType
@@ -66,7 +68,7 @@ def _matches_string_filter(value: str, filter_option: Any) -> bool:
     return all(results)
 
 
-@drawings_provider.tool(tags={"drawings"})
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @log_mcp_tool_call
 def get_drawings(
     drawing_type: Annotated[DrawingType | None, Field(description="Filter by drawing type")] = None,
@@ -161,27 +163,15 @@ def get_drawings(
         }
 
 
-@drawings_provider.tool(tags={"drawings"})
+@drawings_provider.tool(tags={"catalog"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @log_mcp_tool_call
 def get_drawing_properties(
     marks: Annotated[list[str] | None, Field(description="List of drawing marks to get properties for")] = None,
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get properties of drawings by their marks.
 
     If the marks are not provided, gets properties of currently selected drawings in Tekla.
-
-    ## OUTPUT
-    - Table format only; first row = headers, no JSON or extra text.
-    - Leftmost "No" column with sequential row numbers starting from 1.
-
-    ### DEFAULT COLUMNS
-    - Type, Mark, Name, Title1, Title2, Title3, CreationDate, ModificationDate, IsFrozen, IsLocked, IsReadyForIssue, IsIssued, IsIssuedButModified, IsMasterDrawing, IssuingDate, OutputDate, UpToDateStatus, CommitMessage
-
-    ### GENERAL RULES
-    - Each table must have a flat structure.
-    - Each row represents one drawing.
-    - Each column represents one property.
 
     ## EXAMPLES
     # Get properties of selected drawings
@@ -189,15 +179,28 @@ def get_drawing_properties(
 
     # Get properties of specific drawings
     {"marks": ["[HCS-1001 - 1]", "[HCS-1002 - 1]"]}
+
+    ## OUTPUT
+    - Return the result table EXACTLY as provided by the tool.
+    - DO NOT reformat, summarize, or explain.
+    - DO NOT modify spacing, columns, or headers.
     """
+
+    def _build_table(items: list[dict[str, Any]]) -> str:
+        if not items:
+            return ""
+        headers = [h.replace("_", " ").title() for h in items[0].keys()]
+        data = [[i + 1] + list(d.values()) for i, d in enumerate(items)]
+        return tabulate(data, headers=headers, tablefmt="github")
+
     try:
         drawing_handler = DrawingHandler()
 
         if not drawing_handler.GetConnectionStatus():
-            return {
-                "status": "error",
-                "message": "Not connected to Tekla",
-            }
+            return ToolResult(
+                content="Not connected to Tekla",
+                structured_content={"status": "error", "message": "Not connected to Tekla"},
+            )
 
         if marks is None or marks == []:
             selector = drawing_handler.GetDrawingSelector()
@@ -211,26 +214,30 @@ def get_drawing_properties(
             drawings = [d for d in all_drawings if d.mark in marks]
 
         if not drawings:
-            return {
-                "status": "warning",
-                "message": "No drawings found",
-                "selected_count": 0,
-                "drawings": [],
-            }
+            return ToolResult(
+                content="No drawings found",
+                structured_content={"status": "warning", "message": "No drawings found"},
+            )
 
         drawings_data = [d.to_dict() for d in drawings]
 
+        drawings_table = _build_table(drawings_data)
+        content = f"## Drawings\n{drawings_table}\n"
+
         logger.info("Retrieved properties for %s drawings", len(drawings_data))
 
-        return {
-            "status": "success",
-            "selected_count": len(drawings_data),
-            "drawings": drawings_data,
-        }
+        return ToolResult(
+            content=content,
+            structured_content={
+                "status": "success",
+                "selected_count": len(drawings_data),
+                "drawings": drawings_data,
+            },
+        )
 
     except Exception:
         logger.exception("Failed to get drawing properties")
-        return {
-            "status": "error",
-            "message": "Failed to get drawing properties",
-        }
+        return ToolResult(
+            content="Failed to get drawing properties",
+            structured_content={"status": "error", "message": "Failed to get drawing properties"},
+        )

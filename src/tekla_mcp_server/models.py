@@ -23,6 +23,7 @@ Rotation = Literal["FRONT", "TOP", "BACK", "BELOW"]
 DrawingType = Literal["GA", "Assembly", "SinglePart", "CastUnit", "MultiDrawing", "Unknown"]
 SelectionMode = Literal["Assembly", "Main Part"]
 
+
 # Enums
 class BeamType(Enum):
     """Enum for beam element types."""
@@ -58,7 +59,6 @@ class NumericMatchType(Enum):
     SMALLER_OR_EQUAL = "Smaller Or Equal"
     GREATER_THAN = "Greater Than"
     GREATER_OR_EQUAL = "Greater Or Equal"
-
 
 
 class StandardStringFilterKey(str, Enum):
@@ -162,7 +162,6 @@ class EnumWrapper(BaseModel):
         if normalized not in cls._valid_values:
             raise PydanticCustomError(cls._error_code, f"Invalid value: {v}. Allowed: {', '.join(cls._valid_values)}")
         return normalized
-
 
 
 class StringFilterCondition(BaseModel):
@@ -704,6 +703,7 @@ class TeklaBeamInput(BaseModel):
     position: PositionInput | None = Field(default=None, description="Position settings for the element")
     part_number: NumberingSeries | None = Field(default=None, description="Part numbering series")
     assembly_number: NumberingSeries | None = Field(default=None, description="Assembly numbering series")
+
 
 class BeamInput(TeklaBeamInput):
     """Input model for a single beam definition."""

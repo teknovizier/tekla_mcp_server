@@ -153,7 +153,7 @@ def _modify_single_component(model: TeklaModel, component: BaseComponent, select
     return counter
 
 
-@components_provider.tool(tags={"components"})
+@components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def put_components(
     component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
@@ -177,7 +177,7 @@ def put_components(
     return _manage_components_on_selected_objects(_put_single_component, component)
 
 
-@components_provider.tool(tags={"components"})
+@components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def remove_components(component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")]) -> dict[str, Any]:
     """
@@ -211,7 +211,7 @@ def remove_components(component_name: Annotated[str, Field(description="The Tekl
     }
 
 
-@components_provider.tool(tags={"components"})
+@components_provider.tool(tags={"components"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @log_mcp_tool_call
 def get_components() -> dict[str, Any]:
     """
@@ -296,7 +296,7 @@ def get_components() -> dict[str, Any]:
     }
 
 
-@components_provider.tool(tags={"components"})
+@components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
 def modify_components(
     component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
