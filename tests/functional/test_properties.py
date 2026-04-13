@@ -55,7 +55,7 @@ def test_set_elements_properties_with_user_properties(model_objects):
 def test_get_elements_properties_contains_required_fields(model_objects):
     """Tests that get_elements_properties returns all required fields for parts."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Part")
+    select_elements_assemblies_or_main_parts(mode="Main Part")
     result = get_elements_properties()
 
     parts = json.loads(result["parts_list"])
@@ -110,7 +110,7 @@ def test_set_elements_properties_all_part_properties(model_objects):
     assert result["changes_applied"]["phase"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Part")
+    select_elements_assemblies_or_main_parts(mode="Main Part")
     result = get_elements_properties()
     parts = json.loads(result["parts_list"])
     assert len(parts) >= 1
@@ -161,7 +161,7 @@ def test_parts_and_assemblies_have_different_properties(model_objects):
     )
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Part")
+    select_elements_assemblies_or_main_parts(mode="Main Part")
     result_parts = get_elements_properties()
     parts = json.loads(result_parts["parts_list"])
 
@@ -217,7 +217,7 @@ def test_get_elements_properties_parts_vs_assemblies(model_objects):
     result_assemblies = get_elements_properties()
 
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    select_elements_assemblies_or_main_parts(mode="Part")
+    select_elements_assemblies_or_main_parts(mode="Main Part")
     result_parts = get_elements_properties()
 
     assemblies = json.loads(result_assemblies["assemblies_list"])
@@ -230,7 +230,7 @@ def test_get_elements_properties_parts_vs_assemblies(model_objects):
 def test_get_elements_properties_numbering_fields(model_objects):
     """Tests that get_elements_properties returns numbering fields for parts and assemblies."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Part")
+    select_elements_assemblies_or_main_parts(mode="Main Part")
     result_parts = get_elements_properties()
     parts = json.loads(result_parts["parts_list"])
 
@@ -285,7 +285,7 @@ def test_get_elements_properties_user_properties(model_objects):
     assert result["changes_applied"]["udas"] >= 1
 
     TeklaModel.select_objects([model_objects["test_wall7"]])
-    select_elements_assemblies_or_main_parts(mode="Part")
+    select_elements_assemblies_or_main_parts(mode="Main Part")
     result = get_elements_properties()
     parts = json.loads(result["parts_list"])
 

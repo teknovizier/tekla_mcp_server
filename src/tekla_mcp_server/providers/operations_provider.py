@@ -4,7 +4,8 @@ Operations tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Any
+from typing import Any, Annotated
+from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
 
@@ -21,12 +22,9 @@ operations_provider = LocalProvider()
 
 @operations_provider.tool()
 @log_mcp_tool_call
-def cut_elements_with_zero_class_parts(delete_cutting_parts: bool = False) -> dict[str, Any]:
+def cut_elements_with_zero_class_parts(delete_cutting_parts: Annotated[bool, Field(description="Remove cutting parts after cuts are applied")] = False) -> dict[str, Any]:
     """
     Performs boolean cuts on selected model objects using parts in class 0.
-
-    ## INPUT
-    - `delete_cutting_parts` [Optional]: If True, removes cutting parts after cuts are applied (default: False)
     """
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
@@ -60,9 +58,6 @@ def cut_elements_with_zero_class_parts(delete_cutting_parts: bool = False) -> di
 def convert_cut_parts_to_real_parts() -> dict[str, Any]:
     """
     Finds boolean parts and inserts them as real model objects.
-
-    ## INPUT
-    - No additional parameters required.
     """
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
@@ -87,18 +82,12 @@ def convert_cut_parts_to_real_parts() -> dict[str, Any]:
 
 @operations_provider.tool()
 @log_mcp_tool_call
-def run_macro(macro_name: str) -> dict[str, Any]:
+def run_macro(macro_name: Annotated[str, Field(description="Name of the macro file to run (e.g., 'MyMacro.cs'")]) -> dict[str, Any]:
     """
     Runs a Tekla macro with the specified name.
 
-    ## INPUT
-    - `macro_name` [Required]: Name of the macro file to run (e.g., "MyMacro.cs")
-
     ## AVAILABLE MACROS
     Use the `macro://list` resource to get a list of available macros.
-
-    ## OUTPUT
-    Returns status indicating whether the macro ran successfully.
     """
     if Operation.IsMacroRunning():
         logger.warning("Cannot run macro '%s': Tekla is busy running another macro", macro_name)

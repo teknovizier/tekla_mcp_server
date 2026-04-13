@@ -4,7 +4,7 @@ This module defines core data structures, enumerations, and models used in the p
 
 import json
 from enum import Enum
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar, Self, Literal
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
 from pydantic_core import PydanticCustomError
@@ -15,23 +15,21 @@ from tekla_mcp_server.config import get_config
 TYPE_MAP = {"str": str, "int": int, "float": float}
 TYPE_DEFAULTS = {"str": str(), "int": int(), "float": float()}
 
+# Literals
+Plane = Literal["LEFT", "MIDDLE", "RIGHT"]
+Depth = Literal["FRONT", "MIDDLE", "BEHIND"]
+Rotation = Literal["FRONT", "TOP", "BACK", "BELOW"]
 
+DrawingType = Literal["GA", "Assembly", "SinglePart", "CastUnit", "MultiDrawing", "Unknown"]
+SelectionMode = Literal["Assembly", "Main Part"]
+
+# Enums
 class BeamType(Enum):
     """Enum for beam element types."""
 
     BEAM = "Beam"
     COLUMN = "Column"
     PANEL = "Panel"
-
-
-# Enums
-class SelectionMode(Enum):
-    """
-    Represents selection modes for Tekla objects.
-    """
-
-    ASSEMBLY = "Assembly"
-    MAIN_PART = "Main Part"
 
 
 class StringMatchType(Enum):
@@ -61,14 +59,6 @@ class NumericMatchType(Enum):
     GREATER_THAN = "Greater Than"
     GREATER_OR_EQUAL = "Greater Or Equal"
 
-
-class DrawingType(Enum):
-    GA = "GA"
-    ASSEMBLY = "Assembly"
-    SINGLE_PART = "SinglePart"
-    CAST_UNIT = "CastUnit"
-    MULTIDRAWING = "MultiDrawing"
-    UNKNOWN = "Unknown"
 
 
 class StandardStringFilterKey(str, Enum):
@@ -142,9 +132,6 @@ class ElementLabel(Enum):
 
 
 # Mappings
-SELECTION_MODES = {e.value for e in SelectionMode}
-
-DRAWING_TYPES = {e.value for e in DrawingType}
 ELEMENT_TYPES = {e.value for e in ElementType}
 COMPONENT_TYPES = {e.value for e in ComponentType}
 ELEMENT_LABELS = {e.value for e in ElementLabel}
@@ -155,7 +142,7 @@ class EnumWrapper(BaseModel):
     """
     A generic base model for validating string inputs against a predefined set of enum values.
 
-    This class is designed to be subclassed by specific enum models (e.g., SelectionModeModel),
+    This class is designed to be subclassed by specific enum models,
     allowing consistent validation logic and error handling across multiple enum types.
     """
 
@@ -176,35 +163,6 @@ class EnumWrapper(BaseModel):
             raise PydanticCustomError(cls._error_code, f"Invalid value: {v}. Allowed: {', '.join(cls._valid_values)}")
         return normalized
 
-
-class SelectionModeModel(EnumWrapper):
-    """
-    Represents a validated selection mode for Tekla objects.
-    """
-
-    _valid_values = SELECTION_MODES
-    _error_code = "invalid_selection_mode"
-
-    def to_enum(self) -> SelectionMode:
-        """
-        Converts the validated string value to a enum.
-        """
-        return SelectionMode(self.value)
-
-
-class DrawingTypeModel(EnumWrapper):
-    """
-    Represents a validated drawing type for Tekla drawings.
-    """
-
-    _valid_values = DRAWING_TYPES
-    _error_code = "invalid_drawing_type"
-
-    def to_enum(self) -> DrawingType:
-        """
-        Converts the validated string value to an enum.
-        """
-        return DrawingType(self.value)
 
 
 class StringFilterCondition(BaseModel):
@@ -421,9 +379,9 @@ class BaseComponent(BaseModel):
     Base class for Tekla components.
     """
 
-    name: str = Field(description="The name of the Tekla component.")
-    properties_set: str | None = Field(default="standard", description="The name of the Tekla component properties set to use (`standard` by default).")
-    custom_properties: dict[str, Any] | str | None = Field(default=None, description="Custom properties to apply to the component. Can be a dictionary or JSON string.")
+    name: str = Field(description="The Tekla name of the component")
+    properties_set: str | None = Field(default="standard", description="The name of the Tekla component properties set to use")
+    custom_properties: dict[str, Any] | str | None = Field(default=None, description="Custom properties to apply to the component")
 
     # Private properties
     _number: int = PrivateAttr()
@@ -546,29 +504,21 @@ class BaseComponent(BaseModel):
 class NumberingSeries(BaseModel):
     """
     The NumberingSeries class describes how an object is to be numbered.
-
-    Attributes:
-        prefix: The prefix in numbering.
-        start_number: The start number in numbering.
     """
 
-    prefix: str
-    start_number: int
+    prefix: str = Field(description="The prefix in numbering")
+    start_number: int = Field(description="The start number in numbering")
 
 
 class ReportProperty(BaseModel):
     """
-    Represents key properties of a global attribute in Tekla:
-    - Attribute name
-    - Data type (converted from string to Python type)
-    - Unit
-    - Value
+    Represents key properties of a global report property in Tekla.
     """
 
-    name: str
-    data_type: type
-    unit: str | None
-    value: float | str | int | None = None
+    name: str = Field(description="The name of the report property")
+    data_type: type = Field(description="The data type of the report property")
+    unit: str | None = Field(description="The unit of the report property")
+    value: float | str | int | None = Field(default=None, description="The value of the report property")
 
     @field_validator("data_type", mode="before")
     @classmethod
@@ -593,19 +543,14 @@ class ReportProperty(BaseModel):
 
 class ModelObjectSnapshot(BaseModel):
     """
-    Base class for Tekla object snapshots:
-    - GUID
-    - ID
-    - Position
-    - Report properties
-    - User properties
+    Base class for Tekla object snapshots.
     """
 
-    id: int
-    guid: str
-    pos: str
-    report_properties: dict[str, Any] = Field(default_factory=dict)
-    user_properties: dict[str, Any] = Field(default_factory=dict)
+    id: int = Field(description="The ID of the model object")
+    guid: str = Field(description="The GUID of the model object")
+    pos: str = Field(description="The position of the model object")
+    report_properties: dict[str, Any] = Field(default_factory=dict, description="Report properties of the model object")
+    user_properties: dict[str, Any] = Field(default_factory=dict, description="User properties of the model object")
 
     @staticmethod
     def _sort_key_for_comparison(value: Any) -> tuple | str:
@@ -656,20 +601,12 @@ class ModelObjectSnapshot(BaseModel):
 
 class PartSnapshot(ModelObjectSnapshot):
     """
-    Represents a snapshot of a Tekla part for comparison purposes:
-    - GUID
-    - ID
-    - Position
-    - Report properties
-    - User properties
-    - Cut parts
-    - Reinforcements
-    - Welds
+    Represents a snapshot of a Tekla part for comparison purposes.
     """
 
-    cutparts: list[dict[str, Any]] = Field(default_factory=list)
-    reinforcements: list[dict[str, Any]] = Field(default_factory=list)
-    welds: list[dict[str, Any]] = Field(default_factory=list)
+    cutparts: list[dict[str, Any]] = Field(default_factory=list, description="List of cut parts that belong to the part")
+    reinforcements: list[dict[str, Any]] = Field(default_factory=list, description="List of reinforcements that belong to the part")
+    welds: list[dict[str, Any]] = Field(default_factory=list, description="List of welds that belong to the part")
 
     def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
         cutparts = [self._normalize_dict(cp, tolerance) for cp in self.cutparts if cp is not None]
@@ -706,20 +643,12 @@ class PartSnapshot(ModelObjectSnapshot):
 
 class AssemblySnapshot(ModelObjectSnapshot):
     """
-    Represents a snapshot of a Tekla assembly for comparison purposes:
-    - GUID
-    - ID
-    - Position
-    - Report properties
-    - User properties
-    - Main part snapshot
-    - Secondaries snapshots
-    - Subassemblies snapshots
+    Represents a snapshot of a Tekla assembly for comparison purposes.
     """
 
-    main_part: PartSnapshot | None = None
-    secondaries: list[PartSnapshot] = Field(default_factory=list)
-    subassemblies: list["AssemblySnapshot"] = Field(default_factory=list)
+    main_part: PartSnapshot | None = Field(default=None, description="Snapshot of the main part of the assembly")
+    secondaries: list[PartSnapshot] = Field(default_factory=list, description="List of secondary part snapshots")
+    subassemblies: list["AssemblySnapshot"] = Field(default_factory=list, description="List of subassembly snapshots")
 
     def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
         return self.__class__(
@@ -749,76 +678,45 @@ class AssemblySnapshot(ModelObjectSnapshot):
 class PointInput(BaseModel):
     """Input model for 3D point coordinates."""
 
-    x: float
-    y: float
-    z: float
+    x: float = Field(description="X coordinate of the point")
+    y: float = Field(description="Y coordinate of the point")
+    z: float = Field(description="Z coordinate of the point")
 
 
 class PositionInput(BaseModel):
     """Input model for beam position settings."""
 
-    plane: str = "MIDDLE"
-    plane_offset: float = 0.0
-    depth: str = "MIDDLE"
-    depth_offset: float = 0.0
-    rotation: str = "FRONT"
-    rotation_offset: float = 0.0
-
-    @field_validator("plane", mode="before")
-    @classmethod
-    def validate_plane(cls, v: str) -> str:
-        from tekla_mcp_server.tekla.utils import POSITION_PLANE_MAP
-
-        valid = ", ".join(sorted(POSITION_PLANE_MAP.keys()))
-        if v.upper() not in POSITION_PLANE_MAP:
-            raise PydanticCustomError("invalid_plane", f"Invalid plane '{v}'. Must be one of: {valid}")
-        return v.upper()
-
-    @field_validator("depth", mode="before")
-    @classmethod
-    def validate_depth(cls, v: str) -> str:
-        from tekla_mcp_server.tekla.utils import POSITION_DEPTH_MAP
-
-        valid = ", ".join(sorted(POSITION_DEPTH_MAP.keys()))
-        if v.upper() not in POSITION_DEPTH_MAP:
-            raise PydanticCustomError("invalid_depth", f"Invalid depth '{v}'. Must be one of: {valid}")
-        return v.upper()
-
-    @field_validator("rotation", mode="before")
-    @classmethod
-    def validate_rotation(cls, v: str) -> str:
-        from tekla_mcp_server.tekla.utils import POSITION_ROTATION_MAP
-
-        valid = ", ".join(sorted(POSITION_ROTATION_MAP.keys()))
-        if v.upper() not in POSITION_ROTATION_MAP:
-            raise PydanticCustomError("invalid_rotation", f"Invalid rotation '{v}'. Must be one of: {valid}")
-        return v.upper()
+    plane: Plane = Field("MIDDLE", description="Plane position")
+    plane_offset: float = Field(default=0.0, description="Offset in mm along plane axis")
+    depth: Depth = Field("MIDDLE", description="Depth position")
+    depth_offset: float = Field(default=0.0, description="Offset in mm along depth axis")
+    rotation: Rotation = Field("FRONT", description="Rotation position")
+    rotation_offset: float = Field(0.0, description="Rotation offset in degrees")
 
 
 class TeklaBeamInput(BaseModel):
     """Base input model for beam-like elements (beam, column, panel)."""
 
-    profile: str
-    material: str
-    tekla_class: int
-    name: str | None = None
-    position: PositionInput | None = None
-    part_number: NumberingSeries | None = None
-    assembly_number: NumberingSeries | None = None
-
+    profile: str = Field(description="Element profile name, e.g. '300*600', 'HEA200'")
+    material: str = Field(description="Element material grade, e.g. 'C30/37', 'S235JR'")
+    tekla_class: int = Field(description="Tekla class number, e.g. 11, 100")
+    name: str | None = Field(default=None, description="Element name")
+    position: PositionInput | None = Field(default=None, description="Position settings for the element")
+    part_number: NumberingSeries | None = Field(default=None, description="Part numbering series")
+    assembly_number: NumberingSeries | None = Field(default=None, description="Assembly numbering series")
 
 class BeamInput(TeklaBeamInput):
     """Input model for a single beam definition."""
 
-    start: PointInput
-    end: PointInput
+    start: PointInput = Field(description="Start point coordinates")
+    end: PointInput = Field(description="End point coordinates")
 
 
 class ColumnInput(TeklaBeamInput):
     """Input model for a single column definition."""
 
-    base: PointInput
-    height: float
+    base: PointInput = Field(description="Base point coordinates")
+    height: float = Field(description="Column height in mm")
 
     @field_validator("height", mode="before")
     @classmethod
@@ -831,8 +729,8 @@ class ColumnInput(TeklaBeamInput):
 class PanelInput(TeklaBeamInput):
     """Input model for a single panel definition."""
 
-    start: PointInput
-    end: PointInput
+    start: PointInput = Field(description="Start point coordinates")
+    end: PointInput = Field(description="End point coordinates")
 
 
 class PlacementResult(BaseModel):

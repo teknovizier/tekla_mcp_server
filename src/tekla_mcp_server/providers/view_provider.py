@@ -4,9 +4,10 @@ View tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp.server.providers import LocalProvider
+from pydantic import Field
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import ElementLabel, ElementLabelModel
@@ -32,15 +33,14 @@ from tekla_mcp_server.tekla.loader import (
 view_provider = LocalProvider()
 
 
-@view_provider.tool()
+@view_provider.tool(tags={"view"})
 @log_mcp_tool_call
-def draw_elements_labels(label: str | None = None, custom_label: str | None = None) -> dict[str, Any]:
+def draw_elements_labels(
+    label: Annotated[str | None, Field(description="Type of label to draw")] = None,
+    custom_label: Annotated[str | None, Field(description="User-provided report property name")] = None,
+) -> dict[str, Any]:
     """
     Draws temporary labels in the Tekla model.
-
-    ## INPUT
-    - `label` [Optional]: Type of label to draw
-    - `custom_label` [Optional]: Any user-provided report property name.
 
     ## BEHAVIOR
     Treat any value provided by the user as the name of a Tekla attribute.
@@ -138,14 +138,11 @@ def draw_elements_labels(label: str | None = None, custom_label: str | None = No
     }
 
 
-@view_provider.tool()
+@view_provider.tool(tags={"view"})
 @log_mcp_tool_call
 def zoom_to_selection() -> dict[str, Any]:
     """
     Zooms the Tekla current view to fit the currently selected model objects.
-
-    ## INPUT
-    - No additional parameters required.
     """
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
@@ -192,14 +189,11 @@ def zoom_to_selection() -> dict[str, Any]:
     }
 
 
-@view_provider.tool()
+@view_provider.tool(tags={"view"})
 @log_mcp_tool_call
 def redraw_view() -> dict[str, Any]:
     """
     Redraws the currently active view in Tekla.
-
-    ## INPUT
-    - No additional parameters required.
 
     ## INSTRUCTIONS
     - This tool MUST NOT be called immediately after the coloring tool.
@@ -216,15 +210,15 @@ def redraw_view() -> dict[str, Any]:
     return {"status": "success", "views_redrawn": views_redrawn, "total_views": len(views)}
 
 
-@view_provider.tool()
+@view_provider.tool(tags={"view"})
 @log_mcp_tool_call
-def apply_view_filter(filter_name: str) -> dict[str, Any]:
+def apply_view_filter(
+    filter_name: Annotated[str, Field(description="Name of the view filter to apply")],
+) -> dict[str, Any]:
     """
     Applies a view filter to all visible views in Tekla.
 
-    ## INPUT
-    - `filter_name` [Required]: Name of the view filter to apply.
-      Use tekla://filters/view to discover available filters.
+    Use `tekla://filters/view` to discover available filters.
     """
     available = get_filters(".VObjGrp")
     if filter_name not in available:
@@ -240,14 +234,11 @@ def apply_view_filter(filter_name: str) -> dict[str, Any]:
     return {"status": "success", "filter_name": filter_name, "views_modified": len(views)}
 
 
-@view_provider.tool()
+@view_provider.tool(tags={"view"})
 @log_mcp_tool_call
 def show_only_selected() -> dict[str, Any]:
     """
     Shows only the currently selected model objects in the Tekla current view, hiding all others.
-
-    ## INPUT
-    - No additional parameters required.
     """
     selected_objects = TeklaModel().get_selected_objects()
     Operation.ShowOnlySelected(Operation.UnselectedModeEnum.Hidden)
@@ -258,14 +249,11 @@ def show_only_selected() -> dict[str, Any]:
     }
 
 
-@view_provider.tool()
+@view_provider.tool(tags={"view"})
 @log_mcp_tool_call
 def hide_selected() -> dict[str, Any]:
     """
     Hides the selected elements in the Tekla view.
-
-    ## INPUT
-    - No additional parameters required.
     """
     selected_objects = TeklaModel().get_selected_objects()
     tekla_list = collect_children(selected_objects)
@@ -274,16 +262,15 @@ def hide_selected() -> dict[str, Any]:
     return {"status": "success", "hidden_elements": tekla_list.Count}
 
 
-@view_provider.tool()
+@view_provider.tool(tags={"view"})
 @log_mcp_tool_call
-def color_selected(red: int, green: int, blue: int) -> dict[str, Any]:
+def color_selected(
+    red: Annotated[int, Field(description="Red component (0-255)")],
+    green: Annotated[int, Field(description="Green component (0-255)")],
+    blue: Annotated[int, Field(description="Blue component (0-255)")],
+) -> dict[str, Any]:
     """
     Colors the selected elements in the Tekla view with the specified color.
-
-    ## INPUT
-    - `red` [Required]: Red component (0-255)
-    - `green` [Required]: Green component (0-255)
-    - `blue` [Required]: Blue component (0-255)
     """
     selected_objects = TeklaModel().get_selected_objects()
     tekla_list = collect_children(selected_objects)

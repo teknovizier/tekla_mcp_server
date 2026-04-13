@@ -50,7 +50,7 @@ class TestPositionInput:
         assert pos.depth_offset == 0.0
         assert pos.rotation_offset == 0.0
 
-    @pytest.mark.parametrize("plane", ["LEFT", "MIDDLE", "RIGHT", "left", "right"])
+    @pytest.mark.parametrize("plane", ["LEFT", "MIDDLE", "RIGHT"])
     def test_valid_plane_values(self, plane):
         """Test valid plane values."""
         pos = PositionInput(plane=plane)
@@ -62,7 +62,7 @@ class TestPositionInput:
         with pytest.raises(ValidationError):
             PositionInput(plane=plane)
 
-    @pytest.mark.parametrize("depth", ["FRONT", "MIDDLE", "BEHIND", "front", "behind"])
+    @pytest.mark.parametrize("depth", ["FRONT", "MIDDLE", "BEHIND"])
     def test_valid_depth_values(self, depth):
         """Test valid depth values."""
         pos = PositionInput(depth=depth)
@@ -74,7 +74,7 @@ class TestPositionInput:
         with pytest.raises(ValidationError):
             PositionInput(depth=depth)
 
-    @pytest.mark.parametrize("rotation", ["FRONT", "TOP", "BACK", "front"])
+    @pytest.mark.parametrize("rotation", ["FRONT", "TOP", "BACK"])
     def test_valid_rotation_values(self, rotation):
         """Test valid rotation values."""
         pos = PositionInput(rotation=rotation)

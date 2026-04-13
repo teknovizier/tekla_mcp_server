@@ -4,12 +4,13 @@ Drawing tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Any
+from typing import Any, Annotated
+from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import DrawingTypeModel, StringFilterOption, StringMatchType
+from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType
 from tekla_mcp_server.utils import log_mcp_tool_call
 from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings
 from tekla_mcp_server.tekla.loader import DrawingHandler
@@ -65,36 +66,21 @@ def _matches_string_filter(value: str, filter_option: Any) -> bool:
     return all(results)
 
 
-@drawings_provider.tool()
+@drawings_provider.tool(tags={"drawings"})
 @log_mcp_tool_call
 def get_drawings(
-    drawing_type: str | None = None,
-    name_filter: dict[str, Any] | StringFilterOption | None = None,
-    mark_filter: dict[str, Any] | StringFilterOption | None = None,
-    title1_filter: dict[str, Any] | StringFilterOption | None = None,
-    title2_filter: dict[str, Any] | StringFilterOption | None = None,
-    title3_filter: dict[str, Any] | StringFilterOption | None = None,
+    drawing_type: Annotated[DrawingType | None, Field(description="Filter by drawing type")] = None,
+    name_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by drawing name")] = None,
+    mark_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by drawing mark")] = None,
+    title1_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by Title 1")] = None,
+    title2_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by Title 2")] = None,
+    title3_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by Title 3")] = None,
 ) -> dict[str, Any]:
     """
     Get drawings from Tekla model with optional filtering.
 
-    ## INPUT
-    - `drawing_type` [Optional]: Filter by drawing type.
-        Valid values: GA, Assembly, SinglePart, CastUnit, MultiDrawing, Unknown
-
-    - `name_filter` [Optional]: Filter by drawing name using StringFilterOption.
-        Example: {"conditions": {"match_type": "Contains", "value": "floor"}}
-
-    - `mark_filter` [Optional]: Filter by drawing mark using StringFilterOption.
-    - `title1_filter` [Optional]: Filter by title1 using StringFilterOption.
-    - `title2_filter` [Optional]: Filter by title2 using StringFilterOption.
-    - `title3_filter` [Optional]: Filter by title3 using StringFilterOption.
-
-    ## OUTPUT
-    Returns a dictionary with:
-    - status: "success", "warning", or "error"
-    - matched_count: Number of drawings that matched the filter
-    - marks: List of drawing marks
+    Name, mark and title filters are constructed using StringFilterOption.
+    Example: {"conditions": {"match_type": "Contains", "value": "floor"}}
 
     ## EXAMPLES
     # Get all CastUnit drawings
@@ -124,8 +110,6 @@ def get_drawings(
     title2_filter = _parse_filter(title2_filter)
     title3_filter = _parse_filter(title3_filter)
 
-    normalized_type = DrawingTypeModel(value=drawing_type).to_enum().value if drawing_type else None
-
     try:
         drawing_handler = DrawingHandler()
 
@@ -141,8 +125,8 @@ def get_drawings(
 
         filtered_drawings = all_drawings
 
-        if normalized_type:
-            filtered_drawings = [d for d in filtered_drawings if d.drawing_type == normalized_type]
+        if drawing_type:
+            filtered_drawings = [d for d in filtered_drawings if d.drawing_type == drawing_type]
 
         if name_filter:
             filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.name, name_filter)]
@@ -177,17 +161,15 @@ def get_drawings(
         }
 
 
-@drawings_provider.tool()
+@drawings_provider.tool(tags={"drawings"})
 @log_mcp_tool_call
 def get_drawing_properties(
-    marks: list[str] | None = None,
+    marks: Annotated[list[str] | None, Field(description="List of drawing marks to get properties for")] = None,
 ) -> dict[str, Any]:
     """
     Get properties of drawings by their marks.
 
-    ## INPUT
-    - `marks` [Optional]: List of drawing marks to get properties for.
-      If not provided, gets properties of currently selected drawings in Tekla.
+    If the marks are not provided, gets properties of currently selected drawings in Tekla.
 
     ## OUTPUT
     - Table format only; first row = headers, no JSON or extra text.
@@ -200,11 +182,6 @@ def get_drawing_properties(
     - Each table must have a flat structure.
     - Each row represents one drawing.
     - Each column represents one property.
-
-    ## RETURN KEYS
-    - `status`: "success", "warning", or "error"
-    - `selected_count`: Number of drawings
-    - `drawings`: JSON array of drawing properties
 
     ## EXAMPLES
     # Get properties of selected drawings

@@ -4,7 +4,8 @@ Components tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Any
+from typing import Any, Annotated
+from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
 
@@ -152,26 +153,21 @@ def _modify_single_component(model: TeklaModel, component: BaseComponent, select
     return counter
 
 
-@components_provider.tool()
+@components_provider.tool(tags={"components"})
 @log_mcp_tool_call
 def put_components(
-    component_name: str,
-    properties_set: str | None = None,
-    custom_properties: dict[str, Any] | None = None,
+    component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
+    properties_set: Annotated[str | None, Field(default="standard", description="The name of the Tekla component properties set to use")] = None,
+    custom_properties: Annotated[dict[str, Any] | None, Field(description="Custom properties to apply to the component")] = None,
 ) -> dict[str, Any]:
     """
     Inserts Tekla components into the selected objects.
-
-    ## INPUT
-    - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor", "Mesh Bars")
-    - `properties_set` [Optional]: The name of the Tekla component properties set to use (standard by default)
-    - `custom_properties` [Optional]: Custom properties to apply to the component (dict)
 
     ## INSTRUCTIONS
     - First read `component://schema` to discover available components.
     - Then read `component://schema/{component_key}` to get custom properties for a specific component.
     - Use Tekla config keys (e.g., `SpacBarsBottPri`, `BottGradePri`) as property names, NOT user-friendly descriptions.
-    - Example: For "Mesh Bars", read the schema to get: `SpacBarsBottPri` for "bottom primary bars spacing", `BottGradePri` for "bottom primary bars reinforcement grade".
+    - Example: For 'MeshBars', read the schema to get: `SpacBarsBottPri` for 'bottom primary bars spacing', `BottGradePri` for 'bottom primary bars reinforcement grade'.
     """
     try:
         component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=custom_properties)
@@ -181,14 +177,11 @@ def put_components(
     return _manage_components_on_selected_objects(_put_single_component, component)
 
 
-@components_provider.tool()
+@components_provider.tool(tags={"components"})
 @log_mcp_tool_call
-def remove_components(component_name: str) -> dict[str, Any]:
+def remove_components(component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")]) -> dict[str, Any]:
     """
     Removes Tekla components from selected objects.
-
-    ## INPUT
-    - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor", "Mesh Bars")
     """
     component = BaseComponent(name=component_name)
     model = TeklaModel()
@@ -218,17 +211,17 @@ def remove_components(component_name: str) -> dict[str, Any]:
     }
 
 
-@components_provider.tool()
+@components_provider.tool(tags={"components"})
 @log_mcp_tool_call
 def get_components() -> dict[str, Any]:
     """
     Gets all components attached to the currently selected elements.
 
     Returns component information including:
-    - Component name and number
-    - Whether the component is supported by config
-    - Full schema with descriptions and types (if supported)
-    - Actual attribute values from the component instance
+    - Component name and number.
+    - Whether the component is supported by config.
+    - Full schema with descriptions and types (if supported).
+    - Actual attribute values from the component instance.
     """
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
@@ -303,18 +296,14 @@ def get_components() -> dict[str, Any]:
     }
 
 
-@components_provider.tool()
+@components_provider.tool(tags={"components"})
 @log_mcp_tool_call
 def modify_components(
-    component_name: str,
-    custom_properties: dict[str, Any],
+    component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
+    custom_properties: Annotated[dict[str, Any], Field(description="Custom properties to update")],
 ) -> dict[str, Any]:
     """
     Modifies attributes of existing components on selected elements.
-
-    ## INPUT
-    - `component_name` [Required]: The Tekla name of the component (e.g., "Lifting Anchor")
-    - `custom_properties` [Required]: Properties to update (dict with Tekla config keys and new values)
 
     ## INSTRUCTIONS
     - First call `get_components` to see current component values

@@ -14,7 +14,6 @@ import pytest
 from pydantic_core import ValidationError
 
 from tekla_mcp_server.models import (
-    SelectionModeModel,
     ElementTypeModel,
     ComponentTypeModel,
     ElementLabelModel,
@@ -62,34 +61,6 @@ def test_get_element_type_by_class_raises(input_val, expected_exception):
     """
     with pytest.raises(expected_exception):
         ElementTypeModel.get_element_type_by_class(input_val)
-
-
-@pytest.mark.parametrize(
-    "input_val,expected_enum",
-    [
-        ("Assembly", "ASSEMBLY"),
-        ("Main Part", "MAIN_PART"),
-    ],
-)
-def test_selection_mode_model_valid(input_val, expected_enum):
-    """Tests SelectionModeModel with valid values."""
-    model = SelectionModeModel(value=input_val)
-    assert model.to_enum().name == expected_enum
-
-
-@pytest.mark.parametrize(
-    "input_val",
-    [
-        "Assemblies",
-        "Parts",
-        "",
-        "Random",
-    ],
-)
-def test_selection_mode_model_invalid(input_val):
-    """Tests SelectionModeModel with invalid values."""
-    with pytest.raises(ValidationError):
-        SelectionModeModel(value=input_val)
 
 
 @pytest.mark.parametrize(

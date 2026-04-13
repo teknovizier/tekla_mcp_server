@@ -24,7 +24,7 @@ def get_component_list() -> ResourceResult:
     Returns mapping of Tekla component names to config keys.
 
     Use this to find the config key for a component, then call
-    tekla://components/{component_key} to get the property schema.
+    `tekla://components/{component_key}` to get the property schema.
     """
     data = {comp.get("tekla_name"): key for key, comp in get_config().base_components.items() if comp.get("tekla_name")}
     return ResourceResult(contents=[ResourceContent(content=json.dumps(data), mime_type="application/json")])

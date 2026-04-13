@@ -5,7 +5,8 @@ Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
 from collections import Counter
-from typing import Any
+from typing import Any, Annotated
+from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
 
@@ -30,57 +31,26 @@ def _validate_exactly_two_selected(count: int) -> None:
         raise ValueError(f"More than two elements selected. Expected 2, got {count}.")
 
 
-@properties_provider.tool()
+@properties_provider.tool(tags={"properties"})
 @log_mcp_tool_call
 def set_elements_properties(
-    name: str | None = None,
-    profile: str | None = None,
-    material: str | None = None,
-    tekla_class: str | None = None,
-    finish: str | None = None,
-    part_prefix: str | None = None,
-    part_start_number: int | None = None,
-    assembly_prefix: str | None = None,
-    assembly_start_number: int | None = None,
-    phase: int | None = None,
-    user_properties: dict[str, Any] | None = None,
+    name: Annotated[str | None, Field(description="Part name")] = None,
+    profile: Annotated[str | None, Field(description="Profile string (e.g., '3000*200', 'HEA200')")] = None,
+    material: Annotated[str | None, Field(description="Material string (e.g., 'C25/30', 'S355J2')")] = None,
+    tekla_class: Annotated[int | None, Field(description="Tekla class (e.g., 1, 100 etc.)")] = None,
+    finish: Annotated[str | None, Field(description="Finish type")] = None,
+    part_prefix: Annotated[str | None, Field(description="Part numbering prefix")] = None,
+    part_start_number: Annotated[int | None, Field(description="Part start number")] = None,
+    assembly_prefix: Annotated[str | None, Field(description="Assembly numbering prefix")] = None,
+    assembly_start_number: Annotated[int | None, Field(description="Assembly start number")] = None,
+    phase: Annotated[int | None, Field(description="Phase number (1, 2, 3, etc.)")] = None,
+    user_properties: Annotated[dict[str, Any] | None, Field(description="Dictionary of user-defined attribute names and values")] = None,
 ) -> dict[str, Any]:
     """
     Sets properties and user-defined attributes (UDAs) on selected Tekla elements (assemblies or parts).
 
-    ## INPUT
-
-    ### APPLICABLE PROPERTIES BY ELEMENT TYPE
-
-    #### For PARTS (all properties apply):
-    - `name` [Optional]: Part name
-    - `profile` [Optional]: Profile string (e.g., "3000*200", "HEA200")
-    - `material` [Optional]: Material string (e.g., "C25/30", "S355J2")
-    - `tekla_class` [Optional]: Tekla class (e.g., "1", "100", etc.)
-    - `finish` [Optional]: Finish type
-    - `part_prefix` [Optional]: Part numbering prefix
-    - `part_start_number` [Optional]: Part start number
-    - `assembly_prefix` [Optional]: Assembly numbering prefix
-    - `assembly_start_number` [Optional]: Assembly start number
-    - `phase` [Optional]: Phase number (1, 2, 3, etc.)
-
-    #### For ASSEMBLIES (only these properties apply):
-    - `name` [Optional]: Assembly name
-    - `assembly_prefix` [Optional]: Assembly numbering prefix
-    - `assembly_start_number` [Optional]: Assembly start number
-    - `phase` [Optional]: Phase number (1, 2, 3, etc.)
-
-    Note: Assemblies do not have profile, material, finish, tekla_class, or part numbering.
+    Assemblies do not have `profile`, `material`, `finish`, `tekla_class`, `part_prefix`, `part_start_number`.
     These properties will only affect parts, not assemblies.
-
-    - `user_properties` [Optional]: Dictionary of user-defined attribute names and values
-
-    ## OUTPUT
-    - `status`: "success" if any changes were made, "warning" if no changes
-    - `selected_elements`: Total number of selected elements
-    - `processed_elements`: Elements that were processed
-    - `modified_elements`: Elements that were actually modified
-    - `changes_applied`: Breakdown of changes by property type
     """
     selected_objects = TeklaModel().get_selected_objects()
 
@@ -115,7 +85,7 @@ def set_elements_properties(
                     name=name,
                     profile=profile,
                     material=material,
-                    tekla_class=tekla_class,
+                    tekla_class=str(tekla_class),
                     finish=finish,
                     part_prefix=part_prefix,
                     part_start_number=part_start_number,
@@ -150,14 +120,13 @@ def set_elements_properties(
     }
 
 
-@properties_provider.tool()
+@properties_provider.tool(tags={"properties"})
 @log_mcp_tool_call
-def get_elements_properties(report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+def get_elements_properties(
+    report_props_definitions: Annotated[list[str] | None, Field(description="List of user-friendly property names")] = None,
+) -> dict[str, Any]:
     """
     Retrieve key properties for selected Tekla elements (assemblies or parts).
-
-    ## INPUT
-    - `report_props_definitions` [Optional]: List of user-friendly property names.
 
     ### BEHAVIOR
     - Extract properties not in default columns; split multi-property phrases into separate items.
@@ -259,14 +228,11 @@ def get_elements_properties(report_props_definitions: list[str] | None = None) -
     }
 
 
-@properties_provider.tool()
+@properties_provider.tool(tags={"properties"})
 @log_mcp_tool_call
 def get_elements_cut_parts() -> dict[str, Any]:
     """
     Find all cut parts in the selected Tekla elements and return a summary grouped by profile.
-
-    ## INPUT
-    - No additional parameters required.
 
     ## OUTPUT
     - Table format only; first row = headers, no JSON or extra text.
@@ -307,14 +273,13 @@ def get_elements_cut_parts() -> dict[str, Any]:
     }
 
 
-@properties_provider.tool()
+@properties_provider.tool(tags={"properties"})
 @log_mcp_tool_call
-def compare_elements(ignore_numbering: bool = False) -> dict[str, Any]:
+def compare_elements(
+    ignore_numbering: Annotated[bool, Field(description="Skip numbering check")] = False,
+) -> dict[str, Any]:
     """
     Compares two selected Tekla parts or assemblies and returns a human-readable summary of changes.
-
-    ## INPUT
-    - `ignore_numbering` [Optional]: If True, skips numbering check (default: False)
 
     ## RESPONSE FIELDS
     - `identical`: Boolean - True if elements are identical, False otherwise
@@ -413,14 +378,15 @@ def compare_elements(ignore_numbering: bool = False) -> dict[str, Any]:
     }
 
 
-@properties_provider.tool()
+@properties_provider.tool(tags={"properties"})
 @log_mcp_tool_call
-def clear_elements_udas(uda_names: list[str] | None = None) -> dict[str, Any]:
+def clear_elements_udas(
+    uda_names: Annotated[list[str] | None, Field(description="List of specific UDA names to clear")] = None,
+) -> dict[str, Any]:
     """
     Clears user-defined attributes (UDAs) from selected Tekla parts and assemblies.
 
-    ## INPUT
-    - `uda_names` [Optional]: List of specific UDA names to clear. If not provided, clears all UDAs.
+    If the list of specific UDA names is not provided, clears all UDAs.
 
     ## EXAMPLES
     # Clear all UDAs from selected elements
@@ -428,12 +394,6 @@ def clear_elements_udas(uda_names: list[str] | None = None) -> dict[str, Any]:
 
     # Clear only specific UDAs
     clear_elements_udas(uda_names=["STATUS", "APPROVED_BY"])
-
-    ## OUTPUT
-    - `status`: "success" if UDAs were cleared, "warning" if no UDAs found
-    - `cleared_udas`: Total number of UDAs cleared
-    - `modified_parts`: Number of parts modified
-    - `modified_assemblies`: Number of assemblies modified
     """
     selected_objects = TeklaModel().get_selected_objects()
 

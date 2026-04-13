@@ -4,7 +4,8 @@ Modeling tools provider for Tekla MCP server.
 Provides tools for placing beams, columns, panels and managing elements.
 """
 
-from typing import Any
+from typing import Any, Annotated
+from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
 
@@ -27,35 +28,17 @@ from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 modeling_provider = LocalProvider()
 
 
-@modeling_provider.tool()
+@modeling_provider.tool(tags={"modeling"})
 @log_mcp_tool_call
-def place_beams(beams: list[BeamInput] | None = None) -> dict[str, Any]:
+def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List of beam definitions")] = None) -> dict[str, Any]:
     """
     Places multiple beams in the Tekla model.
 
-    ## INPUT
-    - `beams` [Required]: List of beam definitions, each containing:
-        - `start` [Required]: Start point as {x, y, z}
-        - `end` [Required]: End point as {x, y, z}
-        - `profile` [Required]: Profile name (e.g., "300*600", "HEA200")
-        - `material` [Required]: Material grade (e.g., "C30/37", "S235JR")
-        - `tekla_class` [Required]: Tekla class number (e.g., 11, 100)
-          Use tekla://filters/view to discover valid classes.
-        - `name` [Optional]: Element name
-          Only include this field if the user explicitly specifies a name.
-        - `position` [Optional]: Position settings with keys:
-            - `plane`: "LEFT", "MIDDLE", "RIGHT" (default: "MIDDLE")
-            - `plane_offset`: Offset in mm along plane axis
-            - `depth`: "FRONT", "MIDDLE", "BEHIND" (default: "MIDDLE")
-            - `depth_offset`: Offset in mm along depth axis
-            - `rotation`: "FRONT", "TOP", "BACK", "BELOW" (default: "FRONT")
-            - `rotation_offset`: Rotation offset in degrees
-        - `part_number` [Optional]: Part numbering as {prefix, start_number} (e.g., {"prefix": "SB", "start_number": 1})
-        - `assembly_number` [Optional]: Assembly numbering as {prefix, start_number} (e.g., {"prefix": "SBA", "start_number": 1})
-          Do not provide these unless explicitly requested by the user.
-          If omitted, they will be assigned automatically.
+    ## INSTRUCTIONS
+    - Use `tekla://element_types` to discover default Tekla classes.
+    - Do NOT provide optional fields (`name`, `position`, `part_number`, `assembly_number`) unless explicitly specified by the user.
 
-    ## COORDINATES
+    ## COORDINATE SYSTEM
     X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
 
     ## EXAMPLES
@@ -127,35 +110,17 @@ def place_beams(beams: list[BeamInput] | None = None) -> dict[str, Any]:
     ).model_dump(mode="json", exclude_none=True)
 
 
-@modeling_provider.tool()
+@modeling_provider.tool(tags={"modeling"})
 @log_mcp_tool_call
-def place_columns(columns: list[ColumnInput] | None = None) -> dict[str, Any]:
+def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description="List of column definitions")] = None) -> dict[str, Any]:
     """
-    Places multiple columns (vertical beams) in the Tekla model.
+    Places multiple columns in the Tekla model.
 
-    ## INPUT
-    - `columns` [Required]: List of column definitions, each containing:
-        - `base` [Required]: Base point as {x, y, z}
-        - `height` [Required]: Column height in mm (must be > 0)
-        - `profile` [Required]: Profile name (e.g., "300*300", "HEA300")
-        - `material` [Required]: Material grade (e.g., "C30/37", "S235JR")
-        - `tekla_class` [Required]: Tekla class number (e.g., 10, 101)
-          Use tekla://filters/view to discover valid classes.
-        - `name` [Optional]: Element name
-          Only include this field if the user explicitly specifies a name.
-        - `position` [Optional]: Position settings with keys:
-            - `plane`: "LEFT", "MIDDLE", "RIGHT" (default: "MIDDLE")
-            - `plane_offset`: Offset in mm along plane axis
-            - `depth`: "FRONT", "MIDDLE", "BEHIND" (default: "MIDDLE")
-            - `depth_offset`: Offset in mm along depth axis
-            - `rotation`: "FRONT", "TOP", "BACK", "BOTTOM" (default: "FRONT")
-            - `rotation_offset`: Rotation offset in degrees
-        - `part_number` [Optional]: Part numbering as {prefix, start_number}
-        - `assembly_number` [Optional]: Assembly numbering as {prefix, start_number}
-          Do not provide these unless explicitly requested by the user.
-          If omitted, they will be assigned automatically.
+    ## INSTRUCTIONS
+    - Use `tekla://element_types` to discover default Tekla classes.
+    - Do NOT provide optional fields (`name`, `position`, `part_number`, `assembly_number`) unless explicitly specified by the user.
 
-    ## COORDINATES
+    ## COORDINATE SYSTEM
     X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
 
     ## EXAMPLES
@@ -228,35 +193,17 @@ def place_columns(columns: list[ColumnInput] | None = None) -> dict[str, Any]:
     ).model_dump(mode="json", exclude_none=True)
 
 
-@modeling_provider.tool()
+@modeling_provider.tool(tags={"modeling"})
 @log_mcp_tool_call
-def place_panels(panels: list[PanelInput] | None = None) -> dict[str, Any]:
+def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="List of wall panels definitions")] = None) -> dict[str, Any]:
     """
     Places multiple wall panels in the Tekla model.
 
-    ## INPUT
-    - `panels` [Required]: List of panel definitions, each containing:
-        - `start` [Required]: Start point as {x, y, z}
-        - `end` [Required]: End point as {x, y, z}
-        - `profile` [Required]: Profile name (e.g., "3000*200")
-        - `material` [Required]: Material grade (e.g., "C30/37")
-        - `tekla_class` [Required]: Tekla class number (e.g., 1)
-          Use tekla://filters/view to discover valid classes.
-        - `name` [Optional]: Element name
-          Only include this field if the user explicitly specifies a name.
-        - `position` [Optional]: Position settings with keys:
-            - `plane`: "LEFT", "MIDDLE", "RIGHT" (default: "MIDDLE")
-            - `plane_offset`: Offset in mm along plane axis
-            - `depth`: "FRONT", "MIDDLE", "BEHIND" (default: "MIDDLE")
-            - `depth_offset`: Offset in mm along depth axis
-            - `rotation`: "FRONT", "TOP", "BACK", "BOTTOM" (default: "FRONT")
-            - `rotation_offset`: Rotation offset in degrees
-        - `part_number` [Optional]: Part numbering as {prefix, start_number}
-        - `assembly_number` [Optional]: Assembly numbering as {prefix, start_number}
-          Do not provide these unless explicitly requested by the user.
-          If omitted, they will be assigned automatically.
+    ## INSTRUCTIONS
+    - Use `tekla://element_types` to discover default Tekla classes.
+    - Do NOT provide optional fields (`name`, `position`, `part_number`, `assembly_number`) unless explicitly specified by the user.
 
-    ## COORDINATES
+    ## COORDINATE SYSTEM
     X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
 
     ## EXAMPLES
@@ -327,14 +274,11 @@ def place_panels(panels: list[PanelInput] | None = None) -> dict[str, Any]:
     ).model_dump(mode="json", exclude_none=True)
 
 
-@modeling_provider.tool()
+@modeling_provider.tool(tags={"modeling"})
 @log_mcp_tool_call
 def delete_selected() -> dict[str, Any]:
     """
     Deletes all currently selected elements in Tekla.
-
-    ## INPUT
-    - No additional parameters required.
     """
     model = TeklaModel()
     selected = model.get_selected_objects()
