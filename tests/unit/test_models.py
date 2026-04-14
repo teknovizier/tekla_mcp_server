@@ -737,7 +737,7 @@ class TestGetDefaultNameForClass:
         from tekla_mcp_server.models import ElementTypeModel
 
         result = ElementTypeModel.get_default_name(100)
-        assert result == "STEEL_BEAM"
+        assert result == "BEAM"
 
     def test_unknown_class_returns_none(self):
         """Unknown class should return None."""
@@ -772,7 +772,7 @@ class TestNameAutoDetectionLogic:
         default_name = ElementTypeModel.get_default_name(tekla_class)
         resolved_name = user_name if user_name else default_name
 
-        assert resolved_name == "STEEL_BEAM"
+        assert resolved_name == "BEAM"
 
     def test_unknown_class_no_override(self):
         """When class not in config, no name override should happen."""
