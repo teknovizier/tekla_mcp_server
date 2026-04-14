@@ -10,7 +10,7 @@ from typing import Any, Annotated
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from tabulate import tabulate
+from tabulate import tabulate  # type: ignore
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_mcp_tool_call

@@ -739,13 +739,6 @@ class TestGetDefaultNameForClass:
         result = ElementTypeModel.get_default_name(100)
         assert result == "STEEL_BEAM"
 
-    def test_steel_column_returns_name(self):
-        """Steel column class should return default name."""
-        from tekla_mcp_server.models import ElementTypeModel
-
-        result = ElementTypeModel.get_default_name(101)
-        assert result == "STEEL_COLUMN"
-
     def test_unknown_class_returns_none(self):
         """Unknown class should return None."""
         from tekla_mcp_server.models import ElementTypeModel

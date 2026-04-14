@@ -9,7 +9,7 @@ from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
-from tabulate import tabulate
+from tabulate import tabulate  # type: ignore
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType

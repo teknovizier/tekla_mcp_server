@@ -66,7 +66,10 @@ def draw_elements_labels(
         else:
             label_value = "Name" if label is None else label
 
-        label_enum = ElementLabelModel(value=label_value).to_enum()
+        try:
+            label_enum = ElementLabelModel(value=label_value).to_enum()
+        except Exception as e:
+            return ToolResult(structured_content={"status": "error", "message": f"Invalid label: {str(e)}"})
 
         resolved_label = None
         unit = None

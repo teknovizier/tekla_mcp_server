@@ -953,7 +953,7 @@ class TeklaContourPlate(TeklaPart):
             contour_point.Y = pt.y
             contour_point.Z = pt.z
             self.model_object.AddContourPoint(contour_point)
-            self.model_object.Modify()
+        self.model_object.Modify()
 
     def apply_position(self, position: PositionInput | None = None) -> "TeklaContourPlate":
         """Apply position settings to the slab."""

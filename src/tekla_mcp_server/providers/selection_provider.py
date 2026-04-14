@@ -15,7 +15,6 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import (
     ElementTypeModel,
     SelectionMode,
-    ElementType,
     NumericMatchType,
     StandardStringFilterKey,
     StringFilterOption,
@@ -121,7 +120,7 @@ validate_exactly_two_selected = validate_exactly_two_selected
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @log_mcp_tool_call
 def select_elements_by_filter(
-    element_type: Annotated[str | ElementType | None, Field(description="Named element type (e.g., 'Wall', 'Steel Beam')")] = None,
+    element_type: Annotated[str | None, Field(description="Named element type (e.g., 'Wall', 'Steel Beam')")] = None,
     tekla_classes: Annotated[int | list[int] | None, Field(description="Tekla class numbers")] = None,
     standard_string_filters: Annotated[dict[str, Any] | None, Field(description="Dict of standard Tekla properties to filter options")] = None,
     custom_string_filters: Annotated[dict[str, Any] | None, Field(description="Dict of custom attribute names to StringFilterOption")] = None,
@@ -130,6 +129,49 @@ def select_elements_by_filter(
 ) -> ToolResult:
     """
     Selects elements in the Tekla model using standard properties, custom attributes and numeric ranges.
+    
+    ### EXAMPLES
+    # NAME = "Wall" OR PHASE = "2"
+    {
+        "standard_string_filters": {
+            "name": {"conditions": {"match_type": "Is Equal", "value": "Wall"}},
+            "phase": {"conditions": {"match_type": "Is Equal", "value": "2"}}
+        },
+        "combine_with": "OR"
+    }
+
+    # element_type = Wall AND (name = "beam" OR profile = "200*600")
+    {
+        "element_type": "Wall",
+        "standard_string_filters": {
+            "name": {"conditions": {"match_type": "Is Equal", "value": "beam"}},
+            "profile": {"conditions": {"match_type": "Is Equal", "value": "200*600"}}
+        },
+        "combine_with": "OR"
+    }
+
+    # Elements in class 1 (Wall) with name ending in "1601"
+    {
+        "tekla_classes": 1,
+        "standard_string_filters": {
+            "name": {"conditions": {"match_type": "Ends With", "value": "1601"}}
+        }
+    }
+
+    # Multiple classes: Sandwich Wall (8) and Wall (1)
+    {
+        "tekla_classes": [8, 1]
+    }
+
+    # Elements in class 1 (Wall) with height > 2m
+    {
+        "tekla_classes": 1,
+        "custom_numeric_filters": {
+            "HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000}}
+        }
+    }
+
+    At least one filter must be provided.
     """
     if combine_with not in {"AND", "OR"}:
         return ToolResult(structured_content={"status": "error", "message": f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'."})
@@ -137,13 +179,11 @@ def select_elements_by_filter(
     if not any((element_type, tekla_classes, standard_string_filters, custom_string_filters, custom_numeric_filters)):
         return ToolResult(structured_content={"status": "error", "message": "At least one filter must be provided."})
 
-    if isinstance(element_type, str):
+    if element_type:
         try:
-            element_type = ElementTypeModel(value=element_type).to_enum()
+            element_type_enum = ElementTypeModel(value=element_type).to_enum()
         except Exception as e:
             return ToolResult(structured_content={"status": "error", "message": f"Invalid element_type: {str(e)}"})
-    elif element_type is not None and not isinstance(element_type, ElementType):
-        return ToolResult(structured_content={"status": "error", "message": "element_type must be a string or ElementType"})
 
     model = TeklaModel()
 
@@ -194,7 +234,7 @@ def select_elements_by_filter(
         element_type_classes: list[int] = []
         for material_types in get_config().element_types.values():
             for type_name, config in material_types.items():
-                if element_type.name.replace(" ", "_").upper() in type_name.upper() or type_name.upper() in element_type.name.upper():
+                if element_type_enum.name.replace(" ", "_").upper() in type_name.upper() or type_name.upper() in element_type_enum.name.upper():
                     element_type_classes.extend(config.get("tekla_classes", []))
         type_sub = BinaryFilterExpressionCollection()
         for cls in element_type_classes:
@@ -284,7 +324,7 @@ def select_elements_by_filter(
 
     return ToolResult(
         structured_content={
-            "status": "partial" if has_resolution_errors else ("success" if count else "error"),
+            "status": "partial" if has_resolution_errors else ("success" if count else "warning"),
             "selected_elements": count,
             "string_resolution_errors": string_resolution_errors,
             "numeric_resolution_errors": numeric_resolution_errors,
