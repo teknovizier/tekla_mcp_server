@@ -406,7 +406,7 @@ def compare_elements(
                 "part_a_raw": snapshot_a_normalized.model_dump(),
                 "part_b_raw": snapshot_b_normalized.model_dump(),
                 "message": "Elements have differences",
-            }
+            },
         )
     except ValueError as e:
         return ToolResult(structured_content={"status": "error", "message": str(e)})

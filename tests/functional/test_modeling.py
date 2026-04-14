@@ -6,8 +6,8 @@ Tests beam, column, and panel placement operations.
 
 import pytest
 
-from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, delete_selected
-from tekla_mcp_server.models import BeamInput, ColumnInput, PanelInput, PointInput, PositionInput
+from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, place_slabs, delete_selected
+from tekla_mcp_server.models import BeamInput, ColumnInput, PanelInput, SlabInput, PointInput, PositionInput
 
 
 def cleanup_modeling_test_objects():
@@ -261,3 +261,107 @@ def test_delete_selected_no_selection():
     TeklaModel.clear_selection()
     result = delete_selected()
     assert result.structured_content["status"] == "error"
+
+
+@pytest.fixture
+def slab_input():
+    """Fixture: Basic slab input."""
+    return SlabInput(
+        points=[
+            PointInput(x=0, y=0, z=0),
+            PointInput(x=4000, y=0, z=0),
+            PointInput(x=4000, y=3000, z=0),
+            PointInput(x=0, y=3000, z=0),
+        ],
+        profile="200",
+        material="C30/37",
+        tekla_class=9,
+        name="MCP_TEST_SLAB",
+    )
+
+
+def test_place_single_slab(slab_input):
+    """Tests placing a single slab."""
+    result = place_slabs(slabs=[slab_input])
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
+    assert result.structured_content["total"] == 1
+
+
+def test_place_multiple_slabs():
+    """Tests placing multiple slabs in one call."""
+    slabs = [
+        SlabInput(
+            points=[
+                PointInput(x=0, y=0, z=3000),
+                PointInput(x=4000, y=0, z=3000),
+                PointInput(x=4000, y=3000, z=3000),
+                PointInput(x=0, y=3000, z=3000),
+            ],
+            profile="200",
+            material="C30/37",
+            tekla_class=9,
+            name="MCP_TEST_SLAB_1",
+        ),
+        SlabInput(
+            points=[
+                PointInput(x=5000, y=0, z=3000),
+                PointInput(x=9000, y=0, z=3000),
+                PointInput(x=9000, y=3000, z=3000),
+                PointInput(x=5000, y=3000, z=3000),
+            ],
+            profile="200",
+            material="C30/37",
+            tekla_class=9,
+            name="MCP_TEST_SLAB_2",
+        ),
+    ]
+    result = place_slabs(slabs=slabs)
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 2
+
+
+def test_place_slab_with_position():
+    """Tests placing a slab with custom position settings."""
+    slab = SlabInput(
+        points=[
+            PointInput(x=0, y=0, z=0),
+            PointInput(x=2000, y=0, z=0),
+            PointInput(x=2000, y=2000, z=0),
+            PointInput(x=0, y=2000, z=0),
+        ],
+        profile="150",
+        material="C25/30",
+        tekla_class=9,
+        position=PositionInput(plane="MIDDLE", depth="MIDDLE"),
+        name="MCP_TEST_SLAB_POS",
+    )
+    result = place_slabs(slabs=[slab])
+    assert result.structured_content["success"] is True
+
+
+def test_place_slab_empty_list():
+    """Tests placing with empty list returns error."""
+    result = place_slabs(slabs=[])
+    assert result.structured_content["status"] == "error"
+
+
+def test_place_slab_none_list():
+    """Tests placing with None list returns error."""
+    result = place_slabs(slabs=None)
+    assert result.structured_content["status"] == "error"
+
+
+def test_place_slab_less_than_3_points():
+    """Tests placing slab with less than 3 points returns validation error."""
+    with pytest.raises(Exception):
+        SlabInput(
+            points=[
+                PointInput(x=0, y=0, z=0),
+                PointInput(x=2000, y=0, z=0),
+            ],
+            profile="200",
+            material="C30/37",
+            tekla_class=9,
+            name="MCP_TEST_SLAB_BAD",
+        )

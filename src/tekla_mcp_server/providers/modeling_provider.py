@@ -15,6 +15,7 @@ from tekla_mcp_server.models import (
     BeamInput,
     ColumnInput,
     PanelInput,
+    SlabInput,
     BeamType,
     PlacementResult,
     BatchPlacementResult,
@@ -22,7 +23,7 @@ from tekla_mcp_server.models import (
     ElementTypeModel,
 )
 from tekla_mcp_server.utils import log_mcp_tool_call
-from tekla_mcp_server.tekla.wrappers.beam import TeklaBeam
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaBeam, TeklaContourPlate
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
@@ -277,6 +278,90 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
             failed=len(panels) - succeeded,
             results=results,
             message=f"Placed {succeeded} of {len(panels)} panels",
+        ).model_dump(mode="json", exclude_none=True)
+    )
+
+
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@log_mcp_tool_call
+def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List of slab definitions")] = None) -> ToolResult:
+    """
+    Places multiple slabs in the Tekla model.
+
+    ## INSTRUCTIONS
+    - Use `tekla://element_types` to discover default Tekla classes.
+    - Do NOT provide optional fields (`name`, `position`, `part_number`, `assembly_number`) unless explicitly specified by the user.
+    - Slabs require at least 3 points to define a contour.
+
+    ## COORDINATE SYSTEM
+    X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
+
+    ## EXAMPLES
+    ```json
+    {
+      "slabs": [
+        {"points": [{"x": 0, "y": 0, "z": 0}, {"x": 5000, "y": 0, "z": 0}, {"x": 5000, "y": 4000, "z": 0}, {"x": 0, "y": 4000, "z": 0}], "profile": "200", "material": "C30/37", "tekla_class": 4}
+      ]
+    }
+    ```
+    """
+    if not slabs:
+        return ToolResult(structured_content={"status": "error", "message": "No slabs provided"})
+
+    model = TeklaModel()
+    results = []
+    succeeded = 0
+
+    for input_obj in slabs:
+        try:
+            if len(input_obj.points) < 3:
+                results.append(PlacementResult(success=False, message="Slab requires at least 3 points"))
+                continue
+
+            part_number = input_obj.part_number
+            assembly_number = input_obj.assembly_number
+            name = input_obj.name
+
+            if assembly_number is None or part_number is None:
+                numbering = ElementTypeModel.get_default_numbering(input_obj.tekla_class)
+                if numbering:
+                    if assembly_number is None:
+                        assembly_number = numbering.get("assembly_number")
+                    if part_number is None:
+                        part_number = numbering.get("part_number")
+
+            if name is None:
+                name = ElementTypeModel.get_default_name(input_obj.tekla_class)
+
+            tekla_obj = TeklaContourPlate.create(
+                points=input_obj.points,
+                profile=input_obj.profile,
+                material=input_obj.material,
+                tekla_class=input_obj.tekla_class,
+                name=name,
+                position=input_obj.position,
+                part_number=part_number,
+                assembly_number=assembly_number,
+            )
+            if tekla_obj is not None:
+                succeeded += 1
+                results.append(PlacementResult(success=True, guid=tekla_obj.guid))
+            else:
+                results.append(PlacementResult(success=False, message="Insert() returned false"))
+        except Exception as e:
+            logger.exception("Failed to insert slab")
+            results.append(PlacementResult(success=False, message=str(e)))
+
+    model.commit_changes()
+
+    return ToolResult(
+        structured_content=BatchPlacementResult(
+            success=succeeded == len(slabs),
+            total=len(slabs),
+            succeeded=succeeded,
+            failed=len(slabs) - succeeded,
+            results=results,
+            message=f"Placed {succeeded} of {len(slabs)} slabs",
         ).model_dump(mode="json", exclude_none=True)
     )
 

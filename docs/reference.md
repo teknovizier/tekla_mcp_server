@@ -34,6 +34,7 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | Modeling | `place_beams` | Place one or more beams in the Tekla model | `beams` (list with start point, end point, profile, material, Tekla class, name, position) |
 | Modeling | `place_columns` | Place one or more columns in the Tekla model | `columns` (list with base point, height, profile, material, Tekla class, name, position) |
 | Modeling | `place_panels` | Place one or more wall panels in the Tekla model | `panels` (list with start point, end point, profile, material, Tekla class, name, position) |
+| Modeling | `place_slabs` | Place one or more slabs in the Tekla model | `slabs` (list with points (min 3), profile, material, Tekla class, name, position) |
 | Modeling | `delete_selected` | Delete all currently selected elements in Tekla | - |
 
 ## Resources

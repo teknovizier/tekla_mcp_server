@@ -8,24 +8,84 @@ from collections.abc import Generator, Iterable
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot
+from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, BeamType, PointInput, PositionInput
 from tekla_mcp_server.utils import log_function_call
 
 from tekla_mcp_server.tekla.loader import (
     Assembly,
+    Beam,
     BaseWeld,
     Boolean,
     BooleanPart,
+    ContourPlate,
+    ContourPoint,
     Part,
     ModelObject,
     Point,
+    Position,
     Reinforcement,
     Hashtable,
     Phase,
 )
 
+
 from tekla_mcp_server.tekla.snapshot_builder import SnapshotBuilder
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
+
+
+POSITION_PLANE_MAP = {
+    "LEFT": Position.PlaneEnum.LEFT,
+    "MIDDLE": Position.PlaneEnum.MIDDLE,
+    "RIGHT": Position.PlaneEnum.RIGHT,
+}
+POSITION_DEPTH_MAP = {
+    "FRONT": Position.DepthEnum.FRONT,
+    "MIDDLE": Position.DepthEnum.MIDDLE,
+    "BEHIND": Position.DepthEnum.BEHIND,
+}
+POSITION_ROTATION_MAP = {
+    "FRONT": Position.RotationEnum.FRONT,
+    "TOP": Position.RotationEnum.TOP,
+    "BACK": Position.RotationEnum.BACK,
+    "BELOW": Position.RotationEnum.BELOW,
+}
+
+
+def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
+    """
+    Wraps a Tekla ModelObject in the appropriate wrapper class.
+
+    Returns:
+        - TeklaAssembly if the object is an Assembly
+        - TeklaBeam if the object is a Beam
+        - TeklaContourPlate if the object is a ContourPlate
+        - TeklaPart if the object is a Part
+        - TeklaModelObject for any other object types
+    """
+    if isinstance(model_object, Assembly):
+        return TeklaAssembly(model_object)
+    elif isinstance(model_object, Beam):
+        return TeklaBeam(model_object)
+    elif isinstance(model_object, ContourPlate):
+        return TeklaContourPlate(model_object)
+    elif isinstance(model_object, Part):
+        return TeklaPart(model_object)
+    elif isinstance(model_object, (Boolean, BaseWeld, Reinforcement)):
+        return TeklaModelObject(model_object)
+    else:
+        return None
+
+
+def wrap_model_objects(model_objects: Iterable) -> Generator[TeklaModelObject, None, None]:
+    """
+    Wraps each Tekla ModelObject in the appropriate wrapper class.
+
+    Currently only some of the objects are supported, the other object types will be ignored.
+    """
+    for model_object in model_objects:
+        wrapped = wrap_model_object(model_object)
+        if wrapped is not None:
+            yield wrapped
 
 
 class TeklaModelObject:
@@ -238,6 +298,201 @@ class TeklaModelObject:
         else:
             setattr(self.model_object, prop_name, value)
         self.model_object.Modify()
+
+
+class TeklaAssembly(TeklaModelObject):
+    """
+    A wrapper class around the Tekla Structures Assembly object.
+    """
+
+    @property
+    def position(self) -> str:
+        """
+        Returns the position number of the assembly.
+        """
+        return str(self.get_report_property("ASSEMBLY_POS"))
+
+    @property
+    def name(self) -> str:
+        """
+        Returns the name of the assembly.
+        """
+        return self.model_object.Name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        """Sets the name of the assembly."""
+        self._set_property("Name", value)
+
+    @property
+    def assembly_number(self) -> NumberingSeries:
+        """
+        Returns the assembly numbering series.
+        """
+        ns = self.model_object.AssemblyNumber
+        return NumberingSeries(prefix=ns.Prefix, start_number=ns.StartNumber)
+
+    @assembly_number.setter
+    def assembly_number(self, value: NumberingSeries) -> None:
+        """Sets the assembly numbering series."""
+        self.model_object.AssemblyNumber.Prefix = value.prefix
+        self.model_object.AssemblyNumber.StartNumber = value.start_number
+        self.model_object.Modify()
+
+    @property
+    def main_part(self) -> TeklaModelObject:
+        """
+        Returns the main part of the assembly.
+
+        Raises:
+            ValueError: If the main part is not available.
+        """
+        main_part = wrap_model_object(self._model_object.GetMainPart())
+        if main_part is None:
+            raise ValueError("Main part is not available")
+        return main_part
+
+    @property
+    def weight(self) -> tuple[float, float]:
+        """
+        Calculate the weight breakdown of a given Tekla assembly.
+
+        This function returns two weight values:
+        - The total weight of the element, including its main part, secondary parts, and subassemblies.
+        - The total weight of all reinforcement bars associated with the main part, secondary parts, and any rebar subassemblies.
+        """
+        weight_main_part = float(self.main_part.get_report_property("WEIGHT"))
+
+        weight_secondaries = 0.0
+        weight_subassemblies = 0.0
+        weight_rebars = 0.0
+
+        for rebar in wrap_model_objects(self.main_part.model_object.GetReinforcements()):
+            weight_rebar = rebar.get_report_property("WEIGHT_TOTAL")
+            weight_rebars += float(weight_rebar)
+
+        for secondary in wrap_model_objects(self.model_object.GetSecondaries()):
+            weight_secondary = secondary.get_report_property("WEIGHT")
+            weight_secondaries += float(weight_secondary)
+
+            for rebar in wrap_model_objects(secondary.model_object.GetReinforcements()):
+                weight_rebar = rebar.get_report_property("WEIGHT_TOTAL")
+                weight_rebars += float(weight_rebar)
+
+        for subassembly in wrap_model_objects(self.model_object.GetSubAssemblies()):
+            weight_sub = subassembly.get_report_property("WEIGHT")
+            try:
+                rebar_type = subassembly.get_report_property("REBAR_ASSEMBLY_TYPE")
+                assert rebar_type
+                weight_rebars += float(weight_sub)
+            except AttributeError:
+                weight_subassemblies += float(weight_sub)
+
+        total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
+
+        return total_parts_weight, weight_rebars
+
+    def get_all_children(self, include_all: bool = True) -> list[ModelObject]:
+        """
+        Returns all model objects belonging to this assembly.
+
+        Args:
+            include_all: If True, includes welds, reinforcements, secondaries, subassemblies.
+        """
+        objects = []
+        stack = [self._model_object]
+
+        while stack:
+            current = stack.pop()
+
+            if isinstance(current, Assembly):
+                main = current.GetMainPart()
+                if main:
+                    objects.extend(TeklaPart(main).get_all_children(include_all))
+
+                secondaries = current.GetSecondaries()
+                for sec in secondaries:
+                    objects.extend(TeklaPart(sec).get_all_children(include_all))
+
+                subs = current.GetSubAssemblies()
+                for sub in subs:
+                    stack.append(sub)
+
+            elif isinstance(current, Part):
+                if include_all:
+                    objects.extend(TeklaPart(current).get_all_children(include_all))
+                else:
+                    objects.append(current)
+
+        return objects
+
+    def to_snapshot(self) -> AssemblySnapshot:
+        """
+        Creates a snapshot of the Assembly containing:
+        - Report properties
+        - User defined attributes (UDAs)
+        - Main part
+        - Secondaries
+        - Subassemblies
+        """
+        return SnapshotBuilder.build_assembly_snapshot(self)
+
+    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+        """
+        Gets element properties for Assembly.
+        """
+        props = super().get_properties(report_props_definitions)
+        props["position"] = self.position
+        props["name"] = self.name
+        props["assembly_prefix"] = self.assembly_number.prefix
+        props["assembly_start_number"] = self.assembly_number.start_number
+        return props
+
+    def set_properties(
+        self,
+        name: str | None = None,
+        assembly_prefix: str | None = None,
+        assembly_start_number: int | None = None,
+        phase: int | None = None,
+        user_properties: dict[str, Any] | None = None,
+    ) -> dict[str, int]:
+        """
+        Sets properties on the assembly.
+        Returns a summary of changes made.
+        """
+        changes: dict[str, int] = {
+            "name": 0,
+            "assembly_prefix": 0,
+            "assembly_start_number": 0,
+            "phase": 0,
+            "udas": 0,
+        }
+
+        if name is not None:
+            self.name = name
+            changes["name"] = 1
+
+        if assembly_prefix is not None:
+            self.model_object.AssemblyNumber.Prefix = assembly_prefix
+            self.model_object.Modify()
+            changes["assembly_prefix"] = 1
+
+        if assembly_start_number is not None:
+            self.model_object.AssemblyNumber.StartNumber = assembly_start_number
+            self.model_object.Modify()
+            changes["assembly_start_number"] = 1
+
+        if phase is not None:
+            if self.model_object.SetPhase(Phase(phase)):
+                self.model_object.Modify()
+                changes["phase"] = 1
+
+        if user_properties:
+            for key, value in user_properties.items():
+                if self.set_user_property(key, value):
+                    changes["udas"] += 1
+
+        return changes
 
 
 class TeklaPart(TeklaModelObject):
@@ -557,227 +812,220 @@ class TeklaPart(TeklaModelObject):
         return changes
 
 
-class TeklaAssembly(TeklaModelObject):
+class TeklaBeam(TeklaPart):
     """
-    A wrapper class around the Tekla Structures Assembly object.
+    Wrapper around Tekla Beam object.
+
+    Inherits from TeklaPart.
     """
 
-    @property
-    def position(self) -> str:
-        """
-        Returns the position number of the assembly.
-        """
-        return str(self.get_report_property("ASSEMBLY_POS"))
+    def __init__(self, beam: Beam | None = None):
+        super().__init__(beam)
+        self._beam = beam
 
     @property
-    def name(self) -> str:
-        """
-        Returns the name of the assembly.
-        """
-        return self.model_object.Name
+    def start_point(self) -> Point:
+        """Returns the start point of the beam."""
+        return self.model_object.StartPoint
 
-    @name.setter
-    def name(self, value: str) -> None:
-        """Sets the name of the assembly."""
-        self._set_property("Name", value)
+    @start_point.setter
+    def start_point(self, value: Point) -> None:
+        """Sets the start point of the beam."""
+        self._set_property("StartPoint", value)
 
     @property
-    def assembly_number(self) -> NumberingSeries:
+    def end_point(self) -> Point:
+        """Returns the end point of the beam."""
+        return self.model_object.EndPoint
+
+    @end_point.setter
+    def end_point(self, value: Point) -> None:
+        """Sets the end point of the beam."""
+        self._set_property("EndPoint", value)
+
+    def apply_position(self, position: PositionInput | None = None) -> "TeklaBeam":
+        """Apply position settings to the beam."""
+        if position:
+            self.model_object.Position.Plane = POSITION_PLANE_MAP.get(position.plane, Position.PlaneEnum.MIDDLE)
+            self.model_object.Position.Depth = POSITION_DEPTH_MAP.get(position.depth, Position.DepthEnum.MIDDLE)
+            self.model_object.Position.Rotation = POSITION_ROTATION_MAP.get(position.rotation, Position.RotationEnum.FRONT)
+            self.model_object.Position.PlaneOffset = position.plane_offset
+            self.model_object.Position.DepthOffset = position.depth_offset
+            self.model_object.Position.RotationOffset = position.rotation_offset
+        return self
+
+    def apply_defaults(self, beam_type: BeamType) -> "TeklaBeam":
+        """Apply default position settings based on beam type."""
+        if beam_type == BeamType.COLUMN:
+            self.model_object.Position.Depth = Position.DepthEnum.MIDDLE
+            self.model_object.Position.Rotation = Position.RotationEnum.FRONT
+            self.model_object.Position.Plane = Position.PlaneEnum.MIDDLE
+        elif beam_type == BeamType.PANEL or beam_type == BeamType.BEAM:
+            self.model_object.Position.Depth = Position.DepthEnum.FRONT
+            self.model_object.Position.Rotation = Position.RotationEnum.TOP
+            self.model_object.Position.Plane = Position.PlaneEnum.MIDDLE
+        return self
+
+    @staticmethod
+    def create(
+        start: PointInput,
+        end: PointInput,
+        profile: str,
+        material: str,
+        tekla_class: int,
+        name: str | None = None,
+        position: PositionInput | None = None,
+        beam_type: BeamType = BeamType.BEAM,
+        part_number: NumberingSeries | None = None,
+        assembly_number: NumberingSeries | None = None,
+    ) -> "TeklaBeam" | None:
         """
-        Returns the assembly numbering series.
-        """
-        ns = self.model_object.AssemblyNumber
-        return NumberingSeries(prefix=ns.Prefix, start_number=ns.StartNumber)
-
-    @assembly_number.setter
-    def assembly_number(self, value: NumberingSeries) -> None:
-        """Sets the assembly numbering series."""
-        self.model_object.AssemblyNumber.Prefix = value.prefix
-        self.model_object.AssemblyNumber.StartNumber = value.start_number
-        self.model_object.Modify()
-
-    @property
-    def main_part(self) -> TeklaModelObject:
-        """
-        Returns the main part of the assembly.
-
-        Raises:
-            ValueError: If the main part is not available.
-        """
-        main_part = wrap_model_object(self._model_object.GetMainPart())
-        if main_part is None:
-            raise ValueError("Main part is not available")
-        return main_part
-
-    @property
-    def weight(self) -> tuple[float, float]:
-        """
-        Calculate the weight breakdown of a given Tekla assembly.
-
-        This function returns two weight values:
-        - The total weight of the element, including its main part, secondary parts, and subassemblies.
-        - The total weight of all reinforcement bars associated with the main part, secondary parts, and any rebar subassemblies.
-        """
-        weight_main_part = float(self.main_part.get_report_property("WEIGHT"))
-
-        weight_secondaries = 0.0
-        weight_subassemblies = 0.0
-        weight_rebars = 0.0
-
-        for rebar in wrap_model_objects(self.main_part.model_object.GetReinforcements()):
-            weight_rebar = rebar.get_report_property("WEIGHT_TOTAL")
-            weight_rebars += float(weight_rebar)
-
-        for secondary in wrap_model_objects(self.model_object.GetSecondaries()):
-            weight_secondary = secondary.get_report_property("WEIGHT")
-            weight_secondaries += float(weight_secondary)
-
-            for rebar in wrap_model_objects(secondary.model_object.GetReinforcements()):
-                weight_rebar = rebar.get_report_property("WEIGHT_TOTAL")
-                weight_rebars += float(weight_rebar)
-
-        for subassembly in wrap_model_objects(self.model_object.GetSubAssemblies()):
-            weight_sub = subassembly.get_report_property("WEIGHT")
-            try:
-                rebar_type = subassembly.get_report_property("REBAR_ASSEMBLY_TYPE")
-                assert rebar_type
-                weight_rebars += float(weight_sub)
-            except AttributeError:
-                weight_subassemblies += float(weight_sub)
-
-        total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
-
-        return total_parts_weight, weight_rebars
-
-    def get_all_children(self, include_all: bool = True) -> list[ModelObject]:
-        """
-        Returns all model objects belonging to this assembly.
+        Create and insert a new beam.
 
         Args:
-            include_all: If True, includes welds, reinforcements, secondaries, subassemblies.
+            start: Start point
+            end: End point
+            profile: Profile name
+            material: Material grade
+            tekla_class: Tekla class number
+            name: Element name (optional)
+            position: Position settings (optional)
+            beam_type: Type of beam - Beam, Column, or Panel (default: Beam)
+            part_number: NumberingSeries for part numbering (optional)
+            assembly_number: NumberingSeries for assembly numbering (optional)
+
+        Returns:
+            TeklaBeam: The created beam wrapper
         """
-        objects = []
-        stack = [self._model_object]
+        beam = Beam()
+        beam.StartPoint = Point(start.x, start.y, start.z)
+        beam.EndPoint = Point(end.x, end.y, end.z)
+        beam.Profile.ProfileString = profile
+        beam.Material.MaterialString = material
+        beam.Class = str(tekla_class)
+        if name:
+            beam.Name = name
 
-        while stack:
-            current = stack.pop()
+        tekla_beam = TeklaBeam(beam)
 
-            if isinstance(current, Assembly):
-                main = current.GetMainPart()
-                if main:
-                    objects.extend(TeklaPart(main).get_all_children(include_all))
+        if position:
+            tekla_beam.apply_position(position)
+        else:
+            tekla_beam.apply_defaults(beam_type)
 
-                secondaries = current.GetSecondaries()
-                for sec in secondaries:
-                    objects.extend(TeklaPart(sec).get_all_children(include_all))
+        if tekla_beam.model_object.Insert():
+            if assembly_number is not None:
+                tekla_beam.assembly_number = assembly_number
+            if part_number is not None:
+                tekla_beam.part_number = part_number
+            return tekla_beam
 
-                subs = current.GetSubAssemblies()
-                for sub in subs:
-                    stack.append(sub)
-
-            elif isinstance(current, Part):
-                if include_all:
-                    objects.extend(TeklaPart(current).get_all_children(include_all))
-                else:
-                    objects.append(current)
-
-        return objects
-
-    def to_snapshot(self) -> AssemblySnapshot:
-        """
-        Creates a snapshot of the Assembly containing:
-        - Report properties
-        - User defined attributes (UDAs)
-        - Main part
-        - Secondaries
-        - Subassemblies
-        """
-        return SnapshotBuilder.build_assembly_snapshot(self)
-
-    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
-        """
-        Gets element properties for Assembly.
-        """
-        props = super().get_properties(report_props_definitions)
-        props["position"] = self.position
-        props["name"] = self.name
-        props["assembly_prefix"] = self.assembly_number.prefix
-        props["assembly_start_number"] = self.assembly_number.start_number
-        return props
-
-    def set_properties(
-        self,
-        name: str | None = None,
-        assembly_prefix: str | None = None,
-        assembly_start_number: int | None = None,
-        phase: int | None = None,
-        user_properties: dict[str, Any] | None = None,
-    ) -> dict[str, int]:
-        """
-        Sets properties on the assembly.
-        Returns a summary of changes made.
-        """
-        changes: dict[str, int] = {
-            "name": 0,
-            "assembly_prefix": 0,
-            "assembly_start_number": 0,
-            "phase": 0,
-            "udas": 0,
-        }
-
-        if name is not None:
-            self.name = name
-            changes["name"] = 1
-
-        if assembly_prefix is not None:
-            self.model_object.AssemblyNumber.Prefix = assembly_prefix
-            self.model_object.Modify()
-            changes["assembly_prefix"] = 1
-
-        if assembly_start_number is not None:
-            self.model_object.AssemblyNumber.StartNumber = assembly_start_number
-            self.model_object.Modify()
-            changes["assembly_start_number"] = 1
-
-        if phase is not None:
-            if self.model_object.SetPhase(Phase(phase)):
-                self.model_object.Modify()
-                changes["phase"] = 1
-
-        if user_properties:
-            for key, value in user_properties.items():
-                if self.set_user_property(key, value):
-                    changes["udas"] += 1
-
-        return changes
-
-
-def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
-    """
-    Wraps a Tekla ModelObject in the appropriate wrapper class.
-
-    Returns:
-        - TeklaAssembly if the object is an Assembly
-        - TeklaPart if the object is a Part
-        - TeklaModelObject for any other object types
-    """
-    if isinstance(model_object, Assembly):
-        return TeklaAssembly(model_object)
-    elif isinstance(model_object, Part):
-        return TeklaPart(model_object)
-    elif isinstance(model_object, (Boolean, BaseWeld, Reinforcement)):
-        return TeklaModelObject(model_object)
-    else:
         return None
 
 
-def wrap_model_objects(model_objects: Iterable) -> Generator[TeklaModelObject, None, None]:
+class TeklaContourPlate(TeklaPart):
     """
-    Wraps each Tekla ModelObject in the appropriate wrapper class.
+    Wrapper around Tekla ContourPlate object.
 
-    Currently only some of the objects are supported, the other object types will be ignored.
+    Inherits from TeklaPart.
     """
-    for model_object in model_objects:
-        wrapped = wrap_model_object(model_object)
-        if wrapped is not None:
-            yield wrapped
+
+    def __init__(self, slab: ContourPlate | None = None):
+        super().__init__(slab)
+        self._slab = slab
+
+    @property
+    def contour_points(self) -> list[Point]:
+        """Returns the contour points of the slab."""
+        contour = self.model_object.Contour
+        points = []
+        enum = contour.ContourPoints
+        while enum.MoveNext():
+            points.append(enum.Current)
+        return points
+
+    @contour_points.setter
+    def contour_points(self, points: list[Point]) -> None:
+        """Sets the contour points of the slab."""
+        for pt in points:
+            contour_point = ContourPoint()
+            contour_point.X = pt.x
+            contour_point.Y = pt.y
+            contour_point.Z = pt.z
+            self.model_object.AddContourPoint(contour_point)
+            self.model_object.Modify()
+
+    def apply_position(self, position: PositionInput | None = None) -> "TeklaContourPlate":
+        """Apply position settings to the slab."""
+        if position:
+            self.model_object.Position.Plane = POSITION_PLANE_MAP.get(position.plane, Position.PlaneEnum.MIDDLE)
+            self.model_object.Position.Depth = POSITION_DEPTH_MAP.get(position.depth, Position.DepthEnum.MIDDLE)
+            self.model_object.Position.Rotation = POSITION_ROTATION_MAP.get(position.rotation, Position.RotationEnum.FRONT)
+            self.model_object.Position.PlaneOffset = position.plane_offset
+            self.model_object.Position.DepthOffset = position.depth_offset
+            self.model_object.Position.RotationOffset = position.rotation_offset
+        return self
+
+    def apply_defaults(self) -> "TeklaContourPlate":
+        """Apply default position settings for a slab."""
+        self.model_object.Position.Depth = Position.DepthEnum.MIDDLE
+        self.model_object.Position.Rotation = Position.RotationEnum.TOP
+        self.model_object.Position.Plane = Position.PlaneEnum.MIDDLE
+        return self
+
+    @staticmethod
+    def create(
+        points: list[PointInput],
+        profile: str,
+        material: str,
+        tekla_class: int,
+        name: str | None = None,
+        position: PositionInput | None = None,
+        part_number: NumberingSeries | None = None,
+        assembly_number: NumberingSeries | None = None,
+    ) -> "TeklaContourPlate" | None:
+        """
+        Create and insert a new slab.
+
+        Args:
+            points: List of contour points defining slab outline
+            profile: Profile/thickness (e.g., '200', '300')
+            material: Material grade
+            tekla_class: Tekla class number
+            name: Element name (optional)
+            position: Position settings (optional)
+            part_number: NumberingSeries for part numbering (optional)
+            assembly_number: NumberingSeries for assembly numbering (optional)
+
+        Returns:
+            TeklaContourPlate: The created slab wrapper
+        """
+        slab = ContourPlate()
+        slab.Profile.ProfileString = profile
+        slab.Material.MaterialString = material
+        slab.Class = str(tekla_class)
+        if name:
+            slab.Name = name
+
+        for pt in points:
+            contour_point = ContourPoint()
+            contour_point.X = pt.x
+            contour_point.Y = pt.y
+            contour_point.Z = pt.z
+            slab.AddContourPoint(contour_point)
+
+        tekla_slab = TeklaContourPlate(slab)
+
+        if position:
+            tekla_slab.apply_position(position)
+        else:
+            tekla_slab.apply_defaults()
+
+        if tekla_slab.model_object.Insert():
+            if assembly_number is not None:
+                tekla_slab.assembly_number = assembly_number
+            if part_number is not None:
+                tekla_slab.part_number = part_number
+            return tekla_slab
+
+        return None

@@ -733,6 +733,20 @@ class PanelInput(TeklaBeamInput):
     end: PointInput = Field(description="End point coordinates")
 
 
+class SlabInput(TeklaBeamInput):
+    """Input model for a single slab definition."""
+
+    points: list[PointInput] = Field(description="List of contour points defining slab outline (minimum 3 points)")
+    profile: str = Field(description="Slab profile/thickness (e.g., '200', '300')")
+
+    @field_validator("points")
+    @classmethod
+    def validate_points(cls, v: list[PointInput]) -> list[PointInput]:
+        if len(v) < 3:
+            raise PydanticCustomError("invalid_points", f"At least 3 points are required to define a slab, got {len(v)}")
+        return v
+
+
 class PlacementResult(BaseModel):
     """Result model for a single element placement."""
 

@@ -38,30 +38,11 @@ from tekla_mcp_server.tekla.loader import (
     CatalogHandler,
     ProfileItem,
     MaterialItem,
-    Position,
     TeklaStructuresSettings,
     BooleanPart,
 )
 
 from tekla_mcp_server.utils import log_function_call
-
-
-POSITION_PLANE_MAP = {
-    "LEFT": Position.PlaneEnum.LEFT,
-    "MIDDLE": Position.PlaneEnum.MIDDLE,
-    "RIGHT": Position.PlaneEnum.RIGHT,
-}
-POSITION_DEPTH_MAP = {
-    "FRONT": Position.DepthEnum.FRONT,
-    "MIDDLE": Position.DepthEnum.MIDDLE,
-    "BEHIND": Position.DepthEnum.BEHIND,
-}
-POSITION_ROTATION_MAP = {
-    "FRONT": Position.RotationEnum.FRONT,
-    "TOP": Position.RotationEnum.TOP,
-    "BACK": Position.RotationEnum.BACK,
-    "BELOW": Position.RotationEnum.BELOW,
-}
 
 
 # Mappings
