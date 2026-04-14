@@ -811,6 +811,29 @@ class TeklaPart(TeklaModelObject):
 
         return changes
 
+    def apply_position(self, position: PositionInput | None):
+        if not position:
+            return self
+
+        pos = self.model_object.Position
+        pos.Plane = POSITION_PLANE_MAP.get(position.plane, Position.PlaneEnum.MIDDLE)
+        pos.Depth = POSITION_DEPTH_MAP.get(position.depth, Position.DepthEnum.MIDDLE)
+        pos.Rotation = POSITION_ROTATION_MAP.get(position.rotation, Position.RotationEnum.FRONT)
+
+        pos.PlaneOffset = position.plane_offset
+        pos.DepthOffset = position.depth_offset
+        pos.RotationOffset = position.rotation_offset
+        return self
+
+    def finalize_placement(self, part_number, assembly_number):
+        if self.model_object.Insert():
+            if assembly_number:
+                self.assembly_number = assembly_number
+            if part_number:
+                self.part_number = part_number
+            return self
+        return None
+
 
 class TeklaBeam(TeklaPart):
     """
@@ -842,17 +865,6 @@ class TeklaBeam(TeklaPart):
     def end_point(self, value: Point) -> None:
         """Sets the end point of the beam."""
         self._set_property("EndPoint", value)
-
-    def apply_position(self, position: PositionInput | None = None) -> "TeklaBeam":
-        """Apply position settings to the beam."""
-        if position:
-            self.model_object.Position.Plane = POSITION_PLANE_MAP.get(position.plane, Position.PlaneEnum.MIDDLE)
-            self.model_object.Position.Depth = POSITION_DEPTH_MAP.get(position.depth, Position.DepthEnum.MIDDLE)
-            self.model_object.Position.Rotation = POSITION_ROTATION_MAP.get(position.rotation, Position.RotationEnum.FRONT)
-            self.model_object.Position.PlaneOffset = position.plane_offset
-            self.model_object.Position.DepthOffset = position.depth_offset
-            self.model_object.Position.RotationOffset = position.rotation_offset
-        return self
 
     def apply_defaults(self, beam_type: BeamType) -> "TeklaBeam":
         """Apply default position settings based on beam type."""
@@ -907,21 +919,8 @@ class TeklaBeam(TeklaPart):
             beam.Name = name
 
         tekla_beam = TeklaBeam(beam)
-
-        if position:
-            tekla_beam.apply_position(position)
-        else:
-            tekla_beam.apply_defaults(beam_type)
-
-        if tekla_beam.model_object.Insert():
-            if assembly_number is not None:
-                tekla_beam.assembly_number = assembly_number
-            if part_number is not None:
-                tekla_beam.part_number = part_number
-            return tekla_beam
-
-        return None
-
+        tekla_beam.apply_position(position) if position else tekla_beam.apply_defaults(beam_type)
+        return tekla_beam.finalize_placement(part_number, assembly_number)
 
 class TeklaContourPlate(TeklaPart):
     """
@@ -954,17 +953,6 @@ class TeklaContourPlate(TeklaPart):
             contour_point.Z = pt.z
             self.model_object.AddContourPoint(contour_point)
         self.model_object.Modify()
-
-    def apply_position(self, position: PositionInput | None = None) -> "TeklaContourPlate":
-        """Apply position settings to the slab."""
-        if position:
-            self.model_object.Position.Plane = POSITION_PLANE_MAP.get(position.plane, Position.PlaneEnum.MIDDLE)
-            self.model_object.Position.Depth = POSITION_DEPTH_MAP.get(position.depth, Position.DepthEnum.MIDDLE)
-            self.model_object.Position.Rotation = POSITION_ROTATION_MAP.get(position.rotation, Position.RotationEnum.FRONT)
-            self.model_object.Position.PlaneOffset = position.plane_offset
-            self.model_object.Position.DepthOffset = position.depth_offset
-            self.model_object.Position.RotationOffset = position.rotation_offset
-        return self
 
     def apply_defaults(self) -> "TeklaContourPlate":
         """Apply default position settings for a slab."""
@@ -1015,17 +1003,5 @@ class TeklaContourPlate(TeklaPart):
             slab.AddContourPoint(contour_point)
 
         tekla_slab = TeklaContourPlate(slab)
-
-        if position:
-            tekla_slab.apply_position(position)
-        else:
-            tekla_slab.apply_defaults()
-
-        if tekla_slab.model_object.Insert():
-            if assembly_number is not None:
-                tekla_slab.assembly_number = assembly_number
-            if part_number is not None:
-                tekla_slab.part_number = part_number
-            return tekla_slab
-
-        return None
+        tekla_slab.apply_position(position) if position else tekla_slab.apply_defaults()
+        return tekla_slab.finalize_placement(part_number, assembly_number)
