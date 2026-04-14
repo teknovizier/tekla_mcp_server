@@ -333,27 +333,15 @@ def compare_elements(
     ignore_numbering: Annotated[bool, Field(description="Skip numbering check")] = False,
 ) -> ToolResult:
     """
-    Compares two selected Tekla parts or assemblies and returns a human-readable summary of changes.
+    Compares two selected Tekla parts or assemblies and returns a summary of changes.
 
-    ## RESPONSE FIELDS
-    - `identical`: Boolean - True if elements are identical, False otherwise
-    - `differences`: Only present when `identical=False`. Machine-readable diff format
-    - `differences_summary`: Only present when `identical=False`. Human-readable list of differences
-    - `part_a_raw`: Full snapshot of Part A (with guid/id) - use only when you need identifiers
-    - `part_b_raw`: Full snapshot of Part B (with guid/id) - use only when you need identifiers
-
-    ## INSTRUCTIONS
-    1. Check `identical` field first
-    2. If `identical=False`, use `differences_summary` for human-readable report
-    3. Use `differences` for programmatic analysis if needed
-    4. Use `part_a_raw`/`part_b_raw` only when you need guid/id identifiers
-
-    ## WHAT TO IGNORE
-    - `id` and `guid` fields - they are ALWAYS different (not actual differences)
-    - Order of items in lists (cutparts, reinforcements, welds) - pre-sorted for comparison
+    ## RULES
+    - Only use information explicitly present in the diff. Do not infer or assume changes.
+    - Ignore `id` and `guid` fields - they are ALWAYS different (not actual differences).
+    - Ignore order of items in lists (cutparts, reinforcements, welds).
 
     ## OUTPUT
-    A human-readable summary listing only the actual differences between the two selected parts or assemblies.
+    A human-readable summary listing ONLY the actual differences between the two selected parts or assemblies.
     """
     try:
         selected_objects = TeklaModel().get_selected_objects()
@@ -410,26 +398,11 @@ def compare_elements(
 
         diff = _compute_diff(diff_a, diff_b)
 
-        def diff_to_summary(d: Any, path: str = "") -> list[str]:
-            if d is None or not isinstance(d, dict):
-                return []
-            summary = []
-            for key, value in d.items():
-                current_path = f"{path}.{key}" if path else key
-                if isinstance(value, dict) and "a" in value and "b" in value:
-                    summary.append(f"{current_path}: A={value['a']}, B={value['b']}")
-                else:
-                    summary.extend(diff_to_summary(value, current_path))
-            return summary
-
-        diff_summary = diff_to_summary(diff)
-
         return ToolResult(
+            content=diff,
             structured_content={
                 "status": "success",
                 "identical": False,
-                "differences": diff,
-                "differences_summary": diff_summary,
                 "part_a_raw": snapshot_a_normalized.model_dump(),
                 "part_b_raw": snapshot_b_normalized.model_dump(),
                 "message": "Elements have differences",
