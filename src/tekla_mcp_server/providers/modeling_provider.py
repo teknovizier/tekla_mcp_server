@@ -4,10 +4,11 @@ Modeling tools provider for Tekla MCP server.
 Provides tools for placing beams, columns, panels and managing elements.
 """
 
-from typing import Any, Annotated
+from typing import Annotated
 from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
+from fastmcp.tools import ToolResult
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import (
@@ -30,7 +31,7 @@ modeling_provider = LocalProvider()
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
-def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List of beam definitions")] = None) -> dict[str, Any]:
+def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List of beam definitions")] = None) -> ToolResult:
     """
     Places multiple beams in the Tekla model.
 
@@ -52,7 +53,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
     ```
     """
     if not beams:
-        return {"status": "error", "message": "No beams provided"}
+        return ToolResult(structured_content={"status": "error", "message": "No beams provided"})
 
     model = TeklaModel()
     results = []
@@ -100,19 +101,21 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
 
     model.commit_changes()
 
-    return BatchPlacementResult(
-        success=succeeded == len(beams),
-        total=len(beams),
-        succeeded=succeeded,
-        failed=len(beams) - succeeded,
-        results=results,
-        message=f"Placed {succeeded} of {len(beams)} beams",
-    ).model_dump(mode="json", exclude_none=True)
+    return ToolResult(
+        structured_content=BatchPlacementResult(
+            success=succeeded == len(beams),
+            total=len(beams),
+            succeeded=succeeded,
+            failed=len(beams) - succeeded,
+            results=results,
+            message=f"Placed {succeeded} of {len(beams)} beams",
+        ).model_dump(mode="json", exclude_none=True)
+    )
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
-def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description="List of column definitions")] = None) -> dict[str, Any]:
+def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description="List of column definitions")] = None) -> ToolResult:
     """
     Places multiple columns in the Tekla model.
 
@@ -134,7 +137,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
     ```
     """
     if not columns:
-        return {"status": "error", "message": "No columns provided"}
+        return ToolResult(structured_content={"status": "error", "message": "No columns provided"})
 
     model = TeklaModel()
     results = []
@@ -183,19 +186,21 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
 
     model.commit_changes()
 
-    return BatchPlacementResult(
-        success=succeeded == len(columns),
-        total=len(columns),
-        succeeded=succeeded,
-        failed=len(columns) - succeeded,
-        results=results,
-        message=f"Placed {succeeded} of {len(columns)} columns",
-    ).model_dump(mode="json", exclude_none=True)
+    return ToolResult(
+        structured_content=BatchPlacementResult(
+            success=succeeded == len(columns),
+            total=len(columns),
+            succeeded=succeeded,
+            failed=len(columns) - succeeded,
+            results=results,
+            message=f"Placed {succeeded} of {len(columns)} columns",
+        ).model_dump(mode="json", exclude_none=True)
+    )
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
-def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="List of wall panels definitions")] = None) -> dict[str, Any]:
+def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="List of wall panels definitions")] = None) -> ToolResult:
     """
     Places multiple wall panels in the Tekla model.
 
@@ -216,7 +221,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
     ```
     """
     if not panels:
-        return {"status": "error", "message": "No panels provided"}
+        return ToolResult(structured_content={"status": "error", "message": "No panels provided"})
 
     model = TeklaModel()
     results = []
@@ -264,39 +269,49 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
 
     model.commit_changes()
 
-    return BatchPlacementResult(
-        success=succeeded == len(panels),
-        total=len(panels),
-        succeeded=succeeded,
-        failed=len(panels) - succeeded,
-        results=results,
-        message=f"Placed {succeeded} of {len(panels)} panels",
-    ).model_dump(mode="json", exclude_none=True)
+    return ToolResult(
+        structured_content=BatchPlacementResult(
+            success=succeeded == len(panels),
+            total=len(panels),
+            succeeded=succeeded,
+            failed=len(panels) - succeeded,
+            results=results,
+            message=f"Placed {succeeded} of {len(panels)} panels",
+        ).model_dump(mode="json", exclude_none=True)
+    )
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
-def delete_selected() -> dict[str, Any]:
+def delete_selected() -> ToolResult:
     """
     Deletes all currently selected elements in Tekla.
     """
-    model = TeklaModel()
-    selected = model.get_selected_objects()
-    count = selected.GetSize() if selected else 0
+    try:
+        model = TeklaModel()
+        selected = model.get_selected_objects()
+        count = selected.GetSize() if selected else 0
 
-    if count == 0:
-        return {"status": "error", "message": "No objects selected"}
+        if count == 0:
+            return ToolResult(structured_content={"status": "error", "message": "No objects selected"})
 
-    deleted = 0
-    for obj in selected:
-        if obj.Delete():
-            deleted += 1
+        deleted = 0
+        for obj in selected:
+            if obj.Delete():
+                deleted += 1
 
-    model.commit_changes()
+        model.commit_changes()
 
-    return {
-        "status": "success" if deleted == count else "warning",
-        "total_selected": count,
-        "total_deleted": deleted,
-        "message": f"Deleted {deleted} of {count} objects",
-    }
+        return ToolResult(
+            structured_content={
+                "status": "success" if deleted == count else "warning",
+                "total_selected": count,
+                "total_deleted": deleted,
+                "message": f"Deleted {deleted} of {count} objects",
+            }
+        )
+    except ValueError as e:
+        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    except Exception as e:
+        logger.exception("Error in delete_selected")
+        return ToolResult(structured_content={"status": "error", "message": str(e)})

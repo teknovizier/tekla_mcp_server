@@ -16,28 +16,28 @@ class TestGetDrawings:
         """Call get_drawings without any arguments."""
         result = get_drawings()
 
-        assert result["status"] == "success"
-        assert result["matched_count"] >= 3
+        assert result.structured_content["status"] == "success"
+        assert result.structured_content["matched_count"] >= 3
 
     def test_get_drawings_castunit_type(self):
         """Test filtering by CastUnit drawing type."""
         result = get_drawings(drawing_type="CastUnit")
 
-        assert result["status"] == "success"
-        assert result["matched_count"] > 0
+        assert result.structured_content["status"] == "success"
+        assert result.structured_content["matched_count"] > 0
 
     def test_get_drawings_unknown_type(self):
         """Test filtering by Unknown drawing type - should return 0."""
         result = get_drawings(drawing_type="Unknown")
 
-        assert result["status"] == "success"
-        assert result["matched_count"] == 0
+        assert result.structured_content["status"] == "success"
+        assert result.structured_content["matched_count"] == 0
 
     def test_get_drawings_with_mark_filter(self):
         """Test filtering by mark using StringFilterOption."""
         result = get_drawings(mark_filter={"conditions": {"match_type": "Starts With", "value": "["}, "logic": "AND"})
 
-        assert result["status"] == "success"
+        assert result.structured_content["status"] == "success"
 
 
 class TestGetDrawingProperties:
@@ -53,7 +53,7 @@ class TestGetDrawingProperties:
     def test_get_drawing_properties_with_mark(self):
         """Get a GA drawing and check its properties."""
         drawings_result = get_drawings(drawing_type="GA")
-        marks = drawings_result.get("marks", [])
+        marks = drawings_result.structured_content.get("marks", [])
 
         if not marks:
             pytest.skip("No GA drawings available in model")

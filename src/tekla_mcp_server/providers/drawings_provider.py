@@ -77,7 +77,7 @@ def get_drawings(
     title1_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by Title 1")] = None,
     title2_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by Title 2")] = None,
     title3_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by Title 3")] = None,
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Get drawings from Tekla model with optional filtering.
 
@@ -116,10 +116,12 @@ def get_drawings(
         drawing_handler = DrawingHandler()
 
         if not drawing_handler.GetConnectionStatus():
-            return {
-                "status": "error",
-                "message": "Not connected to Tekla",
-            }
+            return ToolResult(
+                structured_content={
+                    "status": "error",
+                    "message": "Not connected to Tekla",
+                }
+            )
 
         drawings_enum = drawing_handler.GetDrawings()
 
@@ -149,18 +151,22 @@ def get_drawings(
 
         logger.info("Found %s drawings matching filters", len(marks))
 
-        return {
-            "status": "success",
-            "matched_count": len(marks),
-            "marks": marks,
-        }
+        return ToolResult(
+            structured_content={
+                "status": "success",
+                "matched_count": len(marks),
+                "marks": marks,
+            }
+        )
 
     except Exception:
         logger.exception("Failed to get drawings")
-        return {
-            "status": "error",
-            "message": "Failed to get drawings",
-        }
+        return ToolResult(
+            structured_content={
+                "status": "error",
+                "message": "Failed to get drawings",
+            }
+        )
 
 
 @drawings_provider.tool(tags={"catalog"}, annotations={"readOnlyHint": True, "destructiveHint": False})

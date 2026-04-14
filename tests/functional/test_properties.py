@@ -19,14 +19,14 @@ def test_set_elements_properties(model_objects):
     TeklaModel.select_objects([model_objects["test_wall7"]])
 
     result = set_elements_properties(name="MCP_TEST_NEW_NAME", profile="2000*150", material="C16/20", tekla_class="8", finish="FR")
-    assert result["status"] == "success"
-    assert result["processed_elements"] == 1
-    assert result["modified_elements"] == 1
-    assert result["changes_applied"]["name"] == 1
-    assert result["changes_applied"]["profile"] == 1
-    assert result["changes_applied"]["material"] == 1
-    assert result["changes_applied"]["tekla_class"] == 1
-    assert result["changes_applied"]["finish"] == 1
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["processed_elements"] == 1
+    assert result.structured_content["modified_elements"] == 1
+    assert result.structured_content["changes_applied"]["name"] == 1
+    assert result.structured_content["changes_applied"]["profile"] == 1
+    assert result.structured_content["changes_applied"]["material"] == 1
+    assert result.structured_content["changes_applied"]["tekla_class"] == 1
+    assert result.structured_content["changes_applied"]["finish"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall7"]])
     result = get_elements_properties()
@@ -45,9 +45,9 @@ def test_set_elements_properties_with_user_properties(model_objects):
 
     user_props = {"MCP_TEST_UDA1": "TestValue1", "MCP_TEST_UDA2": "TestValue2"}
     result = set_elements_properties(user_properties=user_props)
-    assert result["status"] == "success"
-    assert result["processed_elements"] == 1
-    assert result["changes_applied"]["udas"] == 2
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["processed_elements"] == 1
+    assert result.structured_content["changes_applied"]["udas"] == 2
 
 
 def test_get_elements_properties_contains_required_fields(model_objects):
@@ -98,14 +98,14 @@ def test_set_elements_properties_all_part_properties(model_objects):
         finish="R",
         phase=2,
     )
-    assert result["status"] == "success"
-    assert result["modified_elements"] == 1
-    assert result["changes_applied"]["name"] == 1
-    assert result["changes_applied"]["profile"] == 1
-    assert result["changes_applied"]["material"] == 1
-    assert result["changes_applied"]["tekla_class"] == 1
-    assert result["changes_applied"]["finish"] == 1
-    assert result["changes_applied"]["phase"] == 1
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["modified_elements"] == 1
+    assert result.structured_content["changes_applied"]["name"] == 1
+    assert result.structured_content["changes_applied"]["profile"] == 1
+    assert result.structured_content["changes_applied"]["material"] == 1
+    assert result.structured_content["changes_applied"]["tekla_class"] == 1
+    assert result.structured_content["changes_applied"]["finish"] == 1
+    assert result.structured_content["changes_applied"]["phase"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Main Part")
@@ -130,12 +130,12 @@ def test_set_elements_properties_all_assembly_properties(model_objects):
         assembly_start_number=888,
         phase=3,
     )
-    assert result["status"] == "success"
-    assert result["modified_elements"] == 1
-    assert result["changes_applied"]["name"] == 1
-    assert result["changes_applied"]["assembly_prefix"] == 1
-    assert result["changes_applied"]["assembly_start_number"] == 1
-    assert result["changes_applied"]["phase"] == 1
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["modified_elements"] == 1
+    assert result.structured_content["changes_applied"]["name"] == 1
+    assert result.structured_content["changes_applied"]["assembly_prefix"] == 1
+    assert result.structured_content["changes_applied"]["assembly_start_number"] == 1
+    assert result.structured_content["changes_applied"]["phase"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
@@ -191,21 +191,18 @@ def test_set_elements_properties_multiple_elements(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
 
     result = set_elements_properties(tekla_class="77")
-    assert result["status"] == "success"
-    assert result["processed_elements"] == 2
-    assert result["modified_elements"] == 2
-    assert result["changes_applied"]["tekla_class"] == 2
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["processed_elements"] == 2
+    assert result.structured_content["modified_elements"] == 2
+    assert result.structured_content["changes_applied"]["tekla_class"] == 2
 
 
 def test_set_elements_properties_empty_selection(model_objects):
     """Tests set_elements_properties with no elements selected."""
     TeklaModel.select_objects([])
 
-    try:
-        result = set_elements_properties(name="ShouldNotFail")
-        assert result["status"] == "error"
-    except ValueError as e:
-        assert "No objects are currently selected" in str(e)
+    result = set_elements_properties(name="ShouldNotFail")
+    assert result.structured_content["status"] == "error"
 
 
 def test_get_elements_properties_parts_vs_assemblies(model_objects):
@@ -261,9 +258,9 @@ def test_set_elements_properties_numbering(model_objects):
         assembly_prefix="TEST",
         assembly_start_number=100,
     )
-    assert result["status"] == "success"
-    assert result["changes_applied"]["assembly_prefix"] == 1
-    assert result["changes_applied"]["assembly_start_number"] == 1
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["changes_applied"]["assembly_prefix"] == 1
+    assert result.structured_content["changes_applied"]["assembly_start_number"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall7"]])
     select_elements_assemblies_or_main_parts(mode="Assembly")
@@ -279,8 +276,8 @@ def test_get_elements_properties_user_properties(model_objects):
 
     user_props = {"UDA_FOR_TEST": "TestValue123"}
     result = set_elements_properties(user_properties=user_props)
-    assert result["status"] == "success"
-    assert result["changes_applied"]["udas"] >= 1
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["changes_applied"]["udas"] >= 1
 
     TeklaModel.select_objects([model_objects["test_wall7"]])
     select_elements_assemblies_or_main_parts(mode="Main Part")
@@ -400,8 +397,8 @@ def test_compare_elements_numbering_not_up_to_date(model_objects):
     TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
     result = compare_elements()
 
-    assert result["status"] == "error"
-    assert "numbering" in result["message"].lower()
+    assert result.structured_content["status"] == "error"
+    assert "numbering" in result.structured_content["message"].lower()
 
 
 def test_compare_identical_parts(model_objects):
@@ -409,8 +406,8 @@ def test_compare_identical_parts(model_objects):
     TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
     result = compare_elements(ignore_numbering=True)
 
-    assert result["status"] == "success"
-    assert result["identical"] is True
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["identical"] is True
 
 
 def test_compare_different_parts_different_profile(model_objects):
@@ -418,8 +415,8 @@ def test_compare_different_parts_different_profile(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
     result = compare_elements(ignore_numbering=True)
 
-    assert result["status"] == "success"
-    assert result["identical"] is False
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["identical"] is False
 
 
 def test_compare_three_elements(model_objects):
@@ -433,5 +430,5 @@ def test_compare_three_elements(model_objects):
     )
     result = compare_elements(ignore_numbering=True)
 
-    assert result["status"] == "error"
-    assert "More than two elements" in result["message"]
+    assert result.structured_content["status"] == "error"
+    assert "More than two elements" in result.structured_content["message"]

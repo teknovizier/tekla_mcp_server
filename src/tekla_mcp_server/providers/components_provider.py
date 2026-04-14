@@ -8,6 +8,7 @@ from typing import Any, Annotated
 from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
+from fastmcp.tools import ToolResult
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
@@ -29,15 +30,21 @@ def _manage_components_on_selected_objects(
     custom_properties_errors: list[str] | None = None,
     *args: Any,
     **kwargs: Any,
-) -> dict[str, Any]:
-    model = TeklaModel()
-    selected_objects = model.get_selected_objects()
-    if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
-        return _process_detail_or_component(selected_objects, callback, model, component, custom_properties_errors, *args, **kwargs)
-    elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
-        return _process_seam_or_connection(selected_objects, callback, model, component, custom_properties_errors, *args, **kwargs)
-    logger.warning("Unsupported component type: %s", component.component_type)
-    return {"status": "error", "message": f"Unsupported component type: {component.component_type}"}
+) -> ToolResult:
+    try:
+        model = TeklaModel()
+        selected_objects = model.get_selected_objects()
+        if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
+            return _process_detail_or_component(selected_objects, callback, model, component, custom_properties_errors, *args, **kwargs)
+        elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
+            return _process_seam_or_connection(selected_objects, callback, model, component, custom_properties_errors, *args, **kwargs)
+        logger.warning("Unsupported component type: %s", component.component_type)
+        return ToolResult(structured_content={"status": "error", "message": f"Unsupported component type: {component.component_type}"})
+    except ValueError as e:
+        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    except Exception as e:
+        logger.exception("Error in _manage_components_on_selected_objects")
+        return ToolResult(structured_content={"status": "error", "message": str(e)})
 
 
 def _process_detail_or_component(
@@ -48,7 +55,7 @@ def _process_detail_or_component(
     custom_properties_errors: list[str] | None = None,
     *args: Any,
     **kwargs: Any,
-) -> dict[str, Any]:
+) -> ToolResult:
     processed_elements = 0
     processed_components = 0
     for selected_object in selected_objects:
@@ -63,13 +70,15 @@ def _process_detail_or_component(
     status = "success" if processed_components else "error"
     if errors:
         status = "warning"
-    return {
-        "status": status,
-        "selected_elements": selected_objects.GetSize(),
-        "processed_elements": processed_elements,
-        "processed_components": processed_components,
-        "custom_properties_errors": errors,
-    }
+    return ToolResult(
+        structured_content={
+            "status": status,
+            "selected_elements": selected_objects.GetSize(),
+            "processed_elements": processed_elements,
+            "processed_components": processed_components,
+            "custom_properties_errors": errors,
+        }
+    )
 
 
 def _process_seam_or_connection(
@@ -80,14 +89,12 @@ def _process_seam_or_connection(
     custom_properties_errors: list[str] | None = None,
     *args: Any,
     **kwargs: Any,
-) -> dict[str, Any]:
+) -> ToolResult:
     count = selected_objects.GetSize()
-    if count == 0:
-        raise ValueError("No elements selected. Please select two elements.")
     if count == 1:
-        raise ValueError("Only one element selected. Please select two elements.")
+        return ToolResult(structured_content={"status": "error", "message": "Only one element selected. Please select two elements."})
     if count > 2:
-        raise ValueError(f"More than two elements selected. Expected 2, got {count}.")
+        return ToolResult(structured_content={"status": "error", "message": f"More than two elements selected. Expected 2, got {count}."})
 
     processed_elements = 0
     processed_components = 0
@@ -103,13 +110,15 @@ def _process_seam_or_connection(
     status = "success" if processed_components else "error"
     if errors:
         status = "warning"
-    return {
-        "status": status,
-        "selected_elements": selected_objects.GetSize(),
-        "processed_elements": processed_elements,
-        "inserted_components": processed_components,
-        "custom_properties_errors": errors,
-    }
+    return ToolResult(
+        structured_content={
+            "status": status,
+            "selected_elements": selected_objects.GetSize(),
+            "processed_elements": processed_elements,
+            "inserted_components": processed_components,
+            "custom_properties_errors": errors,
+        }
+    )
 
 
 @ensure_transformation_plane
@@ -159,7 +168,7 @@ def put_components(
     component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
     properties_set: Annotated[str | None, Field(default="standard", description="The name of the Tekla component properties set to use")] = None,
     custom_properties: Annotated[dict[str, Any] | None, Field(description="Custom properties to apply to the component")] = None,
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Inserts Tekla components into the selected objects.
 
@@ -172,48 +181,54 @@ def put_components(
     try:
         component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=custom_properties)
     except ValueError as e:
-        return {"status": "error", "message": "Invalid custom_properties", "errors": str(e)}
+        return ToolResult(structured_content={"status": "error", "message": "Invalid custom_properties", "errors": str(e)})
 
-    return _manage_components_on_selected_objects(_put_single_component, component)
+    result = _manage_components_on_selected_objects(_put_single_component, component)
+    return result
 
 
 @components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @log_mcp_tool_call
-def remove_components(component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")]) -> dict[str, Any]:
+def remove_components(component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")]) -> ToolResult:
     """
     Removes Tekla components from selected objects.
     """
-    component = BaseComponent(name=component_name)
-    model = TeklaModel()
-    selected_objects = model.get_selected_objects()
+    try:
+        component = BaseComponent(name=component_name)
+        model = TeklaModel()
+        selected_objects = model.get_selected_objects()
 
-    if selected_objects.GetSize() == 0:
-        raise ValueError("No elements selected. Please select at least one element.")
+        handler = HandlerRegistry.get(component.name)
 
-    handler = HandlerRegistry.get(component.name)
+        counter = 0
+        objects_list = list(selected_objects)
+        if handler and hasattr(handler, "pre_remove"):
+            counter += handler.pre_remove(objects_list)
 
-    counter = 0
-    objects_list = list(selected_objects)
-    if handler and hasattr(handler, "pre_remove"):
-        counter += handler.pre_remove(objects_list)
-
-    for obj in objects_list:
-        for comp in obj.GetComponents():
-            if comp.Number == component.number and comp.Name == component.name:
-                if comp.Delete():
-                    counter += 1
-    model.commit_changes()
-    logger.info("Total components removed: %s", counter)
-    return {
-        "status": "success",
-        "selected_elements": selected_objects.GetSize(),
-        "removed_components": counter,
-    }
+        for obj in objects_list:
+            for comp in obj.GetComponents():
+                if comp.Number == component.number and comp.Name == component.name:
+                    if comp.Delete():
+                        counter += 1
+        model.commit_changes()
+        logger.info("Total components removed: %s", counter)
+        return ToolResult(
+            structured_content={
+                "status": "success",
+                "selected_elements": selected_objects.GetSize(),
+                "removed_components": counter,
+            }
+        )
+    except ValueError as e:
+        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    except Exception as e:
+        logger.exception("Error in remove_components")
+        return ToolResult(structured_content={"status": "error", "message": str(e)})
 
 
 @components_provider.tool(tags={"components"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @log_mcp_tool_call
-def get_components() -> dict[str, Any]:
+def get_components() -> ToolResult:
     """
     Gets all components attached to the currently selected elements.
 
@@ -223,77 +238,86 @@ def get_components() -> dict[str, Any]:
     - Full schema with descriptions and types (if supported).
     - Actual attribute values from the component instance.
     """
-    model = TeklaModel()
-    selected_objects = model.get_selected_objects()
-    base_components = get_config().base_components
+    try:
+        model = TeklaModel()
+        selected_objects = model.get_selected_objects()
 
-    components_by_tekla_name: dict[str, dict[str, Any]] = {}
-    for config_key, comp_def in base_components.items():
-        tekla_name = comp_def.get("tekla_name")
-        if tekla_name:
-            components_by_tekla_name[tekla_name] = {
-                "config_key": config_key,
-                "number": comp_def.get("number", -1),
-                "schema": comp_def.get("custom_properties", {}),
-            }
+        base_components = get_config().base_components
 
-    elements_data: list[dict[str, Any]] = []
-    total_components = 0
-
-    for selected_object in wrap_model_objects(selected_objects):
-        object_components: list[dict[str, Any]] = []
-        comp_enum = selected_object.model_object.GetComponents()
-
-        while comp_enum.MoveNext():
-            comp = comp_enum.Current
-            comp_name = comp.Name
-            comp_number = comp.Number
-
-            config_match = components_by_tekla_name.get(comp_name)
-            if config_match:
-                supported = True
-                config_key = config_match["config_key"]
-                schema = config_match["schema"]
-            else:
-                supported = False
-                config_key = None
-                schema = None
-
-            attributes: dict[str, Any] = {}
-            if schema:
-                for attr_key, attr_def in schema.items():
-                    attr_type = attr_def.get("type", "str")
-                    default = TYPE_DEFAULTS.get(attr_type, str())
-                    is_ok, attr_value = comp.GetAttribute(attr_key, default)
-                    attributes[attr_key] = attr_value if is_ok else default
-
-            object_components.append(
-                {
-                    "name": comp_name,
-                    "number": comp_number,
-                    "supported": supported,
+        components_by_tekla_name: dict[str, dict[str, Any]] = {}
+        for config_key, comp_def in base_components.items():
+            tekla_name = comp_def.get("tekla_name")
+            if tekla_name:
+                components_by_tekla_name[tekla_name] = {
                     "config_key": config_key,
-                    "schema": schema,
-                    "attributes": attributes,
+                    "number": comp_def.get("number", -1),
+                    "schema": comp_def.get("custom_properties", {}),
+                }
+
+        elements_data: list[dict[str, Any]] = []
+        total_components = 0
+
+        for selected_object in wrap_model_objects(selected_objects):
+            object_components: list[dict[str, Any]] = []
+            comp_enum = selected_object.model_object.GetComponents()
+
+            while comp_enum.MoveNext():
+                comp = comp_enum.Current
+                comp_name = comp.Name
+                comp_number = comp.Number
+
+                config_match = components_by_tekla_name.get(comp_name)
+                if config_match:
+                    supported = True
+                    config_key = config_match["config_key"]
+                    schema = config_match["schema"]
+                else:
+                    supported = False
+                    config_key = None
+                    schema = None
+
+                attributes: dict[str, Any] = {}
+                if schema:
+                    for attr_key, attr_def in schema.items():
+                        attr_type = attr_def.get("type", "str")
+                        default = TYPE_DEFAULTS.get(attr_type, str())
+                        is_ok, attr_value = comp.GetAttribute(attr_key, default)
+                        attributes[attr_key] = attr_value if is_ok else default
+
+                object_components.append(
+                    {
+                        "name": comp_name,
+                        "number": comp_number,
+                        "supported": supported,
+                        "config_key": config_key,
+                        "schema": schema,
+                        "attributes": attributes,
+                    }
+                )
+                total_components += 1
+
+            elements_data.append(
+                {
+                    "guid": selected_object.guid,
+                    "components": object_components,
                 }
             )
-            total_components += 1
 
-        elements_data.append(
-            {
-                "guid": selected_object.guid,
-                "components": object_components,
+        logger.info("Found %s components across %s elements", total_components, len(elements_data))
+
+        return ToolResult(
+            structured_content={
+                "status": "success",
+                "total_elements": len(elements_data),
+                "total_components": total_components,
+                "elements": elements_data,
             }
         )
-
-    logger.info("Found %s components across %s elements", total_components, len(elements_data))
-
-    return {
-        "status": "success",
-        "total_elements": len(elements_data),
-        "total_components": total_components,
-        "elements": elements_data,
-    }
+    except ValueError as e:
+        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    except Exception as e:
+        logger.exception("Error in get_components")
+        return ToolResult(structured_content={"status": "error", "message": str(e)})
 
 
 @components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -301,7 +325,7 @@ def get_components() -> dict[str, Any]:
 def modify_components(
     component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
     custom_properties: Annotated[dict[str, Any], Field(description="Custom properties to update")],
-) -> dict[str, Any]:
+) -> ToolResult:
     """
     Modifies attributes of existing components on selected elements.
 
@@ -314,6 +338,7 @@ def modify_components(
     try:
         component = BaseComponent(name=component_name, custom_properties=custom_properties)
     except ValueError as e:
-        return {"status": "error", "message": "Invalid custom_properties", "errors": str(e)}
+        return ToolResult(structured_content={"status": "error", "message": "Invalid custom_properties", "errors": str(e)})
 
-    return _manage_components_on_selected_objects(_modify_single_component, component)
+    result = _manage_components_on_selected_objects(_modify_single_component, component)
+    return result

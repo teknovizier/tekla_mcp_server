@@ -77,7 +77,7 @@ def model_objects():
         objects = model.get_objects_by_guid([guid])
         return objects[0] if objects else None
 
-    panel_guids = [r["guid"] for r in result_panels["results"]]
+    panel_guids = [r["guid"] for r in result_panels.structured_content["results"]]
     yield {
         "model": model,
         "walls": [get_single_object(g) for g in panel_guids[:4]],
@@ -90,9 +90,9 @@ def model_objects():
         "test_wall7": get_single_object(panel_guids[6]),
         "test_wall8": get_single_object(panel_guids[7]),
         "test_sw1": get_single_object(panel_guids[8]),
-        "test_slab1": get_single_object(result_slabs["results"][0]["guid"]),
-        "void1": get_single_object(result_voids["results"][0]["guid"]),
-        "void2": get_single_object(result_voids["results"][1]["guid"]),
+        "test_slab1": get_single_object(result_slabs.structured_content["results"][0]["guid"]),
+        "void1": get_single_object(result_voids.structured_content["results"][0]["guid"]),
+        "void2": get_single_object(result_voids.structured_content["results"][1]["guid"]),
     }
 
     cleanup_mcp_test_objects()

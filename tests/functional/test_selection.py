@@ -18,17 +18,17 @@ from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 def test_select_elements_by_filter_name(model_objects):
     """Tests select_elements_by_filter_name function."""
     result = select_elements_by_filter_name(filter_name="non_standard")
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
     result = select_elements_by_filter_name(filter_name="standard")
-    assert result["status"] == "success"
-    assert result["selected_elements"]
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_elements"]
 
 
 def test_select_elements_by_filter_no_filters_returns_error(model_objects):
     """Tests select_elements_by_filter when called without any filter parameters."""
     result = select_elements_by_filter()
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
 
 @pytest.mark.parametrize(
@@ -49,14 +49,14 @@ def test_select_elements_by_filter_element_type_and_tekla_classes(model_objects,
         kwargs["tekla_classes"] = tekla_classes
 
     result = select_elements_by_filter(**kwargs)
-    assert result["status"] == "success"
+    assert result.structured_content["status"] == "success"
 
 
 @pytest.mark.parametrize("invalid_element_type", ["InvalidType", "NonExistent", "FakeWall"])
 def test_select_elements_by_filter_invalid_element_type(model_objects, invalid_element_type):
     """Tests select_elements_by_filter with invalid element_type values."""
     result = select_elements_by_filter(element_type=invalid_element_type)
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
 
 @pytest.mark.parametrize(
@@ -79,7 +79,7 @@ def test_select_elements_by_filter_standard_string_filters(model_objects, field,
         element_type="Wall",
         standard_string_filters={field: {"conditions": {"match_type": match_type, "value": value}}},
     )
-    assert result["status"] == "success"
+    assert result.structured_content["status"] == "success"
 
 
 @pytest.mark.parametrize("logic", ["AND", "OR"])
@@ -97,7 +97,7 @@ def test_select_elements_by_filter_string_multiple_conditions(model_objects, log
             }
         },
     )
-    assert result["status"] == "success"
+    assert result.structured_content["status"] == "success"
 
 
 def test_select_elements_by_filter_custom_string_filters(model_objects):
@@ -107,7 +107,7 @@ def test_select_elements_by_filter_custom_string_filters(model_objects):
         "custom_string_filters": {},
     }
     result = select_elements_by_filter(**kwargs)
-    assert result["status"] == "success"
+    assert result.structured_content["status"] == "success"
 
 
 @pytest.mark.parametrize(
@@ -131,7 +131,7 @@ def test_select_elements_by_filter_numeric_single_condition(model_objects, prop)
             }
         },
     )
-    assert result["status"] == "success"
+    assert result.structured_content["status"] == "success"
 
 
 @pytest.mark.parametrize("logic", ["AND", "OR"])
@@ -149,7 +149,7 @@ def test_select_elements_by_filter_numeric_multiple_conditions(model_objects, lo
             }
         },
     )
-    assert result["status"] == "success"
+    assert result.structured_content["status"] == "success"
 
 
 @pytest.mark.parametrize("combine_with", ["AND", "OR"])
@@ -161,7 +161,7 @@ def test_select_elements_by_filter_combined_filters(model_objects, combine_with)
         custom_numeric_filters={"HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000.0}}},
         combine_with=combine_with,
     )
-    assert result["status"] == "success"
+    assert result.structured_content["status"] == "success"
 
 
 @pytest.mark.parametrize("invalid_logic", ["and", "or", "XOR", "", "NOT"])
@@ -172,29 +172,29 @@ def test_select_elements_by_filter_invalid_combine_with(model_objects, invalid_l
         standard_string_filters={"name": {"conditions": {"match_type": "Contains", "value": "MCP"}}},
         combine_with=invalid_logic,
     )
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
 
 def test_select_elements_by_guid(model_objects):
     """Tests select_elements_by_guid function."""
     result = select_elements_by_guid(guids=[])
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
     result = select_elements_by_guid(guids=[""])
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
     result = select_elements_by_guid(guids=["MCP_TEST_WALL2"])
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
     wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
     result = select_elements_by_guid(guids=[wall2_guid])
-    assert result["status"] == "success"
-    assert result["selected_elements"] == 1
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_elements"] == 1
 
     wall1_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
     result = select_elements_by_guid(guids=[wall1_guid, wall2_guid])
-    assert result["status"] == "success"
-    assert result["selected_elements"] == 2
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_elements"] == 2
 
 
 @pytest.mark.parametrize("mode,expected_count", [("Assembly", 2), ("Main Part", 2)])
@@ -202,5 +202,5 @@ def test_select_elements_assemblies(model_objects, mode, expected_count):
     """Tests select_elements_assemblies_or_main_parts function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     result = select_elements_assemblies_or_main_parts(mode=mode)
-    assert result["status"] == "success"
-    assert result["selected_elements"] == expected_count
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_elements"] == expected_count

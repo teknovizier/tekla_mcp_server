@@ -79,9 +79,9 @@ def panel_input():
 def test_place_single_beam(beam_input):
     """Tests placing a single beam."""
     result = place_beams(beams=[beam_input])
-    assert result["success"] is True
-    assert result["succeeded"] == 1
-    assert result["total"] == 1
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
+    assert result.structured_content["total"] == 1
 
 
 def test_place_multiple_beams():
@@ -105,8 +105,8 @@ def test_place_multiple_beams():
         ),
     ]
     result = place_beams(beams=beams)
-    assert result["success"] is True
-    assert result["succeeded"] == 2
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 2
 
 
 def test_place_beam_with_position():
@@ -121,26 +121,26 @@ def test_place_beam_with_position():
         name="MCP_TEST_BEAM_POS",
     )
     result = place_beams(beams=[beam])
-    assert result["success"] is True
+    assert result.structured_content["success"] is True
 
 
 def test_place_beam_empty_list():
     """Tests placing with empty list returns error."""
     result = place_beams(beams=[])
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
 
 def test_place_beam_none_list():
     """Tests placing with None list returns error."""
     result = place_beams(beams=None)
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
 
 def test_place_single_column(column_input):
     """Tests placing a single column."""
     result = place_columns(columns=[column_input])
-    assert result["success"] is True
-    assert result["succeeded"] == 1
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
 
 
 def test_place_multiple_columns():
@@ -164,8 +164,8 @@ def test_place_multiple_columns():
         ),
     ]
     result = place_columns(columns=columns)
-    assert result["success"] is True
-    assert result["succeeded"] == 2
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 2
 
 
 def test_place_column_with_position():
@@ -180,26 +180,26 @@ def test_place_column_with_position():
         name="MCP_TEST_COLUMN_POS",
     )
     result = place_columns(columns=[col])
-    assert result["success"] is True
+    assert result.structured_content["success"] is True
 
 
 def test_place_column_empty_list():
     """Tests placing columns with empty list returns error."""
     result = place_columns(columns=[])
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
 
 def test_place_column_none_list():
     """Tests placing columns with None returns error."""
     result = place_columns(columns=None)
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
 
 def test_place_single_panel(panel_input):
     """Tests placing a single panel."""
     result = place_panels(panels=[panel_input])
-    assert result["success"] is True
-    assert result["succeeded"] == 1
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
 
 
 def test_place_multiple_panels():
@@ -223,8 +223,8 @@ def test_place_multiple_panels():
         ),
     ]
     result = place_panels(panels=panels)
-    assert result["success"] is True
-    assert result["succeeded"] == 2
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 2
 
 
 def test_place_panel_with_position():
@@ -239,19 +239,19 @@ def test_place_panel_with_position():
         name="MCP_TEST_PANEL_POS",
     )
     result = place_panels(panels=[panel])
-    assert result["success"] is True
+    assert result.structured_content["success"] is True
 
 
 def test_place_panel_empty_list():
     """Tests placing panels with empty list returns error."""
     result = place_panels(panels=[])
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
 
 def test_place_panel_none_list():
     """Tests placing panels with None returns error."""
     result = place_panels(panels=None)
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
 
 
 def test_delete_selected_no_selection():
@@ -260,4 +260,4 @@ def test_delete_selected_no_selection():
 
     TeklaModel.clear_selection()
     result = delete_selected()
-    assert result["status"] == "error"
+    assert result.structured_content["status"] == "error"
