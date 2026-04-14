@@ -371,11 +371,19 @@ def compare_elements(
         diff_a = snapshot_a_normalized.to_diff_view()
         diff_b = snapshot_b_normalized.to_diff_view()
 
+        IGNORED_KEYS = {"id", "guid"}
+
         def _canonical(value: Any) -> Any:
             if isinstance(value, dict):
-                return tuple((k, _canonical(v)) for k, v in sorted(value.items()) if k.lower() not in ("id", "guid"))
+                return tuple(
+                    (k, _canonical(v))
+                    for k, v in sorted(value.items())
+                    if k.lower() not in IGNORED_KEYS
+                )
+
             if isinstance(value, list):
-                return tuple(sorted(_canonical(v) for v in value))
+                return tuple(_canonical(v) for v in value)  # <-- KEEP ORDER
+
             return value
 
         def _compute_diff(a: Any, b: Any) -> Any:
@@ -384,19 +392,33 @@ def compare_elements(
                 return None
             if isinstance(a, dict) and isinstance(b, dict):
                 diff = {}
-                for key in set(a) | set(b):
-                    if key.lower() in ("id", "guid"):
+                for key in sorted(set(a) | set(b)):
+                    if key.lower() in IGNORED_KEYS:
                         continue
                     d = _compute_diff(a.get(key), b.get(key))
                     if d is not None:
                         diff[key] = d
                 return diff or None
-            return {"a": a, "b": b}
+            return [a, b]
 
-        if _canonical(diff_a) == _canonical(diff_b):
+        def _strip_ignored(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {
+                    k: _strip_ignored(v)
+                    for k, v in value.items()
+                    if k.lower() not in IGNORED_KEYS
+                }
+            if isinstance(value, list):
+                return [_strip_ignored(v) for v in value]
+            return value
+        
+        diff_a_clean = _strip_ignored(diff_a)
+        diff_b_clean = _strip_ignored(diff_b)
+
+        if _canonical(diff_a_clean) == _canonical(diff_b_clean):
             return ToolResult(structured_content={"status": "success", "identical": True, "message": "Elements are identical"})
 
-        diff = _compute_diff(diff_a, diff_b)
+        diff = _compute_diff(diff_a_clean, diff_b_clean)
 
         return ToolResult(
             content=diff,
