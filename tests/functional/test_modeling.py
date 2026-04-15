@@ -41,8 +41,8 @@ def cleanup_after_test():
 def beam_input():
     """Fixture: Basic beam input."""
     return BeamInput(
-        start=PointInput(x=0, y=0, z=0),
-        end=PointInput(x=2000, y=0, z=0),
+        start_point=PointInput(x=0, y=0, z=0),
+        end_point=PointInput(x=2000, y=0, z=0),
         profile="300*600",
         material="C30/37",
         tekla_class=11,
@@ -54,7 +54,7 @@ def beam_input():
 def column_input():
     """Fixture: Basic column input."""
     return ColumnInput(
-        base=PointInput(x=0, y=0, z=0),
+        base_point=PointInput(x=0, y=0, z=0),
         height=3000,
         profile="400*400",
         material="C30/37",
@@ -67,8 +67,8 @@ def column_input():
 def panel_input():
     """Fixture: Basic panel input."""
     return PanelInput(
-        start=PointInput(x=0, y=0, z=0),
-        end=PointInput(x=3000, y=0, z=0),
+        start_point=PointInput(x=0, y=0, z=0),
+        end_point=PointInput(x=3000, y=0, z=0),
         profile="3000*200",
         material="C30/37",
         tekla_class=1,
@@ -88,16 +88,16 @@ def test_place_multiple_beams():
     """Tests placing multiple beams in one call."""
     beams = [
         BeamInput(
-            start=PointInput(x=0, y=0, z=3000),
-            end=PointInput(x=2000, y=0, z=3000),
+            start_point=PointInput(x=0, y=0, z=3000),
+            end_point=PointInput(x=2000, y=0, z=3000),
             profile="300*600",
             material="C30/37",
             tekla_class=11,
             name="MCP_TEST_BEAM_1",
         ),
         BeamInput(
-            start=PointInput(x=2000, y=0, z=3000),
-            end=PointInput(x=4000, y=0, z=3000),
+            start_point=PointInput(x=2000, y=0, z=3000),
+            end_point=PointInput(x=4000, y=0, z=3000),
             profile="300*600",
             material="C30/37",
             tekla_class=11,
@@ -112,8 +112,8 @@ def test_place_multiple_beams():
 def test_place_beam_with_position():
     """Tests placing a beam with custom position settings."""
     beam = BeamInput(
-        start=PointInput(x=0, y=0, z=0),
-        end=PointInput(x=2000, y=0, z=0),
+        start_point=PointInput(x=0, y=0, z=0),
+        end_point=PointInput(x=2000, y=0, z=0),
         profile="HEA200",
         material="S235JR",
         tekla_class=100,
@@ -147,7 +147,7 @@ def test_place_multiple_columns():
     """Tests placing multiple columns in one call."""
     columns = [
         ColumnInput(
-            base=PointInput(x=0, y=0, z=0),
+            base_point=PointInput(x=0, y=0, z=0),
             height=3000,
             profile="400*400",
             material="C30/37",
@@ -155,7 +155,7 @@ def test_place_multiple_columns():
             name="MCP_TEST_COL_1",
         ),
         ColumnInput(
-            base=PointInput(x=5000, y=0, z=0),
+            base_point=PointInput(x=5000, y=0, z=0),
             height=3000,
             profile="400*400",
             material="C30/37",
@@ -171,7 +171,7 @@ def test_place_multiple_columns():
 def test_place_column_with_position():
     """Tests placing a column with custom position settings."""
     col = ColumnInput(
-        base=PointInput(x=0, y=0, z=0),
+        base_point=PointInput(x=0, y=0, z=0),
         height=3000,
         profile="HEA300",
         material="S235JR",
@@ -206,16 +206,16 @@ def test_place_multiple_panels():
     """Tests placing multiple panels in one call."""
     panels = [
         PanelInput(
-            start=PointInput(x=0, y=0, z=0),
-            end=PointInput(x=3000, y=0, z=0),
+            start_point=PointInput(x=0, y=0, z=0),
+            end_point=PointInput(x=3000, y=0, z=0),
             profile="3000*200",
             material="C30/37",
             tekla_class=1,
             name="MCP_TEST_PANEL_1",
         ),
         PanelInput(
-            start=PointInput(x=3000, y=0, z=0),
-            end=PointInput(x=6000, y=0, z=0),
+            start_point=PointInput(x=3000, y=0, z=0),
+            end_point=PointInput(x=6000, y=0, z=0),
             profile="3000*200",
             material="C30/37",
             tekla_class=1,
@@ -230,8 +230,8 @@ def test_place_multiple_panels():
 def test_place_panel_with_position():
     """Tests placing a panel with custom position settings."""
     panel = PanelInput(
-        start=PointInput(x=0, y=0, z=0),
-        end=PointInput(x=3000, y=0, z=0),
+        start_point=PointInput(x=0, y=0, z=0),
+        end_point=PointInput(x=3000, y=0, z=0),
         profile="3000*200",
         material="C30/37",
         tekla_class=1,

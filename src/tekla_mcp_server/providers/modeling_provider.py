@@ -62,7 +62,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
 
     for input_obj in beams:
         try:
-            start, end = input_obj.start, input_obj.end
+            start, end = input_obj.start_point, input_obj.end_point
 
             part_number = input_obj.part_number
             assembly_number = input_obj.assembly_number
@@ -80,14 +80,16 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
                 name = ElementTypeModel.get_default_name(input_obj.tekla_class)
 
             tekla_obj = TeklaBeam.create(
-                start=start,
-                end=end,
+                start_point=start,
+                end_point=end,
                 profile=input_obj.profile,
                 material=input_obj.material,
                 tekla_class=input_obj.tekla_class,
                 name=name,
                 position=input_obj.position,
                 beam_type=BeamType.BEAM,
+                start_point_offset=input_obj.start_point_offset,
+                end_point_offset=input_obj.end_point_offset,
                 part_number=part_number,
                 assembly_number=assembly_number,
             )
@@ -146,8 +148,8 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
 
     for input_obj in columns:
         try:
-            start = input_obj.base
-            end = PointInput(x=input_obj.base.x, y=input_obj.base.y, z=input_obj.base.z + input_obj.height)
+            start = input_obj.base_point
+            end = PointInput(x=input_obj.base_point.x, y=input_obj.base_point.y, z=input_obj.base_point.z + input_obj.height)
 
             part_number = input_obj.part_number
             assembly_number = input_obj.assembly_number
@@ -165,14 +167,16 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
                 name = ElementTypeModel.get_default_name(input_obj.tekla_class)
 
             tekla_obj = TeklaBeam.create(
-                start=start,
-                end=end,
+                start_point=start,
+                end_point=end,
                 profile=input_obj.profile,
                 material=input_obj.material,
                 tekla_class=input_obj.tekla_class,
                 name=name,
                 position=input_obj.position,
                 beam_type=BeamType.COLUMN,
+                start_point_offset=input_obj.start_point_offset,
+                end_point_offset=input_obj.end_point_offset,
                 part_number=part_number,
                 assembly_number=assembly_number,
             )
@@ -230,7 +234,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
 
     for input_obj in panels:
         try:
-            start, end = input_obj.start, input_obj.end
+            start, end = input_obj.start_point, input_obj.end_point
 
             part_number = input_obj.part_number
             assembly_number = input_obj.assembly_number
@@ -248,14 +252,16 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
                 name = ElementTypeModel.get_default_name(input_obj.tekla_class)
 
             tekla_obj = TeklaBeam.create(
-                start=start,
-                end=end,
+                start_point=start,
+                end_point=end,
                 profile=input_obj.profile,
                 material=input_obj.material,
                 tekla_class=input_obj.tekla_class,
                 name=name,
                 position=input_obj.position,
                 beam_type=BeamType.PANEL,
+                start_point_offset=input_obj.start_point_offset,
+                end_point_offset=input_obj.end_point_offset,
                 part_number=part_number,
                 assembly_number=assembly_number,
             )

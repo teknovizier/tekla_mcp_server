@@ -129,7 +129,7 @@ def select_elements_by_filter(
 ) -> ToolResult:
     """
     Selects elements in the Tekla model using standard properties, custom attributes and numeric ranges.
-    
+
     ### EXAMPLES
     # NAME = "Wall" OR PHASE = "2"
     {

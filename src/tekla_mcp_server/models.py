@@ -682,6 +682,14 @@ class PointInput(BaseModel):
     z: float = Field(description="Z coordinate of the point")
 
 
+class OffsetInput(BaseModel):
+    """Input model for beam start/end point offsets."""
+
+    dx: float = Field(description="Offset in X direction in object's coordinate system")
+    dy: float = Field(description="Offset in Y direction in object's coordinate system")
+    dz: float = Field(description="Offset in Z direction in object's coordinate system")
+
+
 class PositionInput(BaseModel):
     """Input model for beam position settings."""
 
@@ -701,6 +709,8 @@ class TeklaBeamInput(BaseModel):
     tekla_class: int = Field(description="Tekla class number, e.g. 11, 100")
     name: str | None = Field(default=None, description="Element name")
     position: PositionInput | None = Field(default=None, description="Position settings for the element")
+    start_point_offset: OffsetInput | None = Field(default=None, description="Start point offset (dx, dy, dz)")
+    end_point_offset: OffsetInput | None = Field(default=None, description="End point offset (dx, dy, dz)")
     part_number: NumberingSeries | None = Field(default=None, description="Part numbering series")
     assembly_number: NumberingSeries | None = Field(default=None, description="Assembly numbering series")
 
@@ -708,14 +718,14 @@ class TeklaBeamInput(BaseModel):
 class BeamInput(TeklaBeamInput):
     """Input model for a single beam definition."""
 
-    start: PointInput = Field(description="Start point coordinates")
-    end: PointInput = Field(description="End point coordinates")
+    start_point: PointInput = Field(description="Start point coordinates")
+    end_point: PointInput = Field(description="End point coordinates")
 
 
 class ColumnInput(TeklaBeamInput):
     """Input model for a single column definition."""
 
-    base: PointInput = Field(description="Base point coordinates")
+    base_point: PointInput = Field(description="Base point coordinates")
     height: float = Field(description="Column height in mm")
 
     @field_validator("height", mode="before")
@@ -729,8 +739,8 @@ class ColumnInput(TeklaBeamInput):
 class PanelInput(TeklaBeamInput):
     """Input model for a single panel definition."""
 
-    start: PointInput = Field(description="Start point coordinates")
-    end: PointInput = Field(description="End point coordinates")
+    start_point: PointInput = Field(description="Start point coordinates")
+    end_point: PointInput = Field(description="End point coordinates")
 
 
 class SlabInput(TeklaBeamInput):

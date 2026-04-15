@@ -8,7 +8,7 @@ from collections.abc import Generator, Iterable
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, BeamType, PointInput, PositionInput
+from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, BeamType, OffsetInput, PointInput, PositionInput
 from tekla_mcp_server.utils import log_function_call
 
 from tekla_mcp_server.tekla.loader import (
@@ -21,6 +21,7 @@ from tekla_mcp_server.tekla.loader import (
     ContourPoint,
     Part,
     ModelObject,
+    Offset,
     Point,
     Position,
     Reinforcement,
@@ -866,6 +867,34 @@ class TeklaBeam(TeklaPart):
         """Sets the end point of the beam."""
         self._set_property("EndPoint", value)
 
+    @property
+    def start_point_offset(self) -> Offset:
+        """Returns the start point offset of the beam."""
+        return self.model_object.StartPointOffset
+
+    @start_point_offset.setter
+    def start_point_offset(self, value: OffsetInput) -> None:
+        """Sets the start point offset of the beam."""
+        offset = self.model_object.StartPointOffset
+        offset.Dx = value.dx
+        offset.Dy = value.dy
+        offset.Dz = value.dz
+        self.model_object.Modify()
+
+    @property
+    def end_point_offset(self) -> Offset:
+        """Returns the end point offset of the beam."""
+        return self.model_object.EndPointOffset
+
+    @end_point_offset.setter
+    def end_point_offset(self, value: OffsetInput) -> None:
+        """Sets the end point offset of the beam."""
+        offset = self.model_object.EndPointOffset
+        offset.Dx = value.dx
+        offset.Dy = value.dy
+        offset.Dz = value.dz
+        self.model_object.Modify()
+
     def apply_defaults(self, beam_type: BeamType) -> "TeklaBeam":
         """Apply default position settings based on beam type."""
         if beam_type == BeamType.COLUMN:
@@ -880,14 +909,16 @@ class TeklaBeam(TeklaPart):
 
     @staticmethod
     def create(
-        start: PointInput,
-        end: PointInput,
+        start_point: PointInput,
+        end_point: PointInput,
         profile: str,
         material: str,
         tekla_class: int,
         name: str | None = None,
         position: PositionInput | None = None,
         beam_type: BeamType = BeamType.BEAM,
+        start_point_offset: OffsetInput | None = None,
+        end_point_offset: OffsetInput | None = None,
         part_number: NumberingSeries | None = None,
         assembly_number: NumberingSeries | None = None,
     ) -> "TeklaBeam" | None:
@@ -903,6 +934,8 @@ class TeklaBeam(TeklaPart):
             name: Element name (optional)
             position: Position settings (optional)
             beam_type: Type of beam - Beam, Column, or Panel (default: Beam)
+            start_point_offset: Start point offset (optional)
+            end_point_offset: End point offset (optional)
             part_number: NumberingSeries for part numbering (optional)
             assembly_number: NumberingSeries for assembly numbering (optional)
 
@@ -910,17 +943,28 @@ class TeklaBeam(TeklaPart):
             TeklaBeam: The created beam wrapper
         """
         beam = Beam()
-        beam.StartPoint = Point(start.x, start.y, start.z)
-        beam.EndPoint = Point(end.x, end.y, end.z)
+        beam.StartPoint = Point(start_point.x, start_point.y, start_point.z)
+        beam.EndPoint = Point(end_point.x, end_point.y, end_point.z)
         beam.Profile.ProfileString = profile
         beam.Material.MaterialString = material
         beam.Class = str(tekla_class)
         if name:
             beam.Name = name
 
+        if start_point_offset:
+            beam.StartPointOffset.Dx = start_point_offset.dx
+            beam.StartPointOffset.Dy = start_point_offset.dy
+            beam.StartPointOffset.Dz = start_point_offset.dz
+
+        if end_point_offset:
+            beam.EndPointOffset.Dx = end_point_offset.dx
+            beam.EndPointOffset.Dy = end_point_offset.dy
+            beam.EndPointOffset.Dz = end_point_offset.dz
+
         tekla_beam = TeklaBeam(beam)
         tekla_beam.apply_position(position) if position else tekla_beam.apply_defaults(beam_type)
         return tekla_beam.finalize_placement(part_number, assembly_number)
+
 
 class TeklaContourPlate(TeklaPart):
     """

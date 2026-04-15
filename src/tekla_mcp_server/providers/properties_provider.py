@@ -15,7 +15,7 @@ from tabulate import tabulate  # type: ignore
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_mcp_tool_call
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_object, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_object, wrap_model_objects
 from tekla_mcp_server.tekla.loader import Part, BooleanPart, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts
@@ -506,4 +506,57 @@ def clear_elements_udas(
         return ToolResult(structured_content={"status": "error", "message": str(e)})
     except Exception as e:
         logger.exception("Error in clear_elements_udas")
+        return ToolResult(structured_content={"status": "error", "message": str(e)})
+
+
+@properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@log_mcp_tool_call
+def get_elements_coordinates() -> ToolResult:
+    """
+    Get coordinates of selected Tekla elements.
+
+    ## OUTPUT
+    - Beams: start_point, end_point (x, y, z) and start_point_offset, end_point_offset (dx, dy, dz)
+    - Slabs: contour_points list of {x, y, z}
+    """
+    try:
+        selected_objects = TeklaModel().get_selected_objects()
+
+        elements: list[dict[str, Any]] = []
+
+        for obj in wrap_model_objects(selected_objects):
+            if isinstance(obj, TeklaBeam):
+                start_pt = obj.start_point
+                end_pt = obj.end_point
+                start_offset = obj.start_point_offset
+                end_offset = obj.end_point_offset
+
+                elements.append(
+                    {
+                        "guid": obj.guid,
+                        "type": "Beam",
+                        "start_point": {"x": start_pt.X, "y": start_pt.Y, "z": start_pt.Z},
+                        "end_point": {"x": end_pt.X, "y": end_pt.Y, "z": end_pt.Z},
+                        "start_point_offset": {"dx": start_offset.Dx, "dy": start_offset.Dy, "dz": start_offset.Dz},
+                        "end_point_offset": {"dx": end_offset.Dx, "dy": end_offset.Dy, "dz": end_offset.Dz},
+                    }
+                )
+            elif isinstance(obj, TeklaContourPlate):
+                contour_pts = obj.contour_points
+                elements.append(
+                    {
+                        "guid": obj.guid,
+                        "type": "Slab",
+                        "contour_points": [{"x": pt.X, "y": pt.Y, "z": pt.Z} for pt in contour_pts],
+                    }
+                )
+
+        return ToolResult(
+            structured_content={
+                "status": "success" if elements else "warning",
+                "elements": elements,
+            }
+        )
+    except Exception as e:
+        logger.exception("Error in get_elements_coordinates")
         return ToolResult(structured_content={"status": "error", "message": str(e)})

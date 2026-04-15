@@ -521,8 +521,8 @@ class TestTeklaBeamInputNumbering:
         assembly_number = NumberingSeries(prefix="BA", start_number=1)
 
         beam = BeamInput(
-            start=PointInput(x=0, y=0, z=0),
-            end=PointInput(x=5000, y=0, z=0),
+            start_point=PointInput(x=0, y=0, z=0),
+            end_point=PointInput(x=5000, y=0, z=0),
             profile="HEA200",
             material="S235JR",
             tekla_class=100,
@@ -540,8 +540,8 @@ class TestTeklaBeamInputNumbering:
         from tekla_mcp_server.models import BeamInput, PointInput
 
         beam = BeamInput(
-            start=PointInput(x=0, y=0, z=0),
-            end=PointInput(x=5000, y=0, z=0),
+            start_point=PointInput(x=0, y=0, z=0),
+            end_point=PointInput(x=5000, y=0, z=0),
             profile="HEA200",
             material="S235JR",
             tekla_class=100,
@@ -557,7 +557,7 @@ class TestTeklaBeamInputNumbering:
         part_number = NumberingSeries(prefix="C", start_number=1)
 
         column = ColumnInput(
-            base=PointInput(x=0, y=0, z=0),
+            base_point=PointInput(x=0, y=0, z=0),
             height=3000,
             profile="400*400",
             material="C30/37",
@@ -575,8 +575,8 @@ class TestTeklaBeamInputNumbering:
         assembly_number = NumberingSeries(prefix="W", start_number=1)
 
         panel = PanelInput(
-            start=PointInput(x=0, y=0, z=0),
-            end=PointInput(x=3000, y=0, z=0),
+            start_point=PointInput(x=0, y=0, z=0),
+            end_point=PointInput(x=3000, y=0, z=0),
             profile="3000*200",
             material="C30/37",
             tekla_class=1,

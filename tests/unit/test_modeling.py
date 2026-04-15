@@ -118,15 +118,15 @@ class TestBeamInput:
         """Test creating a valid beam input."""
         start = PointInput(x=0, y=0, z=0)
         end = PointInput(x=5000, y=0, z=0)
-        beam = BeamInput(start=start, end=end, profile="300*600", material="C30/37", tekla_class=11)
-        assert beam.start.x == 0
-        assert beam.end.x == 5000
+        beam = BeamInput(start_point=start, end_point=end, profile="300*600", material="C30/37", tekla_class=11)
+        assert beam.start_point.x == 0
+        assert beam.end_point.x == 5000
 
     def test_beam_inherits_base(self):
         """Test beam inherits base fields."""
         beam = BeamInput(
-            start=PointInput(x=0, y=0, z=0),
-            end=PointInput(x=1000, y=0, z=0),
+            start_point=PointInput(x=0, y=0, z=0),
+            end_point=PointInput(x=1000, y=0, z=0),
             profile="HEA200",
             material="S235JR",
             tekla_class=100,
@@ -141,20 +141,20 @@ class TestColumnInput:
     def test_valid_column(self):
         """Test creating a valid column input."""
         col = ColumnInput(
-            base=PointInput(x=0, y=0, z=0),
+            base_point=PointInput(x=0, y=0, z=0),
             height=3000,
             profile="400*400",
             material="C30/37",
             tekla_class=10,
         )
-        assert col.base.x == 0
+        assert col.base_point.x == 0
         assert col.height == 3000
 
     def test_column_height_validation(self):
         """Test column height must be positive."""
         with pytest.raises(ValidationError):
             ColumnInput(
-                base=PointInput(x=0, y=0, z=0),
+                base_point=PointInput(x=0, y=0, z=0),
                 height=0,
                 profile="400*400",
                 material="C30/37",
@@ -166,7 +166,7 @@ class TestColumnInput:
         """Test negative height raises validation error."""
         with pytest.raises(ValidationError):
             ColumnInput(
-                base=PointInput(x=0, y=0, z=0),
+                base_point=PointInput(x=0, y=0, z=0),
                 height=height,
                 profile="400*400",
                 material="C30/37",
@@ -180,14 +180,14 @@ class TestPanelInput:
     def test_valid_panel(self):
         """Test creating a valid panel input."""
         panel = PanelInput(
-            start=PointInput(x=0, y=0, z=0),
-            end=PointInput(x=3000, y=0, z=3000),
+            start_point=PointInput(x=0, y=0, z=0),
+            end_point=PointInput(x=3000, y=0, z=3000),
             profile="3000*200",
             material="C30/37",
             tekla_class=1,
         )
-        assert panel.start.x == 0
-        assert panel.end.z == 3000
+        assert panel.start_point.x == 0
+        assert panel.end_point.z == 3000
 
 
 class TestPlacementResult:

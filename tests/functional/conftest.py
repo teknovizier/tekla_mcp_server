@@ -49,24 +49,28 @@ def model_objects():
     model = TeklaModel()
 
     panels = [
-        PanelInput(start=PointInput(x=0, y=0, z=0), end=PointInput(x=2000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL1"),
-        PanelInput(start=PointInput(x=0, y=0, z=3020), end=PointInput(x=2000, y=0, z=3020), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL2"),
-        PanelInput(start=PointInput(x=2000, y=0, z=0), end=PointInput(x=4000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL3"),
-        PanelInput(start=PointInput(x=2000, y=0, z=3020), end=PointInput(x=4000, y=0, z=3020), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL4"),
-        PanelInput(start=PointInput(x=0, y=0, z=6040), end=PointInput(x=2000, y=0, z=6040), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),
-        PanelInput(start=PointInput(x=0, y=0, z=9060), end=PointInput(x=2000, y=0, z=9060), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),
-        PanelInput(start=PointInput(x=0, y=0, z=12080), end=PointInput(x=2000, y=0, z=12080), profile="2000*150", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL7"),
-        PanelInput(start=PointInput(x=0, y=200, z=0), end=PointInput(x=2000, y=200, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL8"),
-        PanelInput(start=PointInput(x=4000, y=0, z=0), end=PointInput(x=6000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=8, name="MCP_TEST_SW1"),
+        PanelInput(start_point=PointInput(x=0, y=0, z=0), end_point=PointInput(x=2000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL1"),
+        PanelInput(start_point=PointInput(x=0, y=0, z=3020), end_point=PointInput(x=2000, y=0, z=3020), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL2"),
+        PanelInput(start_point=PointInput(x=2000, y=0, z=0), end_point=PointInput(x=4000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL3"),
+        PanelInput(start_point=PointInput(x=2000, y=0, z=3020), end_point=PointInput(x=4000, y=0, z=3020), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL4"),
+        PanelInput(start_point=PointInput(x=0, y=0, z=6040), end_point=PointInput(x=2000, y=0, z=6040), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),
+        PanelInput(start_point=PointInput(x=0, y=0, z=9060), end_point=PointInput(x=2000, y=0, z=9060), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),
+        PanelInput(start_point=PointInput(x=0, y=0, z=12080), end_point=PointInput(x=2000, y=0, z=12080), profile="2000*150", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL7"),
+        PanelInput(start_point=PointInput(x=0, y=200, z=0), end_point=PointInput(x=2000, y=200, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL8"),
+        PanelInput(start_point=PointInput(x=4000, y=0, z=0), end_point=PointInput(x=6000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=8, name="MCP_TEST_SW1"),
     ]
 
     slabs = [
-        BeamInput(start=PointInput(x=1000, y=0, z=3020), end=PointInput(x=1000, y=6000, z=3020), profile="P20(200X1200)", material="Concrete_Undefined", tekla_class=3, name="MCP_TEST_SLAB1"),
+        BeamInput(
+            start_point=PointInput(x=1000, y=0, z=3020), end_point=PointInput(x=1000, y=6000, z=3020), profile="P20(200X1200)", material="Concrete_Undefined", tekla_class=3, name="MCP_TEST_SLAB1"
+        ),
     ]
 
     voids = [
-        BeamInput(start=PointInput(x=3000, y=0, z=1000), end=PointInput(x=3000, y=200, z=1000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_WALL3"),
-        BeamInput(start=PointInput(x=3000, y=0, z=10000), end=PointInput(x=3000, y=200, z=10000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_FLOATING"),
+        BeamInput(start_point=PointInput(x=3000, y=0, z=1000), end_point=PointInput(x=3000, y=200, z=1000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_WALL3"),
+        BeamInput(
+            start_point=PointInput(x=3000, y=0, z=10000), end_point=PointInput(x=3000, y=200, z=10000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_FLOATING"
+        ),
     ]
 
     result_panels = place_panels(panels=panels)

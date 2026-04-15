@@ -27,6 +27,7 @@ from Tekla.Structures.Model import (
     BooleanPart,
     ContourPlate,
     ContourPoint,
+    Offset,
     Part,
     Position,
     Reinforcement,
@@ -131,4 +132,5 @@ __all__ = [
     "Drawing",
     "DrawingEnumerator",
     "Grid",
+    "Offset",
 ]

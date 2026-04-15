@@ -18,6 +18,7 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | Properties | `set_elements_properties` | Set properties on selected elements. **For parts:** name, profile, material, finish, class, part/assembly numbering, phase. **For assemblies:** name, assembly numbering, phase. UDAs supported | `name`, `profile`, `material`, `tekla_class`, `finish`, `part_prefix`, `part_start_number`, `assembly_prefix`, `assembly_start_number`, `phase`, `user_properties` |
 | Properties | `get_elements_cut_parts` | Find all cut parts in the selected elements and returns a summary grouped by profile | - |
 | Properties | `clear_elements_udas` | Clear user-defined attributes (UDAs) from selected Tekla parts and assemblies. If no specific UDA names are provided, clears all UDAs | `uda_names` |
+| Properties | `get_elements_coordinates` | Get coordinates of selected elements. Returns start point, end point, start point offset, end point offset for beams, contour points for slabs | - |
 | Properties | `compare_elements` | Compare two selected Tekla elements and returns detailed differences (part properties, UDA, cutparts, welds, reinforcements) | `ignore_numbering` |
 | View | `draw_elements_labels` | Draw temporary labels for selected elements. **For parts:** position, GUID, name, profile, material, finish, class, weight. **For assemblies:** position, GUID, name, weight. Supports custom report properties | `label`, `custom_label` |
 | View | `zoom_to_selection` | Zooms the currently active rendered view to fit the currently selected elements | - |
@@ -31,9 +32,9 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | Operations | `run_macro` | Run a Tekla macro with the specified name | `macro_name` (required) |
 | Drawing | `get_drawings` | Get drawings from Tekla model with optional filtering by type, name, mark, title1/2/3 | `drawing_type`, `name_filter`, `mark_filter`, `title1_filter`, `title2_filter`, `title3_filter` |
 | Drawing | `get_drawing_properties` | Get properties of drawings by their marks or currently selected drawings in Tekla | `marks` |
-| Modeling | `place_beams` | Place one or more beams in the Tekla model | `beams` (list with start point, end point, profile, material, Tekla class, name, position) |
-| Modeling | `place_columns` | Place one or more columns in the Tekla model | `columns` (list with base point, height, profile, material, Tekla class, name, position) |
-| Modeling | `place_panels` | Place one or more wall panels in the Tekla model | `panels` (list with start point, end point, profile, material, Tekla class, name, position) |
+| Modeling | `place_beams` | Place one or more beams in the Tekla model | `beams` (list with start point, end point, start point offset, end_point offset, profile, material, Tekla class, name, position) |
+| Modeling | `place_columns` | Place one or more columns in the Tekla model | `columns` (list with base point, height, start point offset, end point offset, profile, material, Tekla class, name, position) |
+| Modeling | `place_panels` | Place one or more wall panels in the Tekla model | `panels` (list with start point, end point, start point offset, end point offset, profile, material, Tekla class, name, position) |
 | Modeling | `place_slabs` | Place one or more slabs in the Tekla model | `slabs` (list with points (min 3), profile, material, Tekla class, name, position) |
 | Modeling | `delete_selected` | Delete all currently selected elements in Tekla | - |
 
