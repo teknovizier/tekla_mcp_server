@@ -195,8 +195,8 @@ MCP servers receive environment variables from the client. The Tekla MCP Server 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TEKLA_MCP_LOG_LEVEL` | Logging level | `INFO` |
-| `TEKLA_MCP_LOG_FILE_PATH` | Log file path | `mcp_server.log` |
-| `TEKLA_MCP_CONFIG_DIR` | Config directory | `config` |
+| `TEKLA_MCP_LOG_FILE_PATH` | Log file path | `C:\path\to\mcp_server.log` |
+| `TEKLA_MCP_CONFIG_DIR` | Config directory | `C:\path\to\tekla_mcp_server\config` |
 
 For example, in Claude Desktop:
 
@@ -205,16 +205,18 @@ For example, in Claude Desktop:
   "mcpServers": {
     "tekla-mcp": {
       "command": "python",
-      "args": ["src/tekla_mcp_server/mcp_server.py"],
+      "args": ["C:\\path\\to\\tekla_mcp_server\\src\\tekla_mcp_server\\mcp_server.py"],
       "env": {
         "TEKLA_MCP_LOG_LEVEL": "DEBUG",
-        "TEKLA_MCP_LOG_FILE_PATH": "mcp_server.log",
-        "TEKLA_MCP_CONFIG_DIR": "config"
+        "TEKLA_MCP_LOG_FILE_PATH": "C:\\path\\to\\mcp_server.log",
+        "TEKLA_MCP_CONFIG_DIR": "C:\\path\\to\\tekla_mcp_server\\config"
       }
     }
   }
 }
 ```
+
+**Note:** All path variables (`TEKLA_MCP_LOG_FILE_PATH`, `TEKLA_MCP_CONFIG_DIR`) should use absolute paths.
 
 ### Logging Levels
 
