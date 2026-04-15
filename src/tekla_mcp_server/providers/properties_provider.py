@@ -4,18 +4,18 @@ Properties tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
+import json
 from collections import Counter
 from typing import Any, Annotated
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from pydantic import Field
-from tabulate import tabulate  # type: ignore
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_mcp_tool_call
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_object, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBeam, TeklaContourPlate, TeklaPart, wrap_model_object, wrap_model_objects
 from tekla_mcp_server.tekla.loader import Part, BooleanPart, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts
@@ -143,8 +143,8 @@ def get_elements_properties(
     - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
 
     ## OUTPUT
-    - Return the result tables EXACTLY as provided by the tool.
-    - DO NOT reformat, summarize, or explain.
+    - Return the result table in Markdown format EXACTLY as provided by the tool.
+    - DO NOT reformat.
     - DO NOT modify spacing, columns, or headers.
     """
     try:
@@ -181,53 +181,24 @@ def get_elements_properties(
         if resolution_errors or extraction_errors:
             status = "partial"
 
-        def _flatten_properties(props: dict[str, Any]) -> dict[str, Any]:
-            """Flatten properties for table rendering."""
+        def _flatten_props(props: dict[str, Any]) -> dict[str, Any]:
             result: dict[str, Any] = {}
-
             result["GUID"] = props.get("guid", "")
-
             standard_fields = ["position", "name", "profile", "material", "finish", "tekla_class", "part_prefix", "part_start_number", "assembly_prefix", "assembly_start_number"]
             for field in standard_fields:
                 if field in props:
                     result[field.replace("_", " ").title()] = props[field]
-
             result["Phase"] = props.get("phase", "")
-
             return result
 
-        def _build_table(items: list[dict[str, Any]]) -> str:
-            """Build markdown table from properties list."""
+        def _flatten(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if not items:
-                return ""
-
-            standard_keys = list(_flatten_properties(items[0]).keys())
-
-            all_user_keys: set[str] = set()
-            all_report_keys: set[str] = set()
-            for item in items:
-                if user_props := item.get("user_properties"):
-                    all_user_keys.update(user_props.keys())
-                if report_props := item.get("report_properties"):
-                    for rp in report_props:
-                        name = rp.get("name", "")
-                        unit = rp.get("unit", "")
-                        header = f"{name} ({unit})" if unit else name
-                        all_report_keys.add(header)
-
-            user_keys_sorted = [k.replace("_", " ").title() for k in sorted(all_user_keys)]
-            report_keys_sorted = [k.replace("_", " ").title() for k in sorted(all_report_keys)]
-
-            headers = ["No"] + standard_keys + user_keys_sorted + report_keys_sorted
-
+                return []
             flat_items = []
-            for item in items:
-                flat = _flatten_properties(item)
-                row = {**flat}
-
+            for i, item in enumerate(items):
+                row = _flatten_props(item)
                 if user_props := item.get("user_properties"):
                     row.update(user_props)
-
                 if report_props := item.get("report_properties"):
                     for rp in report_props:
                         name = rp.get("name", "")
@@ -238,28 +209,13 @@ def get_elements_properties(
                             row[header] = round(value, 3) if isinstance(value, float) else value
                         else:
                             row[header] = "N/A"
+                flat_items.append({"No": i + 1, **row})
+            return flat_items
 
-                flat_items.append(row)
-
-            data = [[i + 1] + [row.get(h, "") for h in headers[1:]] for i, row in enumerate(flat_items)]
-            return tabulate(data, headers=headers, tablefmt="github")
-
-        content_parts: list[str] = []
-
-        if assemblies:
-            assembly_table = _build_table(assemblies)
-            content_parts.append(f"## Assemblies\n{assembly_table}\n")
-
-        if parts:
-            parts_table = _build_table(parts)
-            content_parts.append(f"## Parts\n{parts_table}\n")
-
-        content = "\n\n".join(content_parts) if content_parts else "No elements found!"
-
-        logger.info("Retrieved properties for %s elements", processed_elements)
+        content_json = {k: v for k, v in (("assemblies", _flatten(assemblies)), ("parts", _flatten(parts))) if v}
 
         return ToolResult(
-            content=content,
+            content=json.dumps(content_json),
             structured_content={
                 "status": status,
                 "selected_elements": selected_objects.GetSize(),
@@ -284,8 +240,8 @@ def get_elements_cut_parts() -> ToolResult:
     Find all cut parts in the selected Tekla elements and return a summary grouped by profile.
 
     ## OUTPUT
-    - Return the result table EXACTLY as provided by the tool.
-    - DO NOT reformat, summarize, or explain.
+    - Return the result table in Markdown format EXACTLY as provided by the tool.
+    - DO NOT reformat.
     - DO NOT modify spacing, columns, or headers.
     """
     try:
@@ -304,20 +260,20 @@ def get_elements_cut_parts() -> ToolResult:
                     cut_parts_by_profile[profile] += 1
             processed_elements += 1
 
-        sorted_profiles = sorted(cut_parts_by_profile.items(), key=lambda x: x[0])
-        table_data = [[i + 1, profile, count] for i, (profile, count) in enumerate(sorted_profiles)]
-        cut_parts_table = tabulate(table_data, headers=["No", "Profile", "Count"], tablefmt="github")
+        cut_parts_sorted_by_profile = sorted(cut_parts_by_profile.items(), key=lambda x: x[0])
+
+        content_json = [{"No": i + 1, "Profile": profile, "Count": count} for i, (profile, count) in enumerate(cut_parts_sorted_by_profile)]
 
         total_cut_parts = sum(cut_parts_by_profile.values())
-        logger.info("Found %s cut parts across %s profiles in %s elements", total_cut_parts, len(sorted_profiles), processed_elements)
+        logger.info("Found %s cut parts across %s profiles in %s elements", total_cut_parts, len(cut_parts_sorted_by_profile), processed_elements)
         return ToolResult(
-            content=f"## Cut Parts\n{cut_parts_table}\n",
+            content=json.dumps(content_json),
             structured_content={
-                "status": "success" if sorted_profiles else "warning",
+                "status": "success" if cut_parts_sorted_by_profile else "warning",
                 "selected_elements": selected_objects.GetSize(),
                 "processed_elements": processed_elements,
                 "total_cut_parts": total_cut_parts,
-                "cut_parts_list": sorted_profiles,
+                "cut_parts_list": cut_parts_sorted_by_profile,
             },
         )
     except ValueError as e:
@@ -339,9 +295,6 @@ def compare_elements(
     - Only use information explicitly present in the diff. Do not infer or assume changes.
     - Ignore `id` and `guid` fields - they are ALWAYS different (not actual differences).
     - Ignore order of items in lists (cutparts, reinforcements, welds).
-
-    ## OUTPUT
-    A human-readable summary listing ONLY the actual differences between the two selected parts or assemblies.
     """
     try:
         selected_objects = TeklaModel().get_selected_objects()
@@ -375,11 +328,7 @@ def compare_elements(
 
         def _canonical(value: Any) -> Any:
             if isinstance(value, dict):
-                return tuple(
-                    (k, _canonical(v))
-                    for k, v in sorted(value.items())
-                    if k.lower() not in IGNORED_KEYS
-                )
+                return tuple((k, _canonical(v)) for k, v in sorted(value.items()) if k.lower() not in IGNORED_KEYS)
 
             if isinstance(value, list):
                 return tuple(_canonical(v) for v in value)  # <-- KEEP ORDER
@@ -403,15 +352,11 @@ def compare_elements(
 
         def _strip_ignored(value: Any) -> Any:
             if isinstance(value, dict):
-                return {
-                    k: _strip_ignored(v)
-                    for k, v in value.items()
-                    if k.lower() not in IGNORED_KEYS
-                }
+                return {k: _strip_ignored(v) for k, v in value.items() if k.lower() not in IGNORED_KEYS}
             if isinstance(value, list):
                 return [_strip_ignored(v) for v in value]
             return value
-        
+
         diff_a_clean = _strip_ignored(diff_a)
         diff_b_clean = _strip_ignored(diff_b)
 

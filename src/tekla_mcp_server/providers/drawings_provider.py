@@ -4,12 +4,12 @@ Drawing tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
+import json
 from typing import Any, Annotated
-from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
-from tabulate import tabulate  # type: ignore
+from pydantic import Field
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType
@@ -187,17 +187,10 @@ def get_drawing_properties(
     {"marks": ["[HCS-1001 - 1]", "[HCS-1002 - 1]"]}
 
     ## OUTPUT
-    - Return the result table EXACTLY as provided by the tool.
-    - DO NOT reformat, summarize, or explain.
+    - Return the result table in Markdown format EXACTLY as provided by the tool.
+    - DO NOT reformat.
     - DO NOT modify spacing, columns, or headers.
     """
-
-    def _build_table(items: list[dict[str, Any]]) -> str:
-        if not items:
-            return ""
-        headers = [h.replace("_", " ").title() for h in items[0].keys()]
-        data = [[i + 1] + list(d.values()) for i, d in enumerate(items)]
-        return tabulate(data, headers=headers, tablefmt="github")
 
     try:
         drawing_handler = DrawingHandler()
@@ -225,15 +218,12 @@ def get_drawing_properties(
                 structured_content={"status": "warning", "message": "No drawings found"},
             )
 
-        drawings_data = [d.to_dict() for d in drawings]
-
-        drawings_table = _build_table(drawings_data)
-        content = f"## Drawings\n{drawings_table}\n"
+        drawings_data = [{"No": i + 1, **d.to_dict()} for i, d in enumerate(drawings)]
 
         logger.info("Retrieved properties for %s drawings", len(drawings_data))
 
         return ToolResult(
-            content=content,
+            content=json.dumps({"drawings": drawings_data}),
             structured_content={
                 "status": "success",
                 "selected_count": len(drawings_data),
