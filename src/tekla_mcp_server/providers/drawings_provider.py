@@ -13,9 +13,9 @@ from pydantic import Field
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType
-from tekla_mcp_server.utils import log_mcp_tool_call
+from tekla_mcp_server.utils import log_mcp_tool_call, rects_overlap, lines_overlap
 from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings
-from tekla_mcp_server.tekla.loader import DrawingHandler
+from tekla_mcp_server.tekla.loader import DrawingHandler, Drawing, Mark, DrawingColors, FrameTypes
 
 
 drawings_provider = LocalProvider()
@@ -66,6 +66,76 @@ def _matches_string_filter(value: str, filter_option: Any) -> bool:
     if logic == "OR":
         return any(results)
     return all(results)
+
+
+def _get_mark_collision_data(mark: Mark) -> dict | None:
+    """Get mark data for both bbox and line collision detection."""
+    result = {"bbox": None, "line": None, "mark": mark}
+
+    # Get bbox using GetAxisAlignedBoundingBox
+    bbox = mark.GetAxisAlignedBoundingBox()
+    if hasattr(bbox, "MinPoint"):
+        min_pt = bbox.MinPoint
+        max_pt = bbox.MaxPoint
+        result["bbox"] = (min_pt.X, min_pt.Y, max_pt.X, max_pt.Y)
+
+    # Get mark insertion point
+    ip = mark.InsertionPoint
+    if ip:
+        ip_x, ip_y = ip.X, ip.Y
+    else:
+        return result
+
+    # Try to get LeaderLine from mark's children
+    leader_start = None
+    leader_end = None
+
+    children = mark.GetObjects()
+    while children.MoveNext():
+        child = children.Current
+        if type(child).__name__ == "LeaderLine":
+            leader = child
+            leader_start = leader.StartPoint  # Arrow tip
+            leader_end = leader.EndPoint  # Point at text edge
+            break
+
+    # Set line data
+    if leader_start and leader_end:
+        result["line"] = ((leader_end.X, leader_end.Y), (leader_start.X, leader_start.Y))
+    elif leader_start:
+        result["line"] = ((ip_x, ip_y), (leader_start.X, leader_start.Y))
+    else:
+        result["line"] = None
+
+    return result
+
+
+def _check_collisions(data_list: list[dict]) -> set[int]:
+    """Check both bbox overlap and line intersections."""
+    colliding: set[int] = set()
+    n = len(data_list)
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            data_i = data_list[i]
+            data_j = data_list[j]
+            is_colliding = False
+
+            # Check bbox overlap
+            if data_i["bbox"] and data_j["bbox"]:
+                if rects_overlap(data_i["bbox"], data_j["bbox"]):
+                    is_colliding = True
+
+            # Check line intersection
+            if data_i["line"] and data_j["line"]:
+                if lines_overlap(data_i["line"][0], data_i["line"][1], data_j["line"][0], data_j["line"][1]):
+                    is_colliding = True
+
+            if is_colliding:
+                colliding.add(i)
+                colliding.add(j)
+
+    return colliding
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -179,13 +249,6 @@ def get_drawing_properties(
 
     If the marks are not provided, gets properties of currently selected drawings in Tekla.
 
-    ## EXAMPLES
-    # Get properties of selected drawings
-    {}
-
-    # Get properties of specific drawings
-    {"marks": ["[HCS-1001 - 1]", "[HCS-1002 - 1]"]}
-
     ## OUTPUT
     - Return the result table in Markdown format EXACTLY as provided by the tool.
     - DO NOT reformat.
@@ -197,7 +260,6 @@ def get_drawing_properties(
 
         if not drawing_handler.GetConnectionStatus():
             return ToolResult(
-                content="Not connected to Tekla",
                 structured_content={"status": "error", "message": "Not connected to Tekla"},
             )
 
@@ -214,7 +276,6 @@ def get_drawing_properties(
 
         if not drawings:
             return ToolResult(
-                content="No drawings found",
                 structured_content={"status": "warning", "message": "No drawings found"},
             )
 
@@ -234,6 +295,123 @@ def get_drawing_properties(
     except Exception:
         logger.exception("Failed to get drawing properties")
         return ToolResult(
-            content="Failed to get drawing properties",
             structured_content={"status": "error", "message": "Failed to get drawing properties"},
+        )
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@log_mcp_tool_call
+def detect_collisions_between_marks(
+    marks: Annotated[list[str] | None, Field(description="List of drawing marks to process")] = None,
+) -> ToolResult:
+    """
+    Detect collisions between part marks in drawings.
+
+    If the marks are not provided, processes currently selected drawings in Tekla.
+    """
+    try:
+        drawing_handler = DrawingHandler()
+
+        if not drawing_handler.GetConnectionStatus():
+            return ToolResult(
+                structured_content={"status": "error", "message": "Not connected to Tekla"},
+            )
+
+        target_drawings: list[Drawing] = []
+        if marks:
+            all_drawings_enum = drawing_handler.GetDrawings()
+            all_drawings = wrap_drawings(all_drawings_enum)
+            target_drawings = [d.drawing for d in all_drawings if d.mark in marks]
+        else:
+            selector = drawing_handler.GetDrawingSelector()
+            selected_enum = selector.GetSelected()
+            target_drawings = [d.drawing for d in wrap_drawings(selected_enum)]
+
+        if not target_drawings:
+            return ToolResult(
+                structured_content={"status": "warning", "message": "No drawings found or selected"},
+            )
+
+        all_drawings_results: list[dict] = []
+        total_colliding_marks = 0
+
+        for drawing in target_drawings:
+            drawing_handler.SetActiveDrawing(drawing)
+
+            view_results: list[dict] = []
+
+            try:
+                sheet = drawing.GetSheet()
+                views_enum = sheet.GetAllViews()
+            except Exception:
+                continue
+
+            while views_enum.MoveNext():
+                view = views_enum.Current
+                view_name = view.Name or ""
+
+                try:
+                    all_objects = view.GetObjects()
+                except Exception:
+                    continue
+
+                mark_data = []
+                while all_objects.MoveNext():
+                    obj = all_objects.Current
+                    if isinstance(obj, Mark):
+                        collision_data = _get_mark_collision_data(obj)
+                        if collision_data:
+                            mark_data.append(collision_data)
+
+                if not mark_data:
+                    continue
+
+                colliding_indices = _check_collisions(mark_data)
+
+                if not colliding_indices:
+                    continue
+
+                colliding_count = len(colliding_indices)
+                total_colliding_marks += colliding_count
+
+                for i, data in enumerate(mark_data):
+                    if i in colliding_indices:
+                        mark = data["mark"]
+                        mark.Attributes.Frame.Color = DrawingColors.Red
+                        mark.Attributes.Frame.Type = FrameTypes.Rectangular
+                        mark.Modify()
+
+                view_results.append(
+                    {
+                        "view": view_name,
+                        "total_marks": len(mark_data),
+                        "colliding_marks": colliding_count,
+                    }
+                )
+
+            if view_results:
+                all_drawings_results.append(
+                    {
+                        "mark": drawing.Mark,
+                        "name": drawing.Name,
+                        "views": view_results,
+                    }
+                )
+                drawing_handler.SaveActiveDrawing()
+
+        drawing_handler.CloseActiveDrawing()
+
+        return ToolResult(
+            structured_content={
+                "status": "success",
+                "total_drawings": len(target_drawings),
+                "drawings_with_collisions": all_drawings_results,
+                "total_colliding_marks": total_colliding_marks,
+            },
+        )
+
+    except Exception as e:
+        logger.exception("Failed to check collisions between part marks: %s", e)
+        return ToolResult(
+            structured_content={"status": "error", "message": str(e)},
         )

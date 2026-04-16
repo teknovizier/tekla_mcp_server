@@ -32,6 +32,7 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | Operations | `run_macro` | Run a Tekla macro with the specified name | `macro_name` (required) |
 | Drawing | `get_drawings` | Get drawings from Tekla model with optional filtering by type, name, mark, title1/2/3 | `drawing_type`, `name_filter`, `mark_filter`, `title1_filter`, `title2_filter`, `title3_filter` |
 | Drawing | `get_drawing_properties` | Get properties of drawings by their marks or currently selected drawings in Tekla | `marks` |
+| Drawing | `detect_collisions_between_marks` | Detect collisions between part marks in drawings by their marks or currently selected drawings in Tekla. Colliding marks are colored red | `marks` |
 | Modeling | `place_beams` | Place one or more beams in the Tekla model | `beams` (list with start point, end point, start point offset, end_point offset, profile, material, Tekla class, name, position) |
 | Modeling | `place_columns` | Place one or more columns in the Tekla model | `columns` (list with base point, height, start point offset, end point offset, profile, material, Tekla class, name, position) |
 | Modeling | `place_panels` | Place one or more wall panels in the Tekla model | `panels` (list with start point, end point, start point offset, end point offset, profile, material, Tekla class, name, position) |

@@ -144,3 +144,27 @@ def parse_label_string(label_str: str) -> list[str]:
     if not label_str:
         return []
     return [label.strip() for label in label_str.strip().split() if label.strip()]
+
+
+def rects_overlap(a: tuple, b: tuple, margin: float = 0.0) -> bool:
+    """Check if two rectangles overlap with margin."""
+    return not (a[2] < b[0] - margin or a[0] > b[2] + margin or a[3] < b[1] - margin or a[1] > b[3] + margin)
+
+
+def lines_overlap(p1: tuple, p2: tuple, p3: tuple, p4: tuple, margin: float = 0.0) -> bool:
+    """Check if two line segments intersect with margin."""
+    x1, y1 = p1
+    x2, y2 = p2
+    x3, y3 = p3
+    x4, y4 = p4
+
+    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if abs(denom) < 0.0001:
+        return False
+
+    t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
+    u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom
+
+    if 0 - margin <= t <= 1 + margin and 0 - margin <= u <= 1 + margin:
+        return True
+    return False

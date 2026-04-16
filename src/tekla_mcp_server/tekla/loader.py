@@ -58,7 +58,22 @@ from Tekla.Structures.Filtering import (
 )
 from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
 from Tekla.Structures.Catalogs import CatalogHandler, MaterialItem, MaterialItemEnumerator, ProfileItem, ProfileItemEnumerator
-from Tekla.Structures.Drawing import DrawingHandler, Drawing, DrawingEnumerator
+from Tekla.Structures.Drawing import (
+    DrawingHandler,
+    Drawing,
+    DrawingEnumerator,
+    Mark,
+    DrawingObject,
+    DrawingObjectEnumerator,
+    Frame,
+    FrameTypes,
+    DrawingColors,
+    Polyline,
+    PointList,
+    DrawingHandler,
+    LeaderLinePlacing,
+    LeaderLine,
+)
 
 
 # Export everything
@@ -131,6 +146,16 @@ __all__ = [
     "DrawingHandler",
     "Drawing",
     "DrawingEnumerator",
+    "Mark",
+    "DrawingObject",
+    "DrawingObjectEnumerator",
+    "Frame",
+    "FrameTypes",
+    "DrawingColors",
+    "Polyline",
+    "PointList",
+    "LeaderLine",
+    "LeaderLinePlacing",
     "Grid",
     "Offset",
 ]
