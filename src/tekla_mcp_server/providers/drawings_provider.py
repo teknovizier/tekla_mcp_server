@@ -362,17 +362,16 @@ def detect_collisions_between_marks(
                 view_name = view.Name or ""
 
                 try:
-                    all_objects = view.GetObjects()
+                    mark_objects = view.GetAllObjects(Mark)
                 except Exception:
                     continue
 
                 mark_data = []
-                while all_objects.MoveNext():
-                    obj = all_objects.Current
-                    if isinstance(obj, Mark):
-                        collision_data = _get_mark_collision_data(obj)
-                        if collision_data:
-                            mark_data.append(collision_data)
+                while mark_objects.MoveNext():
+                    obj = mark_objects.Current
+                    collision_data = _get_mark_collision_data(obj)
+                    if collision_data:
+                        mark_data.append(collision_data)
 
                 if not mark_data:
                     continue
