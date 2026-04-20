@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sys
+import threading
 
 from tekla_mcp_server.config import get_config
 
@@ -15,8 +16,9 @@ import clr
 import System
 
 
-# Global flag to prevent re-loading DLLs
+# Global flag and lock to prevent re-loading DLLs
 _dlls_loaded = False
+_dlls_loaded_lock = threading.Lock()
 
 # Constants
 _log_level = os.getenv("TEKLA_MCP_LOG_LEVEL", "DEBUG")
@@ -43,38 +45,39 @@ def load_dlls() -> bool:
     """
     global _dlls_loaded
 
-    if _dlls_loaded:
-        return True
+    with _dlls_loaded_lock:
+        if _dlls_loaded:
+            return True
 
-    dlls = [
-        "Tekla.Structures.dll",
-        "Tekla.Structures.Plugins.dll",
-        "Tekla.Structures.Model.dll",
-        "Tekla.Structures.DataType.dll",
-        "Tekla.Structures.Geometry3d.Compatibility.dll",
-        "Tekla.Structures.Dialog.dll",
-        "Tekla.Structures.Analysis.dll",
-        "Tekla.Structures.Catalogs.dll",
-        "Tekla.Structures.Drawing.dll",
-    ]
+        dlls = [
+            "Tekla.Structures.dll",
+            "Tekla.Structures.Plugins.dll",
+            "Tekla.Structures.Model.dll",
+            "Tekla.Structures.DataType.dll",
+            "Tekla.Structures.Geometry3d.Compatibility.dll",
+            "Tekla.Structures.Dialog.dll",
+            "Tekla.Structures.Analysis.dll",
+            "Tekla.Structures.Catalogs.dll",
+            "Tekla.Structures.Drawing.dll",
+        ]
 
-    # Read configuration data
-    try:
-        config = get_config()
-    except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
-        logger.exception("Failed to load configuration: %s", e)
-        sys.exit(1)
+        # Read configuration data
+        try:
+            config = get_config()
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
+            logger.exception("Failed to load configuration: %s", e)
+            sys.exit(1)
 
-    tekla_path = config.tekla_path
+        tekla_path = config.tekla_path
 
-    try:
-        for dll in dlls:
-            clr.AddReference(os.path.join(tekla_path, dll))
+        try:
+            for dll in dlls:
+                clr.AddReference(os.path.join(tekla_path, dll))
 
-        _dlls_loaded = True
-        logger.info("Successfully loaded all Tekla Structures DLLs")
-        return True
+            _dlls_loaded = True
+            logger.info("Successfully loaded all Tekla Structures DLLs")
+            return True
 
-    except System.IO.FileNotFoundException:
-        logger.exception("Tekla Structures DLLs not found. Check the TEKLA_PATH environment variable or settings.json")
-        sys.exit(1)
+        except System.IO.FileNotFoundException:
+            logger.exception("Tekla Structures DLLs not found. Check the TEKLA_PATH environment variable or settings.json")
+            sys.exit(1)
