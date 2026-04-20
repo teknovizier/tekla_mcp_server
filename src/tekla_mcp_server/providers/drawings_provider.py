@@ -13,7 +13,7 @@ from pydantic import Field
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType
-from tekla_mcp_server.utils import log_mcp_tool_call, rects_overlap, lines_overlap
+from tekla_mcp_server.utils import log_mcp_tool_call, rects_intersect, lines_intersect, line_rect_intersect
 from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings
 from tekla_mcp_server.tekla.loader import DrawingHandler, Drawing, Mark, DrawingColors, FrameTypes
 
@@ -123,12 +123,20 @@ def _check_collisions(data_list: list[dict]) -> set[int]:
 
             # Check bbox overlap
             if data_i["bbox"] and data_j["bbox"]:
-                if rects_overlap(data_i["bbox"], data_j["bbox"]):
+                if rects_intersect(data_i["bbox"], data_j["bbox"]):
                     is_colliding = True
 
             # Check line intersection
             if data_i["line"] and data_j["line"]:
-                if lines_overlap(data_i["line"][0], data_i["line"][1], data_j["line"][0], data_j["line"][1]):
+                if lines_intersect(data_i["line"][0], data_i["line"][1], data_j["line"][0], data_j["line"][1]):
+                    is_colliding = True
+
+            # Check line vs bbox (both directions)
+            if data_i["line"] and data_j["bbox"]:
+                if line_rect_intersect(data_i["line"][0], data_i["line"][1], data_j["bbox"]):
+                    is_colliding = True
+            if data_i["bbox"] and data_j["line"]:
+                if line_rect_intersect(data_j["line"][0], data_j["line"][1], data_i["bbox"]):
                     is_colliding = True
 
             if is_colliding:

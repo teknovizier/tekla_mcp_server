@@ -146,12 +146,12 @@ def parse_label_string(label_str: str) -> list[str]:
     return [label.strip() for label in label_str.strip().split() if label.strip()]
 
 
-def rects_overlap(a: tuple, b: tuple, margin: float = 0.0) -> bool:
-    """Check if two rectangles overlap with margin."""
+def rects_intersect(a: tuple, b: tuple, margin: float = 0.0) -> bool:
+    """Check if two rectangles intersect with margin."""
     return not (a[2] < b[0] - margin or a[0] > b[2] + margin or a[3] < b[1] - margin or a[1] > b[3] + margin)
 
 
-def lines_overlap(p1: tuple, p2: tuple, p3: tuple, p4: tuple, margin: float = 0.0) -> bool:
+def lines_intersect(p1: tuple, p2: tuple, p3: tuple, p4: tuple, margin: float = 0.0) -> bool:
     """Check if two line segments intersect with margin."""
     x1, y1 = p1
     x2, y2 = p2
@@ -167,4 +167,32 @@ def lines_overlap(p1: tuple, p2: tuple, p3: tuple, p4: tuple, margin: float = 0.
 
     if 0 - margin <= t <= 1 + margin and 0 - margin <= u <= 1 + margin:
         return True
+    return False
+
+
+def line_rect_intersect(line_p1: tuple, line_p2: tuple, rect: tuple, margin: float = 0.0) -> bool:
+    """Check if a line segment intersects a rectangle."""
+    x1, y1 = line_p1
+    x2, y2 = line_p2
+    rx1, ry1, rx2, ry2 = rect
+
+    left = min(rx1, rx2) - margin
+    right = max(rx1, rx2) + margin
+    bottom = min(ry1, ry2) - margin
+    top = max(ry1, ry2) + margin
+
+    if left <= x1 <= right and bottom <= y1 <= top:
+        return True
+    if left <= x2 <= right and bottom <= y2 <= top:
+        return True
+
+    if lines_intersect((x1, y1), (x2, y2), (left, bottom), (right, bottom), margin):
+        return True
+    if lines_intersect((x1, y1), (x2, y2), (right, bottom), (right, top), margin):
+        return True
+    if lines_intersect((x1, y1), (x2, y2), (right, top), (left, top), margin):
+        return True
+    if lines_intersect((x1, y1), (x2, y2), (left, top), (left, bottom), margin):
+        return True
+
     return False
