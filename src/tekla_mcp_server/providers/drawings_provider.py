@@ -340,6 +340,9 @@ def detect_collisions_between_marks(
                 structured_content={"status": "warning", "message": "No drawings found or selected"},
             )
 
+        if drawing_handler.GetActiveDrawing():
+            return ToolResult(structured_content={"status": "warning", "message": "A drawing is currently open. Close it first before running collision detection."})
+
         all_drawings_results: list[dict] = []
         total_colliding_marks = 0
 
