@@ -5,7 +5,10 @@ Module for utility functions.
 import re
 from functools import wraps
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
+
+from fastmcp.resources import ResourceContent, ResourceResult
+from fastmcp.tools import ToolResult
 
 from tekla_mcp_server.init import logger
 
@@ -82,27 +85,33 @@ def log_function_call(func: Callable) -> Callable:
     return wrapper
 
 
-def log_mcp_tool_call(func: Callable) -> Callable:
+def mcp_handler(scope: Literal["tool", "resource"] = "tool") -> Callable:
     """
-    Decorator for MCP tools that logs function calls and handles exceptions.
+    Decorator for MCP tools/resources that logs function calls and handles exceptions.
 
     Args:
-        func: The function to decorate
+        scope: "tool" for tools, "resource" for resources
 
     Returns:
-        Wrapped function that logs its arguments and handles exceptions
+        Decorated function with error handling
     """
 
-    @wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        logger.info("[%s] called with args=%s, kwargs=%s", func.__name__, args, kwargs)
-        try:
-            return func(*args, **kwargs)
-        except (ValueError, TypeError, AttributeError, KeyError) as e:
-            logger.exception("[%s] failed:", func.__name__)
-            return {"status": "error", "error_type": type(e).__name__, "message": str(e)}
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            logger.info("[%s] called with args=%s, kwargs=%s", func.__name__, args, kwargs)
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                logger.exception("[%s] failed:", func.__name__)
+                if scope == "tool":
+                    return ToolResult(structured_content={"status": "error", "message": str(e)})
+                else:
+                    return ResourceResult(contents=[ResourceContent(content={"error": str(e)}, mime_type="application/json")])
 
-    return wrapper
+        return wrapper
+
+    return decorator
 
 
 def parse_coordinate_string(coord_str: str) -> list[float]:

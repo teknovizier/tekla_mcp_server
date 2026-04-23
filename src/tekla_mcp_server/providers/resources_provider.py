@@ -4,20 +4,21 @@ Resources provider for Tekla MCP server.
 Provides read-only data resources for discovery and metadata.
 """
 
-
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers import LocalProvider
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.tekla.loader import Grid
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.utils import get_macros, get_filters
-from tekla_mcp_server.utils import parse_coordinate_string, parse_label_string
+from tekla_mcp_server.utils import mcp_handler, parse_coordinate_string, parse_label_string
 
 
 resources_provider = LocalProvider()
 
 
 @resources_provider.resource("tekla://components")
+@mcp_handler(scope="resource")
 def get_component_list() -> ResourceResult:
     """
     Returns mapping of Tekla component names to config keys.
@@ -30,6 +31,7 @@ def get_component_list() -> ResourceResult:
 
 
 @resources_provider.resource("tekla://components/{component_key}")
+@mcp_handler(scope="resource")
 def get_component_schema(component_key: str) -> ResourceResult:
     """
     Returns the custom_properties schema for a specific component.
@@ -44,6 +46,7 @@ def get_component_schema(component_key: str) -> ResourceResult:
 
 
 @resources_provider.resource("tekla://macros")
+@mcp_handler(scope="resource")
 def get_macro_list() -> ResourceResult:
     """
     Returns a list of available Tekla macros from configured directories.
@@ -52,6 +55,7 @@ def get_macro_list() -> ResourceResult:
 
 
 @resources_provider.resource("tekla://element_types")
+@mcp_handler(scope="resource")
 def get_element_types() -> ResourceResult:
     """
     Returns a list of available Tekla element types and their corresponding class numbers.
@@ -60,6 +64,7 @@ def get_element_types() -> ResourceResult:
 
 
 @resources_provider.resource("tekla://filters/selection")
+@mcp_handler(scope="resource")
 def get_selection_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla selection filter names from .SObjGrp files.
@@ -68,6 +73,7 @@ def get_selection_filter_list() -> ResourceResult:
 
 
 @resources_provider.resource("tekla://filters/view")
+@mcp_handler(scope="resource")
 def get_view_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla view filter names from .VObjGrp files.
@@ -76,12 +82,11 @@ def get_view_filter_list() -> ResourceResult:
 
 
 @resources_provider.resource("tekla://phases")
+@mcp_handler(scope="resource")
 def get_phase_list() -> ResourceResult:
     """
     Returns a list of all phases in the current Tekla model.
     """
-    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-
     tekla_model = TeklaModel()
     phases = tekla_model.model.GetPhases()
 
@@ -110,12 +115,11 @@ def get_phase_list() -> ResourceResult:
 
 
 @resources_provider.resource("tekla://grids")
+@mcp_handler(scope="resource")
 def get_grid_list() -> ResourceResult:
     """
     Returns rectangular grid data from the current Tekla model.
     """
-    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-
     tekla_model = TeklaModel()
     enumerator = tekla_model.model.GetModelObjectSelector().GetAllObjectsWithType(Grid.ModelObjectEnum.GRID)
     grid_data = []
@@ -161,38 +165,28 @@ def get_grid_list() -> ResourceResult:
 
 
 @resources_provider.resource("tekla://connection_status")
+@mcp_handler(scope="resource")
 def get_connection_status() -> ResourceResult:
     """
     Returns the current Tekla connection status.
     """
-    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-
-    try:
-        model = TeklaModel()
-        return ResourceResult(
-            contents=[
-                ResourceContent(
-                    content={
-                            "connected": True,
-                            "model_path": model.model.GetInfo().ModelPath,
-                            "message": "Connected to Tekla model",
-                        },
-                    mime_type="application/json",
-                )
-            ]
-        )
-    except ConnectionError as e:
-        return ResourceResult(
-            contents=[
-                ResourceContent(
-                    content={"connected": False, "model_path": None, "message": str(e)},
-                    mime_type="application/json",
-                )
-            ]
-        )
+    model = TeklaModel()
+    return ResourceResult(
+        contents=[
+            ResourceContent(
+                content={
+                    "connected": True,
+                    "model_path": model.model.GetInfo().ModelPath,
+                    "message": "Connected to Tekla model",
+                },
+                mime_type="application/json",
+            )
+        ]
+    )
 
 
 @resources_provider.resource("project://requirements")
+@mcp_handler(scope="resource")
 def get_project_requirements() -> ResourceResult:
     """
     Provides the complete set of project requirements and conventions.

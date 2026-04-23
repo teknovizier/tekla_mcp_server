@@ -21,7 +21,7 @@ from tekla_mcp_server.models import (
     StringMatchType,
     NumericFilterOption,
 )
-from tekla_mcp_server.utils import log_mcp_tool_call
+from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.loader import (
@@ -61,51 +61,47 @@ def add_filter(
     match_type: StringMatchType | NumericMatchType | NumericOperatorType | None = None,
     operator: BinaryFilterOperatorType = BinaryFilterOperatorType.BOOLEAN_AND,
 ) -> ToolResult | None:
-    try:
-        if not isinstance(value, (str, int, float)):
-            expr = BinaryFilterExpression(filter_expression, NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(value))
-            filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
-            return None
-
-        is_string_filter = False
-        if match_type is not None:
-            if isinstance(match_type, StringMatchType):
-                is_string_filter = True
-            elif isinstance(match_type, NumericMatchType):
-                is_string_filter = False
-
-        if isinstance(value, str) and not is_string_filter:
-            try:
-                if value.replace(".", "").replace("-", "").isdigit():
-                    value = float(value) if "." in value else int(value)
-            except ValueError:
-                pass
-
-        if isinstance(value, str):
-            if match_type is None:
-                match_type = StringMatchType.IS_EQUAL
-            op = STRING_MATCH_TYPE_MAPPING.get(match_type)
-            expr = BinaryFilterExpression(filter_expression, op, StringConstantFilterExpression(value))
-        elif isinstance(value, (int, float)):
-            if match_type is None:
-                match_type = NumericOperatorType.IS_EQUAL
-            if isinstance(match_type, NumericOperatorType):
-                op = match_type
-            else:
-                op = NUMERIC_MATCH_TYPE_MAPPING.get(match_type)
-            expr = BinaryFilterExpression(filter_expression, op, NumericConstantFilterExpression(value))
-        else:
-            return ToolResult(structured_content={"status": "error", "message": f"Unsupported value type: {type(value)}"})
-
+    if not isinstance(value, (str, int, float)):
+        expr = BinaryFilterExpression(filter_expression, NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(value))
         filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
         return None
-    except Exception as e:
-        logger.exception("Error in add_filter")
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
+
+    is_string_filter = False
+    if match_type is not None:
+        if isinstance(match_type, StringMatchType):
+            is_string_filter = True
+        elif isinstance(match_type, NumericMatchType):
+            is_string_filter = False
+
+    if isinstance(value, str) and not is_string_filter:
+        try:
+            if value.replace(".", "").replace("-", "").isdigit():
+                value = float(value) if "." in value else int(value)
+        except ValueError:
+            pass
+
+    if isinstance(value, str):
+        if match_type is None:
+            match_type = StringMatchType.IS_EQUAL
+        op = STRING_MATCH_TYPE_MAPPING.get(match_type)
+        expr = BinaryFilterExpression(filter_expression, op, StringConstantFilterExpression(value))
+    elif isinstance(value, (int, float)):
+        if match_type is None:
+            match_type = NumericOperatorType.IS_EQUAL
+        if isinstance(match_type, NumericOperatorType):
+            op = match_type
+        else:
+            op = NUMERIC_MATCH_TYPE_MAPPING.get(match_type)
+        expr = BinaryFilterExpression(filter_expression, op, NumericConstantFilterExpression(value))
+    else:
+        return ToolResult(structured_content={"status": "error", "message": f"Unsupported value type: {type(value)}"})
+
+    filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
+    return None
 
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def select_elements_by_filter(
     element_type: Annotated[str | None, Field(description="Named element type (e.g., 'Wall', 'Steel Beam')")] = None,
     tekla_classes: Annotated[int | list[int] | None, Field(description="Tekla class numbers")] = None,
@@ -320,7 +316,7 @@ def select_elements_by_filter(
 
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def select_elements_by_filter_name(
     filter_name: Annotated[str, Field(description="Name of the Tekla filter to apply")],
 ) -> ToolResult:
@@ -340,7 +336,7 @@ def select_elements_by_filter_name(
 
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def select_elements_by_guid(
     guids: Annotated[list[str], Field(description="List of GUIDs to select")],
 ) -> ToolResult:
@@ -360,46 +356,40 @@ def select_elements_by_guid(
 
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def select_elements_assemblies_or_main_parts(
     mode: Annotated[SelectionMode, Field(description="Selection mode: 'Assembly' or 'Main Part'")],
 ) -> ToolResult:
     """
     Selects assemblies or main parts for the selected elements.
     """
-    try:
-        selected_objects = TeklaModel().get_selected_objects()
+    selected_objects = TeklaModel().get_selected_objects()
 
-        processed_elements = 0
-        selected_object_types = ""
+    processed_elements = 0
+    selected_object_types = ""
 
-        filtered_parts = ArrayList()
-        for selected_object in wrap_model_objects(selected_objects):
-            try:
-                assembly = selected_object.get_top_level_assembly()
-            except TypeError:
-                logger.warning("Failed to get top level assembly for the element %s", selected_object.guid)
-                continue
-            if mode == "Assembly":
-                filtered_parts.Add(assembly.model_object)
-                selected_object_types = "selected_assemblies"
-            elif mode == "Main Part":
-                filtered_parts.Add(assembly.main_part.model_object)
-                selected_object_types = "selected_main_parts"
-            processed_elements += 1
+    filtered_parts = ArrayList()
+    for selected_object in wrap_model_objects(selected_objects):
+        try:
+            assembly = selected_object.get_top_level_assembly()
+        except TypeError:
+            logger.warning("Failed to get top level assembly for the element %s", selected_object.guid)
+            continue
+        if mode == "Assembly":
+            filtered_parts.Add(assembly.model_object)
+            selected_object_types = "selected_assemblies"
+        elif mode == "Main Part":
+            filtered_parts.Add(assembly.main_part.model_object)
+            selected_object_types = "selected_main_parts"
+        processed_elements += 1
 
-        TeklaModel.select_objects(filtered_parts)
-        logger.info("Selected %s elements as '%s'", filtered_parts.Count, mode)
-        return ToolResult(
-            structured_content={
-                "status": "success" if filtered_parts.Count else "error",
-                "selected_elements": selected_objects.GetSize(),
-                "processed_elements": processed_elements,
-                selected_object_types: filtered_parts.Count,
-            }
-        )
-    except ValueError as e:
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
-    except Exception as e:
-        logger.exception("Error in select_elements_assemblies_or_main_parts")
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    TeklaModel.select_objects(filtered_parts)
+    logger.info("Selected %s elements as '%s'", filtered_parts.Count, mode)
+    return ToolResult(
+        structured_content={
+            "status": "success" if filtered_parts.Count else "error",
+            "selected_elements": selected_objects.GetSize(),
+            "processed_elements": processed_elements,
+            selected_object_types: filtered_parts.Count,
+        }
+    )

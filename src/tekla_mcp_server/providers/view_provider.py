@@ -12,7 +12,7 @@ from pydantic import Field
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import ElementLabel, ElementLabelModel
-from tekla_mcp_server.utils import log_mcp_tool_call
+from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 from tekla_mcp_server.tekla.utils import get_filters, get_active_views, collect_children
@@ -35,7 +35,7 @@ view_provider = LocalProvider()
 
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def draw_elements_labels(
     label: Annotated[str | None, Field(description="Type of label to draw")] = None,
     custom_label: Annotated[str | None, Field(description="User-provided report property name")] = None,
@@ -58,159 +58,147 @@ def draw_elements_labels(
 
     Note: If a label is not applicable to the selected element type, it defaults to Name.
     """
+    selected_objects = TeklaModel().get_selected_objects()
+
+    if custom_label:
+        label_value = "Custom"
+    else:
+        label_value = "Name" if label is None else label
+
     try:
-        selected_objects = TeklaModel().get_selected_objects()
-
-        if custom_label:
-            label_value = "Custom"
-        else:
-            label_value = "Name" if label is None else label
-
-        try:
-            label_enum = ElementLabelModel(value=label_value).to_enum()
-        except Exception as e:
-            return ToolResult(structured_content={"status": "error", "message": f"Invalid label: {str(e)}"})
-
-        resolved_label = None
-        unit = None
-        resolution_errors: list[dict[str, Any]] = []
-        skip_custom_label = False
-
-        if label_enum == ElementLabel.CUSTOM and custom_label:
-            resolution = TemplateAttributeParser.resolve_attributes([custom_label])
-            errors = resolution.get("errors", [])
-            if errors:
-                candidates = resolution.get("candidates", {})
-                resolution_errors.append({"query": custom_label, "candidates": candidates.get(custom_label, [])})
-                skip_custom_label = True
-            else:
-                resolved_label = resolution["resolved"][0]
-                custom_property = TemplateAttributeParser.get_attribute(resolved_label)
-                unit = f" {custom_property.unit}" if custom_property.unit else ""
-
-        color_black = (0.0, 0.0, 0.0)
-        drawer = GraphicsDrawer()
-        processed_elements = 0
-        drawn_labels = 0
-
-        for selected_object in wrap_model_objects(selected_objects):
-            if label_enum == ElementLabel.CUSTOM:
-                if skip_custom_label:
-                    continue
-                value = selected_object.get_report_property(resolved_label)
-                text = f"{resolved_label} = {value}{unit}"
-            else:
-                if isinstance(selected_object, TeklaAssembly):
-                    assembly_labels = {
-                        ElementLabel.POSITION: selected_object.position,
-                        ElementLabel.GUID: selected_object.guid,
-                        ElementLabel.NAME: selected_object.name,
-                        ElementLabel.PHASE: str(selected_object.phase),
-                        ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
-                    }
-                    text = assembly_labels.get(label_enum, ElementLabel.NAME)
-                elif isinstance(selected_object, TeklaPart):
-                    part_labels = {
-                        ElementLabel.POSITION: selected_object.position,
-                        ElementLabel.GUID: selected_object.guid,
-                        ElementLabel.NAME: selected_object.name,
-                        ElementLabel.PROFILE: selected_object.profile,
-                        ElementLabel.MATERIAL: selected_object.material,
-                        ElementLabel.FINISH: selected_object.finish,
-                        ElementLabel.CLASS: selected_object.tekla_class,
-                        ElementLabel.PHASE: str(selected_object.phase),
-                        ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
-                    }
-                    text = part_labels.get(label_enum, ElementLabel.NAME)
-                else:
-                    continue
-            if drawer.DrawText(selected_object.cog, text, Color(*color_black)):
-                drawn_labels += 1
-            processed_elements += 1
-        logger.info("Drawn '%s' labels on %s elements", label_enum.value, drawn_labels)
-        if drawn_labels and not resolution_errors:
-            status = "success"
-        elif drawn_labels and resolution_errors:
-            status = "partial"
-        else:
-            status = "error"
-        return ToolResult(
-            structured_content={
-                "status": status,
-                "selected_elements": selected_objects.GetSize(),
-                "processed_elements": processed_elements,
-                "drawn_labels": drawn_labels,
-                "resolution_errors": resolution_errors,
-            }
-        )
-    except ValueError as e:
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
+        label_enum = ElementLabelModel(value=label_value).to_enum()
     except Exception as e:
-        logger.exception("Error in draw_elements_labels")
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
+        return ToolResult(structured_content={"status": "error", "message": f"Invalid label: {str(e)}"})
 
+    resolved_label = None
+    unit = None
+    resolution_errors: list[dict[str, Any]] = []
+    skip_custom_label = False
+
+    if label_enum == ElementLabel.CUSTOM and custom_label:
+        resolution = TemplateAttributeParser.resolve_attributes([custom_label])
+        errors = resolution.get("errors", [])
+        if errors:
+            candidates = resolution.get("candidates", {})
+            resolution_errors.append({"query": custom_label, "candidates": candidates.get(custom_label, [])})
+            skip_custom_label = True
+        else:
+            resolved_label = resolution["resolved"][0]
+            custom_property = TemplateAttributeParser.get_attribute(resolved_label)
+            unit = f" {custom_property.unit}" if custom_property.unit else ""
+
+    color_black = (0.0, 0.0, 0.0)
+    drawer = GraphicsDrawer()
+    processed_elements = 0
+    drawn_labels = 0
+
+    for selected_object in wrap_model_objects(selected_objects):
+        if label_enum == ElementLabel.CUSTOM:
+            if skip_custom_label:
+                continue
+            value = selected_object.get_report_property(resolved_label)
+            text = f"{resolved_label} = {value}{unit}"
+        else:
+            if isinstance(selected_object, TeklaAssembly):
+                assembly_labels = {
+                    ElementLabel.POSITION: selected_object.position,
+                    ElementLabel.GUID: selected_object.guid,
+                    ElementLabel.NAME: selected_object.name,
+                    ElementLabel.PHASE: str(selected_object.phase),
+                    ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
+                }
+                text = assembly_labels.get(label_enum, ElementLabel.NAME)
+            elif isinstance(selected_object, TeklaPart):
+                part_labels = {
+                    ElementLabel.POSITION: selected_object.position,
+                    ElementLabel.GUID: selected_object.guid,
+                    ElementLabel.NAME: selected_object.name,
+                    ElementLabel.PROFILE: selected_object.profile,
+                    ElementLabel.MATERIAL: selected_object.material,
+                    ElementLabel.FINISH: selected_object.finish,
+                    ElementLabel.CLASS: selected_object.tekla_class,
+                    ElementLabel.PHASE: str(selected_object.phase),
+                    ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
+                }
+                text = part_labels.get(label_enum, ElementLabel.NAME)
+            else:
+                continue
+        if drawer.DrawText(selected_object.cog, text, Color(*color_black)):
+            drawn_labels += 1
+        processed_elements += 1
+    logger.info("Drawn '%s' labels on %s elements", label_enum.value, drawn_labels)
+    if drawn_labels and not resolution_errors:
+        status = "success"
+    elif drawn_labels and resolution_errors:
+        status = "partial"
+    else:
+        status = "error"
+    return ToolResult(
+        structured_content={
+            "status": status,
+            "selected_elements": selected_objects.GetSize(),
+            "processed_elements": processed_elements,
+            "drawn_labels": drawn_labels,
+            "resolution_errors": resolution_errors,
+        }
+    )
+    
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def zoom_to_selection() -> ToolResult:
     """
     Zooms the Tekla current view to fit the currently selected model objects.
     """
-    try:
-        tekla_model = TeklaModel()
-        selected_objects = tekla_model.get_selected_objects()
+    tekla_model = TeklaModel()
+    selected_objects = tekla_model.get_selected_objects()
 
-        processed_elements = 0
+    processed_elements = 0
 
-        min_x = min_y = min_z = float("inf")
-        max_x = max_y = max_z = float("-inf")
+    min_x = min_y = min_z = float("inf")
+    max_x = max_y = max_z = float("-inf")
 
-        for selected_object in selected_objects:
-            part = None
-            if isinstance(selected_object, Part):
-                part = selected_object
-            elif isinstance(selected_object, Assembly):
-                part = selected_object.GetMainPart()
-            if part is None:
-                continue
+    for selected_object in selected_objects:
+        part = None
+        if isinstance(selected_object, Part):
+            part = selected_object
+        elif isinstance(selected_object, Assembly):
+            part = selected_object.GetMainPart()
+        if part is None:
+            continue
 
-            solid = part.GetSolid()
-            if solid is None:
-                continue
+        solid = part.GetSolid()
+        if solid is None:
+            continue
 
-            sp = solid.MinimumPoint
-            ep = solid.MaximumPoint
+        sp = solid.MinimumPoint
+        ep = solid.MaximumPoint
 
-            min_x = min(min_x, sp.X)
-            min_y = min(min_y, sp.Y)
-            min_z = min(min_z, sp.Z)
-            max_x = max(max_x, ep.X)
-            max_y = max(max_y, ep.Y)
-            max_z = max(max_z, ep.Z)
+        min_x = min(min_x, sp.X)
+        min_y = min(min_y, sp.Y)
+        min_z = min(min_z, sp.Z)
+        max_x = max(max_x, ep.X)
+        max_y = max(max_y, ep.Y)
+        max_z = max(max_z, ep.Z)
 
-            processed_elements += 1
+        processed_elements += 1
 
-        min_point = Point(min_x, min_y, min_z)
-        max_point = Point(max_x, max_y, max_z)
-        bbox = AABB(min_point, max_point)
-        result = ViewHandler.ZoomToBoundingBox(bbox)
-        logger.info("Zoomed to bounding box: %s", bbox)
-        return ToolResult(
-            structured_content={
-                "status": "success" if result else "error",
-                "selected_elements": selected_objects.GetSize(),
-                "processed_elements": processed_elements,
-            }
-        )
-    except ValueError as e:
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
-    except Exception as e:
-        logger.exception("Error in zoom_to_selection")
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    min_point = Point(min_x, min_y, min_z)
+    max_point = Point(max_x, max_y, max_z)
+    bbox = AABB(min_point, max_point)
+    result = ViewHandler.ZoomToBoundingBox(bbox)
+    logger.info("Zoomed to bounding box: %s", bbox)
+    return ToolResult(
+        structured_content={
+            "status": "success" if result else "error",
+            "selected_elements": selected_objects.GetSize(),
+            "processed_elements": processed_elements,
+        }
+    )
 
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def redraw_view() -> ToolResult:
     """
     Redraws the currently active view in Tekla.
@@ -231,7 +219,7 @@ def redraw_view() -> ToolResult:
 
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def apply_view_filter(
     filter_name: Annotated[str, Field(description="Name of the view filter to apply")],
 ) -> ToolResult:
@@ -255,49 +243,37 @@ def apply_view_filter(
 
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def show_only_selected() -> ToolResult:
     """
     Shows only the currently selected model objects in the Tekla current view, hiding all others.
     """
-    try:
-        selected_objects = TeklaModel().get_selected_objects()
-        Operation.ShowOnlySelected(Operation.UnselectedModeEnum.Hidden)
-        logger.info("Hidden all the elements except the selected ones")
-        return ToolResult(
-            structured_content={
-                "status": "success",
-                "selected_elements": selected_objects.GetSize(),
-            }
-        )
-    except ValueError as e:
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
-    except Exception as e:
-        logger.exception("Error in show_only_selected")
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    selected_objects = TeklaModel().get_selected_objects()
+    Operation.ShowOnlySelected(Operation.UnselectedModeEnum.Hidden)
+    logger.info("Hidden all the elements except the selected ones")
+    return ToolResult(
+        structured_content={
+            "status": "success",
+            "selected_elements": selected_objects.GetSize(),
+        }
+    )
 
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def hide_selected() -> ToolResult:
     """
     Hides the selected elements in the Tekla view.
     """
-    try:
-        selected_objects = TeklaModel().get_selected_objects()
-        tekla_list = collect_children(selected_objects)
-        ModelObjectVisualization.SetTransparency(tekla_list, TemporaryTransparency.HIDDEN)
+    selected_objects = TeklaModel().get_selected_objects()
+    tekla_list = collect_children(selected_objects)
+    ModelObjectVisualization.SetTransparency(tekla_list, TemporaryTransparency.HIDDEN)
 
-        return ToolResult(structured_content={"status": "success", "hidden_elements": tekla_list.Count})
-    except ValueError as e:
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
-    except Exception as e:
-        logger.exception("Error in hide_selected")
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    return ToolResult(structured_content={"status": "success", "hidden_elements": tekla_list.Count})
 
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def color_selected(
     red: Annotated[int, Field(description="Red component (0-255)")],
     green: Annotated[int, Field(description="Green component (0-255)")],
@@ -306,15 +282,9 @@ def color_selected(
     """
     Colors the selected elements in the Tekla view with the specified color.
     """
-    try:
-        selected_objects = TeklaModel().get_selected_objects()
-        tekla_list = collect_children(selected_objects)
-        color = Color(red / 255.0, green / 255.0, blue / 255.0)
-        ModelObjectVisualization.SetTemporaryState(tekla_list, color)
+    selected_objects = TeklaModel().get_selected_objects()
+    tekla_list = collect_children(selected_objects)
+    color = Color(red / 255.0, green / 255.0, blue / 255.0)
+    ModelObjectVisualization.SetTemporaryState(tekla_list, color)
 
-        return ToolResult(structured_content={"status": "success", "colored_elements": tekla_list.Count})
-    except ValueError as e:
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
-    except Exception as e:
-        logger.exception("Error in color_selected")
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    return ToolResult(structured_content={"status": "success", "colored_elements": tekla_list.Count})

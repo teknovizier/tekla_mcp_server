@@ -22,7 +22,7 @@ from tekla_mcp_server.models import (
     PointInput,
     ElementTypeModel,
 )
-from tekla_mcp_server.utils import log_mcp_tool_call
+from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaBeam, TeklaContourPlate
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
@@ -31,7 +31,7 @@ modeling_provider = LocalProvider()
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List of beam definitions")] = None) -> ToolResult:
     """
     Places multiple beams in the Tekla model.
@@ -117,7 +117,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description="List of column definitions")] = None) -> ToolResult:
     """
     Places multiple columns in the Tekla model.
@@ -204,7 +204,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="List of wall panels definitions")] = None) -> ToolResult:
     """
     Places multiple wall panels in the Tekla model.
@@ -289,7 +289,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List of slab definitions")] = None) -> ToolResult:
     """
     Places multiple slabs in the Tekla model.
@@ -373,36 +373,30 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-@log_mcp_tool_call
+@mcp_handler(scope="tool")
 def delete_selected() -> ToolResult:
     """
     Deletes all currently selected elements in Tekla.
     """
-    try:
-        model = TeklaModel()
-        selected = model.get_selected_objects()
-        count = selected.GetSize() if selected else 0
+    model = TeklaModel()
+    selected = model.get_selected_objects()
+    count = selected.GetSize() if selected else 0
 
-        if count == 0:
-            return ToolResult(structured_content={"status": "error", "message": "No objects selected"})
+    if count == 0:
+        return ToolResult(structured_content={"status": "error", "message": "No objects selected"})
 
-        deleted = 0
-        for obj in selected:
-            if obj.Delete():
-                deleted += 1
+    deleted = 0
+    for obj in selected:
+        if obj.Delete():
+            deleted += 1
 
-        model.commit_changes()
+    model.commit_changes()
 
-        return ToolResult(
-            structured_content={
-                "status": "success" if deleted == count else "warning",
-                "total_selected": count,
-                "total_deleted": deleted,
-                "message": f"Deleted {deleted} of {count} objects",
-            }
-        )
-    except ValueError as e:
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
-    except Exception as e:
-        logger.exception("Error in delete_selected")
-        return ToolResult(structured_content={"status": "error", "message": str(e)})
+    return ToolResult(
+        structured_content={
+            "status": "success" if deleted == count else "warning",
+            "total_selected": count,
+            "total_deleted": deleted,
+            "message": f"Deleted {deleted} of {count} objects",
+        }
+    )
