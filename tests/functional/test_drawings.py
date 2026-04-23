@@ -1,12 +1,12 @@
 """
 Functional tests for drawings_provider.
 
-Tests drawing retrieval and property retrieval operations.
+Tests drawing retrieval, property retrieval, and mark collision detection operations.
 """
 
 import pytest
 
-from tekla_mcp_server.providers.drawings_provider import get_drawings, get_drawing_properties
+from tekla_mcp_server.providers.drawings_provider import get_drawings, get_drawing_properties, detect_collisions_between_marks
 
 
 class TestGetDrawings:
@@ -63,3 +63,14 @@ class TestGetDrawingProperties:
         assert result.structured_content["selected_count"] == 1
         assert len(result.structured_content["drawings"]) == 1
         assert result.structured_content["drawings"][0]["drawing_type"] == "GA"
+
+
+class TestDetectCollisionsBetweenMarks:
+    """Tests for detect_collisions_between_marks function."""
+
+    def test_detect_collisions_no_drawings_selected(self):
+        """Call without selecting any drawings - should return warning."""
+        result = detect_collisions_between_marks()
+
+        assert result.structured_content["status"] == "warning"
+        assert "no drawings" in result.structured_content["message"].lower()
