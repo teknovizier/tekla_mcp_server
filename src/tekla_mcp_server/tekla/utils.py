@@ -71,6 +71,8 @@ NUMERIC_MATCH_TYPE_MAPPING = {
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 
+DEFAULT_TOLERANCE = 50.0  # mm
+
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
     """
@@ -209,10 +211,8 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
         ValueError: If fewer than two elements are selected
         ValueError: If more than two floors are detected
     """
-    # 50 mm tolerance
-    tolerance = 50.0
 
-    def is_within_tolerance(value1: float, value2: float, tolerance: float) -> bool:
+    def is_within_tolerance(value1: float, value2: float, tolerance: float = DEFAULT_TOLERANCE) -> bool:
         """
         Check if two values are within the defined tolerance range.
 
@@ -243,7 +243,7 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
         # Check if this Z-value is close to an existing one
         close_match_found = False
         for existing_z in floor_set:
-            if is_within_tolerance(existing_z, wall.StartPoint.Z, tolerance):
+            if is_within_tolerance(existing_z, wall.StartPoint.Z):
                 # No need to check further
                 close_match_found = True
                 break
@@ -269,10 +269,10 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
         matched_key = None
         for key in wall_dict:
             if (
-                is_within_tolerance(xy_key[0][0], key[0][0], tolerance)
-                and is_within_tolerance(xy_key[0][1], key[0][1], tolerance)
-                and is_within_tolerance(xy_key[1][0], key[1][0], tolerance)
-                and is_within_tolerance(xy_key[1][1], key[1][1], tolerance)
+                is_within_tolerance(xy_key[0][0], key[0][0])
+                and is_within_tolerance(xy_key[0][1], key[0][1])
+                and is_within_tolerance(xy_key[1][0], key[1][0])
+                and is_within_tolerance(xy_key[1][1], key[1][1])
             ):
                 matched_key = key
                 break

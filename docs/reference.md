@@ -38,6 +38,7 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | Modeling | `place_panels` | Place one or more wall panels in the Tekla model | `panels` (list with start point, end point, start point offset, end point offset, profile, material, Tekla class, name, position) |
 | Modeling | `place_slabs` | Place one or more slabs in the Tekla model | `slabs` (list with points (min 3), profile, material, Tekla class, name, position) |
 | Modeling | `delete_selected` | Delete all currently selected elements in Tekla | - |
+| IFC | `copy_properties_from_ifc` | Copy user-defined properties from IFC reference objects to matching Tekla model elements by bounding box matching | `user_properties` (required): Mapping of IFC property names to Tekla UDA names |
 
 ## Resources
 

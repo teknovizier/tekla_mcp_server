@@ -42,6 +42,7 @@ from Tekla.Structures.Model import (
     RebarStrand,
     SingleRebar,
     Grid,
+    ReferenceModelObject,
 )
 from Tekla.Structures.Model.Operations import Operation
 from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector as ModelObjectSelectorUI, ViewHandler, ModelObjectVisualization, TemporaryTransparency, View
@@ -157,4 +158,5 @@ __all__ = [
     "LeaderLinePlacing",
     "Grid",
     "Offset",
+    "ReferenceModelObject",
 ]
