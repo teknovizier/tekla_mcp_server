@@ -4,6 +4,7 @@ Module for Tekla ModelObject wrappers.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Generator, Iterable
 from typing import Any
 
@@ -27,12 +28,15 @@ from tekla_mcp_server.tekla.loader import (
     Reinforcement,
     Hashtable,
     Phase,
+    ReferenceModelObject,
 )
 
 
 from tekla_mcp_server.tekla.snapshot_builder import SnapshotBuilder
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 
+
+DEFAULT_TOLERANCE = 50.0  # mm
 
 POSITION_PLANE_MAP = {
     "LEFT": Position.PlaneEnum.LEFT,
@@ -52,6 +56,64 @@ POSITION_ROTATION_MAP = {
 }
 
 
+class BoundingBox:
+    """Bounding box from Tekla report properties."""
+
+    def __init__(self, model_object: TeklaModelObject):
+        self.min_x = model_object.get_report_property("BOUNDING_BOX_MIN_X")
+        self.max_x = model_object.get_report_property("BOUNDING_BOX_MAX_X")
+        self.min_y = model_object.get_report_property("BOUNDING_BOX_MIN_Y")
+        self.max_y = model_object.get_report_property("BOUNDING_BOX_MAX_Y")
+        self.min_z = model_object.get_report_property("BOUNDING_BOX_MIN_Z")
+        self.max_z = model_object.get_report_property("BOUNDING_BOX_MAX_Z")
+
+    @property
+    def centroid(self) -> tuple[float, float, float]:
+        """
+        Center point of bounding box.
+        """
+        return (
+            (self.min_x + self.max_x) / 2,
+            (self.min_y + self.max_y) / 2,
+            (self.min_z + self.max_z) / 2,
+        )
+
+    @property
+    def diagonal(self) -> float:
+        """
+        Diagonal length of bounding box.
+        """
+        return math.sqrt((self.max_x - self.min_x) ** 2 + (self.max_y - self.min_y) ** 2 + (self.max_z - self.min_z) ** 2)
+
+    def overlaps(self, other: BoundingBox, tol: float = DEFAULT_TOLERANCE) -> bool:
+        """
+        Check if bounding boxes overlap within tolerance.
+        """
+        return (
+            self.min_x <= other.max_x + tol
+            and self.max_x >= other.min_x - tol
+            and self.min_y <= other.max_y + tol
+            and self.max_y >= other.min_y - tol
+            and self.min_z <= other.max_z + tol
+            and self.max_z >= other.min_z - tol
+        )
+
+    def matches(self, other: BoundingBox, tol: float = DEFAULT_TOLERANCE, center_tol_factor: float = 0.05) -> bool:
+        """
+        Match using spatial overlap + centroid distance.
+        """
+        if not self.overlaps(other, tol):
+            return False
+
+        c1, c2 = self.centroid, other.centroid
+        dist = math.sqrt((c1[0] - c2[0]) ** 2 + (c1[1] - c2[1]) ** 2 + (c1[2] - c2[2]) ** 2)
+
+        diag = max(self.diagonal, other.diagonal)
+        adaptive_tol = max(center_tol_factor * diag, tol)
+
+        return dist <= adaptive_tol
+
+
 def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
     """
     Wraps a Tekla ModelObject in the appropriate wrapper class.
@@ -61,6 +123,7 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         - TeklaBeam if the object is a Beam
         - TeklaContourPlate if the object is a ContourPlate
         - TeklaPart if the object is a Part
+        - TeklaReferenceModelObject if the object is a ReferenceModelObject
         - TeklaModelObject for any other object types
     """
     if isinstance(model_object, Assembly):
@@ -71,6 +134,8 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         return TeklaContourPlate(model_object)
     elif isinstance(model_object, Part):
         return TeklaPart(model_object)
+    elif isinstance(model_object, ReferenceModelObject):
+        return TeklaReferenceModelObject(model_object)
     elif isinstance(model_object, (Boolean, BaseWeld, Reinforcement)):
         return TeklaModelObject(model_object)
     else:
@@ -139,6 +204,14 @@ class TeklaModelObject:
         cog_z = self.get_report_property("COG_Z")
 
         return Point(cog_x, cog_y, cog_z)
+
+    @property
+    def bounding_box(self) -> BoundingBox | None:
+        """Get bounding box from report properties."""
+        try:
+            return BoundingBox(self)
+        except Exception:
+            return None
 
     @log_function_call
     def get_top_level_assembly(self) -> TeklaModelObject | None:
@@ -299,6 +372,37 @@ class TeklaModelObject:
         else:
             setattr(self.model_object, prop_name, value)
         self.model_object.Modify()
+
+
+class TeklaReferenceModelObject(TeklaModelObject):
+    """
+    A wrapper class around the Tekla Structures ReferenceModelObject object.
+    """
+
+    def get_report_property(self, property_name: str) -> str | int | float:
+        """
+        Retrieves a report property from ReferenceModelObject.
+
+        First tries using TemplateAttributeParser via base class method.
+        Falls back to using str type if not found in attribute definitions.
+
+        Args:
+            property_name: Name of the report property to retrieve
+
+        Returns:
+            Property value as str, int, or float
+
+        Raises:
+            AttributeError: If the property retrieval fails
+        """
+        try:
+            return super().get_report_property(property_name)
+        except KeyError:
+            is_ok, value = self.model_object.GetReportProperty(property_name, str())
+            if not is_ok:
+                raise AttributeError(f"Failed to retrieve property `{property_name}`.")
+
+        return value
 
 
 class TeklaAssembly(TeklaModelObject):

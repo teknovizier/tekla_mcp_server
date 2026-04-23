@@ -12,6 +12,7 @@ from tekla_mcp_server.providers.operations_provider import operations_provider
 from tekla_mcp_server.providers.components_provider import components_provider
 from tekla_mcp_server.providers.drawings_provider import drawings_provider
 from tekla_mcp_server.providers.modeling_provider import modeling_provider
+from tekla_mcp_server.providers.ifc_provider import ifc_provider
 
 __all__ = [
     "resources_provider",
@@ -22,4 +23,5 @@ __all__ = [
     "components_provider",
     "drawings_provider",
     "modeling_provider",
+    "ifc_provider",
 ]
