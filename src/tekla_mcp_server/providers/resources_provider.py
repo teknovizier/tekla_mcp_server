@@ -4,7 +4,6 @@ Resources provider for Tekla MCP server.
 Provides read-only data resources for discovery and metadata.
 """
 
-import json
 
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers import LocalProvider
@@ -27,7 +26,7 @@ def get_component_list() -> ResourceResult:
     `tekla://components/{component_key}` to get the property schema.
     """
     data = {comp.get("tekla_name"): key for key, comp in get_config().base_components.items() if comp.get("tekla_name")}
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(data), mime_type="application/json")])
+    return ResourceResult(contents=[ResourceContent(content=data, mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://components/{component_key}")
@@ -40,7 +39,7 @@ def get_component_schema(component_key: str) -> ResourceResult:
         description = component.get("description", "")
         custom_props = component.get("custom_properties", {})
         schema = {"description": description, "custom_properties": custom_props}
-        return ResourceResult(contents=[ResourceContent(content=json.dumps(schema), mime_type="application/json")])
+        return ResourceResult(contents=[ResourceContent(content=schema, mime_type="application/json")])
     return ResourceResult(contents=[])
 
 
@@ -49,7 +48,7 @@ def get_macro_list() -> ResourceResult:
     """
     Returns a list of available Tekla macros from configured directories.
     """
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_macros()), mime_type="application/json")])
+    return ResourceResult(contents=[ResourceContent(content=get_macros(), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://element_types")
@@ -57,7 +56,7 @@ def get_element_types() -> ResourceResult:
     """
     Returns a list of available Tekla element types and their corresponding class numbers.
     """
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_config().get_element_types_list()), mime_type="application/json")])
+    return ResourceResult(contents=[ResourceContent(content=get_config().get_element_types_list(), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://filters/selection")
@@ -65,7 +64,7 @@ def get_selection_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla selection filter names from .SObjGrp files.
     """
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_filters(".SObjGrp")), mime_type="application/json")])
+    return ResourceResult(contents=[ResourceContent(content=get_filters(".SObjGrp"), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://filters/view")
@@ -73,7 +72,7 @@ def get_view_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla view filter names from .VObjGrp files.
     """
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_filters(".VObjGrp")), mime_type="application/json")])
+    return ResourceResult(contents=[ResourceContent(content=get_filters(".VObjGrp"), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://phases")
@@ -103,7 +102,7 @@ def get_phase_list() -> ResourceResult:
     return ResourceResult(
         contents=[
             ResourceContent(
-                content=json.dumps({"phases": phase_list, "current_phase": current_phase}),
+                content={"phases": phase_list, "current_phase": current_phase},
                 mime_type="application/json",
             )
         ]
@@ -154,7 +153,7 @@ def get_grid_list() -> ResourceResult:
     return ResourceResult(
         contents=[
             ResourceContent(
-                content=json.dumps({"grids": grid_data}),
+                content={"grids": grid_data},
                 mime_type="application/json",
             )
         ]
@@ -173,13 +172,11 @@ def get_connection_status() -> ResourceResult:
         return ResourceResult(
             contents=[
                 ResourceContent(
-                    content=json.dumps(
-                        {
+                    content={
                             "connected": True,
                             "model_path": model.model.GetInfo().ModelPath,
                             "message": "Connected to Tekla model",
-                        }
-                    ),
+                        },
                     mime_type="application/json",
                 )
             ]
@@ -188,7 +185,7 @@ def get_connection_status() -> ResourceResult:
         return ResourceResult(
             contents=[
                 ResourceContent(
-                    content=json.dumps({"connected": False, "model_path": None, "message": str(e)}),
+                    content={"connected": False, "model_path": None, "message": str(e)},
                     mime_type="application/json",
                 )
             ]

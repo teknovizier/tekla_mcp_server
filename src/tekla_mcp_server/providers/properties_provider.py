@@ -4,7 +4,6 @@ Properties tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-import json
 from collections import Counter
 from typing import Any, Annotated
 
@@ -215,7 +214,7 @@ def get_elements_properties(
         content_json = {k: v for k, v in (("assemblies", _flatten(assemblies)), ("parts", _flatten(parts))) if v}
 
         return ToolResult(
-            content=json.dumps(content_json),
+            content=content_json,
             structured_content={
                 "status": status,
                 "selected_elements": selected_objects.GetSize(),
@@ -267,7 +266,7 @@ def get_elements_cut_parts() -> ToolResult:
         total_cut_parts = sum(cut_parts_by_profile.values())
         logger.info("Found %s cut parts across %s profiles in %s elements", total_cut_parts, len(cut_parts_sorted_by_profile), processed_elements)
         return ToolResult(
-            content=json.dumps(content_json),
+            content=content_json,
             structured_content={
                 "status": "success" if cut_parts_sorted_by_profile else "warning",
                 "selected_elements": selected_objects.GetSize(),

@@ -4,7 +4,6 @@ Drawing tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-import json
 from typing import Any, Annotated
 
 from fastmcp.server.providers import LocalProvider
@@ -292,7 +291,7 @@ def get_drawing_properties(
         logger.info("Retrieved properties for %s drawings", len(drawings_data))
 
         return ToolResult(
-            content=json.dumps({"drawings": drawings_data}),
+            content={"drawings": drawings_data},
             structured_content={
                 "status": "success",
                 "selected_count": len(drawings_data),
