@@ -5,7 +5,6 @@ Module for Tekla Model wrapper.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from functools import lru_cache
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_function_call
@@ -28,12 +27,6 @@ from tekla_mcp_server.tekla.loader import (
     ObjectFilterExpressions,
     TeklaStructuresDatabaseTypeEnum,
 )
-
-
-@lru_cache
-def get_tekla_model() -> "TeklaModel":
-    """Get singleton TeklaModel instance."""
-    return TeklaModel()
 
 
 class TeklaModel:

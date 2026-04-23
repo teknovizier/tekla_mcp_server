@@ -54,16 +54,6 @@ def _to_filter_option(val: Any, model_class: type[StringFilterOption] | type[Num
     return val
 
 
-def validate_exactly_two_selected(count: int) -> ToolResult | None:
-    if count == 0:
-        return ToolResult(structured_content={"status": "error", "message": "No elements selected. Please select two elements."})
-    if count == 1:
-        return ToolResult(structured_content={"status": "error", "message": "Only one element selected. Please select two elements."})
-    if count > 2:
-        return ToolResult(structured_content={"status": "error", "message": f"More than two elements selected. Expected 2, got {count}."})
-    return None
-
-
 def add_filter(
     filter_collection: BinaryFilterExpressionCollection,
     filter_expression: Any,
@@ -112,9 +102,6 @@ def add_filter(
     except Exception as e:
         logger.exception("Error in add_filter")
         return ToolResult(structured_content={"status": "error", "message": str(e)})
-
-
-validate_exactly_two_selected = validate_exactly_two_selected
 
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})

@@ -179,11 +179,6 @@ class Config:
         return _load_settings()["tekla_path"]
 
     @property
-    def content_attributes_file_path(self) -> str:
-        """Path to main Tekla content attributes file (deprecated, use content_attributes_file_paths)."""
-        return str(Path(self.tekla_path) / "applications" / "Tekla" / "Tools" / "TplEd" / "settings" / "contentattributes_global.lst")
-
-    @property
     def content_attributes_file_paths(self) -> list[str]:
         """List of all Tekla contentattributes file paths from tpled.ini INCLUDE statements."""
         return _get_contentattributes_file_paths()

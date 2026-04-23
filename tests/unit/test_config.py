@@ -20,17 +20,6 @@ def clear_caches():
 class TestConfigDefaults:
     """Test default configuration loading."""
 
-    def test_loads_settings_json(self):
-        """Test that settings.json is loaded."""
-        with patch("tekla_mcp_server.config._load_json") as mock_load:
-            mock_load.return_value = {
-                "tekla_path": "C:\\Tekla",
-            }
-            config = Config()
-            assert config.tekla_path == "C:\\Tekla"
-            expected_path = "C:\\Tekla\\applications\\Tekla\\Tools\\TplEd\\settings\\contentattributes_global.lst"
-            assert config.content_attributes_file_path == expected_path
-
     def test_loads_element_types(self):
         """Test that element_types.json is loaded."""
         with patch("tekla_mcp_server.config._load_json") as mock_load:
@@ -49,7 +38,6 @@ class TestConfigDefaults:
 
         with patch("tekla_mcp_server.config._load_json", mock_load_json):
             config = Config()
-            assert config.tekla_path == "C:\\Tekla"
             assert config.tekla_path == "C:\\Tekla"
 
 
