@@ -136,15 +136,12 @@ def tool_example(param: str, count: int) -> dict[str, Any]:
 - Private: prefix with `_` or use `PrivateAttr()`
 
 ## Error Handling
-```python
-@log_mcp_tool_call
-def tool_function(...):
-    try:
-        return {"status": "success", ...}
-    except Exception as e:
-        logger.exception("Operation failed")
-        return {"status": "error", "message": str(e)}
-```
+For tools, use `@mcp_handler(scope="tool")` decorator which wraps tools and automatically handles exceptions and returns `ToolResult`. For resources, use `@mcp_handler(scope="resource")` which returns `ResourceResult` with error embedded in content.
+
+| Scope | Return Type | Error Format |
+|-------|-------------|--------------|
+| `tool` | `ToolResult` | `{"status": "error", "message": "..."}` |
+| `resource` | `ResourceResult` | `{"error": "..."}` in content |
 
 ## Pydantic Models
 - Inherit from `BaseModel`
@@ -156,7 +153,7 @@ def tool_function(...):
 ## Logging
 - Use `logger` from `init.py`
 - Levels: `debug()`, `info()`, `warning()`, `error()`
-- Decorators: `@log_function_call`, `@log_mcp_tool_call`
+- Decorators: `@log_function_call`, `@mcp_handler`
 - Configure via env vars: `TEKLA_MCP_LOG_LEVEL`, `TEKLA_MCP_LOG_FILE_PATH`
 
 ---
@@ -174,6 +171,7 @@ Resources provide discovery/metadata, not actions:
 | Resource | Purpose |
 |----------|---------|
 | `tekla://components` | List all available components |
+| `tekla://components/{component_key}` | Get component details by key |
 | `tekla://macros` | List available Tekla macros |
 | `tekla://element_types` | List element types with class numbers |
 | `tekla://phases` | List all phases in the model |
@@ -181,6 +179,7 @@ Resources provide discovery/metadata, not actions:
 | `tekla://filters/selection` | List available selection filters |
 | `tekla://filters/view` | List available view filters |
 | `tekla://connection_status` | Connection status |
+| `project://requirements` | Project requirements and metadata |
 
 ## When to Use Resources vs Tools
 
@@ -194,42 +193,58 @@ Resources provide discovery/metadata, not actions:
 
 ```python
 from fastmcp.server.providers import LocalProvider
-from tekla_mcp_server.models import MyInputModel
-from tekla_mcp_server.utils import log_mcp_tool_call
+from fastmcp.tools import ToolResult
+from tekla_mcp_server.utils import mcp_handler
 
 my_provider = LocalProvider()
 
 @my_provider.tool()
-@log_mcp_tool_call
-def my_new_feature(param: str) -> dict[str, Any]:
+@mcp_handler(scope="tool")
+def my_new_feature(param: str) -> ToolResult:
     """Tool description for MCP users."""
     # Implementation here
-    return {"status": "success", "result": param}
+    return ToolResult(
+        structured_content={
+            "status": "success",
+            "result": param,
+        }
+    )
 ```
 
-### 2. Add Helper Functions (if needed)
-
-Use underscore prefix for reusable helper functions:
-
-```python
-def _helper_function(param: str) -> dict[str, Any]:
-    """Helper description."""
-    # Helper logic here
-    return {"status": "success"}
-```
-
-### 3. Add to Documentation
+### 2. Add to Documentation
 
 Add the new tool to `docs/reference.md` with:
 - Tool name and description
 - Parameters and their types
 - Return value format
 
+## How to Add a Resource
+
+Resources return discovery/metadata, not actions.
+
+### 1. Add MCP Resource (providers/resources_provider.py)
+
+```python
+@resources_provider.resource("example://data")
+@mcp_handler(scope="resource")
+def get_example_data() -> ResourceResult:
+    """Get example data."""
+    return ResourceResult(
+        contents=[
+            ResourceContent(content={"key": "value"}, mime_type="application/json")
+        ]
+    )
+```
+
+### 2. Add to Documentation
+
+Add the new resource to `docs/reference.md` with resource name and description.
+
 ---
 
-# Part 4: Tekla API Patterns
+# Part 4: Code Patterns
 
-## Tekla API Patterns
+## Code Patterns
 - Use `TeklaModel` class from `tekla/wrappers/model.py` (singleton pattern via `lru_cache`)
 - Always `model.commit_changes()` after modifications
 - Use `wrap_model_objects()` from `tekla/wrappers/model_object.py` for conversion
@@ -272,6 +287,17 @@ class MyComponentHandler:
     }
   }
 }
+```
+
+## Adding a Helper Function
+
+Use underscore prefix for reusable helper functions:
+
+```python
+def _helper_function(param: str) -> dict[str, Any]:
+    """Helper description."""
+    # Helper logic here
+    return {"status": "success"}
 ```
 
 ---
@@ -341,12 +367,11 @@ tekla_mcp_server/
 | File Type | Location |
 |-----------|----------|
 | MCP tool definition | `providers/*.py` |
-| Helper function | `providers/*.py` (prefix with `_`) |
 | Pydantic model | `models.py` |
 | Tekla wrapper | `tekla/wrappers/*.py` |
 | Tekla-specific utility | `tekla/utils.py` |
 | Configuration | `config/*.json` |
-| General decorator | `utils.py` |
+| General utility | `utils.py` |
 | Documentation | `docs/*.md` |
 | Unit test | `tests/unit/test_*.py` |
 | Functional test | `tests/functional/test_*.py` |

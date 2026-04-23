@@ -142,7 +142,7 @@ def draw_elements_labels(
             "resolution_errors": resolution_errors,
         }
     )
-    
+
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")

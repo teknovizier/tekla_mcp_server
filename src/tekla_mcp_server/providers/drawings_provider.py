@@ -288,7 +288,6 @@ def get_drawing_properties(
     )
 
 
-
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def detect_collisions_between_marks(

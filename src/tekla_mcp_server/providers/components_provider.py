@@ -173,7 +173,7 @@ def put_components(
     - Example: For 'MeshBars', read the schema to get: `SpacBarsBottPri` for 'bottom primary bars spacing', `BottGradePri` for 'bottom primary bars reinforcement grade'.
     """
     component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=custom_properties)
-    
+
     result = _manage_components_on_selected_objects(_put_single_component, component)
     return result
 
@@ -209,6 +209,7 @@ def remove_components(component_name: Annotated[str, Field(description="The Tekl
             "removed_components": counter,
         }
     )
+
 
 @components_provider.tool(tags={"components"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
@@ -314,6 +315,6 @@ def modify_components(
     - Only properties in `custom_properties` will be modified; all others remain unchanged
     """
     component = BaseComponent(name=component_name, custom_properties=custom_properties)
-    
+
     result = _manage_components_on_selected_objects(_modify_single_component, component)
     return result
