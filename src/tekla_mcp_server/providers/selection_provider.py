@@ -156,6 +156,7 @@ def select_elements_by_filter(
 
     At least one filter must be provided.
     """
+    # Validate combine_with and ensure at least one filter provided
     if combine_with not in {"AND", "OR"}:
         return ToolResult(structured_content={"status": "error", "message": f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'."})
 
@@ -176,6 +177,7 @@ def select_elements_by_filter(
             if key not in valid_standard_keys:
                 return ToolResult(structured_content={"status": "error", "message": f"Invalid standard_string_filters key '{key}'. Must be one of: {valid_standard_keys}"})
 
+    # Base filter: always filter for parts only
     filter_collection = BinaryFilterExpressionCollection()
     filter_collection.Add(
         BinaryFilterExpressionItem(
@@ -189,12 +191,15 @@ def select_elements_by_filter(
 
     filter_groups: list[BinaryFilterExpressionCollection] = []
 
-    def build_filter_group(expression: Any, filter_option: StringFilterOption | NumericFilterOption, is_numeric: bool = False) -> BinaryFilterExpressionCollection | None:
+    def build_filter_group(expression: Any, filter_option: StringFilterOption | NumericFilterOption, is_numeric: bool = False) -> BinaryFilterExpressionCollection | ToolResult | None:
+        """Build filter group from conditions. Returns None if empty (no valid conditions)."""
         sub = BinaryFilterExpressionCollection()
         conditions = filter_option.conditions
         logic = filter_option.logic
         if not isinstance(conditions, list):
             conditions = [conditions]
+        if not conditions:
+            return None
         operator = BinaryFilterOperatorType.BOOLEAN_OR if logic == "OR" else BinaryFilterOperatorType.BOOLEAN_AND
         for cond in conditions:
             value = cond.value
@@ -202,7 +207,11 @@ def select_elements_by_filter(
             match_type = NumericMatchType(match_type_str) if is_numeric else StringMatchType(match_type_str)
             result = add_filter(sub, expression, value, match_type, operator=operator)
             if result:
-                return result
+                return result  # Error: return early
+
+        # Check if we actually added anything
+        if sub.Count == 0:
+            return None
         return sub
 
     STANDARD_EXPRESSION_MAP = {
@@ -213,6 +222,7 @@ def select_elements_by_filter(
         "phase": TemplateFilterExpressions.CustomString("ASSEMBLY.PHASE"),
     }
 
+    # Resolve element_type to tekla class numbers
     if element_type:
         element_type_classes: list[int] = []
         for material_types in get_config().element_types.values():
@@ -224,6 +234,7 @@ def select_elements_by_filter(
             add_filter(type_sub, PartFilterExpressions.Class(), cls, NumericOperatorType.IS_EQUAL, operator=BinaryFilterOperatorType.BOOLEAN_OR)
         filter_groups.append(type_sub)
 
+    # Add explicit tekla_classes to filter
     if tekla_classes:
         if isinstance(tekla_classes, int):
             tekla_classes = [tekla_classes]
@@ -232,6 +243,7 @@ def select_elements_by_filter(
             add_filter(type_sub, PartFilterExpressions.Class(), cls, NumericOperatorType.IS_EQUAL, operator=BinaryFilterOperatorType.BOOLEAN_OR)
         filter_groups.append(type_sub)
 
+    # Add standard string filters (name, profile, material, finish, phase)
     if standard_string_filters:
         for key, filter_option in standard_string_filters.items():
             expression = STANDARD_EXPRESSION_MAP[key]
@@ -239,13 +251,15 @@ def select_elements_by_filter(
             result = build_filter_group(expression, filter_option)
             if isinstance(result, ToolResult):
                 return result
-            filter_groups.append(result)
+            if result is not None:
+                filter_groups.append(result)
 
     string_resolution_errors: list[dict[str, Any]] = []
     numeric_resolution_errors: list[dict[str, Any]] = []
     resolved_string_attrs: dict[str, str | None] = {}
     resolved_numeric_attrs: dict[str, str | None] = {}
 
+    # Resolve custom attribute names to Tekla names, then add string filters
     if custom_string_filters:
         string_queries = list(custom_string_filters.keys())
         if string_queries:
@@ -266,8 +280,10 @@ def select_elements_by_filter(
                 result = build_filter_group(expression, filter_option)
                 if isinstance(result, ToolResult):
                     return result
-                filter_groups.append(result)
+                if result is not None:
+                    filter_groups.append(result)
 
+    # Same for numeric filters
     if custom_numeric_filters:
         numeric_queries = list(custom_numeric_filters.keys())
         if numeric_queries:
@@ -288,16 +304,20 @@ def select_elements_by_filter(
                 result = build_filter_group(expression, filter_option, is_numeric=True)
                 if isinstance(result, ToolResult):
                     return result
-                filter_groups.append(result)
+                if result is not None:
+                    filter_groups.append(result)
 
+    # Combine all filter groups into final filter
     if len(filter_groups) == 1:
         filter_collection.Add(BinaryFilterExpressionItem(filter_groups[0], BinaryFilterOperatorType.BOOLEAN_AND))
     elif len(filter_groups) > 1:
         combined = BinaryFilterExpressionCollection()
         group_operator = BinaryFilterOperatorType.BOOLEAN_OR if combine_with == "OR" else BinaryFilterOperatorType.BOOLEAN_AND
         for fg in filter_groups:
-            combined.Add(BinaryFilterExpressionItem(fg, group_operator))
-        filter_collection.Add(BinaryFilterExpressionItem(combined, BinaryFilterOperatorType.BOOLEAN_AND))
+            if fg is not None:
+                combined.Add(BinaryFilterExpressionItem(fg, group_operator))
+        if combined.Count > 0:
+            filter_collection.Add(BinaryFilterExpressionItem(combined, BinaryFilterOperatorType.BOOLEAN_AND))
 
     objects_to_select = model.get_objects_by_filter(filter_collection)
     TeklaModel.select_objects(objects_to_select)
