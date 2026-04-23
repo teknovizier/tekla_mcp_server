@@ -21,6 +21,7 @@ from tekla_mcp_server.models import (
     BatchPlacementResult,
     PointInput,
     ElementTypeModel,
+    NumberingSeries,
 )
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaBeam, TeklaContourPlate
@@ -28,6 +29,47 @@ from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
 modeling_provider = LocalProvider()
+
+
+def _resolve_numbering_and_name(
+    input_object: BeamInput | ColumnInput | PanelInput | SlabInput,
+) -> tuple[NumberingSeries | None, NumberingSeries | None, str | None]:
+    """Resolve part/assembly numbering and name from input or defaults."""
+    part_number: NumberingSeries | None = getattr(input_object, "part_number", None)
+    assembly_number: NumberingSeries | None = getattr(input_object, "assembly_number", None)
+    name: str | None = getattr(input_object, "name", None)
+
+    if assembly_number is None or part_number is None:
+        numbering = ElementTypeModel.get_default_numbering(input_object.tekla_class)
+        if numbering:
+            if assembly_number is None:
+                assembly_number = numbering.get("assembly_number")
+            if part_number is None:
+                part_number = numbering.get("part_number")
+
+    if name is None:
+        name = ElementTypeModel.get_default_name(input_object.tekla_class)
+
+    return part_number, assembly_number, name
+
+
+def _to_tool_result(
+    results: list[PlacementResult],
+    total: int,
+    succeeded: int,
+    item_type: str,
+) -> ToolResult:
+    """Convert batch placement results to ToolResult."""
+    return ToolResult(
+        structured_content=BatchPlacementResult(
+            success=succeeded == total,
+            total=total,
+            succeeded=succeeded,
+            failed=total - succeeded,
+            results=results,
+            message=f"Placed {succeeded} of {total} {item_type}",
+        ).model_dump(mode="json", exclude_none=True)
+    )
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -57,39 +99,25 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
         return ToolResult(structured_content={"status": "error", "message": "No beams provided"})
 
     model = TeklaModel()
-    results = []
+    results: list[PlacementResult] = []
     succeeded = 0
 
-    for input_obj in beams:
+    for input_object in beams:
         try:
-            start, end = input_obj.start_point, input_obj.end_point
-
-            part_number = input_obj.part_number
-            assembly_number = input_obj.assembly_number
-            name = input_obj.name
-
-            if assembly_number is None or part_number is None:
-                numbering = ElementTypeModel.get_default_numbering(input_obj.tekla_class)
-                if numbering:
-                    if assembly_number is None:
-                        assembly_number = numbering.get("assembly_number")
-                    if part_number is None:
-                        part_number = numbering.get("part_number")
-
-            if name is None:
-                name = ElementTypeModel.get_default_name(input_obj.tekla_class)
+            start, end = input_object.start_point, input_object.end_point
+            part_number, assembly_number, name = _resolve_numbering_and_name(input_object)
 
             tekla_obj = TeklaBeam.create(
                 start_point=start,
                 end_point=end,
-                profile=input_obj.profile,
-                material=input_obj.material,
-                tekla_class=input_obj.tekla_class,
+                profile=input_object.profile,
+                material=input_object.material,
+                tekla_class=input_object.tekla_class,
                 name=name,
-                position=input_obj.position,
+                position=input_object.position,
                 beam_type=BeamType.BEAM,
-                start_point_offset=input_obj.start_point_offset,
-                end_point_offset=input_obj.end_point_offset,
+                start_point_offset=input_object.start_point_offset,
+                end_point_offset=input_object.end_point_offset,
                 part_number=part_number,
                 assembly_number=assembly_number,
             )
@@ -104,16 +132,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
 
     model.commit_changes()
 
-    return ToolResult(
-        structured_content=BatchPlacementResult(
-            success=succeeded == len(beams),
-            total=len(beams),
-            succeeded=succeeded,
-            failed=len(beams) - succeeded,
-            results=results,
-            message=f"Placed {succeeded} of {len(beams)} beams",
-        ).model_dump(mode="json", exclude_none=True)
-    )
+    return _to_tool_result(results, len(beams), succeeded, "beams")
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -143,40 +162,26 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
         return ToolResult(structured_content={"status": "error", "message": "No columns provided"})
 
     model = TeklaModel()
-    results = []
+    results: list[PlacementResult] = []
     succeeded = 0
 
-    for input_obj in columns:
+    for input_object in columns:
         try:
-            start = input_obj.base_point
-            end = PointInput(x=input_obj.base_point.x, y=input_obj.base_point.y, z=input_obj.base_point.z + input_obj.height)
-
-            part_number = input_obj.part_number
-            assembly_number = input_obj.assembly_number
-            name = input_obj.name
-
-            if assembly_number is None or part_number is None:
-                numbering = ElementTypeModel.get_default_numbering(input_obj.tekla_class)
-                if numbering:
-                    if assembly_number is None:
-                        assembly_number = numbering.get("assembly_number")
-                    if part_number is None:
-                        part_number = numbering.get("part_number")
-
-            if name is None:
-                name = ElementTypeModel.get_default_name(input_obj.tekla_class)
+            start = input_object.base_point
+            end = PointInput(x=input_object.base_point.x, y=input_object.base_point.y, z=input_object.base_point.z + input_object.height)
+            part_number, assembly_number, name = _resolve_numbering_and_name(input_object)
 
             tekla_obj = TeklaBeam.create(
                 start_point=start,
                 end_point=end,
-                profile=input_obj.profile,
-                material=input_obj.material,
-                tekla_class=input_obj.tekla_class,
+                profile=input_object.profile,
+                material=input_object.material,
+                tekla_class=input_object.tekla_class,
                 name=name,
-                position=input_obj.position,
+                position=input_object.position,
                 beam_type=BeamType.COLUMN,
-                start_point_offset=input_obj.start_point_offset,
-                end_point_offset=input_obj.end_point_offset,
+                start_point_offset=input_object.start_point_offset,
+                end_point_offset=input_object.end_point_offset,
                 part_number=part_number,
                 assembly_number=assembly_number,
             )
@@ -191,16 +196,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
 
     model.commit_changes()
 
-    return ToolResult(
-        structured_content=BatchPlacementResult(
-            success=succeeded == len(columns),
-            total=len(columns),
-            succeeded=succeeded,
-            failed=len(columns) - succeeded,
-            results=results,
-            message=f"Placed {succeeded} of {len(columns)} columns",
-        ).model_dump(mode="json", exclude_none=True)
-    )
+    return _to_tool_result(results, len(columns), succeeded, "columns")
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -229,39 +225,25 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
         return ToolResult(structured_content={"status": "error", "message": "No panels provided"})
 
     model = TeklaModel()
-    results = []
+    results: list[PlacementResult] = []
     succeeded = 0
 
-    for input_obj in panels:
+    for input_object in panels:
         try:
-            start, end = input_obj.start_point, input_obj.end_point
-
-            part_number = input_obj.part_number
-            assembly_number = input_obj.assembly_number
-            name = input_obj.name
-
-            if assembly_number is None or part_number is None:
-                numbering = ElementTypeModel.get_default_numbering(input_obj.tekla_class)
-                if numbering:
-                    if assembly_number is None:
-                        assembly_number = numbering.get("assembly_number")
-                    if part_number is None:
-                        part_number = numbering.get("part_number")
-
-            if name is None:
-                name = ElementTypeModel.get_default_name(input_obj.tekla_class)
+            start, end = input_object.start_point, input_object.end_point
+            part_number, assembly_number, name = _resolve_numbering_and_name(input_object)
 
             tekla_obj = TeklaBeam.create(
                 start_point=start,
                 end_point=end,
-                profile=input_obj.profile,
-                material=input_obj.material,
-                tekla_class=input_obj.tekla_class,
+                profile=input_object.profile,
+                material=input_object.material,
+                tekla_class=input_object.tekla_class,
                 name=name,
-                position=input_obj.position,
+                position=input_object.position,
                 beam_type=BeamType.PANEL,
-                start_point_offset=input_obj.start_point_offset,
-                end_point_offset=input_obj.end_point_offset,
+                start_point_offset=input_object.start_point_offset,
+                end_point_offset=input_object.end_point_offset,
                 part_number=part_number,
                 assembly_number=assembly_number,
             )
@@ -276,16 +258,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
 
     model.commit_changes()
 
-    return ToolResult(
-        structured_content=BatchPlacementResult(
-            success=succeeded == len(panels),
-            total=len(panels),
-            succeeded=succeeded,
-            failed=len(panels) - succeeded,
-            results=results,
-            message=f"Placed {succeeded} of {len(panels)} panels",
-        ).model_dump(mode="json", exclude_none=True)
-    )
+    return _to_tool_result(results, len(panels), succeeded, "panels")
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -315,37 +288,24 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
         return ToolResult(structured_content={"status": "error", "message": "No slabs provided"})
 
     model = TeklaModel()
-    results = []
+    results: list[PlacementResult] = []
     succeeded = 0
 
-    for input_obj in slabs:
+    for input_object in slabs:
         try:
-            if len(input_obj.points) < 3:
+            if len(input_object.points) < 3:
                 results.append(PlacementResult(success=False, message="Slab requires at least 3 points"))
                 continue
 
-            part_number = input_obj.part_number
-            assembly_number = input_obj.assembly_number
-            name = input_obj.name
-
-            if assembly_number is None or part_number is None:
-                numbering = ElementTypeModel.get_default_numbering(input_obj.tekla_class)
-                if numbering:
-                    if assembly_number is None:
-                        assembly_number = numbering.get("assembly_number")
-                    if part_number is None:
-                        part_number = numbering.get("part_number")
-
-            if name is None:
-                name = ElementTypeModel.get_default_name(input_obj.tekla_class)
+            part_number, assembly_number, name = _resolve_numbering_and_name(input_object)
 
             tekla_obj = TeklaContourPlate.create(
-                points=input_obj.points,
-                profile=input_obj.profile,
-                material=input_obj.material,
-                tekla_class=input_obj.tekla_class,
+                points=input_object.points,
+                profile=input_object.profile,
+                material=input_object.material,
+                tekla_class=input_object.tekla_class,
                 name=name,
-                position=input_obj.position,
+                position=input_object.position,
                 part_number=part_number,
                 assembly_number=assembly_number,
             )
@@ -360,16 +320,7 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
 
     model.commit_changes()
 
-    return ToolResult(
-        structured_content=BatchPlacementResult(
-            success=succeeded == len(slabs),
-            total=len(slabs),
-            succeeded=succeeded,
-            failed=len(slabs) - succeeded,
-            results=results,
-            message=f"Placed {succeeded} of {len(slabs)} slabs",
-        ).model_dump(mode="json", exclude_none=True)
-    )
+    return _to_tool_result(results, len(slabs), succeeded, "slabs")
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
