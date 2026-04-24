@@ -18,7 +18,7 @@ from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 def test_select_elements_by_filter_name(model_objects):
     """Tests select_elements_by_filter_name function."""
     result = select_elements_by_filter_name(filter_name="non_standard")
-    assert result.structured_content["status"] == "error"
+    assert result.structured_content["status"] == "warning"
 
     result = select_elements_by_filter_name(filter_name="standard")
     assert result.structured_content["status"] == "success"
@@ -178,13 +178,13 @@ def test_select_elements_by_filter_invalid_combine_with(model_objects, invalid_l
 def test_select_elements_by_guid(model_objects):
     """Tests select_elements_by_guid function."""
     result = select_elements_by_guid(guids=[])
-    assert result.structured_content["status"] == "error"
+    assert result.structured_content["status"] == "warning"
 
     result = select_elements_by_guid(guids=[""])
-    assert result.structured_content["status"] == "error"
+    assert result.structured_content["status"] == "warning"
 
     result = select_elements_by_guid(guids=["MCP_TEST_WALL2"])
-    assert result.structured_content["status"] == "error"
+    assert result.structured_content["status"] == "warning"
 
     wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
     result = select_elements_by_guid(guids=[wall2_guid])

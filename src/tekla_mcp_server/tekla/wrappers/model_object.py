@@ -10,7 +10,6 @@ from typing import Any
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, BeamType, OffsetInput, PointInput, PositionInput
-from tekla_mcp_server.utils import log_function_call
 
 from tekla_mcp_server.tekla.loader import (
     Assembly,
@@ -57,15 +56,28 @@ POSITION_ROTATION_MAP = {
 
 
 class BoundingBox:
-    """Bounding box from Tekla report properties."""
+    """
+    Bounding box calculated from Tekla report properties.
+
+    Extracts BOUNDING_BOX_MIN/MAX_X/Y/Z report properties from a Tekla model object
+    and provides geometric analysis methods.
+
+    Attributes:
+        min_x: Minimum X coordinate
+        max_x: Maximum X coordinate
+        min_y: Minimum Y coordinate
+        max_y: Maximum Y coordinate
+        min_z: Minimum Z coordinate
+        max_z: Maximum Z coordinate
+    """
 
     def __init__(self, model_object: TeklaModelObject):
-        self.min_x = model_object.get_report_property("BOUNDING_BOX_MIN_X")
-        self.max_x = model_object.get_report_property("BOUNDING_BOX_MAX_X")
-        self.min_y = model_object.get_report_property("BOUNDING_BOX_MIN_Y")
-        self.max_y = model_object.get_report_property("BOUNDING_BOX_MAX_Y")
-        self.min_z = model_object.get_report_property("BOUNDING_BOX_MIN_Z")
-        self.max_z = model_object.get_report_property("BOUNDING_BOX_MAX_Z")
+        self.min_x = float(model_object.get_report_property("BOUNDING_BOX_MIN_X"))
+        self.max_x = float(model_object.get_report_property("BOUNDING_BOX_MAX_X"))
+        self.min_y = float(model_object.get_report_property("BOUNDING_BOX_MIN_Y"))
+        self.max_y = float(model_object.get_report_property("BOUNDING_BOX_MAX_Y"))
+        self.min_z = float(model_object.get_report_property("BOUNDING_BOX_MIN_Z"))
+        self.max_z = float(model_object.get_report_property("BOUNDING_BOX_MAX_Z"))
 
     @property
     def centroid(self) -> tuple[float, float, float]:
@@ -213,7 +225,6 @@ class TeklaModelObject:
         except Exception:
             return None
 
-    @log_function_call
     def get_top_level_assembly(self) -> TeklaModelObject | None:
         """
         Finds and returns the top-level assembly of this Tekla model object.
@@ -332,9 +343,17 @@ class TeklaModelObject:
 
         result = []
         for attr_name in resolved:
+            value = None
+            parsed_prop = None
             try:
                 parsed_prop = TemplateAttributeParser.get_attribute(attr_name)
                 value = self.get_report_property(attr_name)
+            except KeyError:
+                logger.debug("Attribute '%s' not found in cache", attr_name)
+            except Exception:
+                logger.debug("Property '%s' not available for this element", attr_name)
+
+            if parsed_prop is not None:
                 result.append(
                     {
                         "name": parsed_prop.name,
@@ -343,8 +362,6 @@ class TeklaModelObject:
                         "value": value,
                     }
                 )
-            except Exception:
-                pass
         return result
 
     @staticmethod

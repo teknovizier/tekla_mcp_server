@@ -37,7 +37,7 @@ def _manage_components_on_selected_objects(
         return _process_detail_or_component(selected_objects, callback, model, component, custom_properties_errors, *args, **kwargs)
     elif component.component_type in [ComponentType.SEAM, ComponentType.CONNECTION]:
         return _process_seam_or_connection(selected_objects, callback, model, component, custom_properties_errors, *args, **kwargs)
-    logger.warning("Unsupported component type: %s", component.component_type)
+    logger.error("Unsupported component type: %s", component.component_type)
     return ToolResult(structured_content={"status": "error", "message": f"Unsupported component type: {component.component_type}"})
 
 
@@ -86,8 +86,10 @@ def _process_seam_or_connection(
 ) -> ToolResult:
     count = selected_objects.GetSize()
     if count == 1:
+        logger.error("insert_component failed: Only one element selected. Please select two elements.")
         return ToolResult(structured_content={"status": "error", "message": "Only one element selected. Please select two elements."})
     if count > 2:
+        logger.error("insert_component failed: More than two elements selected. Expected 2, got %s.", count)
         return ToolResult(structured_content={"status": "error", "message": f"More than two elements selected. Expected 2, got {count}."})
 
     processed_elements = 0

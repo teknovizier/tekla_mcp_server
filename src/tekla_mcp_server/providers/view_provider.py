@@ -68,6 +68,7 @@ def draw_elements_labels(
     try:
         label_enum = ElementLabelModel(value=label_value).to_enum()
     except Exception as e:
+        logger.error("draw_elements_labels failed: Invalid label: %s", str(e))
         return ToolResult(structured_content={"status": "error", "message": f"Invalid label: {str(e)}"})
 
     resolved_label = None
@@ -190,7 +191,7 @@ def zoom_to_selection() -> ToolResult:
     logger.info("Zoomed to bounding box: %s", bbox)
     return ToolResult(
         structured_content={
-            "status": "success" if result else "error",
+            "status": "success" if result else "warning",
             "selected_elements": selected_objects.GetSize(),
             "processed_elements": processed_elements,
         }
@@ -230,7 +231,7 @@ def apply_view_filter(
     """
     available = get_filters(".VObjGrp")
     if filter_name not in available:
-        logger.warning("Invalid filter '%s' requested. Available filters: %s", filter_name, available)
+        logger.error("apply_view_filter failed: Invalid filter '%s'", filter_name)
         return ToolResult(structured_content={"status": "error", "message": f"Invalid filter '{filter_name}'", "available_filters": available})
 
     views = get_active_views()
@@ -269,6 +270,7 @@ def hide_selected() -> ToolResult:
     tekla_list = collect_children(selected_objects)
     ModelObjectVisualization.SetTransparency(tekla_list, TemporaryTransparency.HIDDEN)
 
+    logger.info("Hidden %d elements", tekla_list.Count)
     return ToolResult(structured_content={"status": "success", "hidden_elements": tekla_list.Count})
 
 
@@ -287,4 +289,5 @@ def color_selected(
     color = Color(red / 255.0, green / 255.0, blue / 255.0)
     ModelObjectVisualization.SetTemporaryState(tekla_list, color)
 
+    logger.info("Colored %d elements with RGB(%d, %d, %d)", tekla_list.Count, red, green, blue)
     return ToolResult(structured_content={"status": "success", "colored_elements": tekla_list.Count})

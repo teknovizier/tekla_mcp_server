@@ -23,13 +23,6 @@ from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 
 
 @pytest.fixture(autouse=True)
-def enable_embeddings():
-    """Enable embeddings for these tests that rely on semantic matching."""
-    with patch("tekla_mcp_server.tekla.template_attrs_parser.is_embeddings_enabled", return_value=True):
-        yield
-
-
-@pytest.fixture(autouse=True)
 def reset_parser():
     """Reset the parser state before each test."""
     TemplateAttributeParser._cache = {}

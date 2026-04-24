@@ -132,6 +132,9 @@ class TemplateAttributeParser:
         min_threshold = get_config().embedding_minimum_threshold
         top_k = 10
 
+        if not cls._embeddings_cache:
+            logger.warning("Embeddings not loaded - semantic resolution disabled")
+
         resolved, errors = [], []
 
         for query in queries:
@@ -142,12 +145,26 @@ class TemplateAttributeParser:
                 result = cls._get_candidates(query, spread_threshold=spread_threshold, min_threshold=min_threshold, top_k=top_k)
                 if isinstance(result, str):
                     resolved.append(result)
+                elif result:
+                    errors.append({"query": query, "candidates": result, "reason": "below_threshold"})
                 else:
-                    errors.append({"query": query, "candidates": result})
+                    errors.append({"query": query, "candidates": [], "reason": "no_candidates"})
             elif name:
                 resolved.append(name)
             else:
-                errors.append({"query": query, "candidates": []})
+                errors.append({"query": query, "candidates": [], "reason": "no_match"})
+
+        if queries and errors:
+            failed_below = [e["query"] for e in errors if e.get("reason") == "below_threshold"]
+            failed_no_cands = [e["query"] for e in errors if e.get("reason") == "no_candidates"]
+            failed_no_match = [e["query"] for e in errors if e.get("reason") == "no_match"]
+            logger.info("Resolved %d/%d attributes", len(resolved), len(queries))
+            if failed_below:
+                logger.warning("Below threshold: %s", failed_below)
+            if failed_no_cands:
+                logger.warning("No candidates: %s", failed_no_cands)
+            if failed_no_match:
+                logger.warning("No match: %s", failed_no_match)
 
         return {"resolved": resolved, "errors": errors}
 

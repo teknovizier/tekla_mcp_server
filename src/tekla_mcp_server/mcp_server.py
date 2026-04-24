@@ -40,14 +40,20 @@ mcp.add_provider(ifc_provider)
 
 # Run the MCP server locally
 if __name__ == "__main__":
-    from tekla_mcp_server.embeddings import is_embeddings_enabled
+    from tekla_mcp_server.embeddings import is_embeddings_enabled, check_embeddings_ready
 
-    if is_embeddings_enabled():
-        from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
+    if not is_embeddings_enabled():
+       logger.info("Embeddings are disabled")
+    else: 
+        try:
+            if check_embeddings_ready():
+                from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 
-        logger.info("Pre-loading embeddings at startup...")
-        TemplateAttributeParser.preload()
-        logger.info("Embeddings ready")
+                logger.info("Pre-loading embeddings at startup...")
+                TemplateAttributeParser.preload()
+                logger.info("Embeddings ready")
+        except (ImportError, ValueError) as e:
+            logger.warning("Embeddings validation failed: %s. Continuing without embeddings", e)
 
     mcp.add_transform(ResourcesAsTools(mcp))
 

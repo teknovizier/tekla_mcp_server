@@ -609,13 +609,13 @@ class PartSnapshot(ModelObjectSnapshot):
 
     def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
         cutparts = [self._normalize_dict(cp, tolerance) for cp in self.cutparts if cp is not None]
-        cutparts.sort(key=ModelObjectSnapshot._deterministic_sort_key) if cutparts else None
+        cutparts.sort(key=ModelObjectSnapshot._deterministic_sort_key)
 
         reinforcements = [self._normalize_dict(r, tolerance) for r in self.reinforcements if r is not None]
-        reinforcements.sort(key=ModelObjectSnapshot._deterministic_sort_key) if reinforcements else None
+        reinforcements.sort(key=ModelObjectSnapshot._deterministic_sort_key)
 
         welds = [self._normalize_dict(w, tolerance) for w in self.welds if w is not None]
-        welds.sort(key=ModelObjectSnapshot._deterministic_sort_key) if welds else None
+        welds.sort(key=ModelObjectSnapshot._deterministic_sort_key)
 
         return self.__class__(
             id=self.id,

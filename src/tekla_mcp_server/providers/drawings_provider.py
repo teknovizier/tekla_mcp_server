@@ -248,8 +248,8 @@ def get_drawing_properties(
 
     ## OUTPUT
     - Return the result table in Markdown format EXACTLY as provided by the tool.
-    - DO NOT reformat.
-    - DO NOT modify spacing, columns, or headers.
+    - DO NOT reformat, truncate, or modify anything, including spacing, columns, or headers.
+    - ALWAYS show the full table. DO NOT remove any rows or columns.
     """
     drawing_handler = DrawingHandler()
 
@@ -317,11 +317,12 @@ def detect_collisions_between_marks(
 
     if not target_drawings:
         return ToolResult(
-            structured_content={"status": "warning", "message": "No drawings found or selected"},
+            structured_content={"status": "error", "message": "No drawings found or selected"},
         )
 
     if drawing_handler.GetActiveDrawing():
-        return ToolResult(structured_content={"status": "warning", "message": "A drawing is currently open. Close it first before running collision detection."})
+        logger.error("detect_drawing_collisions failed: A drawing is currently open")
+        return ToolResult(structured_content={"status": "error", "message": "A drawing is currently open. Close it first before running collision detection."})
 
     all_drawings_results: list[dict] = []
     total_colliding_marks = 0
@@ -391,6 +392,7 @@ def detect_collisions_between_marks(
 
     drawing_handler.CloseActiveDrawing()
 
+    logger.info("Collision detection complete: %d total colliding marks", total_colliding_marks)
     return ToolResult(
         structured_content={
             "status": "success",

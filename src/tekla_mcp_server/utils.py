@@ -155,13 +155,45 @@ def parse_label_string(label_str: str) -> list[str]:
     return [label.strip() for label in label_str.strip().split() if label.strip()]
 
 
-def rects_intersect(a: tuple, b: tuple, margin: float = 0.0) -> bool:
-    """Check if two rectangles intersect with margin."""
+def rects_intersect(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+    margin: float = 0.0,
+) -> bool:
+    """
+    Check if two rectangles intersect with margin.
+
+    Args:
+        a: Tuple of (x1, y1, x2, y2) defining first rectangle
+        b: Tuple of (x1, y1, x2, y2) defining second rectangle
+        margin: Optional margin to add to rectangles
+
+    Returns:
+        True if rectangles intersect, False otherwise
+    """
     return not (a[2] < b[0] - margin or a[0] > b[2] + margin or a[3] < b[1] - margin or a[1] > b[3] + margin)
 
 
-def lines_intersect(p1: tuple, p2: tuple, p3: tuple, p4: tuple, margin: float = 0.0) -> bool:
-    """Check if two line segments intersect with margin."""
+def lines_intersect(
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    p3: tuple[float, float],
+    p4: tuple[float, float],
+    margin: float = 0.0,
+) -> bool:
+    """
+    Check if two line segments intersect with margin.
+
+    Args:
+        p1: First point of first line segment (x, y)
+        p2: Second point of first line segment (x, y)
+        p3: First point of second line segment (x, y)
+        p4: Second point of second line segment (x, y)
+        margin: Optional margin for intersection tolerance
+
+    Returns:
+        True if line segments intersect, False otherwise
+    """
     x1, y1 = p1
     x2, y2 = p2
     x3, y3 = p3
@@ -179,8 +211,24 @@ def lines_intersect(p1: tuple, p2: tuple, p3: tuple, p4: tuple, margin: float = 
     return False
 
 
-def line_rect_intersect(line_p1: tuple, line_p2: tuple, rect: tuple, margin: float = 0.0) -> bool:
-    """Check if a line segment intersects a rectangle."""
+def line_rect_intersect(
+    line_p1: tuple[float, float],
+    line_p2: tuple[float, float],
+    rect: tuple[float, float, float, float],
+    margin: float = 0.0,
+) -> bool:
+    """
+    Check if a line segment intersects a rectangle.
+
+    Args:
+        line_p1: First point of line segment (x, y)
+        line_p2: Second point of line segment (x, y)
+        rect: Tuple of (x1, y1, x2, y2) defining rectangle
+        margin: Optional margin to add to rectangle
+
+    Returns:
+        True if line intersects rectangle, False otherwise
+    """
     x1, y1 = line_p1
     x2, y2 = line_p2
     rx1, ry1, rx2, ry2 = rect
