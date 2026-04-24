@@ -207,7 +207,7 @@ For example, in Claude Desktop:
       "command": "python",
       "args": ["C:\\path\\to\\tekla_mcp_server\\src\\tekla_mcp_server\\mcp_server.py"],
       "env": {
-        "TEKLA_MCP_LOG_LEVEL": "DEBUG",
+        "TEKLA_MCP_LOG_LEVEL": "INFO",
         "TEKLA_MCP_LOG_FILE_PATH": "C:\\path\\to\\mcp_server.log",
         "TEKLA_MCP_CONFIG_DIR": "C:\\path\\to\\tekla_mcp_server\\config"
       }

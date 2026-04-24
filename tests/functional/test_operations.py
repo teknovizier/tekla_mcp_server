@@ -24,7 +24,7 @@ def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):
     """Tests convert_cut_parts_to_real_parts when no cuts are present."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     result = convert_cut_parts_to_real_parts()
-    assert result.structured_content["status"] == "error"
+    assert result.structured_content["status"] == "warning"
 
 
 def test_convert_cut_parts_to_real_parts_with_cut(model_objects):

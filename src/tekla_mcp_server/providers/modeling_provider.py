@@ -4,7 +4,7 @@ Modeling tools provider for Tekla MCP server.
 Provides tools for placing beams, columns, panels and managing elements.
 """
 
-from typing import Annotated
+from typing import Annotated, Callable, TypeVar
 from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
@@ -30,6 +30,8 @@ from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 modeling_provider = LocalProvider()
 
+T = TypeVar("T", BeamInput, ColumnInput, PanelInput)
+
 
 def _resolve_numbering_and_name(
     input_object: BeamInput | ColumnInput | PanelInput | SlabInput,
@@ -51,6 +53,34 @@ def _resolve_numbering_and_name(
         name = ElementTypeModel.get_default_name(input_object.tekla_class)
 
     return part_number, assembly_number, name
+
+
+def _place_beam_element(
+    input_object: T,
+    input_to_points: Callable[[T], tuple[PointInput, PointInput]],
+    beam_type: BeamType,
+) -> tuple[bool, PlacementResult]:
+    """Place a single beam-type element and return success flag and result."""
+    start, end = input_to_points(input_object)
+    part_number, assembly_number, name = _resolve_numbering_and_name(input_object)
+
+    tekla_obj = TeklaBeam.create(
+        start_point=start,
+        end_point=end,
+        profile=input_object.profile,
+        material=input_object.material,
+        tekla_class=input_object.tekla_class,
+        name=name,
+        position=input_object.position,
+        beam_type=beam_type,
+        start_point_offset=input_object.start_point_offset,
+        end_point_offset=input_object.end_point_offset,
+        part_number=part_number,
+        assembly_number=assembly_number,
+    )
+    if tekla_obj is not None:
+        return True, PlacementResult(success=True, guid=tekla_obj.guid)
+    return False, PlacementResult(success=False, message="Insert() returned false")
 
 
 def _to_tool_result(
@@ -96,42 +126,31 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
     ```
     """
     if not beams:
+        logger.error("place_beams failed: No beams provided")
         return ToolResult(structured_content={"status": "error", "message": "No beams provided"})
 
     model = TeklaModel()
     results: list[PlacementResult] = []
     succeeded = 0
 
-    for input_object in beams:
+    for i, input_object in enumerate(beams):
         try:
-            start, end = input_object.start_point, input_object.end_point
-            part_number, assembly_number, name = _resolve_numbering_and_name(input_object)
-
-            tekla_obj = TeklaBeam.create(
-                start_point=start,
-                end_point=end,
-                profile=input_object.profile,
-                material=input_object.material,
-                tekla_class=input_object.tekla_class,
-                name=name,
-                position=input_object.position,
-                beam_type=BeamType.BEAM,
-                start_point_offset=input_object.start_point_offset,
-                end_point_offset=input_object.end_point_offset,
-                part_number=part_number,
-                assembly_number=assembly_number,
+            logger.debug("Placing beam %d/%d: profile=%s, material=%s, class=%d", i + 1, len(beams), input_object.profile, input_object.material, input_object.tekla_class)
+            success, result = _place_beam_element(
+                input_object,
+                lambda b: (b.start_point, b.end_point),
+                BeamType.BEAM,
             )
-            if tekla_obj is not None:
+            if success:
                 succeeded += 1
-                results.append(PlacementResult(success=True, guid=tekla_obj.guid))
-            else:
-                results.append(PlacementResult(success=False, message="Insert() returned false"))
+            results.append(result)
         except Exception as e:
             logger.exception("Failed to insert element")
             results.append(PlacementResult(success=False, message=str(e)))
 
     model.commit_changes()
 
+    logger.info("Placed %d of %d beams", succeeded, len(beams))
     return _to_tool_result(results, len(beams), succeeded, "beams")
 
 
@@ -159,43 +178,33 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
     ```
     """
     if not columns:
+        logger.error("place_columns failed: No columns provided")
         return ToolResult(structured_content={"status": "error", "message": "No columns provided"})
 
     model = TeklaModel()
     results: list[PlacementResult] = []
     succeeded = 0
 
-    for input_object in columns:
+    for i, input_object in enumerate(columns):
         try:
-            start = input_object.base_point
-            end = PointInput(x=input_object.base_point.x, y=input_object.base_point.y, z=input_object.base_point.z + input_object.height)
-            part_number, assembly_number, name = _resolve_numbering_and_name(input_object)
-
-            tekla_obj = TeklaBeam.create(
-                start_point=start,
-                end_point=end,
-                profile=input_object.profile,
-                material=input_object.material,
-                tekla_class=input_object.tekla_class,
-                name=name,
-                position=input_object.position,
-                beam_type=BeamType.COLUMN,
-                start_point_offset=input_object.start_point_offset,
-                end_point_offset=input_object.end_point_offset,
-                part_number=part_number,
-                assembly_number=assembly_number,
+            logger.debug(
+                "Placing column %d/%d: profile=%s, material=%s, class=%d, height=%.0f", i + 1, len(columns), input_object.profile, input_object.material, input_object.tekla_class, input_object.height
             )
-            if tekla_obj is not None:
+            success, result = _place_beam_element(
+                input_object,
+                lambda c: (c.base_point, PointInput(x=c.base_point.x, y=c.base_point.y, z=c.base_point.z + c.height)),
+                BeamType.COLUMN,
+            )
+            if success:
                 succeeded += 1
-                results.append(PlacementResult(success=True, guid=tekla_obj.guid))
-            else:
-                results.append(PlacementResult(success=False, message="Insert() returned false"))
+            results.append(result)
         except Exception as e:
             logger.exception("Failed to insert element")
             results.append(PlacementResult(success=False, message=str(e)))
 
     model.commit_changes()
 
+    logger.info("Placed %d of %d columns", succeeded, len(columns))
     return _to_tool_result(results, len(columns), succeeded, "columns")
 
 
@@ -222,42 +231,31 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
     ```
     """
     if not panels:
+        logger.error("place_panels failed: No panels provided")
         return ToolResult(structured_content={"status": "error", "message": "No panels provided"})
 
     model = TeklaModel()
     results: list[PlacementResult] = []
     succeeded = 0
 
-    for input_object in panels:
+    for i, input_object in enumerate(panels):
         try:
-            start, end = input_object.start_point, input_object.end_point
-            part_number, assembly_number, name = _resolve_numbering_and_name(input_object)
-
-            tekla_obj = TeklaBeam.create(
-                start_point=start,
-                end_point=end,
-                profile=input_object.profile,
-                material=input_object.material,
-                tekla_class=input_object.tekla_class,
-                name=name,
-                position=input_object.position,
-                beam_type=BeamType.PANEL,
-                start_point_offset=input_object.start_point_offset,
-                end_point_offset=input_object.end_point_offset,
-                part_number=part_number,
-                assembly_number=assembly_number,
+            logger.debug("Placing panel %d/%d: profile=%s, material=%s, class=%d", i + 1, len(panels), input_object.profile, input_object.material, input_object.tekla_class)
+            success, result = _place_beam_element(
+                input_object,
+                lambda p: (p.start_point, p.end_point),
+                BeamType.PANEL,
             )
-            if tekla_obj is not None:
+            if success:
                 succeeded += 1
-                results.append(PlacementResult(success=True, guid=tekla_obj.guid))
-            else:
-                results.append(PlacementResult(success=False, message="Insert() returned false"))
+            results.append(result)
         except Exception as e:
             logger.exception("Failed to insert element")
             results.append(PlacementResult(success=False, message=str(e)))
 
     model.commit_changes()
 
+    logger.info("Placed %d of %d panels", succeeded, len(panels))
     return _to_tool_result(results, len(panels), succeeded, "panels")
 
 
@@ -285,14 +283,18 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
     ```
     """
     if not slabs:
+        logger.error("place_slabs failed: No slabs provided")
         return ToolResult(structured_content={"status": "error", "message": "No slabs provided"})
 
     model = TeklaModel()
     results: list[PlacementResult] = []
     succeeded = 0
 
-    for input_object in slabs:
+    for i, input_object in enumerate(slabs):
         try:
+            logger.debug(
+                "Placing slab %d/%d: profile=%s, material=%s, class=%d, points=%d", i + 1, len(slabs), input_object.profile, input_object.material, input_object.tekla_class, len(input_object.points)
+            )
             if len(input_object.points) < 3:
                 results.append(PlacementResult(success=False, message="Slab requires at least 3 points"))
                 continue
@@ -320,6 +322,7 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
 
     model.commit_changes()
 
+    logger.info("Placed %d of %d slabs", succeeded, len(slabs))
     return _to_tool_result(results, len(slabs), succeeded, "slabs")
 
 
@@ -334,6 +337,7 @@ def delete_selected() -> ToolResult:
     count = selected.GetSize() if selected else 0
 
     if count == 0:
+        logger.error("delete_selected failed: No objects selected")
         return ToolResult(structured_content={"status": "error", "message": "No objects selected"})
 
     deleted = 0
@@ -343,6 +347,7 @@ def delete_selected() -> ToolResult:
 
     model.commit_changes()
 
+    logger.info("Deleted %d of %d objects", deleted, count)
     return ToolResult(
         structured_content={
             "status": "success" if deleted == count else "warning",

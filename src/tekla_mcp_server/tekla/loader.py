@@ -106,7 +106,6 @@ __all__ = [
     "Phase",
     "PhaseCollection",
     "Position",
-    "Reinforcement",
     "Solid",
     "TransformationPlane",
     "ComponentInput",

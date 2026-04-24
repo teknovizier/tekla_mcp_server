@@ -69,8 +69,8 @@ class TestDetectCollisionsBetweenMarks:
     """Tests for detect_collisions_between_marks function."""
 
     def test_detect_collisions_no_drawings_selected(self):
-        """Call without selecting any drawings - should return warning."""
+        """Call without selecting any drawings."""
         result = detect_collisions_between_marks()
 
-        assert result.structured_content["status"] == "warning"
+        assert result.structured_content["status"] == "error"
         assert "no drawings" in result.structured_content["message"].lower()

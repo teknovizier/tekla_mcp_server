@@ -46,6 +46,7 @@ def copy_properties_from_ifc(
             tekla_targets.append((guid, selected_object))
 
     if not ifc_sources:
+        logger.error("copy_properties_from_ifc failed: No IFC reference objects found in selection")
         return ToolResult(
             structured_content={
                 "status": "error",
@@ -53,6 +54,7 @@ def copy_properties_from_ifc(
             }
         )
     if not tekla_targets:
+        logger.error("copy_properties_from_ifc failed: No Tekla parts found in selection")
         return ToolResult(
             structured_content={
                 "status": "error",
@@ -80,10 +82,12 @@ def copy_properties_from_ifc(
     matches_made = 0
 
     # Match IFC to Tekla elements by bounding box and copy properties
-    for ifc_guid, ifc_object in ifc_sources:
+    for i, (ifc_guid, ifc_object) in enumerate(ifc_sources):
         if ifc_guid not in ifc_bboxes:
+            logger.debug("Skipping IFC %s: no bounding box", ifc_guid)
             continue
 
+        logger.debug("Processing IFC source %d/%d: %s", i + 1, len(ifc_sources), ifc_guid)
         ifc_bbox = ifc_bboxes[ifc_guid]
         found_match = False
 
@@ -138,6 +142,7 @@ def copy_properties_from_ifc(
             unmatched.append({"tekla_object": tekla_guid, "reason": "No matching IFC reference found"})
 
     if matches_made == 0:
+        logger.error("copy_properties_from_ifc failed: No matches made between IFC and Tekla elements")
         status = "error"
     elif errors:
         status = "partial"
@@ -146,6 +151,7 @@ def copy_properties_from_ifc(
     else:
         status = "success"
 
+    logger.info("IFC copy complete: %d matches, %d properties copied, %d errors, %d unmatched", matches_made, properties_copied, len(errors), len(unmatched))
     return ToolResult(
         structured_content={
             "status": status,

@@ -106,7 +106,10 @@ def _get_contentattributes_file_paths() -> list[str]:
         List of paths to all .lst files referenced in the main contentattributes file
     """
 
-    def resolve_path(raw_path: str, base: Path, tekla_base: Path) -> Path:
+    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
+    from tekla_mcp_server.init import logger
+
+    def resolve_path(raw_path: str, base: Path, tekla_base: Path) -> Path | None:
         """
         Resolve a raw path relative to base or tekla_base.
 
@@ -116,15 +119,29 @@ def _get_contentattributes_file_paths() -> list[str]:
             tekla_base: Tekla base path for resolution
 
         Returns:
-            Resolved Path object
+            Resolved Path object, or None if path escapes the base directory
         """
-        if raw_path.startswith("@") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):
-            return base.parent / raw_path[2:]
-        if raw_path.startswith(".") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):
-            return tekla_base / raw_path[2:]
-        return base.parent / raw_path
+        try:
+            if raw_path.startswith("@") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):
+                resolved = base.parent / raw_path[2:]
+            elif raw_path.startswith(".") and len(raw_path) > 1 and raw_path[1] in ("\\", "/"):
+                resolved = tekla_base / raw_path[2:]
+            else:
+                resolved = base.parent / raw_path
 
-    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
+            resolved = resolved.resolve()
+            base_root = base.parent.resolve()
+            tekla_root = tekla_base.resolve()
+
+            if not (resolved.is_relative_to(base_root) or resolved.is_relative_to(tekla_root)):
+                logger.warning("Rejected path traversal attempt: %s", raw_path)
+                return None
+
+            return resolved
+
+        except Exception as e:
+            logger.warning("Failed to resolve path %s: %s", raw_path, e)
+            return None
 
     # Get tpled.ini location
     _, tpled_ini_path = TeklaStructuresSettings.GetAdvancedOption("XS_TPLED_INI", str())
@@ -162,10 +179,14 @@ def _get_contentattributes_file_paths() -> list[str]:
             match = re.search(r"\[INCLUDE\s+(.+)\]", stripped, re.IGNORECASE)
             if match:
                 resolved = resolve_path(match.group(1).strip(), content_attr_path, tekla_base)
-                if resolved.exists():
+                if resolved and resolved.exists():
                     included_files.append(str(resolved))
+                elif resolved:
+                    logger.warning("Included file not found: %s", resolved)
     except FileNotFoundError:
-        return []
+        logger.warning("contentattributes.lst not found at: %s", content_attr_path)
+    except Exception as e:
+        logger.warning("Failed to parse contentattributes file: %s", e)
 
     return included_files
 
@@ -276,6 +297,7 @@ class Config:
                     result[tekla_class] = config
         return result
 
+    @lru_cache
     def get_custom_properties_schema(self, component_key: str) -> dict[str, dict[str, str]] | None:
         """Returns custom_properties schema for a component."""
         component = self.base_components.get(component_key)

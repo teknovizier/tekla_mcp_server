@@ -4,6 +4,7 @@ Module for Tekla Model wrapper.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable
 
 from tekla_mcp_server.init import logger
@@ -32,14 +33,42 @@ from tekla_mcp_server.tekla.loader import (
 class TeklaModel:
     """
     A wrapper class around the Tekla Structures Model object.
-    Uses singleton pattern to reuse the connection.
+    Uses thread-safe singleton pattern to reuse the connection.
     """
 
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
     def __init__(self):
-        self._model = Model()
-        if not self._model.GetConnectionStatus():
-            raise ConnectionError("Cannot connect to Tekla model. Please check that Tekla Structures is running and the model is opened.")
-        logger.debug("Connected to Tekla model")
+        if getattr(self, "_initialized", False):
+            return
+
+        self._model = None
+        self._initialized = False
+
+        try:
+            model = Model()
+
+            if not model.GetConnectionStatus():
+                raise ConnectionError("Cannot connect to Tekla model. Ensure Tekla is running and a model is open.")
+
+            self._model = model
+            self._initialized = True
+            logger.debug("Connected to Tekla model")
+
+        except Exception:
+            self._model = None
+            self._initialized = False
+            TeklaModel._instance = None  # Allows clean retry
+            raise
 
     @property
     def model(self) -> Model:
@@ -105,7 +134,7 @@ class TeklaModel:
         filter_parts = BinaryFilterExpression(ObjectFilterExpressions.Type(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(TeklaStructuresDatabaseTypeEnum.PART))
         filter_collection.Add(BinaryFilterExpressionItem(filter_parts, BinaryFilterOperatorType.BOOLEAN_AND))
 
-        # FIlter on class
+        # Filter on class
         filter_collection_class = BinaryFilterExpressionCollection()
         filter_class = BinaryFilterExpression(PartFilterExpressions.Class(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(tekla_class))
         filter_collection_class.Add(BinaryFilterExpressionItem(filter_class, BinaryFilterOperatorType.BOOLEAN_OR))

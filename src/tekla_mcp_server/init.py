@@ -21,7 +21,7 @@ _dlls_loaded = False
 _dlls_loaded_lock = threading.Lock()
 
 # Constants
-_log_level = os.getenv("TEKLA_MCP_LOG_LEVEL", "DEBUG")
+_log_level = os.getenv("TEKLA_MCP_LOG_LEVEL", "INFO")
 _log_file_path = os.getenv("TEKLA_MCP_LOG_FILE_PATH", "mcp_server.log")
 
 # Logging
@@ -42,6 +42,14 @@ def load_dlls() -> bool:
     This function reads the DLL path from the configuration file and loads the required
     libraries using the `clr` module. If any DLL is not found, an exception is raised,
     and the application exits.
+
+    Returns:
+        True if DLLs were loaded successfully, False if already loaded.
+
+    Raises:
+        FileNotFoundError: If Tekla DLLs are not found at the configured path.
+        System.IO.FileNotFoundException: If a specific DLL cannot be loaded.
+        json.JSONDecodeError: If configuration file is invalid.
     """
     global _dlls_loaded
 

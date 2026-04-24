@@ -94,6 +94,7 @@ def add_filter(
             op = NUMERIC_MATCH_TYPE_MAPPING.get(match_type)
         expr = BinaryFilterExpression(filter_expression, op, NumericConstantFilterExpression(value))
     else:
+        logger.error("Unsupported value type in filter: %s", type(value))
         return ToolResult(structured_content={"status": "error", "message": f"Unsupported value type: {type(value)}"})
 
     filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
@@ -158,15 +159,18 @@ def select_elements_by_filter(
     """
     # Validate combine_with and ensure at least one filter provided
     if combine_with not in {"AND", "OR"}:
+        logger.error("select_elements_by_filter failed: Invalid combine_with '%s'. Must be 'AND' or 'OR'.", combine_with)
         return ToolResult(structured_content={"status": "error", "message": f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'."})
 
     if not any((element_type, tekla_classes, standard_string_filters, custom_string_filters, custom_numeric_filters)):
+        logger.error("select_elements_by_filter failed: No filters provided")
         return ToolResult(structured_content={"status": "error", "message": "At least one filter must be provided."})
 
     if element_type:
         try:
             element_type_enum = ElementTypeModel(value=element_type).to_enum()
         except Exception as e:
+            logger.error("select_elements_by_filter failed: Invalid element_type '%s': %s", element_type, str(e))
             return ToolResult(structured_content={"status": "error", "message": f"Invalid element_type: {str(e)}"})
 
     model = TeklaModel()
@@ -175,6 +179,7 @@ def select_elements_by_filter(
     if standard_string_filters:
         for key in standard_string_filters:
             if key not in valid_standard_keys:
+                logger.error("select_elements_by_filter failed: Invalid standard_string_filters key '%s'. Must be one of: %s", key, valid_standard_keys)
                 return ToolResult(structured_content={"status": "error", "message": f"Invalid standard_string_filters key '{key}'. Must be one of: {valid_standard_keys}"})
 
     # Base filter: always filter for parts only
@@ -227,6 +232,7 @@ def select_elements_by_filter(
         element_type_classes: list[int] = []
         for material_types in get_config().element_types.values():
             for type_name, config in material_types.items():
+                logger.debug("Checking element type '%s' against '%s', classes=%s", element_type_enum.name, type_name, config.get("tekla_classes", []))
                 if element_type_enum.name.replace(" ", "_").upper() in type_name.upper() or type_name.upper() in element_type_enum.name.upper():
                     element_type_classes.extend(config.get("tekla_classes", []))
         type_sub = BinaryFilterExpressionCollection()
@@ -313,6 +319,7 @@ def select_elements_by_filter(
     elif len(filter_groups) > 1:
         combined = BinaryFilterExpressionCollection()
         group_operator = BinaryFilterOperatorType.BOOLEAN_OR if combine_with == "OR" else BinaryFilterOperatorType.BOOLEAN_AND
+        logger.debug("Combining %d filter groups with %s", len(filter_groups), combine_with)
         for fg in filter_groups:
             if fg is not None:
                 combined.Add(BinaryFilterExpressionItem(fg, group_operator))
@@ -349,7 +356,7 @@ def select_elements_by_filter_name(
     logger.info("Selected %s elements by named filter", objects_to_select.GetSize())
     return ToolResult(
         structured_content={
-            "status": "success" if objects_to_select.GetSize() else "error",
+            "status": "success" if objects_to_select.GetSize() else "warning",
             "selected_elements": objects_to_select.GetSize(),
         }
     )
@@ -369,7 +376,7 @@ def select_elements_by_guid(
     logger.info("Selected %s elements by GUID", objects_to_select.Count)
     return ToolResult(
         structured_content={
-            "status": "success" if objects_to_select.Count else "error",
+            "status": "success" if objects_to_select.Count else "warning",
             "selected_elements": objects_to_select.Count,
         }
     )
@@ -393,7 +400,7 @@ def select_elements_assemblies_or_main_parts(
         try:
             assembly = selected_object.get_top_level_assembly()
         except TypeError:
-            logger.warning("Failed to get top level assembly for the element %s", selected_object.guid)
+            logger.error("Failed to get top level assembly for the element %s", selected_object.guid)
             continue
         if mode == "Assembly":
             filtered_parts.Add(assembly.model_object)
@@ -407,7 +414,7 @@ def select_elements_assemblies_or_main_parts(
     logger.info("Selected %s elements as '%s'", filtered_parts.Count, mode)
     return ToolResult(
         structured_content={
-            "status": "success" if filtered_parts.Count else "error",
+            "status": "success" if filtered_parts.Count else "warning",
             "selected_elements": selected_objects.GetSize(),
             "processed_elements": processed_elements,
             selected_object_types: filtered_parts.Count,

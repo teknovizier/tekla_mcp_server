@@ -10,6 +10,7 @@ from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers import LocalProvider
 
 from tekla_mcp_server.config import get_config
+from tekla_mcp_server.init import logger
 from tekla_mcp_server.tekla.loader import Grid
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.utils import get_macros, get_filters
@@ -29,6 +30,7 @@ def get_component_list() -> ResourceResult:
     `tekla://components/{component_key}` to get the property schema.
     """
     data = {comp.get("tekla_name"): key for key, comp in get_config().base_components.items() if comp.get("tekla_name")}
+    logger.debug("Retrieved %d components", len(data))
     return ResourceResult(contents=[ResourceContent(content=json.dumps(data), mime_type="application/json")])
 
 
@@ -43,7 +45,9 @@ def get_component_schema(component_key: str) -> ResourceResult:
         description = component.get("description", "")
         custom_props = component.get("custom_properties", {})
         schema = {"description": description, "custom_properties": custom_props}
+        logger.debug("Retrieved schema for component '%s'", component_key)
         return ResourceResult(contents=[ResourceContent(content=json.dumps(schema), mime_type="application/json")])
+    logger.warning("Component schema not found for key '%s'", component_key)
     return ResourceResult(contents=[])
 
 
@@ -53,7 +57,9 @@ def get_macro_list() -> ResourceResult:
     """
     Returns a list of available Tekla macros from configured directories.
     """
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_macros()), mime_type="application/json")])
+    macros = get_macros()
+    logger.debug("Retrieved %d macros", len(macros))
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(macros), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://element_types")
@@ -62,7 +68,9 @@ def get_element_types() -> ResourceResult:
     """
     Returns a list of available Tekla element types and their corresponding class numbers.
     """
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_config().get_element_types_list()), mime_type="application/json")])
+    element_types = get_config().get_element_types_list()
+    logger.debug("Retrieved %d element types", len(element_types))
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(element_types), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://filters/selection")
@@ -71,7 +79,9 @@ def get_selection_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla selection filter names from .SObjGrp files.
     """
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_filters(".SObjGrp")), mime_type="application/json")])
+    filters = get_filters(".SObjGrp")
+    logger.debug("Retrieved %d selection filters", len(filters))
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(filters), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://filters/view")
@@ -80,7 +90,9 @@ def get_view_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla view filter names from .VObjGrp files.
     """
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(get_filters(".VObjGrp")), mime_type="application/json")])
+    filters = get_filters(".VObjGrp")
+    logger.debug("Retrieved %d view filters", len(filters))
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(filters), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://phases")
@@ -106,6 +118,7 @@ def get_phase_list() -> ResourceResult:
             }
         )
 
+    logger.debug("Retrieved %d phases, current: %s", len(phase_list), current_phase)
     return ResourceResult(
         contents=[
             ResourceContent(
@@ -156,6 +169,7 @@ def get_grid_list() -> ResourceResult:
                 },
             }
         )
+    logger.debug("Retrieved %d grids", len(grid_data))
     return ResourceResult(
         contents=[
             ResourceContent(
@@ -173,12 +187,14 @@ def get_connection_status() -> ResourceResult:
     Returns the current Tekla connection status.
     """
     model = TeklaModel()
+    model_path = model.model.GetInfo().ModelPath
+    logger.debug("Connection status check: %s", model_path)
     return ResourceResult(
         contents=[
             ResourceContent(
                 content=json.dumps({
                     "connected": True,
-                    "model_path": model.model.GetInfo().ModelPath,
+                    "model_path": model_path,
                     "message": "Connected to Tekla model",
                 }),
                 mime_type="application/json",
@@ -187,8 +203,6 @@ def get_connection_status() -> ResourceResult:
     )
 
 
-@resources_provider.resource("project://requirements")
-@mcp_handler(scope="resource")
 def get_project_requirements() -> ResourceResult:
     """
     Provides the complete set of project requirements and conventions.
@@ -198,4 +212,5 @@ def get_project_requirements() -> ResourceResult:
     helping the AI understand the project scope and design conventions.
     """
     content = get_config().load_requirements()
+    logger.debug("Retrieved project requirements, length: %d chars", len(content))
     return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/markdown")])
