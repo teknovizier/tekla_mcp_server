@@ -421,6 +421,14 @@ class TeklaReferenceModelObject(TeklaModelObject):
 
         return value
 
+    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+        """
+        Gets element properties as dict for IFC reference objects.
+        """
+        props = super().get_properties(report_props_definitions)
+        props["guid"] = self.get_report_property("GUID")
+        return props
+
 
 class TeklaAssembly(TeklaModelObject):
     """

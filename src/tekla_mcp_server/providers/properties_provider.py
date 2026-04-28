@@ -14,7 +14,7 @@ from pydantic import Field
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBeam, TeklaContourPlate, TeklaPart, wrap_model_object, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBeam, TeklaContourPlate, TeklaPart, TeklaReferenceModelObject, wrap_model_object, wrap_model_objects
 from tekla_mcp_server.tekla.loader import Part, BooleanPart, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts
@@ -132,7 +132,7 @@ def get_elements_properties(
     report_props_definitions: Annotated[list[str] | None, Field(description="List of user-friendly property names")] = None,
 ) -> ToolResult:
     """
-    Retrieve key properties for selected Tekla elements (assemblies or parts).
+    Retrieve key properties for selected Tekla elements (assemblies, parts, or IFC reference objects).
 
     ### BEHAVIOR
     - Extract properties not in default columns; split multi-property phrases into separate items.
@@ -161,6 +161,7 @@ def get_elements_properties(
 
     assemblies: list[dict[str, Any]] = []
     parts: list[dict[str, Any]] = []
+    reference_objects: list[dict[str, Any]] = []
     processed_elements = 0
 
     for selected_object in wrap_model_objects(selected_objects):
@@ -170,14 +171,16 @@ def get_elements_properties(
             extraction_errors.append({"guid": selected_object.guid, "error": str(e)})
             props = selected_object.get_properties(None)
 
-        if isinstance(selected_object, TeklaAssembly):
+        if isinstance(selected_object, TeklaReferenceModelObject):
+            reference_objects.append(props)
+        elif isinstance(selected_object, TeklaAssembly):
             assemblies.append(props)
         elif isinstance(selected_object, TeklaPart):
             parts.append(props)
         processed_elements += 1
 
     logger.info("Retrieved properties for %s elements", processed_elements)
-    status = "success" if assemblies or parts else "error"
+    status = "success" if assemblies or parts or reference_objects else "error"
     if resolution_errors or extraction_errors:
         status = "partial"
         if extraction_errors:
@@ -214,7 +217,7 @@ def get_elements_properties(
             flat_items.append({"No": i + 1, **row})
         return flat_items
 
-    content_json = {k: v for k, v in (("assemblies", _flatten(assemblies)), ("parts", _flatten(parts))) if v}
+    content_json = {k: v for k, v in (("assemblies", _flatten(assemblies)), ("parts", _flatten(parts)), ("reference_objects", _flatten(reference_objects))) if v}
 
     return ToolResult(
         content=content_json,
@@ -224,6 +227,7 @@ def get_elements_properties(
             "processed_elements": processed_elements,
             "assemblies": assemblies,
             "parts": parts,
+            "reference_objects": reference_objects,
             "resolution_errors": resolution_errors,
             "extraction_errors": extraction_errors,
         },
