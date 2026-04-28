@@ -6,7 +6,6 @@ where Tekla is not available.
 """
 
 import os
-from unittest.mock import patch
 
 import pytest
 

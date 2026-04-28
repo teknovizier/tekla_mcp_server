@@ -402,6 +402,7 @@ class TeklaReferenceModelObject(TeklaModelObject):
 
         First tries using TemplateAttributeParser via base class method.
         Falls back to using str type if not found in attribute definitions.
+        Falls back to trying with "EXTERNAL." prefix for IFC properties.
 
         Args:
             property_name: Name of the report property to retrieve
@@ -417,7 +418,9 @@ class TeklaReferenceModelObject(TeklaModelObject):
         except KeyError:
             is_ok, value = self.model_object.GetReportProperty(property_name, str())
             if not is_ok:
-                raise AttributeError(f"Failed to retrieve property `{property_name}`.")
+                is_ok, value = self.model_object.GetReportProperty(f"EXTERNAL.{property_name}", str())
+                if not is_ok:
+                    raise AttributeError(f"Failed to retrieve property `{property_name}`.")
 
         return value
 
