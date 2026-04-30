@@ -38,6 +38,8 @@ class TeklaModel:
 
     _instance = None
     _lock = threading.Lock()
+    _max_retries = 3
+    _retry_delay = 1.0  # seconds
 
     def __new__(cls):
         if cls._instance is None:
@@ -50,25 +52,75 @@ class TeklaModel:
     def __init__(self):
         if getattr(self, "_initialized", False):
             return
+        self._connect()
+
+    def _connect(self, retries: int | None = None) -> None:
+        """Connect to Tekla model with retry logic."""
+        max_retries = retries if retries is not None else self._max_retries
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                self._model = None
+                self._initialized = False
+
+                model = Model()
+
+                if not model.GetConnectionStatus():
+                    raise ConnectionError("Cannot connect to Tekla model. Ensure Tekla is running and a model is open.")
+
+                self._model = model
+                self._initialized = True
+                logger.debug("Connected to Tekla model (attempt %d)", attempt + 1)
+                return
+
+            except Exception as e:
+                last_exception = e
+                logger.warning("Connection attempt %d/%d failed: %s", attempt + 1, max_retries, e)
+                if attempt < max_retries - 1:
+                    import time
+
+                    time.sleep(self._retry_delay * (attempt + 1))  # Exponential backoff
 
         self._model = None
         self._initialized = False
+        if last_exception:
+            raise last_exception
+        raise ConnectionError("Failed to connect to Tekla model")
 
+    @classmethod
+    def reconnect(cls) -> "TeklaModel":
+        """Force a reconnection to the Tekla model."""
+        with cls._lock:
+            instance = cls()
+            instance._connect()
+            return instance
+
+    def is_connected(self) -> bool:
+        """Check if the connection to Tekla model is still active."""
+        if self._model is None:
+            return False
         try:
-            model = Model()
-
-            if not model.GetConnectionStatus():
-                raise ConnectionError("Cannot connect to Tekla model. Ensure Tekla is running and a model is open.")
-
-            self._model = model
-            self._initialized = True
-            logger.debug("Connected to Tekla model")
-
+            return self._model.GetConnectionStatus()
         except Exception:
-            self._model = None
-            self._initialized = False
-            TeklaModel._instance = None  # Allows clean retry
-            raise
+            return False
+
+    def ensure_connected(self) -> bool:
+        """
+        Ensure connection is active, reconnect if needed.
+
+        Returns:
+            True if connected after check, False otherwise
+        """
+        if self.is_connected():
+            return True
+        logger.info("Connection lost, attempting reconnection...")
+        try:
+            self._connect()
+            return self.is_connected()
+        except Exception as e:
+            logger.error("Reconnection failed: %s", e)
+            return False
 
     @property
     def model(self) -> Model:
@@ -77,7 +129,12 @@ class TeklaModel:
 
         Returns:
             The Model instance for interacting with Tekla Structures
+
+        Raises:
+            ConnectionError: If connection to Tekla model is lost and cannot be reconnected
         """
+        if not self.ensure_connected():
+            raise ConnectionError("Cannot connect to Tekla model. Ensure Tekla is running and a model is open.")
         return self._model
 
     @log_function_call
