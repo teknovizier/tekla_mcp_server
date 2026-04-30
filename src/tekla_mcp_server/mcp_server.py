@@ -43,8 +43,8 @@ if __name__ == "__main__":
     from tekla_mcp_server.embeddings import is_embeddings_enabled, check_embeddings_ready
 
     if not is_embeddings_enabled():
-       logger.info("Embeddings are disabled")
-    else: 
+        logger.info("Embeddings are disabled")
+    else:
         try:
             if check_embeddings_ready():
                 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser

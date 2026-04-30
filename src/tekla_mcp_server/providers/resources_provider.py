@@ -192,11 +192,13 @@ def get_connection_status() -> ResourceResult:
     return ResourceResult(
         contents=[
             ResourceContent(
-                content=json.dumps({
-                    "connected": True,
-                    "model_path": model_path,
-                    "message": "Connected to Tekla model",
-                }),
+                content=json.dumps(
+                    {
+                        "connected": True,
+                        "model_path": model_path,
+                        "message": "Connected to Tekla model",
+                    }
+                ),
                 mime_type="application/json",
             )
         ]

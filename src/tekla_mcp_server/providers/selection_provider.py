@@ -16,7 +16,6 @@ from tekla_mcp_server.models import (
     ElementTypeModel,
     SelectionMode,
     NumericMatchType,
-    StandardStringFilterKey,
     StringFilterOption,
     StringMatchType,
     NumericFilterOption,
@@ -106,7 +105,8 @@ def add_filter(
 def select_elements_by_filter(
     element_type: Annotated[str | None, Field(description="Named element type (e.g., 'Wall', 'Steel Beam')")] = None,
     tekla_classes: Annotated[int | list[int] | None, Field(description="Tekla class numbers")] = None,
-    standard_string_filters: Annotated[dict[str, Any] | None, Field(description="Dict of standard Tekla properties to filter options")] = None,
+    standard_string_filters: Annotated[dict[str, Any] | None, Field(description="Dict of standard string properties to filter options")] = None,
+    standard_numeric_filters: Annotated[dict[str, Any] | None, Field(description="Dict of standard numeric properties to filter options")] = None,
     custom_string_filters: Annotated[dict[str, Any] | None, Field(description="Dict of custom attribute names to StringFilterOption")] = None,
     custom_numeric_filters: Annotated[dict[str, Any] | None, Field(description="Dict of custom property names to NumericFilterOption")] = None,
     combine_with: Annotated[str, Field(description="How to combine filter groups: 'AND' or 'OR'")] = "AND",
@@ -142,17 +142,23 @@ def select_elements_by_filter(
         }
     }
 
-    # Multiple classes: Sandwich Wall (8) and Wall (1)
-    {
-        "tekla_classes": [8, 1]
-    }
-
     # Elements in class 1 (Wall) with height > 2m
     {
         "tekla_classes": 1,
         "custom_numeric_filters": {
             "HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000}}
         }
+    }
+
+    # Combined: prefix starts with SB AND part_start_number > 50
+    {
+        "standard_string_filters": {
+            "part_prefix": {"conditions": {"match_type": "Starts With", "value": "SB"}}
+        },
+        "standard_numeric_filters": {
+            "part_start_number": {"conditions": {"match_type": "Greater Than", "value": 50}}
+        },
+        "combine_with": "AND"
     }
 
     At least one filter must be provided.
@@ -162,7 +168,7 @@ def select_elements_by_filter(
         logger.error("select_elements_by_filter failed: Invalid combine_with '%s'. Must be 'AND' or 'OR'.", combine_with)
         return ToolResult(structured_content={"status": "error", "message": f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'."})
 
-    if not any((element_type, tekla_classes, standard_string_filters, custom_string_filters, custom_numeric_filters)):
+    if not any((element_type, tekla_classes, standard_string_filters, standard_numeric_filters, custom_string_filters, custom_numeric_filters)):
         logger.error("select_elements_by_filter failed: No filters provided")
         return ToolResult(structured_content={"status": "error", "message": "At least one filter must be provided."})
 
@@ -175,13 +181,6 @@ def select_elements_by_filter(
 
     model = TeklaModel()
 
-    valid_standard_keys = {k.value for k in StandardStringFilterKey}
-    if standard_string_filters:
-        for key in standard_string_filters:
-            if key not in valid_standard_keys:
-                logger.error("select_elements_by_filter failed: Invalid standard_string_filters key '%s'. Must be one of: %s", key, valid_standard_keys)
-                return ToolResult(structured_content={"status": "error", "message": f"Invalid standard_string_filters key '{key}'. Must be one of: {valid_standard_keys}"})
-
     # Base filter: always filter for parts only
     filter_collection = BinaryFilterExpressionCollection()
     filter_collection.Add(
@@ -193,6 +192,39 @@ def select_elements_by_filter(
             )
         )
     )
+
+    # Define expression maps
+    _STANDARD_STRING_EXPRESSION_MAP = {
+        "name": PartFilterExpressions.Name(),
+        "profile": PartFilterExpressions.Profile(),
+        "material": PartFilterExpressions.Material(),
+        "finish": PartFilterExpressions.Finish(),
+        "phase": TemplateFilterExpressions.CustomString("ASSEMBLY.PHASE"),
+        "part_prefix": PartFilterExpressions.Prefix(),
+        "assembly_prefix": TemplateFilterExpressions.CustomString("ASSEMBLY_PREFIX"),
+    }
+
+    _STANDARD_NUMERIC_EXPRESSION_MAP = {
+        "part_start_number": PartFilterExpressions.StartNumber(),
+        "assembly_start_number": TemplateFilterExpressions.CustomNumber("ASSEMBLY_START_NUMBER"),
+    }
+
+    # Derive valid keys from expression maps
+    _VALID_STRING_KEYS = frozenset(_STANDARD_STRING_EXPRESSION_MAP.keys())
+    _VALID_NUMERIC_KEYS = frozenset(_STANDARD_NUMERIC_EXPRESSION_MAP.keys())
+
+    # Validate input keys
+    if standard_string_filters:
+        for key in standard_string_filters:
+            if key not in _VALID_STRING_KEYS:
+                logger.error("select_elements_by_filter failed: Invalid standard_string_filters key '%s'. Must be one of: %s", key, _VALID_STRING_KEYS)
+                return ToolResult(structured_content={"status": "error", "message": f"Invalid standard_string_filters key '{key}'. Must be one of: {_VALID_STRING_KEYS}"})
+
+    if standard_numeric_filters:
+        for key in standard_numeric_filters:
+            if key not in _VALID_NUMERIC_KEYS:
+                logger.error("select_elements_by_filter failed: Invalid standard_numeric_filters key '%s'. Must be one of: %s", key, _VALID_NUMERIC_KEYS)
+                return ToolResult(structured_content={"status": "error", "message": f"Invalid standard_numeric_filters key '{key}'. Must be one of: {_VALID_NUMERIC_KEYS}"})
 
     filter_groups: list[BinaryFilterExpressionCollection] = []
 
@@ -219,14 +251,6 @@ def select_elements_by_filter(
             return None
         return sub
 
-    STANDARD_EXPRESSION_MAP = {
-        "name": PartFilterExpressions.Name(),
-        "profile": PartFilterExpressions.Profile(),
-        "material": PartFilterExpressions.Material(),
-        "finish": PartFilterExpressions.Finish(),
-        "phase": TemplateFilterExpressions.CustomString("ASSEMBLY.PHASE"),
-    }
-
     # Resolve element_type to tekla class numbers
     if element_type:
         element_type_classes: list[int] = []
@@ -249,12 +273,23 @@ def select_elements_by_filter(
             add_filter(type_sub, PartFilterExpressions.Class(), cls, NumericOperatorType.IS_EQUAL, operator=BinaryFilterOperatorType.BOOLEAN_OR)
         filter_groups.append(type_sub)
 
-    # Add standard string filters (name, profile, material, finish, phase)
+    # Add standard string filters (name, profile, material, finish, phase, part_prefix, assembly_prefix)
     if standard_string_filters:
         for key, filter_option in standard_string_filters.items():
-            expression = STANDARD_EXPRESSION_MAP[key]
+            expression = _STANDARD_STRING_EXPRESSION_MAP[key]
             filter_option = _to_filter_option(filter_option, StringFilterOption)
             result = build_filter_group(expression, filter_option)
+            if isinstance(result, ToolResult):
+                return result
+            if result is not None:
+                filter_groups.append(result)
+
+    # Add standard numeric filters (part_start_number, assembly_start_number)
+    if standard_numeric_filters:
+        for key, filter_option in standard_numeric_filters.items():
+            expression = _STANDARD_NUMERIC_EXPRESSION_MAP[key]
+            filter_option = _to_filter_option(filter_option, NumericFilterOption)
+            result = build_filter_group(expression, filter_option, is_numeric=True)
             if isinstance(result, ToolResult):
                 return result
             if result is not None:

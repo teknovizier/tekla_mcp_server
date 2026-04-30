@@ -61,19 +61,6 @@ class NumericMatchType(Enum):
     GREATER_OR_EQUAL = "Greater Or Equal"
 
 
-class StandardStringFilterKey(str, Enum):
-    """
-    Valid keys for standard string filters.
-    These correspond to built-in Tekla properties.
-    """
-
-    NAME = "name"
-    PROFILE = "profile"
-    MATERIAL = "material"
-    FINISH = "finish"
-    PHASE = "phase"
-
-
 class ElementType(Enum):
     """
     Represents different types of elements in Tekla.

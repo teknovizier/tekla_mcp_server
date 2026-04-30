@@ -6,7 +6,7 @@ Complete reference for tools and resources available in Tekla MCP Server.
 
 | Category | Tool | Description | Parameters |
 |----------|------|-------------|------------|
-| Selection | `select_elements_by_filter` | Select elements in Tekla model based on type/Tekla class, name, profile, material, finish and phase. Supports complex filters with AND/OR logic | `element_type`, `tekla_classes`, `standard_string_filters`, `custom_string_filters`, `custom_numeric_filters`, `combine_with` |
+| Selection | `select_elements_by_filter` | Select elements in Tekla model based on type/Tekla class, name, profile, material, finish, phase, part/assembly prefix and  part/assembly start number. Supports complex filters with AND/OR logic | `element_type`, `tekla_classes`, `standard_string_filters`, `standard_numeric_filters`, `custom_string_filters`, `custom_numeric_filters`, `combine_with` |
 | Selection | `select_elements_by_filter_name` | Select elements in Tekla model based on a predefined filter | `filter_name` (required) |
 | Selection | `select_elements_by_guid` | Select elements in Tekla model by their GUID | `guids` (required) |
 | Selection | `select_elements_assemblies_or_main_parts` | Get assemblies or main parts for the selected elements and select them | `mode` (required): Assembly or Main Part |
