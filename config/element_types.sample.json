@@ -118,5 +118,13 @@
             "assembly_prefix": "SBBA",
             "assembly_start_number": 1
         }
+    },
+    "MATERIAL_EMBEDDED": {
+        "INCAST_DETAIL": {
+            "tekla_classes": [200, 201]
+        },
+        "CORRUGATED_TUBE": {
+            "tekla_classes": [205]
+        }
     }
 }

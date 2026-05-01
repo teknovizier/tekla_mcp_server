@@ -29,6 +29,7 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | View | `apply_view_filter` | Apply a view filter the currently active view in Tekla | `filter_name` (required) |
 | Operations | `cut_elements_with_zero_class_parts` | Performs boolean cuts on selected elements using elements in class 0, with optional deletion of cutting parts | `delete_cutting_parts` |
 | Operations | `convert_cut_parts_to_real_parts` | Convert all cut parts in the selected elements into real model parts | - |
+| Operations | `check_for_orphaned_embeds` | Find embedded details within bounding box of selected elements that are not attached to any selected assembly. Returns orphaned details and colors them red | - |
 | Operations | `run_macro` | Run a Tekla macro with the specified name | `macro_name` (required) |
 | Drawings | `get_drawings` | Get drawings from Tekla model with optional filtering by type, name, mark, title1/2/3 | `drawing_type`, `name_filter`, `mark_filter`, `title1_filter`, `title2_filter`, `title3_filter` |
 | Drawings | `get_drawing_properties` | Get properties of drawings by their marks or currently selected drawings in Tekla | `marks` |

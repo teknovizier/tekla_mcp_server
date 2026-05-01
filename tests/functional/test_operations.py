@@ -5,11 +5,28 @@ Tests operations like boolean cuts, cut part conversion, and macro execution.
 """
 
 from tekla_mcp_server.providers.operations_provider import (
+    check_for_orphaned_embeds,
     cut_elements_with_zero_class_parts,
     convert_cut_parts_to_real_parts,
     run_macro,
 )
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+
+
+def test_check_for_orphaned_embeds_no_selection():
+    """Tests that check_for_orphaned_embeds returns error when nothing selected."""
+    result = check_for_orphaned_embeds()
+    assert result.structured_content["status"] == "error"
+
+
+def test_check_for_orphaned_embeds_with_selection(model_objects):
+    """Tests check_for_orphaned_embeds with selected elements."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = check_for_orphaned_embeds()
+    assert result.structured_content["status"] in ["success", "warning"]
+    assert result.structured_content["selected_elements"] == 1
+    assert "embeds_evaluated" in result.structured_content
+    assert "orphaned_embeds_found" in result.structured_content
 
 
 def test_cut_elements_with_zero_class_parts(model_objects):
