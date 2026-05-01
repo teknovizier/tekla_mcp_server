@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 
-from tekla_mcp_server.config import get_config
+from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringMatchType, NumericMatchType, BaseComponent
 
@@ -70,8 +70,6 @@ NUMERIC_MATCH_TYPE_MAPPING = {
 
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
-
-DEFAULT_TOLERANCE = 50.0  # mm
 
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -212,7 +210,7 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
         ValueError: If more than two floors are detected
     """
 
-    def is_within_tolerance(value1: float, value2: float, tolerance: float = DEFAULT_TOLERANCE) -> bool:
+    def is_within_tolerance(value1: float, value2: float, tolerance: float | None = None) -> bool:
         """
         Check if two values are within the defined tolerance range.
 
@@ -224,6 +222,8 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
         Returns:
             True if absolute difference <= tolerance, False otherwise
         """
+        if tolerance is None:
+            tolerance = get_tolerance("wall_pairing")
         return abs(value1 - value2) <= tolerance
 
     selected_walls = []

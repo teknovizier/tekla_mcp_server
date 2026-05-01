@@ -6,5 +6,10 @@
         "embedding_model": "teknovizier/minilm-tekla-attr-embed-v1",
         "embedding_spread_threshold": 0.1,
         "embedding_minimum_threshold": 0.8
+    },
+    "tolerances": {
+        "default": 20.0,
+        "wall_pairing": 50.0,
+        "center_tolerance_factor": 0.05
     }
 }

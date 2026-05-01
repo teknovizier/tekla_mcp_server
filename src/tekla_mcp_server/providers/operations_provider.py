@@ -10,7 +10,7 @@ from pydantic import Field
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 
-from tekla_mcp_server.config import get_config
+from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -145,7 +145,7 @@ def check_for_orphaned_embeds() -> ToolResult:
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
 
-    _TOLERANCE = 20.0  # mm
+    _tolerance = get_tolerance()
 
     # Collect GUIDs of selected elements AND their parent assemblies for matching
     selected_guids: set[str] = set()
@@ -188,12 +188,12 @@ def check_for_orphaned_embeds() -> ToolResult:
             }
         )
 
-    min_point.X -= _TOLERANCE
-    min_point.Y -= _TOLERANCE
-    min_point.Z -= _TOLERANCE
-    max_point.X += _TOLERANCE
-    max_point.Y += _TOLERANCE
-    max_point.Z += _TOLERANCE
+    min_point.X -= _tolerance
+    min_point.Y -= _tolerance
+    min_point.Z -= _tolerance
+    max_point.X += _tolerance
+    max_point.Y += _tolerance
+    max_point.Z += _tolerance
 
     selector = ModelObjectSelector()
     candidates = selector.GetObjectsByBoundingBox(min_point, max_point)

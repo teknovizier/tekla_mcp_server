@@ -306,6 +306,20 @@ class Config:
         return None
 
 
+def get_tolerance(name: str = "default") -> float:
+    """
+    Get a tolerance value from configuration.
+
+    Args:
+        name: Tolerance key
+
+    Returns:
+        Tolerance value in mm (or unitless for factor)
+    """
+    tolerances = _load_settings().get("tolerances", {})
+    return tolerances.get(name, 20.0)
+
+
 @lru_cache
 def get_config() -> Config:
     """Get the singleton Config instance."""

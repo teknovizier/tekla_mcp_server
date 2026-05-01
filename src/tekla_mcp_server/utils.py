@@ -199,8 +199,9 @@ def lines_intersect(
     x3, y3 = p3
     x4, y4 = p4
 
+    epsilon = 0.0001
     denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    if abs(denom) < 0.0001:
+    if abs(denom) < epsilon:
         return False
 
     t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom

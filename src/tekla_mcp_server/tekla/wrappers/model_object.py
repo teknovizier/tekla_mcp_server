@@ -8,6 +8,7 @@ import math
 from collections.abc import Generator, Iterable
 from typing import Any
 
+from tekla_mcp_server.config import get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, BeamType, OffsetInput, PointInput, PositionInput
 
@@ -33,9 +34,6 @@ from tekla_mcp_server.tekla.loader import (
 
 from tekla_mcp_server.tekla.snapshot_builder import SnapshotBuilder
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
-
-
-DEFAULT_TOLERANCE = 50.0  # mm
 
 POSITION_PLANE_MAP = {
     "LEFT": Position.PlaneEnum.LEFT,
@@ -97,10 +95,12 @@ class BoundingBox:
         """
         return math.sqrt((self.max_x - self.min_x) ** 2 + (self.max_y - self.min_y) ** 2 + (self.max_z - self.min_z) ** 2)
 
-    def overlaps(self, other: BoundingBox, tol: float = DEFAULT_TOLERANCE) -> bool:
+    def overlaps(self, other: BoundingBox, tol: float | None = None) -> bool:
         """
         Check if bounding boxes overlap within tolerance.
         """
+        if tol is None:
+            tol = get_tolerance()
         return (
             self.min_x <= other.max_x + tol
             and self.max_x >= other.min_x - tol
@@ -110,10 +110,14 @@ class BoundingBox:
             and self.max_z >= other.min_z - tol
         )
 
-    def matches(self, other: BoundingBox, tol: float = DEFAULT_TOLERANCE, center_tol_factor: float = 0.05) -> bool:
+    def matches(self, other: BoundingBox, tol: float | None = None, center_tol_factor: float | None = None) -> bool:
         """
         Match using spatial overlap + centroid distance.
         """
+        if tol is None:
+            tol = get_tolerance()
+        if center_tol_factor is None:
+            center_tol_factor = get_tolerance("center_tolerance_factor")
         if not self.overlaps(other, tol):
             return False
 
