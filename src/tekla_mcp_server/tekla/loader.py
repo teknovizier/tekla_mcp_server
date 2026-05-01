@@ -73,6 +73,13 @@ from Tekla.Structures.Drawing import (
     DrawingHandler,
     LeaderLinePlacing,
     LeaderLine,
+    DPMPrinterAttributes,
+    DotPrintColor,
+    DotPrintOrientationType,
+    DotPrintOutputType,
+    DotPrintPaperSize,
+    DotPrintToMultipleSheet,
+    DotPrintScalingType,
 )
 
 
@@ -158,4 +165,11 @@ __all__ = [
     "Grid",
     "Offset",
     "ReferenceModelObject",
+    "DPMPrinterAttributes",
+    "DotPrintColor",
+    "DotPrintOrientationType",
+    "DotPrintOutputType",
+    "DotPrintPaperSize",
+    "DotPrintToMultipleSheet",
+    "DotPrintScalingType",
 ]

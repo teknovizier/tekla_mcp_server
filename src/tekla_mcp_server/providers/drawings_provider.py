@@ -4,7 +4,8 @@ Drawing tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Any, Annotated
+from pathlib import Path
+from typing import Any, Annotated, Literal
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
@@ -13,11 +14,42 @@ from pydantic import Field
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType
 from tekla_mcp_server.utils import mcp_handler, rects_intersect, lines_intersect, line_rect_intersect
-from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings
-from tekla_mcp_server.tekla.loader import DrawingHandler, Drawing, Mark, DrawingColors, FrameTypes
+from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings, get_drawings_by_marks
+from functools import lru_cache
+
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.loader import (
+    DrawingHandler,
+    Mark,
+    DrawingColors,
+    FrameTypes,
+    DPMPrinterAttributes,
+    DotPrintColor,
+    DotPrintOrientationType,
+    DotPrintOutputType,
+    DotPrintPaperSize,
+    DotPrintToMultipleSheet,
+    DotPrintScalingType,
+)
 
 
 drawings_provider = LocalProvider()
+
+
+@lru_cache
+def _get_default_plot_output_folder() -> Path | None:
+    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
+
+    model = TeklaModel()
+    model_path = model.model.GetInfo().ModelPath
+    _, plot_dir = TeklaStructuresSettings.GetAdvancedOption("XS_DRAWING_PLOT_FILE_DIRECTORY", str())
+
+    if not plot_dir:
+        return None
+
+    if Path(plot_dir).is_absolute():
+        return Path(plot_dir).resolve()
+    return (Path(model_path) / plot_dir).absolute()
 
 
 def _parse_filter(filter_option: Any) -> StringFilterOption | None:
@@ -65,6 +97,26 @@ def _matches_string_filter(value: str, filter_option: Any) -> bool:
     if logic == "OR":
         return any(results)
     return all(results)
+
+
+def _map_sheet_size_to_paper_size(sheet_width: float, sheet_height: float) -> DotPrintPaperSize | None:
+    width = round(sheet_width)
+    height = round(sheet_height)
+
+    paper_sizes = {
+        (210, 297): DotPrintPaperSize.A4,
+        (297, 210): DotPrintPaperSize.A4,
+        (297, 420): DotPrintPaperSize.A3,
+        (420, 297): DotPrintPaperSize.A3,
+        (420, 594): DotPrintPaperSize.A2,
+        (594, 420): DotPrintPaperSize.A2,
+        (594, 841): DotPrintPaperSize.A1,
+        (841, 594): DotPrintPaperSize.A1,
+        (841, 1189): DotPrintPaperSize.A0,
+        (1189, 841): DotPrintPaperSize.A0,
+    }
+
+    return paper_sizes.get((width, height))
 
 
 def _get_mark_collision_data(mark: Mark) -> dict | None:
@@ -244,7 +296,7 @@ def get_drawing_properties(
     """
     Get properties of drawings by their marks.
 
-    If the marks are not provided, gets properties of currently selected drawings in Tekla.
+    If marks are not provided, gets properties of currently selected drawings in Tekla.
 
     ## OUTPUT
     - Return the result table in Markdown format EXACTLY as provided by the tool.
@@ -258,23 +310,14 @@ def get_drawing_properties(
             structured_content={"status": "error", "message": "Not connected to Tekla"},
         )
 
-    if marks is None or marks == []:
-        selector = drawing_handler.GetDrawingSelector()
-        selected_drawings_enum = selector.GetSelected()
+    target_drawings = get_drawings_by_marks(marks)
 
-        drawings = wrap_drawings(selected_drawings_enum)
-    else:
-        drawings_enum = drawing_handler.GetDrawings()
-        all_drawings = wrap_drawings(drawings_enum)
-
-        drawings = [d for d in all_drawings if d.mark in marks]
-
-    if not drawings:
+    if not target_drawings:
         return ToolResult(
             structured_content={"status": "warning", "message": "No drawings found"},
         )
 
-    drawings_data = [{"No": i + 1, **d.to_dict()} for i, d in enumerate(drawings)]
+    drawings_data = [{"No": i + 1, **d.to_dict()} for i, d in enumerate(target_drawings)]
 
     logger.info("Retrieved properties for %s drawings", len(drawings_data))
 
@@ -305,15 +348,7 @@ def detect_collisions_between_marks(
             structured_content={"status": "error", "message": "Not connected to Tekla"},
         )
 
-    target_drawings: list[Drawing] = []
-    if marks:
-        all_drawings_enum = drawing_handler.GetDrawings()
-        all_drawings = wrap_drawings(all_drawings_enum)
-        target_drawings = [d.drawing for d in all_drawings if d.mark in marks]
-    else:
-        selector = drawing_handler.GetDrawingSelector()
-        selected_enum = selector.GetSelected()
-        target_drawings = [d.drawing for d in wrap_drawings(selected_enum)]
+    target_drawings = get_drawings_by_marks(marks)
 
     if not target_drawings:
         return ToolResult(
@@ -328,12 +363,12 @@ def detect_collisions_between_marks(
     total_colliding_marks = 0
 
     for drawing in target_drawings:
-        drawing_handler.SetActiveDrawing(drawing)
+        drawing_handler.SetActiveDrawing(drawing.drawing)
 
         view_results: list[dict] = []
 
         try:
-            sheet = drawing.GetSheet()
+            sheet = drawing.drawing.GetSheet()
             views_enum = sheet.GetAllViews()
         except Exception:
             continue
@@ -383,8 +418,8 @@ def detect_collisions_between_marks(
         if view_results:
             all_drawings_results.append(
                 {
-                    "mark": drawing.Mark,
-                    "name": drawing.Name,
+                    "mark": drawing.mark,
+                    "name": drawing.name,
                     "views": view_results,
                 }
             )
@@ -399,5 +434,129 @@ def detect_collisions_between_marks(
             "total_drawings": len(target_drawings),
             "drawings_with_collisions": all_drawings_results,
             "total_colliding_marks": total_colliding_marks,
+        },
+    )
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def print_drawings(
+    marks: Annotated[list[str] | None, Field(description="List of drawing marks to process")] = None,
+    output_filename: Annotated[Literal["name", "mark", "title1", "title2", "title3"] | None, Field(description="Output filename")] = None,
+    output_folder: Annotated[str | None, Field(description="Output folder path for PDF output")] = None,
+    printer_attributes: Annotated[
+        dict[str, Any] | None,
+        Field(description="Optional overrides for printing behavior. Used to customize default print settings."),
+    ] = None,
+) -> ToolResult:
+    """
+    Print drawings by their marks.
+
+    If marks are not provided, prints currently selected drawings in Tekla.
+    """
+    drawing_handler = DrawingHandler()
+
+    if not drawing_handler.GetConnectionStatus():
+        return ToolResult(
+            structured_content={"status": "error", "message": "Not connected to Tekla"},
+        )
+
+    target_drawings = get_drawings_by_marks(marks)
+
+    if not target_drawings:
+        return ToolResult(
+            structured_content={"status": "error", "message": "No drawings found or selected"},
+        )
+
+    if not output_folder:
+        output_folder_path = _get_default_plot_output_folder()
+        if not output_folder_path:
+            return ToolResult(
+                structured_content={"status": "error", "message": "No output directory is set"},
+            )
+        output_folder = str(output_folder_path)
+
+    _DEFAULT_ATTRIBUTES = {
+        "printer_name": "PDF-XChange 3.0",
+        "output_filename": output_filename,
+        "output_type": "PDF",
+        "color_mode": "BlackAndWhite",
+        "orientation": "Landscape",
+        "copies": 1,
+        "scale_factor": 1.0,
+        "open_when_finished": False,
+        "scaling_method": "Auto",
+    }
+
+    if printer_attributes:
+        attrs = {**_DEFAULT_ATTRIBUTES, **printer_attributes}
+    else:
+        attrs = _DEFAULT_ATTRIBUTES
+
+    _OUTPUT_TYPE_MAP = {"PDF": DotPrintOutputType.PDF, "Printer": DotPrintOutputType.Printer, "Plot": DotPrintOutputType.Plot, "Image": DotPrintOutputType.Image}
+    _COLOR_MODE_MAP = {"BlackAndWhite": DotPrintColor.BlackAndWhite, "Color": DotPrintColor.Color}
+    _ORIENTATION_MAP = {"Landscape": DotPrintOrientationType.Landscape, "Portrait": DotPrintOrientationType.Portrait}
+    _SCALING_METHOD_MAP = {
+        "Auto": DotPrintScalingType.Auto,
+        "Scale": DotPrintScalingType.Scale,
+    }
+
+    results: list[dict] = []
+    success_count = 0
+
+    for drawing in target_drawings:
+        try:
+            sheet_width = drawing.drawing.Layout.SheetSize.Width
+            sheet_height = drawing.drawing.Layout.SheetSize.Height
+
+            paper_size = _map_sheet_size_to_paper_size(sheet_width, sheet_height)
+            if paper_size is None:
+                logger.warning("Format not supported for drawing %s (size: %sx%s mm)", drawing.mark, sheet_width, sheet_height)
+                results.append({"mark": drawing.mark, "status": "failed", "message": f"Format not supported: sheet size {sheet_width}x{sheet_height} mm does not match A0-A4"})
+                continue
+
+            print_attrs = DPMPrinterAttributes()
+            print_attrs.PrinterName = attrs["printer_name"]
+            print_attrs.OutputType = _OUTPUT_TYPE_MAP.get(attrs["output_type"], DotPrintOutputType.PDF)
+            print_attrs.ColorMode = _COLOR_MODE_MAP.get(attrs["color_mode"], DotPrintColor.BlackAndWhite)
+            print_attrs.Orientation = _ORIENTATION_MAP.get(attrs["orientation"], DotPrintOrientationType.Landscape)
+            print_attrs.PaperSize = paper_size
+            print_attrs.NumberOfCopies = attrs["copies"]
+            print_attrs.ScaleFactor = attrs["scale_factor"]
+            print_attrs.ScalingMethod = _SCALING_METHOD_MAP.get(attrs["scaling_method"], DotPrintScalingType.Auto)
+            print_attrs.PrintToMultipleSheet = DotPrintToMultipleSheet.Off
+
+            output_filename = attrs["output_filename"]
+            if output_filename and hasattr(drawing, output_filename):
+                print_attrs.OutputFileName = getattr(drawing, output_filename)
+            else:
+                print_attrs.OutputFileName = drawing.mark
+
+            output_filename_with_ext = print_attrs.OutputFileName + ".pdf"
+            output_file = Path(output_folder) / output_filename_with_ext
+
+            print_attrs.OpenFileWhenFinished = attrs["open_when_finished"]
+            result = drawing_handler.PrintDrawing(drawing.drawing, print_attrs, str(output_file))
+
+            if result:
+                success_count += 1
+                results.append({"mark": drawing.mark, "status": "success", "file_name": output_filename_with_ext})
+            else:
+                results.append({"mark": drawing.mark, "status": "failed", "message": "PrintDrawing returned False"})
+
+        except Exception as e:
+            logger.error("Failed to print drawing %s: %s", drawing.mark, str(e))
+            results.append({"mark": drawing.mark, "status": "error", "message": str(e)})
+
+    status = "success" if success_count == len(target_drawings) else "partial" if success_count > 0 else "error"
+
+    return ToolResult(
+        structured_content={
+            "status": status,
+            "total": len(target_drawings),
+            "succeeded": success_count,
+            "failed": len(target_drawings) - success_count,
+            "output_folder": str(output_folder),
+            "results": results,
         },
     )

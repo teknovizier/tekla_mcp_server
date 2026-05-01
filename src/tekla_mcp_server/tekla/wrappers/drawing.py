@@ -4,7 +4,7 @@ Module for Tekla Drawing wrappers.
 
 from typing import Any
 
-from tekla_mcp_server.tekla.loader import Drawing, DrawingEnumerator
+from tekla_mcp_server.tekla.loader import Drawing, DrawingEnumerator, DrawingHandler
 
 
 class TeklaDrawing:
@@ -207,3 +207,25 @@ def wrap_drawings(drawings: DrawingEnumerator) -> list[TeklaDrawing]:
     while drawings.MoveNext():
         result.append(TeklaDrawing(drawings.Current))
     return result
+
+
+def get_drawings_by_marks(marks: list[str] | None = None) -> list[TeklaDrawing]:
+    """
+    Get drawings by marks or from selection.
+
+    Args:
+        marks: Optional list of drawing marks to filter by.
+               If None, returns selected drawings.
+
+    Returns:
+        List of TeklaDrawing wrappers. Empty list if not connected or no drawings found.
+    """
+    drawing_handler = DrawingHandler()
+    if not drawing_handler.GetConnectionStatus():
+        return []
+
+    if marks:
+        all_drawings = wrap_drawings(drawing_handler.GetDrawings())
+        return [d for d in all_drawings if d.mark in marks]
+    else:
+        return wrap_drawings(drawing_handler.GetDrawingSelector().GetSelected())

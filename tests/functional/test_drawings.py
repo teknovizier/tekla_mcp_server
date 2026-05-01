@@ -6,7 +6,12 @@ Tests drawing retrieval, property retrieval, and mark collision detection operat
 
 import pytest
 
-from tekla_mcp_server.providers.drawings_provider import get_drawings, get_drawing_properties, detect_collisions_between_marks
+from tekla_mcp_server.providers.drawings_provider import (
+    detect_collisions_between_marks,
+    get_drawing_properties,
+    get_drawings,
+    print_drawings,
+)
 
 
 class TestGetDrawings:
@@ -71,6 +76,17 @@ class TestDetectCollisionsBetweenMarks:
     def test_detect_collisions_no_drawings_selected(self):
         """Call without selecting any drawings."""
         result = detect_collisions_between_marks()
+
+        assert result.structured_content["status"] == "error"
+        assert "no drawings" in result.structured_content["message"].lower()
+
+
+class TestPrintDrawings:
+    """Tests for print_drawings function."""
+
+    def test_print_drawings_no_drawings_selected(self):
+        """Call without selecting any drawings."""
+        result = print_drawings()
 
         assert result.structured_content["status"] == "error"
         assert "no drawings" in result.structured_content["message"].lower()
