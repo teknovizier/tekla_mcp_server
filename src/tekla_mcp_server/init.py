@@ -57,6 +57,20 @@ def load_dlls() -> bool:
         if _dlls_loaded:
             return True
 
+        dependency_dlls = [
+            "DotNetKit.dll",
+            "Trimble.Remoting.dll",
+            "System.Runtime.CompilerServices.Unsafe.dll",
+            "System.Buffers.dll",
+            "System.Memory.dll",
+            "System.Threading.Tasks.Extensions.dll",
+            "System.Text.Json.dll",
+            "Grpc.Core.Api.dll",
+            "Grpc.Core.dll",
+            "Grpc.Net.Common.dll",
+            "Grpc.Net.Client.dll",
+        ]
+
         dlls = [
             "Tekla.Structures.dll",
             "Tekla.Structures.Plugins.dll",
@@ -77,10 +91,34 @@ def load_dlls() -> bool:
             sys.exit(1)
 
         tekla_path = config.tekla_path
+        tekla_paths = [
+            tekla_path,
+            os.path.join(tekla_path, "Net48Runtime"),
+        ]
+
+        for path in tekla_paths:
+            if os.path.isdir(path):
+                try:
+                    os.add_dll_directory(path)
+                except (AttributeError, OSError):
+                    pass
 
         try:
+            for dll in dependency_dlls:
+                for path in tekla_paths:
+                    dll_path = os.path.join(path, dll)
+                    if os.path.exists(dll_path):
+                        clr.AddReference(dll_path)
+                        break
+
             for dll in dlls:
-                clr.AddReference(os.path.join(tekla_path, dll))
+                for path in tekla_paths:
+                    dll_path = os.path.join(path, dll)
+                    if os.path.exists(dll_path):
+                        clr.AddReference(dll_path)
+                        break
+                else:
+                    clr.AddReference(os.path.join(tekla_path, dll))
 
             _dlls_loaded = True
             logger.info("Successfully loaded all Tekla Structures DLLs")

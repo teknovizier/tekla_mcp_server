@@ -28,7 +28,8 @@ mcp = FastMCP("Tekla MCP Server")
 # Add all providers to the MCP server
 mcp.add_provider(resources_provider)
 
-mcp.add_provider(selection_provider)
+if selection_provider is not None:
+    mcp.add_provider(selection_provider)
 mcp.add_provider(view_provider)
 mcp.add_provider(properties_provider)
 mcp.add_provider(operations_provider)

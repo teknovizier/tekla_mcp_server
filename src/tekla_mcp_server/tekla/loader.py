@@ -46,18 +46,32 @@ from Tekla.Structures.Model import (
 )
 from Tekla.Structures.Model.Operations import Operation
 from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector as ModelObjectSelectorUI, ViewHandler, ModelObjectVisualization, TemporaryTransparency, View
-from Tekla.Structures.Filtering import (
-    BinaryFilterOperatorType,
-    BinaryFilterExpressionCollection,
-    BinaryFilterExpressionItem,
-    NumericOperatorType,
-    NumericConstantFilterExpression,
-    StringConstantFilterExpression,
-    BinaryFilterExpression,
-    StringOperatorType,
-    FilterExpression,
-)
-from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
+try:
+    from Tekla.Structures.Filtering import (
+        BinaryFilterOperatorType,
+        BinaryFilterExpressionCollection,
+        BinaryFilterExpressionItem,
+        NumericOperatorType,
+        NumericConstantFilterExpression,
+        StringConstantFilterExpression,
+        BinaryFilterExpression,
+        StringOperatorType,
+        FilterExpression,
+    )
+    from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
+except ModuleNotFoundError:
+    BinaryFilterOperatorType = None
+    BinaryFilterExpressionCollection = None
+    BinaryFilterExpressionItem = None
+    NumericOperatorType = None
+    NumericConstantFilterExpression = None
+    StringConstantFilterExpression = None
+    BinaryFilterExpression = None
+    StringOperatorType = None
+    FilterExpression = None
+    PartFilterExpressions = None
+    ObjectFilterExpressions = None
+    TemplateFilterExpressions = None
 from Tekla.Structures.Catalogs import CatalogHandler, MaterialItem, MaterialItemEnumerator, ProfileItem, ProfileItemEnumerator
 from Tekla.Structures.Drawing import (
     Drawing,

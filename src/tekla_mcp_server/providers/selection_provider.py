@@ -25,6 +25,7 @@ from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.loader import (
     ArrayList,
+    Part,
     BinaryFilterExpression,
     BinaryFilterExpressionCollection,
     BinaryFilterExpressionItem,
@@ -45,6 +46,21 @@ from tekla_mcp_server.tekla.utils import (
 
 
 selection_provider = LocalProvider()
+_FILTERING_API_AVAILABLE = all(
+    item is not None
+    for item in (
+        BinaryFilterExpression,
+        BinaryFilterExpressionCollection,
+        BinaryFilterExpressionItem,
+        BinaryFilterOperatorType,
+        NumericConstantFilterExpression,
+        NumericOperatorType,
+        ObjectFilterExpressions,
+        PartFilterExpressions,
+        StringConstantFilterExpression,
+        TemplateFilterExpressions,
+    )
+)
 
 
 def _to_filter_option(val: Any, model_class: type[StringFilterOption] | type[NumericFilterOption]) -> StringFilterOption | NumericFilterOption:
@@ -57,9 +73,11 @@ def add_filter(
     filter_collection: BinaryFilterExpressionCollection,
     filter_expression: Any,
     value: str | int | float,
-    match_type: StringMatchType | NumericMatchType | NumericOperatorType | None = None,
-    operator: BinaryFilterOperatorType = BinaryFilterOperatorType.BOOLEAN_AND,
+    match_type: Any = None,
+    operator: Any = None,
 ) -> ToolResult | None:
+    if operator is None:
+        operator = BinaryFilterOperatorType.BOOLEAN_AND
     if not isinstance(value, (str, int, float)):
         expr = BinaryFilterExpression(filter_expression, NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(value))
         filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
@@ -98,6 +116,228 @@ def add_filter(
 
     filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
     return None
+
+
+def _string_matches(actual: Any, expected: Any, match_type: str) -> bool:
+    actual_value = "" if actual is None else str(actual)
+    expected_value = "" if expected is None else str(expected)
+    if match_type == StringMatchType.IS_EQUAL.value:
+        return actual_value == expected_value
+    if match_type == StringMatchType.IS_NOT_EQUAL.value:
+        return actual_value != expected_value
+    if match_type == StringMatchType.CONTAINS.value:
+        return expected_value in actual_value
+    if match_type == StringMatchType.NOT_CONTAINS.value:
+        return expected_value not in actual_value
+    if match_type == StringMatchType.STARTS_WITH.value:
+        return actual_value.startswith(expected_value)
+    if match_type == StringMatchType.NOT_STARTS_WITH.value:
+        return not actual_value.startswith(expected_value)
+    if match_type == StringMatchType.ENDS_WITH.value:
+        return actual_value.endswith(expected_value)
+    if match_type == StringMatchType.NOT_ENDS_WITH.value:
+        return not actual_value.endswith(expected_value)
+    return False
+
+
+def _numeric_matches(actual: Any, expected: Any, match_type: str) -> bool:
+    try:
+        actual_value = float(actual)
+        expected_value = float(expected)
+    except (TypeError, ValueError):
+        return False
+    if match_type == NumericMatchType.IS_EQUAL.value:
+        return actual_value == expected_value
+    if match_type == NumericMatchType.IS_NOT_EQUAL.value:
+        return actual_value != expected_value
+    if match_type == NumericMatchType.SMALLER_THAN.value:
+        return actual_value < expected_value
+    if match_type == NumericMatchType.SMALLER_OR_EQUAL.value:
+        return actual_value <= expected_value
+    if match_type == NumericMatchType.GREATER_THAN.value:
+        return actual_value > expected_value
+    if match_type == NumericMatchType.GREATER_OR_EQUAL.value:
+        return actual_value >= expected_value
+    return False
+
+
+def _conditions_match(actual: Any, filter_option: StringFilterOption | NumericFilterOption, is_numeric: bool = False) -> bool:
+    conditions = filter_option.conditions
+    if not isinstance(conditions, list):
+        conditions = [conditions]
+    matcher = _numeric_matches if is_numeric else _string_matches
+    results = [matcher(actual, condition.value, condition.match_type) for condition in conditions]
+    return all(results) if filter_option.logic == "AND" else any(results)
+
+
+def _safe_custom_property(model_object: Any, property_name: str, is_numeric: bool) -> Any:
+    if is_numeric:
+        for default in (float(), int(), str()):
+            try:
+                is_ok, value = model_object.GetReportProperty(property_name, default)
+                if is_ok:
+                    return value
+            except Exception:
+                pass
+    else:
+        for default in (str(), float(), int()):
+            try:
+                is_ok, value = model_object.GetReportProperty(property_name, default)
+                if is_ok:
+                    return value
+            except Exception:
+                pass
+
+    for default in (float(), int(), str()) if is_numeric else (str(), float(), int()):
+        try:
+            is_ok, value = model_object.GetUserProperty(property_name, default)
+            if is_ok:
+                return value
+        except Exception:
+            pass
+    return None
+
+
+def _resolve_custom_attrs(queries: list[str]) -> tuple[dict[str, str | None], list[dict[str, Any]]]:
+    if not queries:
+        return {}, []
+    try:
+        resolution = TemplateAttributeParser.resolve_attributes(queries)
+    except Exception as e:
+        logger.warning("Custom attribute resolution failed, using raw names: %s", e)
+        return {query: query for query in queries}, []
+
+    errors = resolution.get("errors", [])
+    resolved: dict[str, str | None] = {}
+    for query, attr in zip(queries, resolution.get("resolved", []), strict=False):
+        resolved[query] = None if any(error.get("query") == query for error in errors) else attr
+    for query in queries:
+        resolved.setdefault(query, query)
+    return resolved, errors
+
+
+def _fallback_select_elements_by_filter(
+    element_type: str | None = None,
+    tekla_classes: int | list[int] | None = None,
+    standard_string_filters: dict[str, Any] | None = None,
+    standard_numeric_filters: dict[str, Any] | None = None,
+    custom_string_filters: dict[str, Any] | None = None,
+    custom_numeric_filters: dict[str, Any] | None = None,
+    combine_with: str = "AND",
+) -> ToolResult:
+    if combine_with not in {"AND", "OR"}:
+        return ToolResult(structured_content={"status": "error", "message": f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'."})
+
+    if not any((element_type, tekla_classes, standard_string_filters, standard_numeric_filters, custom_string_filters, custom_numeric_filters)):
+        return ToolResult(structured_content={"status": "error", "message": "At least one filter must be provided."})
+
+    element_type_classes: list[int] = []
+    if element_type:
+        try:
+            element_type_enum = ElementTypeModel(value=element_type).to_enum()
+        except Exception as e:
+            return ToolResult(structured_content={"status": "error", "message": f"Invalid element_type: {str(e)}"})
+
+        for material_types in get_config().element_types.values():
+            for type_name, config in material_types.items():
+                if element_type_enum.name.replace(" ", "_").upper() in type_name.upper() or type_name.upper() in element_type_enum.name.upper():
+                    element_type_classes.extend(config.get("tekla_classes", []))
+
+    explicit_classes: list[int] = []
+    if tekla_classes:
+        explicit_classes = [tekla_classes] if isinstance(tekla_classes, int) else list(tekla_classes)
+
+    standard_string_filters = standard_string_filters or {}
+    standard_numeric_filters = standard_numeric_filters or {}
+    custom_string_filters = custom_string_filters or {}
+    custom_numeric_filters = custom_numeric_filters or {}
+
+    valid_string_keys = {"name", "profile", "material", "finish", "phase", "part_prefix", "assembly_prefix"}
+    valid_numeric_keys = {"part_start_number", "assembly_start_number"}
+    invalid_string_keys = set(standard_string_filters) - valid_string_keys
+    invalid_numeric_keys = set(standard_numeric_filters) - valid_numeric_keys
+    if invalid_string_keys:
+        return ToolResult(structured_content={"status": "error", "message": f"Invalid standard_string_filters key(s): {sorted(invalid_string_keys)}"})
+    if invalid_numeric_keys:
+        return ToolResult(structured_content={"status": "error", "message": f"Invalid standard_numeric_filters key(s): {sorted(invalid_numeric_keys)}"})
+
+    resolved_string_attrs, string_resolution_errors = _resolve_custom_attrs(list(custom_string_filters.keys()))
+    resolved_numeric_attrs, numeric_resolution_errors = _resolve_custom_attrs(list(custom_numeric_filters.keys()))
+
+    def standard_value(part: Any, key: str) -> Any:
+        if key == "name":
+            return part.Name
+        if key == "profile":
+            return part.Profile.ProfileString
+        if key == "material":
+            return part.Material.MaterialString
+        if key == "finish":
+            return part.Finish
+        if key == "phase":
+            is_ok, phase = part.GetPhase()
+            return phase.PhaseNumber if is_ok else None
+        if key == "part_prefix":
+            return part.PartNumber.Prefix
+        if key == "assembly_prefix":
+            return part.AssemblyNumber.Prefix
+        if key == "part_start_number":
+            return part.PartNumber.StartNumber
+        if key == "assembly_start_number":
+            return part.AssemblyNumber.StartNumber
+        return None
+
+    def part_matches(part: Any) -> bool:
+        groups: list[bool] = []
+
+        if element_type_classes:
+            groups.append(int(part.Class) in element_type_classes)
+        if explicit_classes:
+            groups.append(int(part.Class) in explicit_classes)
+
+        for key, raw_filter_option in standard_string_filters.items():
+            filter_option = _to_filter_option(raw_filter_option, StringFilterOption)
+            groups.append(_conditions_match(standard_value(part, key), filter_option))
+
+        for key, raw_filter_option in standard_numeric_filters.items():
+            filter_option = _to_filter_option(raw_filter_option, NumericFilterOption)
+            groups.append(_conditions_match(standard_value(part, key), filter_option, is_numeric=True))
+
+        for key, raw_filter_option in custom_string_filters.items():
+            attr_name = resolved_string_attrs.get(key)
+            if not attr_name:
+                groups.append(False)
+                continue
+            filter_option = _to_filter_option(raw_filter_option, StringFilterOption)
+            groups.append(_conditions_match(_safe_custom_property(part, attr_name, is_numeric=False), filter_option))
+
+        for key, raw_filter_option in custom_numeric_filters.items():
+            attr_name = resolved_numeric_attrs.get(key)
+            if not attr_name:
+                groups.append(False)
+                continue
+            filter_option = _to_filter_option(raw_filter_option, NumericFilterOption)
+            groups.append(_conditions_match(_safe_custom_property(part, attr_name, is_numeric=True), filter_option, is_numeric=True))
+
+        return all(groups) if combine_with == "AND" else any(groups)
+
+    selected = ArrayList()
+    all_objects = TeklaModel().get_all_objects()
+    while all_objects.MoveNext():
+        obj = all_objects.Current
+        if isinstance(obj, Part) and part_matches(obj):
+            selected.Add(obj)
+
+    TeklaModel.select_objects(selected)
+    has_resolution_errors = bool(string_resolution_errors or numeric_resolution_errors)
+    return ToolResult(
+        structured_content={
+            "status": "partial" if has_resolution_errors else ("success" if selected.Count else "warning"),
+            "selected_elements": selected.Count,
+            "filtering_mode": "python_fallback",
+            "string_resolution_errors": string_resolution_errors,
+            "numeric_resolution_errors": numeric_resolution_errors,
+        }
+    )
 
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
@@ -163,6 +403,17 @@ def select_elements_by_filter(
 
     At least one filter must be provided.
     """
+    if not _FILTERING_API_AVAILABLE:
+        return _fallback_select_elements_by_filter(
+            element_type=element_type,
+            tekla_classes=tekla_classes,
+            standard_string_filters=standard_string_filters,
+            standard_numeric_filters=standard_numeric_filters,
+            custom_string_filters=custom_string_filters,
+            custom_numeric_filters=custom_numeric_filters,
+            combine_with=combine_with,
+        )
+
     # Validate combine_with and ensure at least one filter provided
     if combine_with not in {"AND", "OR"}:
         logger.error("select_elements_by_filter failed: Invalid combine_with '%s'. Must be 'AND' or 'OR'.", combine_with)

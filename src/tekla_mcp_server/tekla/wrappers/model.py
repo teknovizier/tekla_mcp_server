@@ -233,10 +233,10 @@ class TeklaModel:
             TypeError: If the provided filter type is not FilterExpression or str.
         """
         selector = ModelObjectSelector()
-        if isinstance(model_filter, FilterExpression):
-            objects_to_select = selector.GetObjectsByFilter(model_filter)
-        elif isinstance(model_filter, str):
+        if isinstance(model_filter, str):
             objects_to_select = selector.GetObjectsByFilterName(model_filter)
+        elif FilterExpression is not None and isinstance(model_filter, FilterExpression):
+            objects_to_select = selector.GetObjectsByFilter(model_filter)
         else:
             raise TypeError(f"Invalid filter type: {type(model_filter)}. Expected FilterExpression or str.")
 
