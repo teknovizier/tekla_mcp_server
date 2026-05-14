@@ -145,64 +145,7 @@ def check_for_orphaned_embeds() -> ToolResult:
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
 
-    _tolerance = get_tolerance()
-
-    # Collect GUIDs of selected elements AND their parent assemblies for matching
-    selected_guids: set[str] = set()
-    min_point: Point | None = None
-    max_point: Point | None = None
-
-    for obj in wrap_model_objects(selected_objects):
-        selected_guids.add(obj.guid)
-
-        # If selected object is a Part, also add its parent assembly GUID
-        # This allows checking attachment when selecting a part vs assembly
-        if isinstance(obj, TeklaPart):
-            parent_assembly = obj.model_object.GetAssembly()
-            if parent_assembly:
-                selected_guids.add(parent_assembly.Identifier.GUID.ToString())
-
-        # Compute horizontal bounding box from selected elements
-        aabb = obj.bounding_box
-        if aabb:
-            if min_point is None:
-                min_point = Point(aabb.min_x, aabb.min_y, aabb.min_z)
-                max_point = Point(aabb.max_x, aabb.max_y, aabb.max_z)
-            else:
-                assert min_point is not None and max_point is not None
-                min_point.X = min(min_point.X, aabb.min_x)
-                min_point.Y = min(min_point.Y, aabb.min_y)
-                min_point.Z = min(min_point.Z, aabb.min_z)
-                max_point.X = max(max_point.X, aabb.max_x)
-                max_point.Y = max(max_point.Y, aabb.max_y)
-                max_point.Z = max(max_point.Z, aabb.max_z)
-
-    # No valid bounding box found: selected objects may lack geometry
-    if min_point is None or max_point is None:
-        logger.warning("Cannot compute bounding box: selected objects may not have valid geometry (selected: %d)", selected_objects.GetSize())
-        return ToolResult(
-            structured_content={
-                "status": "error",
-                "message": "Cannot compute bounding box: selected objects may not have valid geometry",
-                "selected_elements": selected_objects.GetSize(),
-            }
-        )
-
-    min_point.X -= _tolerance
-    min_point.Y -= _tolerance
-    min_point.Z -= _tolerance
-    max_point.X += _tolerance
-    max_point.Y += _tolerance
-    max_point.Z += _tolerance
-
-    selector = ModelObjectSelector()
-    candidates = selector.GetObjectsByBoundingBox(min_point, max_point)
-
-    logger.debug("Found %d candidates in bounding box", candidates.GetSize())
-
-    orphaned_elements: list[dict] = []
-    orphaned_guids: set[str] = set()
-    evaluated_count = 0
+    tolerance = get_tolerance()
 
     def _get_embedded_classes() -> list[int]:
         """Get all tekla_classes from MATERIAL_EMBEDDED in element_types.json."""
@@ -214,54 +157,69 @@ def check_for_orphaned_embeds() -> ToolResult:
 
     EMBEDDED_DETAILS_CLASSES = _get_embedded_classes()
 
-    # Filter candidates to incast detail classes and check attachment
-    for candidate in wrap_model_objects(candidates):
-        part_class: int | None = None
-        part_name: str = ""
-        part_position: str = ""
+    # Get all assembly GUIDs that this object belongs to for attachment checking
+    def _get_target_assembly_guids(obj: TeklaPart | TeklaAssembly) -> set[str]:
+        guids: set[str] = set()
+        if isinstance(obj, TeklaAssembly):
+            guids.add(obj.guid)
+        elif isinstance(obj, TeklaPart):
+            # If selected object is a Part, also add its parent assembly GUID
+            # This allows checking attachment when selecting a part vs assembly
+            parent_assembly = obj.model_object.GetAssembly()
+            if parent_assembly:
+                guids.add(parent_assembly.Identifier.GUID.ToString())
+            guids.add(obj.guid)
+        return guids
 
-        # Get class from assembly main part or part directly
-        if isinstance(candidate, TeklaAssembly):
-            main = candidate.main_part
-            part_class = int(main.tekla_class)
-            part_name = main.name
-            part_position = main.position
-        elif isinstance(candidate, TeklaPart):
-            part_class = int(candidate.tekla_class)
-            part_name = candidate.name
-            part_position = candidate.position
-        else:
-            # Skip non-part/assembly objects
-            continue
+    # Check bounding box of a single element for orphaned embeds
+    def _check_element_bounding_box(element: TeklaPart | TeklaAssembly, target_assembly_guids: set[str]) -> tuple[list[dict], int]:
+        aabb = element.bounding_box
+        if not aabb:
+            return [], 0
 
-        # Filter to embedded detail classes only
-        if part_class not in EMBEDDED_DETAILS_CLASSES:
-            continue
+        min_point = Point(aabb.min_x - tolerance, aabb.min_y - tolerance, aabb.min_z - tolerance)
+        max_point = Point(aabb.max_x + tolerance, aabb.max_y + tolerance, aabb.max_z + tolerance)
 
-        logger.debug("Evaluating embedded detail: %s (class: %d)", part_name, part_class)
-        evaluated_count += 1
+        selector = ModelObjectSelector()
+        candidates = selector.GetObjectsByBoundingBox(min_point, max_point)
 
-        # Check if candidate's assembly is attached to selected assembly
-        candidate_assembly = candidate.model_object.GetAssembly()
-        if not candidate_assembly:
-            # Has no assembly at all - definitely orphaned
-            orphaned_elements.append(
-                {
-                    "guid": candidate.guid,
-                    "name": part_name,
-                    "position": part_position,
-                    "class": part_class,
-                }
-            )
-            orphaned_guids.add(candidate.guid)
-            continue
+        orphaned: list[dict] = []
+        evaluated = 0
 
-        parent = candidate_assembly.GetAssembly()
-        if parent:
-            parent_guid = parent.Identifier.GUID.ToString()
-            # Orphaned if parent assembly is not one of the selected assemblies
-            if parent_guid not in selected_guids:
-                orphaned_elements.append(
+        # Filter candidates to incast detail classes and check attachment
+        for candidate in wrap_model_objects(candidates):
+            part_class: int | None = None
+            part_name: str = ""
+            part_position: str = ""
+
+            # Get class from assembly main part or part directly
+            if isinstance(candidate, TeklaAssembly):
+                main = candidate.main_part
+                if not main:
+                    continue
+                part_class = int(main.tekla_class)
+                part_name = main.name
+                part_position = main.position
+            elif isinstance(candidate, TeklaPart):
+                part_class = int(candidate.tekla_class)
+                part_name = candidate.name
+                part_position = candidate.position
+            else:
+                # Skip non-part/assembly objects
+                continue
+
+            # Filter to embedded detail classes only
+            if part_class not in EMBEDDED_DETAILS_CLASSES:
+                continue
+
+            evaluated += 1
+            logger.debug("Evaluating embedded detail: %s (class: %d)", part_name, part_class)
+
+            # Check if candidate's assembly is attached to target assembly
+            candidate_assembly = candidate.model_object.GetAssembly()
+            if not candidate_assembly:
+                # Has no assembly at all - definitely orphaned
+                orphaned.append(
                     {
                         "guid": candidate.guid,
                         "name": part_name,
@@ -269,18 +227,56 @@ def check_for_orphaned_embeds() -> ToolResult:
                         "class": part_class,
                     }
                 )
-                orphaned_guids.add(candidate.guid)
-        else:
-            # Has assembly but no parent assembly - definitely orphaned
-            orphaned_elements.append(
-                {
-                    "guid": candidate.guid,
-                    "name": part_name,
-                    "position": part_position,
-                    "class": part_class,
-                }
-            )
-            orphaned_guids.add(candidate.guid)
+                continue
+
+            parent = candidate_assembly.GetAssembly()
+            if parent:
+                parent_guid = parent.Identifier.GUID.ToString()
+                # Orphaned if parent assembly is not one of the target assemblies
+                if parent_guid not in target_assembly_guids:
+                    orphaned.append(
+                        {
+                            "guid": candidate.guid,
+                            "name": part_name,
+                            "position": part_position,
+                            "class": part_class,
+                        }
+                    )
+            else:
+                # Has assembly but no parent assembly - definitely orphaned
+                orphaned.append(
+                    {
+                        "guid": candidate.guid,
+                        "name": part_name,
+                        "position": part_position,
+                        "class": part_class,
+                    }
+                )
+
+        return orphaned, evaluated
+
+    # Process each selected element individually
+    orphaned_elements: list[dict] = []
+    orphaned_guids: set[str] = set()
+    total_evaluated = 0
+
+    for obj in wrap_model_objects(selected_objects):
+        if not isinstance(obj, (TeklaPart, TeklaAssembly)):
+            continue
+
+        target_guids = _get_target_assembly_guids(obj)
+        orphaned, evaluated = _check_element_bounding_box(obj, target_guids)
+
+        for item in orphaned:
+            if item["guid"] not in orphaned_guids:
+                orphaned_elements.append(item)
+                orphaned_guids.add(item["guid"])
+
+        total_evaluated += evaluated
+
+    # No valid bounding box found: selected objects may lack geometry
+    if total_evaluated == 0:
+        logger.warning("No embedded details found: selected objects may not have valid geometry or no embeds present (selected: %d)", selected_objects.GetSize())
 
     # Color orphaned elements red for visibility
     if orphaned_guids:
@@ -290,13 +286,13 @@ def check_for_orphaned_embeds() -> ToolResult:
         color_red = Color(1.0, 0.0, 0.0)
         ModelObjectVisualization.SetTemporaryState(tekla_list, color_red)
 
-    logger.info("Finished check for orphaned embedding details: selected=%d, evaluated=%d, orphaned=%d", selected_objects.GetSize(), evaluated_count, len(orphaned_elements))
+    logger.info("Finished check for orphaned embedding details: selected=%d, evaluated=%d, orphaned=%d", selected_objects.GetSize(), total_evaluated, len(orphaned_elements))
 
     return ToolResult(
         structured_content={
             "status": "success" if not orphaned_elements else "warning",
             "selected_elements": selected_objects.GetSize(),
-            "embeds_evaluated": evaluated_count,
+            "embeds_evaluated": total_evaluated,
             "orphaned_embeds_found": len(orphaned_elements),
             "orphaned_embeds": orphaned_elements,
         }
