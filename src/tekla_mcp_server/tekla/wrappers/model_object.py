@@ -16,7 +16,6 @@ from tekla_mcp_server.tekla.loader import (
     Assembly,
     Beam,
     BaseWeld,
-    Boolean,
     BooleanPart,
     ContourPlate,
     ContourPoint,
@@ -152,7 +151,9 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         return TeklaPart(model_object)
     elif isinstance(model_object, ReferenceModelObject):
         return TeklaReferenceModelObject(model_object)
-    elif isinstance(model_object, (Boolean, BaseWeld, Reinforcement)):
+    elif isinstance(model_object, Reinforcement):
+        return TeklaReinforcement(model_object)
+    elif isinstance(model_object, (BaseWeld, Reinforcement)):
         return TeklaModelObject(model_object)
     else:
         return None
@@ -1185,3 +1186,40 @@ class TeklaContourPlate(TeklaPart):
         tekla_slab = TeklaContourPlate(slab)
         tekla_slab.apply_position(position) if position else tekla_slab.apply_defaults()
         return tekla_slab.finalize_placement(part_number, assembly_number)
+
+
+class TeklaReinforcement(TeklaModelObject):
+    """
+    A wrapper class around the Tekla Structures Reinforcement object.
+    """
+
+    @property
+    def position(self) -> str:
+        """
+        Returns the position number of the reinforcement element.
+        """
+        return str(self.get_report_property("REBAR_POS"))
+
+    @property
+    def name(self) -> str:
+        """
+        Returns the name of the reinforcement element.
+        """
+        return self.model_object.Name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        """Sets the name of the reinforcement element."""
+        self._set_property("Name", value)
+
+    @property
+    def tekla_class(self) -> str:
+        """
+        Returns the Tekla class of the reinforcement element.
+        """
+        return self.model_object.Class
+
+    @tekla_class.setter
+    def tekla_class(self, value: str) -> None:
+        """Sets the Tekla class of the reinforcement element."""
+        self._set_property("Class", value)

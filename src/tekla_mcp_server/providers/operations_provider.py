@@ -4,7 +4,7 @@ Operations tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
@@ -14,15 +14,9 @@ from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, TeklaAssembly, TeklaPart
-from tekla_mcp_server.tekla.loader import (
-    Operation,
-    Point,
-    ModelObjectSelector,
-    ModelObjectVisualization,
-    Color,
-)
-from tekla_mcp_server.tekla.utils import iterate_boolean_parts, collect_children
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, TeklaAssembly, TeklaPart, TeklaReinforcement
+from tekla_mcp_server.tekla.loader import Operation, Point, ModelObjectSelector
+from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 
 
 operations_provider = LocalProvider()
@@ -137,57 +131,68 @@ def run_macro(macro_name: Annotated[str, Field(description="Name of the macro fi
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def check_for_orphaned_embeds() -> ToolResult:
+def check_for_orphans(mode: Annotated[Literal["embeds", "rebars"], Field(description="Check mode: embeds or rebars")]) -> ToolResult:
     """
-    Check for embedded details not attached to selected elements.
-    Returns orphaned details and colors them red.
+    Check for embedded details or reinforcement bars not attached to selected elements.
+    Returns orphaned objects.
     """
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
 
     tolerance = get_tolerance()
 
-    def _get_embedded_classes() -> list[int]:
-        """Get all tekla_classes from MATERIAL_EMBEDDED in element_types.json."""
-        embedded = get_config().element_types.get("MATERIAL_EMBEDDED", {})
-        all_classes: list[int] = []
-        for type_config in embedded.values():
-            all_classes.extend(type_config.get("tekla_classes", []))
-        return all_classes
+    def _get_tekla_classes(material_key: str) -> set[int]:
+        """Get all tekla_classes for a material group."""
+        material = get_config().element_types.get(material_key, {})
 
-    EMBEDDED_DETAILS_CLASSES = _get_embedded_classes()
+        return {
+            tekla_class
+            for type_config in material.values()
+            for tekla_class in type_config.get("tekla_classes", [])
+        }
 
-    # Get all assembly GUIDs that this object belongs to for attachment checking
-    def _get_target_assembly_guids(obj: TeklaPart | TeklaAssembly) -> set[str]:
+    EMBEDDED_DETAILS_CLASSES = _get_tekla_classes("MATERIAL_EMBEDDED")
+    REINFORCEMENT_CLASSES = _get_tekla_classes("MATERIAL_REINFORCEMENT")
+
+    def _build_orphaned_dict(guid: str, name: str, position: str, tekla_class: int) -> dict:
+        return {"guid": guid, "name": name, "position": position, "class": tekla_class}
+
+    def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
         guids: set[str] = set()
-        if isinstance(obj, TeklaAssembly):
-            guids.add(obj.guid)
-        elif isinstance(obj, TeklaPart):
-            # If selected object is a Part, also add its parent assembly GUID
-            # This allows checking attachment when selecting a part vs assembly
-            parent_assembly = obj.model_object.GetAssembly()
-            if parent_assembly:
-                guids.add(parent_assembly.Identifier.GUID.ToString())
-            guids.add(obj.guid)
+
+        reinfs = element.main_part.model_object.GetReinforcements()
+        for rebar in wrap_model_objects(reinfs):
+            if rebar:
+                guids.add(rebar.guid)
+
+        for sec in element.model_object.GetSecondaries():
+            sec_reinfs = sec.GetReinforcements()
+            for rebar in wrap_model_objects(sec_reinfs):
+                if rebar:
+                    guids.add(rebar.guid)
+
         return guids
 
-    # Check bounding box of a single element for orphaned embeds
-    def _check_element_bounding_box(element: TeklaPart | TeklaAssembly, target_assembly_guids: set[str]) -> tuple[list[dict], int]:
+    def _get_candidates_in_bounding_box(element: TeklaAssembly) -> list:
         aabb = element.bounding_box
         if not aabb:
-            return [], 0
-
+            return []
         min_point = Point(aabb.min_x - tolerance, aabb.min_y - tolerance, aabb.min_z - tolerance)
         max_point = Point(aabb.max_x + tolerance, aabb.max_y + tolerance, aabb.max_z + tolerance)
-
         selector = ModelObjectSelector()
-        candidates = selector.GetObjectsByBoundingBox(min_point, max_point)
+        return wrap_model_objects(selector.GetObjectsByBoundingBox(min_point, max_point))
+
+    # Check bounding box of a single element for orphaned embeds
+    def _check_element_bounding_box_embeds(element: TeklaAssembly, target_assembly_guids: set[str]) -> tuple[list[dict], int]:
+        candidates = _get_candidates_in_bounding_box(element)
+        if not candidates:
+            return [], 0
 
         orphaned: list[dict] = []
         evaluated = 0
 
         # Filter candidates to incast detail classes and check attachment
-        for candidate in wrap_model_objects(candidates):
+        for candidate in candidates:
             part_class: int | None = None
             part_name: str = ""
             part_position: str = ""
@@ -218,40 +223,45 @@ def check_for_orphaned_embeds() -> ToolResult:
             # Check if candidate's assembly is attached to target assembly
             candidate_assembly = candidate.model_object.GetAssembly()
             if not candidate_assembly:
-                # Has no assembly at all - definitely orphaned
-                orphaned.append(
-                    {
-                        "guid": candidate.guid,
-                        "name": part_name,
-                        "position": part_position,
-                        "class": part_class,
-                    }
-                )
+                orphaned.append(_build_orphaned_dict(candidate.guid, part_name, part_position, part_class))
                 continue
 
             parent = candidate_assembly.GetAssembly()
             if parent:
                 parent_guid = parent.Identifier.GUID.ToString()
-                # Orphaned if parent assembly is not one of the target assemblies
                 if parent_guid not in target_assembly_guids:
-                    orphaned.append(
-                        {
-                            "guid": candidate.guid,
-                            "name": part_name,
-                            "position": part_position,
-                            "class": part_class,
-                        }
-                    )
+                    orphaned.append(_build_orphaned_dict(candidate.guid, part_name, part_position, part_class))
             else:
-                # Has assembly but no parent assembly - definitely orphaned
-                orphaned.append(
-                    {
-                        "guid": candidate.guid,
-                        "name": part_name,
-                        "position": part_position,
-                        "class": part_class,
-                    }
-                )
+                orphaned.append(_build_orphaned_dict(candidate.guid, part_name, part_position, part_class))
+
+        return orphaned, evaluated
+
+    # Check bounding box of a single element for orphaned rebars
+    def _check_element_bounding_box_rebars(element: TeklaAssembly, element_reinforcement_guids: set[str]) -> tuple[list[dict], int]:
+        candidates = _get_candidates_in_bounding_box(element)
+        if not candidates:
+            return [], 0
+
+        orphaned: list[dict] = []
+        evaluated = 0
+
+        # Filter candidates to reinforcement classes and check attachment
+        for candidate in candidates:
+            # Get reinforcement class directly
+            if not isinstance(candidate, TeklaReinforcement):
+                # Skip non-reinforcement objects
+                continue
+
+            reinforcement_class = int(candidate.tekla_class)
+            if reinforcement_class not in REINFORCEMENT_CLASSES:
+                # Filter to reinforcement classes only
+                continue
+
+            evaluated += 1
+
+            # Check if reinforcement is attached to element
+            if candidate.guid not in element_reinforcement_guids:
+                orphaned.append(_build_orphaned_dict(candidate.guid, candidate.name, candidate.position, reinforcement_class))
 
         return orphaned, evaluated
 
@@ -263,9 +273,14 @@ def check_for_orphaned_embeds() -> ToolResult:
     for obj in wrap_model_objects(selected_objects):
         if not isinstance(obj, (TeklaPart, TeklaAssembly)):
             continue
-
-        target_guids = _get_target_assembly_guids(obj)
-        orphaned, evaluated = _check_element_bounding_box(obj, target_guids)
+        #
+        parent_assembly = obj.get_top_level_assembly()
+        if mode == "embeds":
+            target_guids = {parent_assembly.guid}
+            orphaned, evaluated = _check_element_bounding_box_embeds(parent_assembly, target_guids)
+        else:
+            reinforcement_guids = _get_reinforcement_guids(parent_assembly)
+            orphaned, evaluated = _check_element_bounding_box_rebars(parent_assembly, reinforcement_guids)
 
         for item in orphaned:
             if item["guid"] not in orphaned_guids:
@@ -276,24 +291,18 @@ def check_for_orphaned_embeds() -> ToolResult:
 
     # No valid bounding box found: selected objects may lack geometry
     if total_evaluated == 0:
-        logger.warning("No embedded details found: selected objects may not have valid geometry or no embeds present (selected: %d)", selected_objects.GetSize())
+        logger.warning("No %s found: selected objects may not have valid geometry or no %s present (selected: %d)", mode, mode, selected_objects.GetSize())
 
-    # Color orphaned elements red for visibility
-    if orphaned_guids:
-        logger.debug("Coloring %d orphaned elements red for visibility", len(orphaned_guids))
-        orphaned_objects = model.get_objects_by_guid(list(orphaned_guids))
-        tekla_list = collect_children(orphaned_objects)
-        color_red = Color(1.0, 0.0, 0.0)
-        ModelObjectVisualization.SetTemporaryState(tekla_list, color_red)
+    logger.info("Finished check for orphaned %s: selected=%d, evaluated=%d, orphaned=%d", mode, selected_objects.GetSize(), total_evaluated, len(orphaned_elements))
 
-    logger.info("Finished check for orphaned embedding details: selected=%d, evaluated=%d, orphaned=%d", selected_objects.GetSize(), total_evaluated, len(orphaned_elements))
+    prefix = "embeds" if mode == "embeds" else "rebar_objects"
 
     return ToolResult(
         structured_content={
             "status": "success" if not orphaned_elements else "warning",
             "selected_elements": selected_objects.GetSize(),
-            "embeds_evaluated": total_evaluated,
-            "orphaned_embeds_found": len(orphaned_elements),
-            "orphaned_embeds": orphaned_elements,
+            f"{prefix}_evaluated": total_evaluated,
+            f"orphaned_{prefix}_found": len(orphaned_elements),
+            f"orphaned_{prefix}": orphaned_elements,
         }
     )

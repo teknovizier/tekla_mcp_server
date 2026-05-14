@@ -126,5 +126,13 @@
         "CORRUGATED_TUBE": {
             "tekla_classes": [205]
         }
+    },
+    "MATERIAL_REINFORCEMENT": {
+        "REBAR": {
+            "tekla_classes": [500, 501]
+        },
+        "MESH": {
+            "tekla_classes": [505]
+        }
     }
 }
