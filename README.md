@@ -58,7 +58,8 @@ The server was tested to work with **only Tekla 2022** and may not be compatible
 
 Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [chatmcp](https://github.com/daodao97/chatmcp) clients, along with the following language models:
 - GPT-4o
-- DeepSeek
+- DeepSeek-V3
+- DeepSeek-V4-Flash
 - Gemini 2.0 Flash
 - Gemini 2.5 Flash
 - Qwen3
