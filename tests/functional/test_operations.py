@@ -26,7 +26,7 @@ def test_check_for_orphans_with_selection(model_objects):
     assert result.structured_content["status"] in ["success", "warning"]
     assert result.structured_content["selected_elements"] == 1
     assert "embeds_evaluated" in result.structured_content
-    assert "orphaned_embeds_found" in result.structured_content
+    assert "orphaned_embeds_count" in result.structured_content
 
 
 def test_cut_elements_with_zero_class_parts(model_objects):

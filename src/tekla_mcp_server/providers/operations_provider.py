@@ -14,7 +14,7 @@ from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, TeklaAssembly, TeklaPart, TeklaReinforcement
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaPart, TeklaReinforcement
 from tekla_mcp_server.tekla.loader import Operation, Point, ModelObjectSelector
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 
@@ -129,9 +129,12 @@ def run_macro(macro_name: Annotated[str, Field(description="Name of the macro fi
     )
 
 
-@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def check_for_orphans(mode: Annotated[Literal["embeds", "rebars"], Field(description="Check mode: embeds or rebars")]) -> ToolResult:
+def check_for_orphans(
+    mode: Annotated[Literal["embeds", "rebars"], Field(description="Check mode: embeds or rebars")],
+    attach: Annotated[bool, Field(description="If true, attach orphaned elements to their parent assembly")] = False,
+) -> ToolResult:
     """
     Check for embedded details or reinforcement bars not attached to selected elements.
     Returns orphaned objects.
@@ -145,19 +148,18 @@ def check_for_orphans(mode: Annotated[Literal["embeds", "rebars"], Field(descrip
         """Get all tekla_classes for a material group."""
         material = get_config().element_types.get(material_key, {})
 
-        return {
-            tekla_class
-            for type_config in material.values()
-            for tekla_class in type_config.get("tekla_classes", [])
-        }
+        return {tekla_class for type_config in material.values() for tekla_class in type_config.get("tekla_classes", [])}
 
+    # Load class IDs from config for filtering candidates
     EMBEDDED_DETAILS_CLASSES = _get_tekla_classes("MATERIAL_EMBEDDED")
     REINFORCEMENT_CLASSES = _get_tekla_classes("MATERIAL_REINFORCEMENT")
 
     def _build_orphaned_dict(guid: str, name: str, position: str, tekla_class: int) -> dict:
+        """Build orphaned object result data."""
         return {"guid": guid, "name": name, "position": position, "class": tekla_class}
 
     def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
+        """Collect all rebar GUIDs from main part and secondary parts."""
         guids: set[str] = set()
 
         reinfs = element.main_part.model_object.GetReinforcements()
@@ -174,75 +176,90 @@ def check_for_orphans(mode: Annotated[Literal["embeds", "rebars"], Field(descrip
         return guids
 
     def _get_candidates_in_bounding_box(element: TeklaAssembly) -> list:
+        """Find objects within element's bounding box (expanded by tolerance)."""
         aabb = element.bounding_box
         if not aabb:
             return []
+        # Expand box by tolerance to catch objects near boundaries
         min_point = Point(aabb.min_x - tolerance, aabb.min_y - tolerance, aabb.min_z - tolerance)
         max_point = Point(aabb.max_x + tolerance, aabb.max_y + tolerance, aabb.max_z + tolerance)
         selector = ModelObjectSelector()
-        return wrap_model_objects(selector.GetObjectsByBoundingBox(min_point, max_point))
+        candidates = list(wrap_model_objects(selector.GetObjectsByBoundingBox(min_point, max_point)))
+        logger.debug("Bounding box search for %s: found %d candidates", element.guid, len(candidates))
+        return candidates
 
     # Check bounding box of a single element for orphaned embeds
-    def _check_element_bounding_box_embeds(element: TeklaAssembly, target_assembly_guids: set[str]) -> tuple[list[dict], int]:
+    def _check_element_bounding_box_embeds(
+        element: TeklaAssembly,
+        target_assembly_guids: set[str],
+    ) -> tuple[list, list[dict], int]:
         candidates = _get_candidates_in_bounding_box(element)
-        if not candidates:
-            return [], 0
 
         orphaned: list[dict] = []
+        orphaned_objects: list = []
+        processed_guids: set[str] = set()
         evaluated = 0
 
-        # Filter candidates to incast detail classes and check attachment
         for candidate in candidates:
-            part_class: int | None = None
-            part_name: str = ""
-            part_position: str = ""
+            # Get assembly from candidate (or part's assembly)
+            assembly_obj = None
+            wrapped_assembly = None
 
-            # Get class from assembly main part or part directly
             if isinstance(candidate, TeklaAssembly):
-                main = candidate.main_part
-                if not main:
-                    continue
-                part_class = int(main.tekla_class)
-                part_name = main.name
-                part_position = main.position
+                wrapped_assembly = candidate
+                assembly_obj = candidate.model_object
             elif isinstance(candidate, TeklaPart):
-                part_class = int(candidate.tekla_class)
-                part_name = candidate.name
-                part_position = candidate.position
-            else:
-                # Skip non-part/assembly objects
+                assembly_obj = candidate.model_object.GetAssembly()
+                if assembly_obj:
+                    wrapped_assembly = wrap_model_object(assembly_obj)
+
+            if not assembly_obj or not wrapped_assembly:
                 continue
 
-            # Filter to embedded detail classes only
+            # Skip already processed assemblies
+            assembly_guid = wrapped_assembly.guid
+            if assembly_guid in processed_guids:
+                continue
+
+            # Get main part class
+            main = wrapped_assembly.main_part
+            if not main:
+                continue
+
+            part_class = int(main.tekla_class)
             if part_class not in EMBEDDED_DETAILS_CLASSES:
+                # Filter to embeds classes only
                 continue
 
             evaluated += 1
-            logger.debug("Evaluating embedded detail: %s (class: %d)", part_name, part_class)
+            processed_guids.add(assembly_guid)
 
-            # Check if candidate's assembly is attached to target assembly
-            candidate_assembly = candidate.model_object.GetAssembly()
-            if not candidate_assembly:
-                orphaned.append(_build_orphaned_dict(candidate.guid, part_name, part_position, part_class))
-                continue
+            # Check if attached to target assembly (orphan if parent differs)
+            parent = assembly_obj.GetAssembly()
+            parent_guid = parent.Identifier.GUID.ToString() if parent else None
 
-            parent = candidate_assembly.GetAssembly()
-            if parent:
-                parent_guid = parent.Identifier.GUID.ToString()
-                if parent_guid not in target_assembly_guids:
-                    orphaned.append(_build_orphaned_dict(candidate.guid, part_name, part_position, part_class))
-            else:
-                orphaned.append(_build_orphaned_dict(candidate.guid, part_name, part_position, part_class))
+            if parent_guid not in target_assembly_guids:
+                orphaned.append(
+                    _build_orphaned_dict(
+                        assembly_guid,
+                        main.name,
+                        main.position,
+                        part_class,
+                    )
+                )
+                orphaned_objects.append(assembly_obj)
 
-        return orphaned, evaluated
+        logger.debug("Found %d orphaned embeds for element %s", len(orphaned), element.guid)
+        return orphaned_objects, orphaned, evaluated
 
     # Check bounding box of a single element for orphaned rebars
-    def _check_element_bounding_box_rebars(element: TeklaAssembly, element_reinforcement_guids: set[str]) -> tuple[list[dict], int]:
+    def _check_element_bounding_box_rebars(element: TeklaAssembly, element_reinforcement_guids: set[str]) -> tuple[list, list[dict], int]:
         candidates = _get_candidates_in_bounding_box(element)
         if not candidates:
-            return [], 0
+            return [], [], 0
 
         orphaned: list[dict] = []
+        orphaned_objects: list = []
         evaluated = 0
 
         # Filter candidates to reinforcement classes and check attachment
@@ -259,50 +276,120 @@ def check_for_orphans(mode: Annotated[Literal["embeds", "rebars"], Field(descrip
 
             evaluated += 1
 
-            # Check if reinforcement is attached to element
+            # Orphan if rebar's GUID is not in element's reinforcement set (not attached)
             if candidate.guid not in element_reinforcement_guids:
                 orphaned.append(_build_orphaned_dict(candidate.guid, candidate.name, candidate.position, reinforcement_class))
+                orphaned_objects.append(candidate)
 
-        return orphaned, evaluated
+        logger.debug("Found %d orphaned rebars for element %s", len(orphaned), element.guid)
+        return orphaned_objects, orphaned, evaluated
 
-    # Process each selected element individually
+    # Main loop: process each selected element, find orphans, optionally attach
     orphaned_elements: list[dict] = []
     orphaned_guids: set[str] = set()
+    attached_elements: list[dict] = []
     total_evaluated = 0
 
     for obj in wrap_model_objects(selected_objects):
         if not isinstance(obj, (TeklaPart, TeklaAssembly)):
             continue
-        #
-        parent_assembly = obj.get_top_level_assembly()
-        if mode == "embeds":
-            target_guids = {parent_assembly.guid}
-            orphaned, evaluated = _check_element_bounding_box_embeds(parent_assembly, target_guids)
-        else:
-            reinforcement_guids = _get_reinforcement_guids(parent_assembly)
-            orphaned, evaluated = _check_element_bounding_box_rebars(parent_assembly, reinforcement_guids)
 
-        for item in orphaned:
-            if item["guid"] not in orphaned_guids:
-                orphaned_elements.append(item)
-                orphaned_guids.add(item["guid"])
+        # Get top-level assembly for checking attachment
+        parent_assembly = obj.get_top_level_assembly()
+
+        # Run mode-specific orphan detection
+        if mode == "embeds":
+            # Check if candidates have different parent (orphan)
+            orphaned_objects, orphaned, evaluated = _check_element_bounding_box_embeds(
+                parent_assembly,
+                {parent_assembly.guid},
+            )
+
+        elif mode == "rebars":
+            # Check if rebars are in element's reinforcement set (orphan if not found)
+            orphaned_objects, orphaned, evaluated = _check_element_bounding_box_rebars(
+                parent_assembly,
+                _get_reinforcement_guids(parent_assembly),
+            )
 
         total_evaluated += evaluated
 
-    # No valid bounding box found: selected objects may lack geometry
+        # Deduplicate: same orphan may be found near multiple selected elements
+        for item, orphan_obj in zip(orphaned, orphaned_objects):
+            if item["guid"] in orphaned_guids:
+                continue
+
+            orphaned_elements.append(item)
+            orphaned_guids.add(item["guid"])
+
+            if not attach:
+                continue
+
+            # Skip self-attachment: don't attach element to itself
+            if item["guid"] == parent_assembly.guid:
+                logger.debug("Skipping self-attachment for %s", item["guid"])
+                continue
+
+            success = False
+
+            # Different attachment methods for embeds vs rebars
+            if mode == "embeds":
+                # Add embed assembly to parent assembly
+                added = parent_assembly.model_object.Add(orphan_obj)
+
+                if added:
+                    success = parent_assembly.model_object.Modify() and orphan_obj.Modify()
+
+            elif mode == "rebars":
+                # Set rebar's Father to main part
+                orphan_obj.model_object.Father = parent_assembly.main_part.model_object
+
+                success = parent_assembly.main_part.model_object.Modify() and orphan_obj.model_object.Modify()
+
+            if not success:
+                logger.warning(
+                    "Failed to attach orphaned %s %s to assembly %s",
+                    mode[:-1],
+                    item["guid"],
+                    parent_assembly.guid,
+                )
+
+                continue
+
+            attached_elements.append(item)
+
+            logger.info(
+                "Attached orphaned %s %s to assembly %s",
+                mode[:-1],
+                item["guid"],
+                parent_assembly.guid,
+            )
+
+    # Commit all attached orphans in single transaction
+    if attach and attached_elements:
+        model.commit_changes()
+
+    # Warn if no candidates evaluated (no geometry or wrong object types selected)
     if total_evaluated == 0:
         logger.warning("No %s found: selected objects may not have valid geometry or no %s present (selected: %d)", mode, mode, selected_objects.GetSize())
 
-    logger.info("Finished check for orphaned %s: selected=%d, evaluated=%d, orphaned=%d", mode, selected_objects.GetSize(), total_evaluated, len(orphaned_elements))
+    logger.info(
+        "Finished check for orphaned %s: selected=%d, evaluated=%d, orphaned=%d, attached=%d", mode, selected_objects.GetSize(), total_evaluated, len(orphaned_elements), len(attached_elements)
+    )
 
     prefix = "embeds" if mode == "embeds" else "rebar_objects"
 
-    return ToolResult(
-        structured_content={
-            "status": "success" if not orphaned_elements else "warning",
-            "selected_elements": selected_objects.GetSize(),
-            f"{prefix}_evaluated": total_evaluated,
-            f"orphaned_{prefix}_found": len(orphaned_elements),
-            f"orphaned_{prefix}": orphaned_elements,
-        }
-    )
+    result_content = {
+        "status": "success" if not orphaned_elements else "warning",
+        "selected_elements": selected_objects.GetSize(),
+        f"{prefix}_evaluated": total_evaluated,
+        f"orphaned_{prefix}_count": len(orphaned_elements),
+    }
+
+    if attach:
+        result_content[f"attached_{prefix}_count"] = len(attached_elements)
+        result_content[f"attached_{prefix}"] = attached_elements
+    else:
+        result_content[f"orphaned_{prefix}"] = orphaned_elements
+
+    return ToolResult(structured_content=result_content)
