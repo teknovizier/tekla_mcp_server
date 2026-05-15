@@ -268,7 +268,9 @@ def hide_selected() -> ToolResult:
     """
     selected_objects = TeklaModel().get_selected_objects()
     tekla_list = collect_children(selected_objects)
-    ModelObjectVisualization.SetTransparency(tekla_list, TemporaryTransparency.HIDDEN)
+    if not ModelObjectVisualization.SetTransparency(tekla_list, TemporaryTransparency.HIDDEN):
+        logger.error("Failed to hide selected elements")
+        return ToolResult(structured_content={"status": "error", "message": "Error hiding elements"})
 
     logger.info("Hidden %d elements", tekla_list.Count)
     return ToolResult(structured_content={"status": "success", "hidden_elements": tekla_list.Count})
@@ -287,7 +289,9 @@ def color_selected(
     selected_objects = TeklaModel().get_selected_objects()
     tekla_list = collect_children(selected_objects)
     color = Color(red / 255.0, green / 255.0, blue / 255.0)
-    ModelObjectVisualization.SetTemporaryState(tekla_list, color)
+    if not ModelObjectVisualization.SetTemporaryState(tekla_list, color):
+        logger.error("Failed to color selected elements")
+        return ToolResult(structured_content={"status": "error", "message": "Error coloring elements"})
 
     logger.info("Colored %d elements with RGB(%d, %d, %d)", tekla_list.Count, red, green, blue)
     return ToolResult(structured_content={"status": "success", "colored_elements": tekla_list.Count})

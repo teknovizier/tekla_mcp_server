@@ -69,7 +69,7 @@ NUMERIC_MATCH_TYPE_MAPPING = {
 
 
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, TeklaReinforcement, wrap_model_objects
 
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -348,6 +348,8 @@ def collect_children(selected_objects: ModelObjectEnumerator) -> List[ModelObjec
             children.extend(obj.get_all_children())
         elif isinstance(obj, TeklaPart):
             children.extend(obj.get_all_children(include_all=False))
+        elif isinstance(obj, TeklaReinforcement):
+            children.extend([obj.model_object])
 
     tekla_list = List[ModelObject]()
     for child in children:
