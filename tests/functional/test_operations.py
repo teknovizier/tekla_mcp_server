@@ -5,6 +5,7 @@ Tests operations like boolean cuts, cut part conversion, and macro execution.
 """
 
 from tekla_mcp_server.providers.operations_provider import (
+    check_for_invalid_objects,
     check_for_orphans,
     cut_elements_with_zero_class_parts,
     convert_cut_parts_to_real_parts,
@@ -55,3 +56,22 @@ def test_run_macro_nonexistent():
     """Tests that run_macro returns an error for non-existent macro."""
     result = run_macro(macro_name="NonExistentMacro.cs")
     assert result.structured_content["status"] == "error"
+
+
+def test_check_for_invalid_objects_no_selection():
+    """Tests that check_for_invalid_objects returns success when nothing selected."""
+    result = check_for_invalid_objects()
+    assert result.structured_content["status"] in ["success", "warning"]
+    assert result.structured_content["selected_count"] >= 0
+
+
+def test_check_for_invalid_objects_with_selection(model_objects):
+    """Tests check_for_invalid_objects with selected elements."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = check_for_invalid_objects()
+    assert result.structured_content["status"] in ["success", "warning"]
+    assert result.structured_content["selected_count"] == 1
+    assert "total_evaluated" in result.structured_content
+    assert "invalid_parts_count" in result.structured_content
+    assert "invalid_reinforcements_count" in result.structured_content
+    assert "invalid_assemblies_count" in result.structured_content

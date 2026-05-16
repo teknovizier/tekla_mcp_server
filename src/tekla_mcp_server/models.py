@@ -761,3 +761,13 @@ class BatchPlacementResult(BaseModel):
     failed: int
     results: list[PlacementResult]
     message: str
+
+
+class CheckResult(BaseModel):
+    """Result model for validity check operations."""
+
+    guid: str
+    name: str | None
+    position: str | None
+    tekla_class: int | None
+    issues: list[str] = Field(default_factory=list)

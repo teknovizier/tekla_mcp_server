@@ -58,7 +58,7 @@ from Tekla.Structures.Filtering import (
     FilterExpression,
 )
 from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
-from Tekla.Structures.Catalogs import CatalogHandler, MaterialItem, MaterialItemEnumerator, ProfileItem, ProfileItemEnumerator
+from Tekla.Structures.Catalogs import CatalogHandler, MaterialItem, MaterialItemEnumerator, ProfileItem, ProfileItemEnumerator, RebarItem
 from Tekla.Structures.Drawing import (
     Drawing,
     DrawingEnumerator,
@@ -149,6 +149,7 @@ __all__ = [
     "MaterialItemEnumerator",
     "ProfileItem",
     "ProfileItemEnumerator",
+    "RebarItem",
     "DrawingHandler",
     "Drawing",
     "DrawingEnumerator",

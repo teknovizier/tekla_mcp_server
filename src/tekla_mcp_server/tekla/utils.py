@@ -22,6 +22,7 @@ from tekla_mcp_server.tekla.loader import (
     Vector,
     ModelObject,
     ModelObjectEnumerator,
+    ModelObjectSelector,
     Beam,
     TransformationPlane,
     ComponentInput,
@@ -38,6 +39,7 @@ from tekla_mcp_server.tekla.loader import (
     CatalogHandler,
     ProfileItem,
     MaterialItem,
+    RebarItem,
     TeklaStructuresSettings,
     BooleanPart,
 )
@@ -69,7 +71,7 @@ NUMERIC_MATCH_TYPE_MAPPING = {
 
 
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, TeklaReinforcement, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaReinforcement, wrap_model_objects
 
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -357,6 +359,30 @@ def collect_children(selected_objects: ModelObjectEnumerator) -> List[ModelObjec
     return tekla_list
 
 
+def get_candidates_in_bounding_box(element: TeklaModelObject, tolerance: float) -> list[TeklaModelObject]:
+    """
+    Find objects within element's bounding box.
+
+    Args:
+        element: The element to get bounding box from.
+        tolerance: Extra distance to expand the bounding box in all directions.
+
+    Returns:
+        List of model objects found within the expanded bounding box.
+    """
+    aabb = element.bounding_box
+    if not aabb:
+        return []
+
+    # Expand box by tolerance to catch objects near boundaries
+    min_point = Point(aabb.min_x - tolerance, aabb.min_y - tolerance, aabb.min_z - tolerance)
+    max_point = Point(aabb.max_x + tolerance, aabb.max_y + tolerance, aabb.max_z + tolerance)
+    selector = ModelObjectSelector()
+    candidates = list(wrap_model_objects(selector.GetObjectsByBoundingBox(min_point, max_point)))
+    logger.debug("Bounding box search for %s: found %d candidates", element.guid, len(candidates))
+    return candidates
+
+
 def iterate_boolean_parts(model_object: ModelObject) -> list[ModelObject]:
     """
     Iterate over boolean parts attached to a model object.
@@ -420,6 +446,29 @@ def get_all_materials() -> list[dict[str, str]]:
                     "type": mat_type.ToString() if mat_type else "UNKNOWN",
                 }
             )
+    return result
+
+
+@lru_cache
+def get_all_rebar_items() -> list[dict[str, str]]:
+    """
+    Get all available rebar items from Tekla catalog. Lazy loaded on first access.
+    """
+    catalog = CatalogHandler()
+    if not catalog.GetConnectionStatus():
+        return []
+    rebars = catalog.GetRebarItems()
+    result = []
+    while rebars.MoveNext():
+        item = rebars.Current
+        if isinstance(item, RebarItem):
+            result.append(
+                {
+                    "grade": item.Grade,
+                    "size": item.Size,
+                }
+            )
+
     return result
 
 

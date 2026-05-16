@@ -12,11 +12,12 @@ from fastmcp.tools import ToolResult
 
 from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
+from tekla_mcp_server.models import CheckResult
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaPart, TeklaReinforcement
-from tekla_mcp_server.tekla.loader import Operation, Point, ModelObjectSelector
-from tekla_mcp_server.tekla.utils import iterate_boolean_parts
+from tekla_mcp_server.tekla.loader import Operation
+from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items
 
 
 operations_provider = LocalProvider()
@@ -154,10 +155,6 @@ def check_for_orphans(
     EMBEDDED_DETAILS_CLASSES = _get_tekla_classes("MATERIAL_EMBEDDED")
     REINFORCEMENT_CLASSES = _get_tekla_classes("MATERIAL_REINFORCEMENT")
 
-    def _build_orphaned_dict(guid: str, name: str, position: str, tekla_class: int) -> dict:
-        """Build orphaned object result data."""
-        return {"guid": guid, "name": name, "position": position, "class": tekla_class}
-
     def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
         """Collect all rebar GUIDs from main part and secondary parts."""
         guids: set[str] = set()
@@ -175,27 +172,14 @@ def check_for_orphans(
 
         return guids
 
-    def _get_candidates_in_bounding_box(element: TeklaAssembly) -> list:
-        """Find objects within element's bounding box (expanded by tolerance)."""
-        aabb = element.bounding_box
-        if not aabb:
-            return []
-        # Expand box by tolerance to catch objects near boundaries
-        min_point = Point(aabb.min_x - tolerance, aabb.min_y - tolerance, aabb.min_z - tolerance)
-        max_point = Point(aabb.max_x + tolerance, aabb.max_y + tolerance, aabb.max_z + tolerance)
-        selector = ModelObjectSelector()
-        candidates = list(wrap_model_objects(selector.GetObjectsByBoundingBox(min_point, max_point)))
-        logger.debug("Bounding box search for %s: found %d candidates", element.guid, len(candidates))
-        return candidates
-
     # Check bounding box of a single element for orphaned embeds
     def _check_element_bounding_box_embeds(
         element: TeklaAssembly,
         target_assembly_guids: set[str],
-    ) -> tuple[list, list[dict], int]:
-        candidates = _get_candidates_in_bounding_box(element)
+    ) -> tuple[list, list[CheckResult], int]:
+        candidates = get_candidates_in_bounding_box(element, tolerance)
 
-        orphaned: list[dict] = []
+        orphaned: list[CheckResult] = []
         orphaned_objects: list = []
         processed_guids: set[str] = set()
         evaluated = 0
@@ -240,11 +224,11 @@ def check_for_orphans(
 
             if parent_guid not in target_assembly_guids:
                 orphaned.append(
-                    _build_orphaned_dict(
-                        assembly_guid,
-                        main.name,
-                        main.position,
-                        part_class,
+                    CheckResult(
+                        guid=assembly_guid,
+                        name=main.name,
+                        position=main.position,
+                        tekla_class=part_class,
                     )
                 )
                 orphaned_objects.append(assembly_obj)
@@ -253,12 +237,12 @@ def check_for_orphans(
         return orphaned_objects, orphaned, evaluated
 
     # Check bounding box of a single element for orphaned rebars
-    def _check_element_bounding_box_rebars(element: TeklaAssembly, element_reinforcement_guids: set[str]) -> tuple[list, list[dict], int]:
-        candidates = _get_candidates_in_bounding_box(element)
+    def _check_element_bounding_box_rebars(element: TeklaAssembly, element_reinforcement_guids: set[str]) -> tuple[list, list[CheckResult], int]:
+        candidates = get_candidates_in_bounding_box(element, tolerance)
         if not candidates:
             return [], [], 0
 
-        orphaned: list[dict] = []
+        orphaned: list[CheckResult] = []
         orphaned_objects: list = []
         evaluated = 0
 
@@ -278,16 +262,23 @@ def check_for_orphans(
 
             # Orphan if rebar's GUID is not in element's reinforcement set (not attached)
             if candidate.guid not in element_reinforcement_guids:
-                orphaned.append(_build_orphaned_dict(candidate.guid, candidate.name, candidate.position, reinforcement_class))
+                orphaned.append(
+                    CheckResult(
+                        guid=candidate.guid,
+                        name=candidate.name,
+                        position=candidate.position,
+                        tekla_class=reinforcement_class,
+                    )
+                )
                 orphaned_objects.append(candidate)
 
         logger.debug("Found %d orphaned rebars for element %s", len(orphaned), element.guid)
         return orphaned_objects, orphaned, evaluated
 
     # Main loop: process each selected element, find orphans, optionally attach
-    orphaned_elements: list[dict] = []
+    orphaned_elements: list[CheckResult] = []
     orphaned_guids: set[str] = set()
-    attached_elements: list[dict] = []
+    attached_elements: list[CheckResult] = []
     total_evaluated = 0
 
     for obj in wrap_model_objects(selected_objects):
@@ -316,18 +307,18 @@ def check_for_orphans(
 
         # Deduplicate: same orphan may be found near multiple selected elements
         for item, orphan_obj in zip(orphaned, orphaned_objects):
-            if item["guid"] in orphaned_guids:
+            if item.guid in orphaned_guids:
                 continue
 
             orphaned_elements.append(item)
-            orphaned_guids.add(item["guid"])
+            orphaned_guids.add(item.guid)
 
             if not attach:
                 continue
 
             # Skip self-attachment: don't attach element to itself
-            if item["guid"] == parent_assembly.guid:
-                logger.debug("Skipping self-attachment for %s", item["guid"])
+            if item.guid == parent_assembly.guid:
+                logger.debug("Skipping self-attachment for %s", item.guid)
                 continue
 
             success = False
@@ -350,7 +341,7 @@ def check_for_orphans(
                 logger.warning(
                     "Failed to attach orphaned %s %s to assembly %s",
                     mode[:-1],
-                    item["guid"],
+                    item.guid,
                     parent_assembly.guid,
                 )
 
@@ -361,7 +352,7 @@ def check_for_orphans(
             logger.info(
                 "Attached orphaned %s %s to assembly %s",
                 mode[:-1],
-                item["guid"],
+                item.guid,
                 parent_assembly.guid,
             )
 
@@ -386,10 +377,193 @@ def check_for_orphans(
         f"orphaned_{prefix}_count": len(orphaned_elements),
     }
 
-    if attach:
-        result_content[f"attached_{prefix}_count"] = len(attached_elements)
-        result_content[f"attached_{prefix}"] = attached_elements
-    else:
-        result_content[f"orphaned_{prefix}"] = orphaned_elements
+    if orphaned_elements:
+        if attach:
+            result_content[f"attached_{prefix}_count"] = len(attached_elements)
+            result_content[f"attached_{prefix}"] = attached_elements
+        else:
+            result_content[f"orphaned_{prefix}"] = orphaned_elements
+
+    return ToolResult(structured_content=result_content)
+
+
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def check_for_invalid_objects() -> ToolResult:
+    """
+    Find invalid objects in selected objects and their bounding boxes.
+    """
+    model = TeklaModel()
+    selected_objects = model.get_selected_objects()
+
+    tolerance = get_tolerance()
+
+    # All valid material names and reinforcement grades from Tekla catalogs
+    valid_materials = {item["name"] for item in get_all_materials()}
+    valid_grades = {item["grade"] for item in get_all_rebar_items()}
+
+    invalid_parts: list[CheckResult] = []
+    invalid_reinforcements: list[CheckResult] = []
+    invalid_assemblies: list[CheckResult] = []
+    processed_guids: set[str] = set()
+    total_evaluated = 0
+
+    for model_obj in wrap_model_objects(selected_objects):
+        if not isinstance(model_obj, (TeklaPart, TeklaAssembly)):
+            logger.debug(f"Skipping non-part/assembly object: {type(model_obj).__name__}")
+            continue
+
+        # Get top-level assembly for the selected object
+        parent_assembly = model_obj.get_top_level_assembly()
+        if parent_assembly is None:
+            logger.debug("No assembly found for %s, checking object directly", model_obj.guid)
+            objects_to_check = [model_obj]
+        else:
+            # Start with all structural children that belong to the assembly
+            children = list(wrap_model_objects(parent_assembly.get_all_children()))
+
+            # Also include nearby objects from the bounding box search
+            bbox_candidates = get_candidates_in_bounding_box(
+                parent_assembly,
+                tolerance,
+            )
+
+            objects_to_check = children + bbox_candidates
+
+            logger.debug(
+                ("Processing assembly %s: %d children, %d bounding box candidates, %d total objects"),
+                parent_assembly.guid,
+                len(children),
+                len(bbox_candidates),
+                len(objects_to_check),
+            )
+
+        for obj in objects_to_check:
+            guid = obj.guid
+            if guid in processed_guids:
+                continue
+            processed_guids.add(guid)
+
+            # Process parts
+            if isinstance(obj, TeklaPart):
+                total_evaluated += 1
+                issues: list[str] = []
+
+                # Missing profile
+                profile = obj.profile
+                if not profile:
+                    issues.append("missing_profile")
+
+                # Missing or invalid material
+                material = obj.material
+                if not material:
+                    issues.append("missing_material")
+                elif material not in valid_materials:
+                    issues.append(f"invalid_material: '{material}'")
+
+                # Invalid solid
+                solid = obj.model_object.GetSolid()
+                if not solid or not solid.IsValid():
+                    issues.append("invalid_solid")
+
+                # Zero or negative volume
+                volume = float(obj.get_report_property("VOLUME"))
+                epsilon = 0.0001
+                if volume <= epsilon:
+                    issues.append("zero_volume")
+
+                if issues:
+                    invalid_parts.append(
+                        CheckResult(
+                            guid=guid,
+                            name=obj.name,
+                            position=obj.position,
+                            tekla_class=int(obj.tekla_class),
+                            issues=issues,
+                        )
+                    )
+
+            # Process assemblies
+            elif isinstance(obj, TeklaAssembly):
+                total_evaluated += 1
+                assembly_issues: list[str] = []
+
+                # Missing main part
+                main_part = obj.model_object.GetMainPart()
+                if main_part is None:
+                    assembly_issues.append("no_main_part")
+
+                if assembly_issues:
+                    invalid_assemblies.append(
+                        CheckResult(
+                            guid=guid,
+                            name=obj.name,
+                            position=obj.position,
+                            tekla_class=main_part.tekla_class if main_part else None,
+                            issues=assembly_issues,
+                        )
+                    )
+
+            # Process reinforcements
+            elif isinstance(obj, TeklaReinforcement):
+                total_evaluated += 1
+                reinf_issues: list[str] = []
+
+                # Invalid geometry
+                if not obj.model_object.IsGeometryValid():
+                    reinf_issues.append("invalid_geometry")
+
+                # Invalid solid
+                solid = obj.model_object.GetSolid()
+                if not solid or not solid.IsValid():
+                    reinf_issues.append("invalid_solid")
+
+                # Missing or invalid grade
+                grade = obj.model_object.Grade
+                if not grade:
+                    reinf_issues.append("missing_grade")
+                elif grade not in valid_grades:
+                    reinf_issues.append(f"invalid_grade: '{grade}'")
+
+                # Missing father (not attached to part/assembly)
+                if not obj.model_object.Father:
+                    reinf_issues.append("no_father")
+
+                if reinf_issues:
+                    invalid_reinforcements.append(
+                        CheckResult(
+                            guid=guid,
+                            name=obj.name,
+                            position=obj.position,
+                            tekla_class=int(obj.tekla_class),
+                            issues=reinf_issues,
+                        )
+                    )
+
+    logger.info(
+        "Evaluated %d objects, found %d invalid parts, %d invalid reinforcements, %d invalid assemblies",
+        total_evaluated,
+        len(invalid_parts),
+        len(invalid_reinforcements),
+        len(invalid_assemblies),
+    )
+
+    result_content = {
+        "status": "success" if not invalid_parts and not invalid_reinforcements and not invalid_assemblies else "warning",
+        "selected_count": selected_objects.GetSize(),
+        "total_evaluated": total_evaluated,
+        "invalid_parts_count": len(invalid_parts),
+        "invalid_reinforcements_count": len(invalid_reinforcements),
+        "invalid_assemblies_count": len(invalid_assemblies),
+    }
+
+    if invalid_parts:
+        result_content["invalid_parts"] = invalid_parts
+
+    if invalid_reinforcements:
+        result_content["invalid_reinforcements"] = invalid_reinforcements
+
+    if invalid_assemblies:
+        result_content["invalid_assemblies"] = invalid_assemblies
 
     return ToolResult(structured_content=result_content)
