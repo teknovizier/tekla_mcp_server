@@ -370,8 +370,11 @@ def check_for_orphans(
 
     prefix = "embeds" if mode == "embeds" else "rebar_objects"
 
+    remaining_orphans = len(orphaned_elements) - len(attached_elements)
+    status = "success" if remaining_orphans == 0 else "warning"
+
     result_content = {
-        "status": "success" if not orphaned_elements else "warning",
+        "status": status,
         "selected_elements": selected_objects.GetSize(),
         f"{prefix}_evaluated": total_evaluated,
         f"orphaned_{prefix}_count": len(orphaned_elements),
