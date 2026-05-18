@@ -29,9 +29,14 @@ def test_load_dlls_success():
 
     mock_config = MagicMock()
     mock_config.tekla_path = "C:\\Tekla"
-    with patch("tekla_mcp_server.init.get_config", return_value=mock_config), patch("tekla_mcp_server.init.clr.AddReference") as mock_add_ref:
+    with (
+        patch("tekla_mcp_server.init.get_config", return_value=mock_config),
+        patch("pathlib.Path.is_dir", return_value=True),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("tekla_mcp_server.init.clr.AddReference") as mock_add_ref,
+    ):
         assert load_dlls() is True
-        assert mock_add_ref.call_count == 9  # 9 DLLs
+        assert mock_add_ref.call_count == 18  # 9 DLLs * 2 paths
 
 
 @pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
@@ -45,10 +50,15 @@ def test_load_dlls_file_not_found_triggers_exception_and_exit():
     mock_config.tekla_path = "C:\\Tekla"
     with (
         patch("tekla_mcp_server.init.get_config", return_value=mock_config),
-        patch("tekla_mcp_server.init.clr.AddReference", side_effect=System.IO.FileNotFoundException),
+        patch("pathlib.Path.is_dir", return_value=True),
+        patch("pathlib.Path.exists", return_value=True),
+        patch(
+            "tekla_mcp_server.init.clr.AddReference",
+            side_effect=System.IO.FileNotFoundException,
+        ),
         patch("tekla_mcp_server.init.logger.exception") as mock_exception,
-        patch("tekla_mcp_server.init.sys.exit") as mock_exit,
     ):
-        load_dlls()
+        with pytest.raises(System.IO.FileNotFoundException):
+            load_dlls()
+
         mock_exception.assert_called_once()
-        mock_exit.assert_called_once_with(1)

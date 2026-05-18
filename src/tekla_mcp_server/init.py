@@ -10,6 +10,8 @@ import os
 import sys
 import threading
 
+from pathlib import Path
+
 from tekla_mcp_server.config import get_config
 
 import clr
@@ -74,18 +76,39 @@ def load_dlls() -> bool:
             config = get_config()
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
             logger.exception("Failed to load configuration: %s", e)
-            sys.exit(1)
+            raise
 
-        tekla_path = config.tekla_path
+        tekla_path = Path(config.tekla_path)
+
+        # Include Tekla 2026 runtime folder
+        tekla_paths = [
+            tekla_path,
+            tekla_path / "Net48Runtime",
+        ]
+
+        # Python.NET uses sys.path to resolve dependent Tekla assemblies
+        for path in tekla_paths:
+            sys.path.append(str(path))
+
+        loaded_dlls: set[str] = set()
 
         try:
-            for dll in dlls:
-                clr.AddReference(os.path.join(tekla_path, dll))
+            for path in tekla_paths:
+                if path.is_dir():
+                    for dll in dlls:
+                        dll_path = path / dll
+                        if dll_path.exists():
+                            clr.AddReference(str(dll_path))
+                            loaded_dlls.add(dll)
+
+            if len(loaded_dlls) != len(dlls):
+                logger.error(f"Only {len(loaded_dlls)} out of {len(dlls)} Tekla Structures DLLs were loaded")
+                return False
 
             _dlls_loaded = True
-            logger.info("Successfully loaded all Tekla Structures DLLs")
+            logger.info(f"Successfully loaded {len(loaded_dlls)} out of {len(dlls)} Tekla Structures DLLs")
             return True
 
         except System.IO.FileNotFoundException:
             logger.exception("Tekla Structures DLLs not found. Check the TEKLA_PATH environment variable or settings.json")
-            sys.exit(1)
+            raise
