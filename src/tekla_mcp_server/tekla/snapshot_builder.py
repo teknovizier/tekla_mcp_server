@@ -4,6 +4,7 @@ SnapshotBuilder extracts snapshot data from Tekla objects.
 
 from typing import Any
 
+from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AssemblySnapshot, PartSnapshot
 
@@ -15,180 +16,13 @@ from tekla_mcp_server.tekla.loader import (
     SingleRebar,
 )
 
-PART_REPORT_PROPS = [
-    "AREA",
-    "ASSEMBLY_PREFIX",
-    "FINISH",
-    "HEIGHT",
-    "HIERARCHY_LEVEL",
-    "LENGTH",
-    "LENGTH_GROSS",
-    "MATERIAL",
-    "MATERIAL_TYPE",
-    "NAME",
-    "PART_PREFIX",
-    "PART_START_NUMBER",
-    "PROFILE",
-    "RADIUS",
-    "VOLUME",
-    "WEIGHT",
-    "WEIGHT_NET",
-    "WEIGHT_GROSS",
-    "WIDTH",
-]
-
-ASSEMBLY_REPORT_PROPS = [
-    "AREA",
-    "ASSEMBLY_PREFIX",
-    "HEIGHT",
-    "HIERARCHY_LEVEL",
-    "LENGTH",
-    "LENGTH_GROSS",
-    "MATERIAL_TYPE",
-    "NAME",
-    "VOLUME",
-    "WEIGHT",
-    "WEIGHT_NET",
-    "WEIGHT_GROSS",
-    "WIDTH",
-]
-
-REBAR_GROUP_PROPS = [
-    "DIM_A",
-    "DIM_B",
-    "DIM_C",
-    "DIM_D",
-    "DIM_E",
-    "DIM_F",
-    "DIM_G",
-    "DIM_H1",
-    "DIM_H2",
-    "DIM_I",
-    "DIM_J",
-    "DIM_K1",
-    "DIM_K2",
-    "DIM_L",
-    "DIM_O",
-    "DIM_R",
-    "DIM_R_ALL",
-    "DIM_TD",
-    "DIM_WEIGHT",
-    "DIM_X",
-    "DIM_Y",
-    "GRADE",
-    "GROUP_TYPE",
-    "LENGTH",
-    "LENGTH_GROSS",
-    "LENGTH_MAX",
-    "LENGTH_MIN",
-    "MATERIAL",
-    "NAME",
-    "NUMBER",
-    "REBAR_POS",
-    "SHAPE",
-    "SHAPE_INTERNAL",
-    "SIZE",
-    "WEIGHT",
-    "WEIGHT_TOTAL",
-]
-
-REBAR_MESH_PROPS = [
-    "CC",
-    "CC_CROSS",
-    "CC_LONG",
-    "CC_MAX",
-    "CC_MAX_CROSS",
-    "CC_MAX_LONG",
-    "CC_MIN",
-    "CC_MIN_CROSS",
-    "CC_MIN_LONG",
-    "GRADE",
-    "LENGTH",
-    "MATERIAL",
-    "MATERIAL_TYPE",
-    "MESH_POS",
-    "NAME",
-    "NUMBER",
-    "PREFIX",
-    "SIZE",
-    "WEIGHT",
-]
-
-REBAR_STRAND_PROPS = [
-    "GRADE",
-    "LENGTH",
-    "LENGTH_GROSS",
-    "LENGTH_MAX",
-    "LENGTH_MIN",
-    "MATERIAL",
-    "MATERIAL_TYPE",
-    "NAME",
-    "NUMBER",
-    "PREFIX",
-    "SIZE",
-    "STRAND_N_PATTERN",
-    "STRAND_N_STRAND",
-    "STRAND_POS",
-    "STRAND_PULL_FORCE",
-    "WEIGHT",
-    "WEIGHT_TOTAL",
-]
-
-WELD_REPORT_PROPS = [
-    "WELD_ACTUAL_LENGTH1",
-    "WELD_ACTUAL_LENGTH2",
-    "WELD_ADDITIONAL_SIZE1",
-    "WELD_ADDITIONAL_SIZE2",
-    "WELD_ANGLE1",
-    "WELD_ANGLE2",
-    "WELD_CROSSSECTION_AREA1",
-    "WELD_CROSSSECTION_AREA2",
-    "WELD_EFFECTIVE_THROAT",
-    "WELD_EFFECTIVE_THROAT2",
-    "WELD_FILLTYPE1",
-    "WELD_FILLTYPE2",
-    "WELD_FINISH1",
-    "WELD_FINISH2",
-    "WELD_INCREMENT_AMOUNT1",
-    "WELD_INCREMENT_AMOUNT2",
-    "WELD_INTERMITTENT_TYPE",
-    "WELD_LENGTH1",
-    "WELD_LENGTH2",
-    "WELD_PERIOD1",
-    "WELD_PERIOD2",
-    "WELD_ROOT_FACE_THICKNESS",
-    "WELD_ROOT_FACE_THICKNESS2",
-    "WELD_ROOT_OPENING",
-    "WELD_ROOT_OPENING2",
-    "WELD_SIZE1",
-    "WELD_SIZE2",
-    "WELD_SIZE_PREFIX_ABOVE",
-    "WELD_SIZE_PREFIX_BELOW",
-    "WELD_TYPE1",
-    "WELD_TYPE2",
-    "WELD_VOLUME",
-    "WELD_ASSEMBLYTYPE",
-    "WELD_DEFAULT",
-    "WELD_ELECTRODE_CLASSIFICATION",
-    "WELD_ELECTRODE_COEFFICIENT",
-    "WELD_ELECTRODE_STRENGTH",
-    "WELD_ERRORLIST",
-    "WELD_NDT_INSPECTION",
-    "WELD_NUMBER",
-    "WELD_PROCESS_TYPE",
-    "WELD_TEXT",
-    "WELD_EDGE_AROUND",
-    "WELD_FATHER_CODE",
-    "WELD_FATHER_NUMBER",
-]
-
 
 class SnapshotBuilder:
     """Stateless builder that extracts snapshot data from Tekla objects."""
 
     @staticmethod
     def build_part_snapshot(part: Any) -> PartSnapshot:
-        report_properties = SnapshotBuilder._build_report_properties(part, PART_REPORT_PROPS)
+        report_properties = SnapshotBuilder._build_report_properties(part, get_config().get_report_props("part"))
         user_properties = SnapshotBuilder._build_sorted_user_properties(part)
         cutparts = SnapshotBuilder._build_cutparts(part)
         reinforcements = SnapshotBuilder._build_reinforcements(part)
@@ -209,7 +43,7 @@ class SnapshotBuilder:
     def build_assembly_snapshot(assembly: Any) -> AssemblySnapshot:
         from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 
-        report_properties = SnapshotBuilder._build_report_properties(assembly, ASSEMBLY_REPORT_PROPS)
+        report_properties = SnapshotBuilder._build_report_properties(assembly, get_config().get_report_props("assembly"))
         user_properties = SnapshotBuilder._build_sorted_user_properties(assembly)
 
         main_part_snapshot = None
@@ -286,11 +120,11 @@ class SnapshotBuilder:
             wrapped_rebar = TeklaModelObject(rebar)
 
             if isinstance(rebar, (BaseRebarGroup, SingleRebar)):
-                prop_names = REBAR_GROUP_PROPS
+                prop_names = get_config().get_report_props("rebar_group")
             elif isinstance(rebar, RebarMesh):
-                prop_names = REBAR_MESH_PROPS
+                prop_names = get_config().get_report_props("rebar_mesh")
             elif isinstance(rebar, RebarStrand):
-                prop_names = REBAR_STRAND_PROPS
+                prop_names = get_config().get_report_props("rebar_strand")
             else:
                 prop_names = []
 
@@ -318,7 +152,7 @@ class SnapshotBuilder:
         while weld_enum.MoveNext():
             weld = weld_enum.Current
             weld_wrapped = wrap_model_object(weld)
-            weld_props = weld_wrapped.get_multiple_report_properties(WELD_REPORT_PROPS) if weld_wrapped else {}
+            weld_props = weld_wrapped.get_multiple_report_properties(get_config().get_report_props("weld")) if weld_wrapped else {}
             relative_pos = SnapshotBuilder._build_relative_position(weld, part.model_object)
 
             welds.append(

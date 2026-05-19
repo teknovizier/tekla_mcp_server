@@ -80,6 +80,21 @@ Map element type names to Tekla class numbers and numbering settings:
 - `part_prefix`: Prefix for part numbering (steel only - concrete typically uses assembly-only)
 - `part_start_number`: Starting number for part numbering (steel only)
 
+## Report Properties (`report_properties.json`)
+
+Controls which Tekla report properties are extracted for each object type when building element snapshots. Snapshots are used both for reporting element properties (`get_elements_properties`) and for element comparison (`compare_elements`).
+
+```json
+{
+    "part": ["AREA", "PROFILE", "MATERIAL", "WEIGHT", "..."],
+    "assembly": ["AREA", "NAME", "WEIGHT", "..."],
+    "rebar_group": ["GRADE", "LENGTH", "SHAPE", "..."],
+    "rebar_mesh": ["GRADE", "LENGTH", "SIZE", "..."],
+    "rebar_strand": ["GRADE", "LENGTH", "SIZE", "..."],
+    "weld": ["WELD_SIZE1", "WELD_TYPE1", "WELD_LENGTH1", "..."]
+}
+```
+
 ## Semantic Overrides (`semantic_overrides.json`)
 
 Override common ambiguous attributes to bypass semantic model:

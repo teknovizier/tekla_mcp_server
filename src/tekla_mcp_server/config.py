@@ -253,6 +253,11 @@ class Config:
         return _load_json("semantic_overrides.json")
 
     @property
+    def report_properties(self) -> dict[str, list[str]]:
+        """Report property lists per object type."""
+        return _load_json("report_properties.json")
+
+    @property
     def tekla_macro_directories(self) -> list[str]:
         """List of directories to scan for Tekla macros."""
         return _get_tekla_macro_directories()
@@ -290,6 +295,11 @@ class Config:
         if component:
             return component.get("custom_properties")
         return None
+
+    @lru_cache
+    def get_report_props(self, key: str) -> list[str]:
+        """Returns report property list for the given object type key."""
+        return self.report_properties.get(key, [])
 
 
 def get_tolerance(name: str = "default") -> float:
