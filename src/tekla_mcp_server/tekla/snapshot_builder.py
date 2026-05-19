@@ -340,5 +340,5 @@ class SnapshotBuilder:
                 "dz": float(child_pos.Z - parent_pos.Z),
             }
         except Exception:
-            logger.debug("Failed to calculate relative position for child %s", child.Identifier.ID)
+            logger.warning("Failed to calculate relative position for child %s", child.Identifier.ID)
             return None
