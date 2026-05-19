@@ -371,6 +371,7 @@ def detect_collisions_between_marks(
             sheet = drawing.drawing.GetSheet()
             views_enum = sheet.GetAllViews()
         except Exception:
+            logger.debug("Failed to open sheet for drawing, skipping")
             continue
 
         while views_enum.MoveNext():
@@ -380,6 +381,7 @@ def detect_collisions_between_marks(
             try:
                 mark_objects = view.GetAllObjects(Mark)
             except Exception:
+                logger.debug("Failed to get marks for view %s, skipping", view_name)
                 continue
 
             mark_data = []
