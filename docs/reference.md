@@ -47,7 +47,8 @@ Complete reference for tools and resources available in Tekla MCP Server.
 
 | Resource | Description |
 |----------|-------------|
-| `project://requirements` | Returns combined content of markdown files from the requirements folder (e.g., reinforcement defaults, material specs) |
+| `project://context` | Returns an index of project context files (design rules, naming conventions, etc.) |
+| `project://context/{file}` | Returns the full content of a specific project context file |
 | `tekla://components` | Returns the list of Tekla components available in server configuration |
 | `tekla://components/{component_key}` | Returns the custom_properties schema for a specific component |
 | `tekla://catalog/materials` | Returns all available materials from the Tekla material catalog |

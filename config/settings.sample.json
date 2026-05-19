@@ -1,6 +1,6 @@
 {
     "tekla_path": "C:\\Program Files\\Tekla Structures\\2022.0\\bin",
-    "requirements_folder": "requirements",
+    "context_folder": "context",
     "embeddings": {
         "enabled": true,
         "embedding_model": "teknovizier/minilm-tekla-attr-embed-v1",

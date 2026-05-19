@@ -227,14 +227,47 @@ def get_connection_status() -> ResourceResult:
     )
 
 
-def get_project_requirements() -> ResourceResult:
-    """
-    Provides the complete set of project requirements and conventions.
+def _parse_context_meta(path) -> dict:
+    """Extract name (# H1) and description (## H2) from a context file."""
+    name = path.stem
+    description = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("# ") and name == path.stem:
+            name = line[2:].strip()
+        elif line.startswith("## "):
+            description = line[3:].strip()
+            break
+    return {"name": name, "description": description, "file": path.stem}
 
-    This resource aggregates foundational rules, guidelines, and
-    expected practices that should be followed throughout the project,
-    helping the AI understand the project scope and design conventions.
+
+@resources_provider.resource("project://context")
+@mcp_handler(scope="resource")
+def get_context_index() -> ResourceResult:
     """
-    content = get_config().load_requirements()
-    logger.debug("Retrieved project requirements, length: %d chars", len(content))
+    Returns an index of available project context files.
+
+    Each entry contains the context name, a short description,
+    and the file key to use with `project://context/{file}`.
+    """
+    folder = get_config().context_folder
+    index = [_parse_context_meta(f) for f in sorted(folder.glob("*.md"))] if folder.exists() else []
+    logger.debug("Retrieved context index: %d files", len(index))
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(index), mime_type="application/json")])
+
+
+@resources_provider.resource("project://context/{file}")
+@mcp_handler(scope="resource")
+def get_context(file: str) -> ResourceResult:
+    """
+    Returns the full content of a specific project context file.
+
+    Use `project://context` first to discover available file keys.
+    """
+    folder = get_config().context_folder.resolve()
+    path = (folder / f"{file}.md").resolve()
+    if not path.exists() or not path.is_relative_to(folder):
+        logger.warning("Context file not found: %s", file)
+        return ResourceResult(contents=[])
+    content = path.read_text(encoding="utf-8")
+    logger.debug("Retrieved context file '%s', %d chars", file, len(content))
     return ResourceResult(contents=[ResourceContent(content=content, mime_type="text/markdown")])

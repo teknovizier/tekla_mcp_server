@@ -179,7 +179,8 @@ Resources provide discovery/metadata, not actions:
 | `tekla://filters/selection` | List available selection filters |
 | `tekla://filters/view` | List available view filters |
 | `tekla://connection_status` | Connection status |
-| `project://requirements` | Project requirements and metadata |
+| `project://context` | Project context: design rules, naming conventions, etc. |
+| `project://context/{file}` | Full content of a specific project context file |
 
 ## When to Use Resources vs Tools
 

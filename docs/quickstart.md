@@ -19,7 +19,7 @@ uv pip install -r requirements-dev.txt
 | Property | Default | Description |
 |----------|---------|-------------|
 | `tekla_path` | `C:\Program Files\Tekla Structures\2022.0\bin` | Tekla Structures binary directory |
-| `requirements_folder` | `requirements` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://requirements` MCP resource to provide context like project design requirements, element naming conventions, etc. |
+| `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
 | `embeddings.enabled` | `true` | Enable semantic search |
 | `embeddings.embedding_model` | `teknovizier/minilm-tekla-attr-embed-v1` | HuggingFace model or local path |
 | `embeddings.embedding_spread_threshold` | `0.1` | Min stddev for auto-resolution (0-1) |

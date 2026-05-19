@@ -258,29 +258,15 @@ class Config:
         return _get_tekla_macro_directories()
 
     @property
-    def requirements_folder(self) -> Path:
-        """Folder containing requirements markdown files."""
-        folder = _load_settings().get("requirements_folder", "requirements")
+    def context_folder(self) -> Path:
+        """Folder containing project context markdown files."""
+        folder = _load_settings().get("context_folder", "context")
         path = Path(folder)
         if not path.is_absolute():
             path = _get_config_dir() / folder
         if not path.is_dir():
-            return _get_config_dir() / "requirements"
+            return _get_config_dir() / "context"
         return path
-
-    @lru_cache
-    def load_requirements(self) -> str:
-        """Load and combine all markdown files from requirements folder."""
-        folder = self.requirements_folder
-        if not folder.exists():
-            return "# Requirements\n\nRequirements folder not found."
-        files = sorted(folder.glob("*.md"))
-        if not files:
-            return "# Requirements\n\nNo requirements files found."
-        contents = []
-        for f in files:
-            contents.append(f.read_text(encoding="utf-8"))
-        return "\n\n---\n\n".join(contents)
 
     @lru_cache
     def get_element_types_list(self) -> list[dict[str, Any]]:
