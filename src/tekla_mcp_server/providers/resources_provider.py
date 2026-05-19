@@ -13,7 +13,7 @@ from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.tekla.loader import Grid
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.utils import get_macros, get_filters
+from tekla_mcp_server.tekla.utils import get_all_materials, get_all_rebar_items, get_macros, get_filters
 from tekla_mcp_server.utils import mcp_handler, parse_coordinate_string, parse_label_string
 
 
@@ -49,6 +49,28 @@ def get_component_schema(component_key: str) -> ResourceResult:
         return ResourceResult(contents=[ResourceContent(content=json.dumps(schema), mime_type="application/json")])
     logger.warning("Component schema not found for key '%s'", component_key)
     return ResourceResult(contents=[])
+
+
+@resources_provider.resource("tekla://catalog/materials")
+@mcp_handler(scope="resource")
+def get_materials_resource() -> ResourceResult:
+    """
+    Returns all available materials from Tekla catalog.
+    """
+    materials = get_all_materials()
+    logger.debug("Retrieved %d materials", len(materials))
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(materials), mime_type="application/json")])
+
+
+@resources_provider.resource("tekla://catalog/rebars")
+@mcp_handler(scope="resource")
+def get_rebars_resource() -> ResourceResult:
+    """
+    Returns all available rebar grades and sizes from Tekla catalog.
+    """
+    rebars = get_all_rebar_items()
+    logger.debug("Retrieved %d rebars", len(rebars))
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(rebars), mime_type="application/json")])
 
 
 @resources_provider.resource("tekla://macros")

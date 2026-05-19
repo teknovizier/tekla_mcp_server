@@ -50,6 +50,8 @@ Complete reference for tools and resources available in Tekla MCP Server.
 | `project://requirements` | Returns combined content of markdown files from the requirements folder (e.g., reinforcement defaults, material specs) |
 | `tekla://components` | Returns the list of Tekla components available in server configuration |
 | `tekla://components/{component_key}` | Returns the custom_properties schema for a specific component |
+| `tekla://catalog/materials` | Returns all available materials from the Tekla material catalog |
+| `tekla://catalog/rebars` | Returns all available rebar grades and sizes from the Tekla rebar catalog |
 | `tekla://macros` | Returns list of available Tekla macros from configured directories |
 | `tekla://element_types` | Returns element types from `element_types.json` config as flat list |
 | `tekla://filters/selection` | Returns list of available Tekla selection filter names from `.SObjGrp` files |
