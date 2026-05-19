@@ -5,6 +5,7 @@ Module for Tekla Model wrapper.
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Iterable
 
 from tekla_mcp_server.init import logger
@@ -37,33 +38,34 @@ class TeklaModel:
     """
 
     _instance = None
-    _lock = threading.Lock()
+    _instance_lock = threading.Lock()
     _max_retries = 3
     _retry_delay = 1.0  # seconds
 
     def __new__(cls):
         if cls._instance is None:
-            with cls._lock:
+            with cls._instance_lock:
                 if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
+                    instance = super().__new__(cls)
+                    instance._connect_lock = threading.RLock()
+                    instance._model = None
+                    instance._initialized = False
+                    cls._instance = instance
         return cls._instance
 
     def __init__(self):
-        if getattr(self, "_initialized", False):
-            return
-        self._connect()
+        with self._connect_lock:
+            if self._initialized:
+                return
+            self._connect()
 
     def _connect(self, retries: int | None = None) -> None:
-        """Connect to Tekla model with retry logic."""
+        """Connect to Tekla model with retry logic. Caller must hold ``_connect_lock``."""
         max_retries = retries if retries is not None else self._max_retries
         last_exception = None
 
         for attempt in range(max_retries):
             try:
-                self._model = None
-                self._initialized = False
-
                 model = Model()
 
                 if not model.GetConnectionStatus():
@@ -78,8 +80,6 @@ class TeklaModel:
                 last_exception = e
                 logger.warning("Connection attempt %d/%d failed: %s", attempt + 1, max_retries, e)
                 if attempt < max_retries - 1:
-                    import time
-
                     time.sleep(self._retry_delay * (attempt + 1))  # Exponential backoff
 
         self._model = None
@@ -91,10 +91,10 @@ class TeklaModel:
     @classmethod
     def reconnect(cls) -> "TeklaModel":
         """Force a reconnection to the Tekla model."""
-        with cls._lock:
-            instance = cls()
+        instance = cls()
+        with instance._connect_lock:
             instance._connect()
-            return instance
+        return instance
 
     def is_connected(self) -> bool:
         """Check if the connection to Tekla model is still active."""
@@ -114,13 +114,16 @@ class TeklaModel:
         """
         if self.is_connected():
             return True
-        logger.info("Connection lost, attempting reconnection...")
-        try:
-            self._connect()
-            return self.is_connected()
-        except Exception as e:
-            logger.error("Reconnection failed: %s", e)
-            return False
+        with self._connect_lock:
+            if self.is_connected():
+                return True
+            logger.info("Connection lost, attempting reconnection...")
+            try:
+                self._connect()
+                return self.is_connected()
+            except Exception as e:
+                logger.error("Reconnection failed: %s", e)
+                return False
 
     @property
     def model(self) -> Model:
