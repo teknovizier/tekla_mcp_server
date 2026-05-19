@@ -212,16 +212,19 @@ class SnapshotBuilder:
         report_properties = SnapshotBuilder._build_report_properties(assembly, ASSEMBLY_REPORT_PROPS)
         user_properties = SnapshotBuilder._build_sorted_user_properties(assembly)
 
-        main_part = assembly.main_part
         main_part_snapshot = None
-        if isinstance(main_part, TeklaPart):
-            main_part_snapshot = main_part.to_snapshot()
+        try:
+            main_part = assembly.main_part
+            if isinstance(main_part, TeklaPart):
+                main_part_snapshot = main_part.to_snapshot()
+        except ValueError:
+            logger.warning("Assembly %s has no main part available", assembly.guid)
 
         secondaries = []
         for secondary in wrap_model_objects(assembly.model_object.GetSecondaries()):
             if isinstance(secondary, TeklaPart):
                 secondaries.append(secondary.to_snapshot())
-        secondaries = sorted(secondaries, key=lambda s: (s.id, s.name))
+        secondaries = sorted(secondaries, key=lambda s: (s.id, s.pos))
 
         subassemblies = []
         for subassembly in wrap_model_objects(assembly.model_object.GetSubAssemblies()):
