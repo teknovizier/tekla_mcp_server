@@ -129,22 +129,58 @@ def set_elements_properties(
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def get_elements_properties(
-    report_props_definitions: Annotated[list[str] | None, Field(description="List of user-friendly property names")] = None,
+    report_props_definitions: Annotated[list[str] | None, Field(description="Additional report property names")] = None,
+    snapshot_mode: Annotated[bool, Field(description="Return full element snapshots")] = False,
 ) -> ToolResult:
     """
-    Retrieve key properties for selected Tekla elements (assemblies, parts, or IFC reference objects).
+    Retrieve properties for selected Tekla elements (assemblies, parts, or IFC reference objects).
 
-    ### BEHAVIOR
+    ## MODES
+
+    ### Default mode (`snapshot_mode=False`)
+    Returns a flat table of key element properties. Optionally request extra columns via `report_props_definitions`.
     - Extract properties not in default columns; split multi-property phrases into separate items.
     - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
+    - Return the result table in Markdown format EXACTLY as provided. DO NOT reformat, truncate, or modify anything. ALWAYS show the full table.
 
-    ## OUTPUT
-    - Return the result table in Markdown format EXACTLY as provided by the tool.
-    - DO NOT reformat, truncate, or modify anything, including spacing, columns, or headers.
-    - ALWAYS show the full table. DO NOT remove any rows or columns.
+    ### Snapshot mode (`snapshot_mode=True`)
+    Returns full element snapshots for convention and QA checks, including basic element properties, UDAs, cutparts, welds and reinforcement.
     """
     selected_objects = TeklaModel().get_selected_objects()
 
+    processed_elements = 0
+
+    # Snapshot mode
+    if snapshot_mode:
+        parts: list[dict[str, Any]] = []
+        assemblies: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        for obj in wrap_model_objects(selected_objects):
+            try:
+                if isinstance(obj, TeklaPart):
+                    parts.append(obj.to_snapshot().model_dump())
+                elif isinstance(obj, TeklaAssembly):
+                    assemblies.append(obj.to_snapshot().model_dump())
+                processed_elements += 1
+            except Exception as e:
+                logger.exception("Failed to build snapshot for %s: %s", obj.guid, str(e))
+                errors.append({"guid": obj.guid, "error": str(e)})
+
+        total = len(parts) + len(assemblies)
+        logger.info("Snapshot mode: built snapshots for %d parts and %d assemblies", len(parts), len(assemblies))
+        return ToolResult(
+            structured_content={
+                "status": "success" if total > 0 else "warning",
+                "selected_elements": selected_objects.GetSize(),
+                "processed_elements": processed_elements,
+                "parts": parts,
+                "assemblies": assemblies,
+                "errors": errors,
+            }
+        )
+
+    # Default mode: flat property table
     resolution_errors: list[dict[str, Any]] = []
     extraction_errors: list[dict[str, Any]] = []
     resolved_props: list[str] = []
@@ -159,10 +195,9 @@ def get_elements_properties(
         if resolution_errors:
             logger.warning("Failed to resolve %d properties: %s", len(resolution_errors), [e.get("query") for e in resolution_errors])
 
-    assemblies: list[dict[str, Any]] = []
-    parts: list[dict[str, Any]] = []
+    flat_assemblies: list[dict[str, Any]] = []
+    flat_parts: list[dict[str, Any]] = []
     reference_objects: list[dict[str, Any]] = []
-    processed_elements = 0
 
     for selected_object in wrap_model_objects(selected_objects):
         try:
@@ -174,13 +209,13 @@ def get_elements_properties(
         if isinstance(selected_object, TeklaReferenceModelObject):
             reference_objects.append(props)
         elif isinstance(selected_object, TeklaAssembly):
-            assemblies.append(props)
+            flat_assemblies.append(props)
         elif isinstance(selected_object, TeklaPart):
-            parts.append(props)
+            flat_parts.append(props)
         processed_elements += 1
 
     logger.info("Retrieved properties for %s elements", processed_elements)
-    status = "success" if assemblies or parts or reference_objects else "error"
+    status = "success" if flat_assemblies or flat_parts or reference_objects else "error"
     if resolution_errors or extraction_errors:
         status = "partial"
         if extraction_errors:
@@ -217,7 +252,7 @@ def get_elements_properties(
             flat_items.append({"No": i + 1, **row})
         return flat_items
 
-    content_json = {k: v for k, v in (("assemblies", _flatten(assemblies)), ("parts", _flatten(parts)), ("reference_objects", _flatten(reference_objects))) if v}
+    content_json = {k: v for k, v in (("assemblies", _flatten(flat_assemblies)), ("parts", _flatten(flat_parts)), ("reference_objects", _flatten(reference_objects))) if v}
 
     return ToolResult(
         content=content_json,
@@ -225,8 +260,8 @@ def get_elements_properties(
             "status": status,
             "selected_elements": selected_objects.GetSize(),
             "processed_elements": processed_elements,
-            "assemblies": assemblies,
-            "parts": parts,
+            "assemblies": flat_assemblies,
+            "parts": flat_parts,
             "reference_objects": reference_objects,
             "resolution_errors": resolution_errors,
             "extraction_errors": extraction_errors,
