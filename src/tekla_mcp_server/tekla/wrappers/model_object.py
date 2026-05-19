@@ -910,7 +910,7 @@ class TeklaPart(TeklaModelObject):
             changes["material"] = 1
 
         if tekla_class is not None:
-            self.tekla_class = tekla_class
+            self.tekla_class = str(tekla_class)
             changes["tekla_class"] = 1
 
         if finish is not None:

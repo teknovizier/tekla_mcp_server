@@ -89,7 +89,7 @@ def set_elements_properties(
                     name=name,
                     profile=profile,
                     material=material,
-                    tekla_class=str(tekla_class),
+                    tekla_class=tekla_class,
                     finish=finish,
                     part_prefix=part_prefix,
                     part_start_number=part_start_number,
