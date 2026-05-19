@@ -30,6 +30,8 @@ def _get_config_dir() -> Path:
     return Path(env_dir)
 
 
+# Config JSON files are cached for the process lifetime.
+# Edits only take effect after restart.
 @lru_cache(maxsize=8)
 def _load_json(filename: str) -> dict[str, Any]:
     """
@@ -302,18 +304,20 @@ class Config:
         return self.report_properties.get(key, [])
 
 
-def get_tolerance(name: str = "default") -> float:
+def get_tolerance(name: str = "default", default: float = 20.0) -> float:
     """
     Get a tolerance value from configuration.
 
     Args:
         name: Tolerance key
+        default: Fallback value if the key is missing (callers should pass a sensible
+            value, e.g. a small factor for multipliers, mm for distances).
 
     Returns:
         Tolerance value in mm (or unitless for factor)
     """
     tolerances = _load_settings().get("tolerances", {})
-    return tolerances.get(name, 20.0)
+    return tolerances.get(name, default)
 
 
 @lru_cache

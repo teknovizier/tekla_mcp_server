@@ -159,10 +159,15 @@ def check_for_orphans(
         """Collect all rebar GUIDs from main part and secondary parts."""
         guids: set[str] = set()
 
-        reinfs = element.main_part.model_object.GetReinforcements()
-        for rebar in wrap_model_objects(reinfs):
-            if rebar:
-                guids.add(rebar.guid)
+        try:
+            reinfs = element.main_part.model_object.GetReinforcements()
+        except ValueError:
+            reinfs = None
+
+        if reinfs is not None:
+            for rebar in wrap_model_objects(reinfs):
+                if rebar:
+                    guids.add(rebar.guid)
 
         for sec in element.model_object.GetSecondaries():
             sec_reinfs = sec.GetReinforcements()
@@ -206,7 +211,10 @@ def check_for_orphans(
                 continue
 
             # Get main part class
-            main = wrapped_assembly.main_part
+            try:
+                main = wrapped_assembly.main_part
+            except ValueError:
+                continue
             if not main:
                 continue
 
@@ -287,6 +295,9 @@ def check_for_orphans(
 
         # Get top-level assembly for checking attachment
         parent_assembly = obj.get_top_level_assembly()
+        if parent_assembly is None:
+            logger.debug("No top-level assembly for %s, skipping", obj.guid)
+            continue
 
         # Run mode-specific orphan detection
         if mode == "embeds":
@@ -333,9 +344,14 @@ def check_for_orphans(
 
             elif mode == "rebars":
                 # Set rebar's Father to main part
-                orphan_obj.model_object.Father = parent_assembly.main_part.model_object
+                try:
+                    main_part_obj = parent_assembly.main_part.model_object
+                except ValueError:
+                    logger.warning("Cannot attach %s: parent assembly %s has no main part", item.guid, parent_assembly.guid)
+                    continue
+                orphan_obj.model_object.Father = main_part_obj
 
-                success = parent_assembly.main_part.model_object.Modify() and orphan_obj.model_object.Modify()
+                success = main_part_obj.Modify() and orphan_obj.model_object.Modify()
 
             if not success:
                 logger.warning(
@@ -502,7 +518,7 @@ def check_for_invalid_objects() -> ToolResult:
                             guid=guid,
                             name=obj.name,
                             position=obj.position,
-                            tekla_class=main_part.tekla_class if main_part else None,
+                            tekla_class=int(main_part.Class) if main_part else None,
                             issues=assembly_issues,
                         )
                     )

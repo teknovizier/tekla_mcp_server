@@ -7,6 +7,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Iterable
+from typing import ClassVar
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_function_call
@@ -37,10 +38,14 @@ class TeklaModel:
     Uses thread-safe singleton pattern to reuse the connection.
     """
 
-    _instance = None
-    _instance_lock = threading.Lock()
-    _max_retries = 3
-    _retry_delay = 1.0  # seconds
+    _instance: ClassVar["TeklaModel | None"] = None
+    _instance_lock: ClassVar[threading.Lock] = threading.Lock()
+    _max_retries: ClassVar[int] = 3
+    _retry_delay: ClassVar[float] = 1.0  # seconds
+
+    _connect_lock: threading.RLock
+    _model: Model | None
+    _initialized: bool
 
     def __new__(cls):
         if cls._instance is None:

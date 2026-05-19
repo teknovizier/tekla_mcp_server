@@ -428,7 +428,7 @@ def select_elements_assemblies_or_main_parts(
     selected_objects = TeklaModel().get_selected_objects()
 
     processed_elements = 0
-    selected_object_types = ""
+    selected_object_types = "selected_assemblies" if mode == "Assembly" else "selected_main_parts"
 
     filtered_parts = ArrayList()
     for selected_object in wrap_model_objects(selected_objects):
@@ -437,12 +437,17 @@ def select_elements_assemblies_or_main_parts(
         except TypeError:
             logger.error("Failed to get top level assembly for the element %s", selected_object.guid)
             continue
+        if assembly is None:
+            logger.debug("No top-level assembly for %s, skipping", selected_object.guid)
+            continue
         if mode == "Assembly":
             filtered_parts.Add(assembly.model_object)
-            selected_object_types = "selected_assemblies"
         elif mode == "Main Part":
-            filtered_parts.Add(assembly.main_part.model_object)
-            selected_object_types = "selected_main_parts"
+            try:
+                filtered_parts.Add(assembly.main_part.model_object)
+            except ValueError:
+                logger.warning("Assembly %s has no main part, skipping", assembly.guid)
+                continue
         processed_elements += 1
 
     TeklaModel.select_objects(filtered_parts)

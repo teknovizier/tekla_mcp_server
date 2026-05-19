@@ -116,7 +116,7 @@ class BoundingBox:
         if tol is None:
             tol = get_tolerance()
         if center_tol_factor is None:
-            center_tol_factor = get_tolerance("center_tolerance_factor")
+            center_tol_factor = get_tolerance("center_tolerance_factor", default=0.1)
         if not self.overlaps(other, tol):
             return False
 
@@ -153,7 +153,7 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         return TeklaReferenceModelObject(model_object)
     elif isinstance(model_object, Reinforcement):
         return TeklaReinforcement(model_object)
-    elif isinstance(model_object, (BaseWeld, Reinforcement)):
+    elif isinstance(model_object, BaseWeld):
         return TeklaModelObject(model_object)
     else:
         return None
@@ -521,9 +521,11 @@ class TeklaAssembly(TeklaModelObject):
             weight_sub = subassembly.get_report_property("WEIGHT")
             try:
                 rebar_type = subassembly.get_report_property("REBAR_ASSEMBLY_TYPE")
-                assert rebar_type
-                weight_rebars += float(weight_sub)
             except AttributeError:
+                rebar_type = ""
+            if rebar_type:
+                weight_rebars += float(weight_sub)
+            else:
                 weight_subassemblies += float(weight_sub)
 
         total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies

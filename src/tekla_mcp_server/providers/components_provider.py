@@ -162,7 +162,7 @@ def _modify_single_component(model: TeklaModel, component: BaseComponent, select
 @mcp_handler(scope="tool")
 def put_components(
     component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
-    properties_set: Annotated[str | None, Field(default="standard", description="The name of the Tekla component properties set to use")] = None,
+    properties_set: Annotated[str, Field(description="The name of the Tekla component properties set to use")] = "standard",
     custom_properties: Annotated[dict[str, Any] | None, Field(description="Custom properties to apply to the component")] = None,
 ) -> ToolResult:
     """

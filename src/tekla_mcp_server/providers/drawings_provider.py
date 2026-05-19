@@ -15,11 +15,11 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType
 from tekla_mcp_server.utils import mcp_handler, rects_intersect, lines_intersect, line_rect_intersect
 from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings, get_drawings_by_marks
-from functools import lru_cache
 
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import (
     DrawingHandler,
+    LeaderLine,
     Mark,
     DrawingColors,
     FrameTypes,
@@ -36,7 +36,6 @@ from tekla_mcp_server.tekla.loader import (
 drawings_provider = LocalProvider()
 
 
-@lru_cache
 def _get_default_plot_output_folder() -> Path | None:
     from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
 
@@ -144,10 +143,9 @@ def _get_mark_collision_data(mark: Mark) -> dict | None:
     children = mark.GetObjects()
     while children.MoveNext():
         child = children.Current
-        if type(child).__name__ == "LeaderLine":
-            leader = child
-            leader_start = leader.StartPoint  # Arrow tip
-            leader_end = leader.EndPoint  # Point at text edge
+        if isinstance(child, LeaderLine):
+            leader_start = child.StartPoint  # Arrow tip
+            leader_end = child.EndPoint  # Point at text edge
             break
 
     # Set line data

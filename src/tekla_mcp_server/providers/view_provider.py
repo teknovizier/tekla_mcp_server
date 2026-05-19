@@ -108,7 +108,7 @@ def draw_elements_labels(
                     ElementLabel.PHASE: str(selected_object.phase),
                     ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
                 }
-                text = assembly_labels.get(label_enum, ElementLabel.NAME)
+                text = assembly_labels.get(label_enum, selected_object.name)
             elif isinstance(selected_object, TeklaPart):
                 part_labels = {
                     ElementLabel.POSITION: selected_object.position,
@@ -121,7 +121,7 @@ def draw_elements_labels(
                     ElementLabel.PHASE: str(selected_object.phase),
                     ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
                 }
-                text = part_labels.get(label_enum, ElementLabel.NAME)
+                text = part_labels.get(label_enum, selected_object.name)
             else:
                 continue
         if drawer.DrawText(selected_object.cog, text, Color(*color_black)):
@@ -183,6 +183,17 @@ def zoom_to_selection() -> ToolResult:
         max_z = max(max_z, ep.Z)
 
         processed_elements += 1
+
+    if processed_elements == 0:
+        logger.warning("zoom_to_selection: no parts or assemblies in selection")
+        return ToolResult(
+            structured_content={
+                "status": "warning",
+                "selected_elements": selected_objects.GetSize(),
+                "processed_elements": 0,
+                "message": "No parts or assemblies in selection to zoom to",
+            }
+        )
 
     min_point = Point(min_x, min_y, min_z)
     max_point = Point(max_x, max_y, max_z)

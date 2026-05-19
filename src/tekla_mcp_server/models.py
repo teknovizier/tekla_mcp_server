@@ -2,6 +2,7 @@
 This module defines core data structures, enumerations, and models used in the project.
 """
 
+import hashlib
 import json
 from enum import Enum
 from typing import Any, ClassVar, Self, Literal
@@ -539,19 +540,21 @@ class ModelObjectSnapshot(BaseModel):
     user_properties: dict[str, Any] = Field(default_factory=dict, description="User properties of the model object")
 
     @staticmethod
-    def _sort_key_for_comparison(value: Any) -> tuple | str:
+    def _sort_key_for_comparison(value: Any) -> tuple:
         """Generate a stable sort key for comparison, excluding id and guid fields."""
+        # Tag every branch with a discriminator so heterogeneous lists sort without TypeError.
         if isinstance(value, dict):
-            return tuple((k, ModelObjectSnapshot._sort_key_for_comparison(v)) for k, v in sorted(value.items()) if k.lower() not in ("id", "guid"))
+            return ("d", tuple((k, ModelObjectSnapshot._sort_key_for_comparison(v)) for k, v in sorted(value.items()) if k.lower() not in ("id", "guid")))
         elif isinstance(value, list):
-            return tuple(sorted(ModelObjectSnapshot._sort_key_for_comparison(v) for v in value))
-        return str(type(value).__name__) + ":" + str(value)
+            return ("l", tuple(sorted(ModelObjectSnapshot._sort_key_for_comparison(v) for v in value)))
+        return ("s", str(type(value).__name__) + ":" + str(value))
 
     @staticmethod
     def _deterministic_sort_key(item: dict[str, Any]) -> tuple:
         """Generate deterministic sort key with hash tiebreaker for consistent ordering."""
         content_key = ModelObjectSnapshot._sort_key_for_comparison(item)
-        content_hash = hash(str(content_key))
+        # Use MD5
+        content_hash = hashlib.md5(str(content_key).encode("utf-8")).hexdigest()
         return (content_key, content_hash)
 
     def normalize(self, tolerance: float) -> Self:
