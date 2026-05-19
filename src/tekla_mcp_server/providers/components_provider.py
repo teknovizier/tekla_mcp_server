@@ -17,7 +17,7 @@ from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.component_handlers import HandlerRegistry
-from tekla_mcp_server.tekla.loader import Beam
+from tekla_mcp_server.tekla.loader import Beam, CustomPart, Part
 from tekla_mcp_server.tekla.utils import ensure_transformation_plane, get_wall_pairs, insert_component, insert_detail
 
 
@@ -198,6 +198,9 @@ def remove_components(component_name: Annotated[str, Field(description="The Tekl
         counter += handler.pre_remove(objects_list)
 
     for obj in objects_list:
+        # Only Part and CustomPart support GetComponents()
+        if not isinstance(obj, (Part, CustomPart)):
+            continue
         for comp in obj.GetComponents():
             if comp.Number == component.number and comp.Name == component.name:
                 if comp.Delete():
@@ -244,6 +247,9 @@ def get_components() -> ToolResult:
     total_components = 0
 
     for selected_object in wrap_model_objects(selected_objects):
+        # Only Part and CustomPart support GetComponents()
+        if not isinstance(selected_object.model_object, (Part, CustomPart)):
+            continue
         object_components: list[dict[str, Any]] = []
         comp_enum = selected_object.model_object.GetComponents()
 
