@@ -136,7 +136,19 @@ def tool_example(param: str, count: int) -> dict[str, Any]:
 - Private: prefix with `_` or use `PrivateAttr()`
 
 ## Error Handling
-For tools, use `@mcp_handler(scope="tool")` decorator which wraps tools and automatically handles exceptions and returns `ToolResult`. For resources, use `@mcp_handler(scope="resource")` which returns `ResourceResult` with error embedded in content.
+Use `@mcp_handler(scope="tool")` on every tool and `@mcp_handler(scope="resource")` on every resource. The decorator catches all exceptions and converts them into the correct error response automatically.
+
+**Never return a `ToolResult` with `status: "error"` directly.** Raise an exception instead - the decorator handles the conversion.
+
+```python
+# Correct
+if not items:
+    raise ValueError("No items provided")
+
+# Wrong: do not do this
+if not items:
+    return ToolResult(structured_content={"status": "error", "message": "No items provided"})
+```
 
 | Scope | Return Type | Error Format |
 |-------|-------------|--------------|
