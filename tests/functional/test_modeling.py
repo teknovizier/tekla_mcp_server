@@ -6,8 +6,10 @@ Tests beam, column, and panel placement operations.
 
 import pytest
 
-from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, place_slabs, delete_selected
+from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, place_slabs, delete_selected, move_elements
 from tekla_mcp_server.models import BeamInput, ColumnInput, PanelInput, SlabInput, PointInput, PositionInput
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly
 
 
 def cleanup_modeling_test_objects():
@@ -365,3 +367,58 @@ def test_place_slab_less_than_3_points():
             tekla_class=9,
             name="MCP_TEST_SLAB_BAD",
         )
+
+
+def test_move_part(panel_input):
+    """Move a panel selected as a part."""
+    result_place = place_panels(panels=[panel_input])
+    guid = result_place.structured_content["results"][0]["guid"]
+    obj = TeklaModel().get_objects_by_guid([guid])[0]
+    TeklaModel.select_objects([obj])
+    result = move_elements(dz=6000.0)
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
+
+
+def test_copy_part(panel_input):
+    """Copy a panel (copy=True)."""
+    result_place = place_panels(panels=[panel_input])
+    guid = result_place.structured_content["results"][0]["guid"]
+    obj = TeklaModel().get_objects_by_guid([guid])[0]
+    TeklaModel.select_objects([obj])
+    result = move_elements(dz=6000.0, copy=True)
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
+
+
+def test_move_assembly(panel_input):
+    """Select the assembly instead of the part - _collect_parts must expand it."""
+    result_place = place_panels(panels=[panel_input])
+    guid = result_place.structured_content["results"][0]["guid"]
+    obj = TeklaModel().get_objects_by_guid([guid])[0]
+    asm = wrap_model_object(obj.GetAssembly())
+    assert isinstance(asm, TeklaAssembly)
+    TeklaModel.select_objects([asm.model_object])
+    result = move_elements(dz=6000.0)
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
+
+
+def test_copy_assembly(panel_input):
+    """Copy via assembly selection."""
+    result_place = place_panels(panels=[panel_input])
+    guid = result_place.structured_content["results"][0]["guid"]
+    obj = TeklaModel().get_objects_by_guid([guid])[0]
+    asm = wrap_model_object(obj.GetAssembly())
+    assert isinstance(asm, TeklaAssembly)
+    TeklaModel.select_objects([asm.model_object])
+    result = move_elements(dz=6000.0, copy=True)
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
+
+
+def test_move_no_selection():
+    """No selection - tool must return an error."""
+    TeklaModel.clear_selection()
+    result = move_elements(dz=6000.0)
+    assert result.structured_content.get("status") == "error"

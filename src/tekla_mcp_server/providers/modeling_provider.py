@@ -24,13 +24,22 @@ from tekla_mcp_server.models import (
     NumberingSeries,
 )
 from tekla_mcp_server.utils import mcp_handler
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaBeam, TeklaContourPlate
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_objects, wrap_model_object
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.loader import Operation, Vector
 
 
 modeling_provider = LocalProvider()
 
 T = TypeVar("T", BeamInput, ColumnInput, PanelInput)
+
+
+def _collect_parts(obj: TeklaModelObject) -> list[TeklaPart]:
+    """Return all child Part objects reachable from *obj*."""
+    if isinstance(obj, TeklaAssembly):
+        return [wrapped for raw in obj.get_all_children(include_all=False) if (wrapped := wrap_model_object(raw)) is not None and isinstance(wrapped, TeklaPart)]
+
+    return [obj]
 
 
 def _resolve_numbering_and_name(
@@ -324,6 +333,70 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
 
     logger.info("Placed %d of %d slabs", succeeded, len(slabs))
     return _to_tool_result(results, len(slabs), succeeded, "slabs")
+
+
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def move_elements(
+    dx: Annotated[float, Field(description="Displacement in X direction (mm)")] = 0.0,
+    dy: Annotated[float, Field(description="Displacement in Y direction (mm)")] = 0.0,
+    dz: Annotated[float, Field(description="Displacement in Z direction (mm)")] = 0.0,
+    copy: Annotated[bool, Field(description="When True, creates a copy at the new position and keeps the original in place")] = False,
+) -> ToolResult:
+    """
+    Moves or copies all selected elements by the given displacement vector.
+
+    ## COORDINATE SYSTEM
+    X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
+
+    ## EXAMPLES
+    # Move selected elements 1000 mm in X
+    move_elements(dx=1000)
+
+    # Copy selected elements 500 mm diagonally, keeping originals
+    move_elements(dx=500, dy=500, copy=True)
+    """
+    model = TeklaModel()
+    selected_objects = model.get_selected_objects()
+
+    if selected_objects.GetSize() == 0:
+        logger.error("move_elements failed: No elements selected")
+        raise ValueError("No objects selected")
+
+    move_vec = Vector(dx, dy, dz)
+    results: list[PlacementResult] = []
+    succeeded = 0
+    failed = 0
+
+    for obj in wrap_model_objects(selected_objects):
+        for part in _collect_parts(obj):
+            try:
+                if copy:
+                    Operation.CopyObject(part.model_object, move_vec)
+                else:
+                    Operation.MoveObject(part.model_object, move_vec)
+                succeeded += 1
+                results.append(PlacementResult(success=True, guid=part.guid))
+            except Exception as e:
+                logger.exception("Failed to %s part %s: %s", "copy" if copy else "move", part.guid, str(e))
+                results.append(PlacementResult(success=False, message=str(e)))
+                failed += 1
+
+    model.commit_changes()
+
+    total = succeeded + failed
+    action = "Copied" if copy else "Moved"
+    logger.info("%s %d of %d elements (dx=%.0f dy=%.0f dz=%.0f)", action, succeeded, total, dx, dy, dz)
+    return ToolResult(
+        structured_content=BatchPlacementResult(
+            success=failed == 0 and total > 0,
+            total=total,
+            succeeded=succeeded,
+            failed=failed,
+            results=results,
+            message=f"{action} {succeeded} of {total} elements",
+        ).model_dump(mode="json", exclude_none=True)
+    )
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
