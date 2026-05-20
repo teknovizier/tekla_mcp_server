@@ -45,6 +45,7 @@ Type and default shown where relevant.
 | Modeling | `place_panels` | Place one or more wall panels | **`panels`** (list): each item has **`start_point`**, **`end_point`**, **`profile`**, **`material`**, **`tekla_class`** (int); optional: `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
 | Modeling | `place_slabs` | Place one or more slabs | **`slabs`** (list): each item has **`points`** (list of ≥3 points), **`profile`**, **`material`**, **`tekla_class`** (int); optional: `name`, `position`, `part_number`, `assembly_number` |
 | Modeling | `move_elements` | Move or copy selected elements by a displacement vector. Assemblies are expanded to all constituent parts recursively. `copy=true` keeps originals and creates new elements at the displaced position | `dx` (float, mm, default: `0`), `dy` (float, mm, default: `0`), `dz` (float, mm, default: `0`), `copy` (bool, default: `false`) - all optional |
+| Modeling | `place_grid` | Place a rectangular grid in the Tekla model | **`x`** (list[float], mm), **`y`** (list[float], mm), `z` (list[float], mm), `x_labels` (list[str]), `y_labels` (list[str]), `z_labels` (list[str]), `origin` (PointInput), `name` (str) |
 | Modeling | `delete_selected` | Delete all selected elements | - |
 | IFC | `copy_properties_from_ifc` | Copy properties from IFC reference objects to matching Tekla elements by bounding-box overlap | **`user_properties`** (dict[str, str]): IFC property name → Tekla UDA name |
 

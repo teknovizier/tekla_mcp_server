@@ -26,12 +26,24 @@ from tekla_mcp_server.models import (
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_objects, wrap_model_object
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.loader import Operation, Vector
+from tekla_mcp_server.tekla.loader import Grid, Operation, Point, Vector
 
 
 modeling_provider = LocalProvider()
 
 T = TypeVar("T", BeamInput, ColumnInput, PanelInput)
+
+
+def _to_tekla_coords(coords: list[float]) -> str:
+    """Convert absolute coordinates to Tekla's incremental grid format.
+
+    Tekla stores the first axis value as an absolute position and subsequent
+    values as spacings (differences), e.g. [0, 5000, 10000] → "0 5000 5000".
+    """
+    if not coords:
+        return ""
+    values = [coords[0]] + [coords[i] - coords[i - 1] for i in range(1, len(coords))]
+    return " ".join(str(int(v)) if v == int(v) else str(v) for v in values)
 
 
 def _collect_parts(obj: TeklaModelObject) -> list[TeklaPart]:
@@ -397,6 +409,70 @@ def move_elements(
             message=f"{action} {succeeded} of {total} elements",
         ).model_dump(mode="json", exclude_none=True)
     )
+
+
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def place_grid(
+    x: Annotated[list[float], Field(description="Absolute X axis coordinates (mm), e.g. [0, 5000, 10000]")],
+    y: Annotated[list[float], Field(description="Absolute Y axis coordinates (mm)")],
+    z: Annotated[list[float] | None, Field(description="Absolute Z axis coordinates (storey heights, mm)")] = None,
+    x_labels: Annotated[list[str] | None, Field(description="Labels for X axis lines")] = None,
+    y_labels: Annotated[list[str] | None, Field(description="Labels for Y axis lines")] = None,
+    z_labels: Annotated[list[str] | None, Field(description="Labels for Z axis lines")] = None,
+    origin: Annotated[PointInput | None, Field(description="Grid origin point (mm). Defaults to (0, 0, 0)")] = None,
+    name: Annotated[str | None, Field(description="Grid name")] = None,
+) -> ToolResult:
+    """
+    Places a rectangular grid in the Tekla model.
+
+    ## COORDINATE SYSTEM
+    X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
+
+    ## EXAMPLES
+    # Simple 3 x 2 grid, 5 m spacing
+    place_grid(x=[0, 5000, 10000], y=[0, 5000])
+
+    # Named grid with labels and storeys
+    place_grid(
+        x=[0, 6000, 12000], y=[0, 4000],
+        z=[0, 3000, 6000],
+        x_labels=["A", "B", "C"], y_labels=["1", "2"],
+        z_labels=["+0.000", "+3.000", "+6.000"],
+        name="MAIN_GRID",
+    )
+    """
+    if len(x) < 2:
+        raise ValueError("At least two X coordinates required")
+    if len(y) < 2:
+        raise ValueError("At least two Y coordinates required")
+
+    resolved_z = z or []
+
+    grid = Grid()
+    if name:
+        grid.Name = name
+    grid.CoordinateX = _to_tekla_coords(x)
+    grid.CoordinateY = _to_tekla_coords(y)
+    grid.CoordinateZ = _to_tekla_coords(resolved_z) if resolved_z else ""
+    if x_labels:
+        grid.LabelX = " ".join(x_labels)
+    if y_labels:
+        grid.LabelY = " ".join(y_labels)
+    if z_labels:
+        grid.LabelZ = " ".join(z_labels)
+
+    if origin:
+        grid.Origin = Point(origin.x, origin.y, origin.z)
+
+    model = TeklaModel()
+    if grid.Insert():
+        model.commit_changes()
+        guid = grid.Identifier.GUID.ToString()
+        logger.info("Placed grid guid=%s (x=%d, y=%d, z=%d lines)", guid, len(x), len(y), len(resolved_z))
+        return ToolResult(structured_content={"status": "success", "guid": guid, "name": grid.Name})
+
+    raise RuntimeError("Grid.Insert() returned false")
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})

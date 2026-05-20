@@ -6,7 +6,7 @@ Tests beam, column, and panel placement operations.
 
 import pytest
 
-from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, place_slabs, delete_selected, move_elements
+from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, place_slabs, delete_selected, move_elements, place_grid
 from tekla_mcp_server.models import BeamInput, ColumnInput, PanelInput, SlabInput, PointInput, PositionInput
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly
@@ -422,3 +422,40 @@ def test_move_no_selection():
     TeklaModel.clear_selection()
     result = move_elements(dz=6000.0)
     assert result.structured_content.get("status") == "error"
+
+
+@pytest.fixture
+def grid_cleanup():
+    """Delete grids created during the test by their GUIDs."""
+    guids: list[str] = []
+    yield guids
+    if guids:
+        model = TeklaModel()
+        objects = model.get_objects_by_guid(guids)
+        for obj in objects:
+            obj.Delete()
+        model.commit_changes()
+
+
+def test_place_grid_basic(grid_cleanup):
+    """Place a minimal grid with only X and Y axes."""
+    result = place_grid(x=[0, 5000, 10000], y=[0, 5000])
+    assert result.structured_content["status"] == "success"
+    assert "guid" in result.structured_content
+    grid_cleanup.append(result.structured_content["guid"])
+
+
+def test_place_grid_with_name_and_z(grid_cleanup):
+    """Place a grid with a name, Z storeys, and axis labels."""
+    result = place_grid(
+        x=[0, 6000, 12000],
+        y=[0, 4000],
+        z=[0, 3000, 6000],
+        x_labels=["A", "B", "C"],
+        y_labels=["1", "2"],
+        z_labels=["+0.000", "+3.000", "+6.000"],
+        name="MCP_TEST_GRID",
+    )
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["name"] == "MCP_TEST_GRID"
+    grid_cleanup.append(result.structured_content["guid"])
