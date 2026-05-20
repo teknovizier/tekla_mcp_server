@@ -323,7 +323,7 @@ def print_drawings(
             print_attrs.PrintToMultipleSheet = DotPrintToMultipleSheet.Off
 
             file_attr = attrs["output_filename"]
-            print_attrs.OutputFileName = getattr(drawing, file_attr) if file_attr and hasattr(drawing, file_attr) else drawing.mark
+            print_attrs.OutputFileName = getattr(drawing, file_attr) if isinstance(file_attr, str) and hasattr(drawing, file_attr) else drawing.mark
 
             output_filename_with_ext = print_attrs.OutputFileName + ".pdf"
             output_file = Path(output_folder) / output_filename_with_ext
