@@ -4,7 +4,7 @@ Module for Tekla Drawing wrappers.
 
 from typing import Any
 
-from tekla_mcp_server.tekla.loader import Drawing, DrawingEnumerator, DrawingHandler
+from tekla_mcp_server.tekla.loader import Drawing, DrawingEnumerator, DrawingHandler, Beam, BindingFlags
 
 
 class TeklaDrawing:
@@ -35,6 +35,26 @@ class TeklaDrawing:
         Returns the mark of the drawing.
         """
         return self.drawing.Mark
+
+    @property
+    def revision_mark(self) -> str:
+        """
+        Returns the revision mark of the drawing.
+        """
+        # Tekla OpenAPI doesn't provide a method to access drawing revision mark directly.
+        # Using the workaround from:
+        # https://gist.github.com/benkoshy/bcef5f34c8dd3503eb77eb2fcef88814
+        try:
+            pi = self.drawing.GetType().GetProperty(
+                "Identifier", BindingFlags.Instance | BindingFlags.NonPublic
+            )
+            identifier = pi.GetValue(self.drawing, None)
+            b = Beam()
+            b.Identifier = identifier
+            ok, val = b.GetReportProperty("REVISION.MARK", str())
+            return val if ok else ""
+        except Exception:
+            return ""
 
     @property
     def drawing_type(self) -> str:
@@ -174,6 +194,7 @@ class TeklaDrawing:
         return {
             "drawing_type": self.drawing_type,
             "mark": self.mark,
+            "revision_mark": self.revision_mark,
             "name": self.name,
             "title1": self.title1,
             "title2": self.title2,
