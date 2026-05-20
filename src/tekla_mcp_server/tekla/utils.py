@@ -13,11 +13,9 @@ from pathlib import Path
 
 from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import StringMatchType, NumericMatchType, BaseComponent
+from tekla_mcp_server.models import BaseComponent
 
 from tekla_mcp_server.tekla.loader import (
-    StringOperatorType,
-    NumericOperatorType,
     Point,
     Vector,
     ModelObject,
@@ -45,29 +43,6 @@ from tekla_mcp_server.tekla.loader import (
 )
 
 from tekla_mcp_server.utils import log_function_call
-
-
-# Mappings
-# String match types
-STRING_MATCH_TYPE_MAPPING = {
-    StringMatchType.IS_EQUAL: StringOperatorType.IS_EQUAL,
-    StringMatchType.IS_NOT_EQUAL: StringOperatorType.IS_NOT_EQUAL,
-    StringMatchType.CONTAINS: StringOperatorType.CONTAINS,
-    StringMatchType.NOT_CONTAINS: StringOperatorType.NOT_CONTAINS,
-    StringMatchType.STARTS_WITH: StringOperatorType.STARTS_WITH,
-    StringMatchType.NOT_STARTS_WITH: StringOperatorType.NOT_STARTS_WITH,
-    StringMatchType.ENDS_WITH: StringOperatorType.ENDS_WITH,
-    StringMatchType.NOT_ENDS_WITH: StringOperatorType.NOT_ENDS_WITH,
-}
-
-NUMERIC_MATCH_TYPE_MAPPING = {
-    NumericMatchType.IS_EQUAL: NumericOperatorType.IS_EQUAL,
-    NumericMatchType.IS_NOT_EQUAL: NumericOperatorType.IS_NOT_EQUAL,
-    NumericMatchType.SMALLER_THAN: NumericOperatorType.SMALLER_THAN,
-    NumericMatchType.SMALLER_OR_EQUAL: NumericOperatorType.SMALLER_OR_EQUAL,
-    NumericMatchType.GREATER_THAN: NumericOperatorType.GREATER_THAN,
-    NumericMatchType.GREATER_OR_EQUAL: NumericOperatorType.GREATER_OR_EQUAL,
-}
 
 
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel

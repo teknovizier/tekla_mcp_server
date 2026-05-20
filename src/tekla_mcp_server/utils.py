@@ -2,6 +2,7 @@
 Module for utility functions.
 """
 
+import json
 import re
 from functools import wraps
 from collections.abc import Callable
@@ -103,15 +104,20 @@ def mcp_handler(scope: Literal["tool", "resource"] = "tool") -> Callable:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                logger.exception("[%s] failed:", func.__name__)
+                logger.exception("[%s] failed: %s", func.__name__, e)
                 if scope == "tool":
                     return ToolResult(structured_content={"status": "error", "message": str(e)})
                 else:
-                    return ResourceResult(contents=[ResourceContent(content={"error": str(e)}, mime_type="application/json")])
+                    return ResourceResult(contents=[ResourceContent(content=json.dumps({"error": str(e)}), mime_type="application/json")])
 
         return wrapper
 
     return decorator
+
+
+def json_resource(data: Any) -> ResourceResult:
+    """Wrap JSON-serialisable data as a single-item ResourceResult."""
+    return ResourceResult(contents=[ResourceContent(content=json.dumps(data), mime_type="application/json")])
 
 
 def parse_coordinate_string(coord_str: str) -> list[float]:

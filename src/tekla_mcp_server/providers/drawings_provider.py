@@ -242,12 +242,7 @@ def get_drawings(
     drawing_handler = DrawingHandler()
 
     if not drawing_handler.GetConnectionStatus():
-        return ToolResult(
-            structured_content={
-                "status": "error",
-                "message": "Not connected to Tekla",
-            }
-        )
+        raise ConnectionError("Not connected to Tekla")
 
     drawings_enum = drawing_handler.GetDrawings()
 
@@ -304,9 +299,7 @@ def get_drawing_properties(
     drawing_handler = DrawingHandler()
 
     if not drawing_handler.GetConnectionStatus():
-        return ToolResult(
-            structured_content={"status": "error", "message": "Not connected to Tekla"},
-        )
+        raise ConnectionError("Not connected to Tekla")
 
     target_drawings = get_drawings_by_marks(marks)
 
@@ -342,20 +335,15 @@ def detect_collisions_between_marks(
     drawing_handler = DrawingHandler()
 
     if not drawing_handler.GetConnectionStatus():
-        return ToolResult(
-            structured_content={"status": "error", "message": "Not connected to Tekla"},
-        )
+        raise ConnectionError("Not connected to Tekla")
 
     target_drawings = get_drawings_by_marks(marks)
 
     if not target_drawings:
-        return ToolResult(
-            structured_content={"status": "error", "message": "No drawings found or selected"},
-        )
+        raise ValueError("No drawings found or selected")
 
     if drawing_handler.GetActiveDrawing():
-        logger.error("detect_drawing_collisions failed: A drawing is currently open")
-        return ToolResult(structured_content={"status": "error", "message": "A drawing is currently open. Close it first before running collision detection."})
+        raise RuntimeError("A drawing is currently open. Close it first before running collision detection.")
 
     all_drawings_results: list[dict] = []
     total_colliding_marks = 0
@@ -457,23 +445,17 @@ def print_drawings(
     drawing_handler = DrawingHandler()
 
     if not drawing_handler.GetConnectionStatus():
-        return ToolResult(
-            structured_content={"status": "error", "message": "Not connected to Tekla"},
-        )
+        raise ConnectionError("Not connected to Tekla")
 
     target_drawings = get_drawings_by_marks(marks)
 
     if not target_drawings:
-        return ToolResult(
-            structured_content={"status": "error", "message": "No drawings found or selected"},
-        )
+        raise ValueError("No drawings found or selected")
 
     if not output_folder:
         output_folder_path = _get_default_plot_output_folder()
         if not output_folder_path:
-            return ToolResult(
-                structured_content={"status": "error", "message": "No output directory is set"},
-            )
+            raise ValueError("No output directory is set")
         output_folder = str(output_folder_path)
 
     _DEFAULT_ATTRIBUTES = {

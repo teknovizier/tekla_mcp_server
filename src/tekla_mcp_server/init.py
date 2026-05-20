@@ -34,7 +34,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-logger.setLevel(getattr(logging, _log_level))
+logger.setLevel(getattr(logging, _log_level.upper(), logging.INFO))
 
 
 def load_dlls() -> bool:

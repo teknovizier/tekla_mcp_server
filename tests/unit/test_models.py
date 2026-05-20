@@ -14,9 +14,8 @@ import pytest
 from pydantic_core import ValidationError
 
 from tekla_mcp_server.models import (
-    ElementTypeModel,
-    ComponentTypeModel,
-    ElementLabelModel,
+    ElementType,
+    ElementTypes,
     BaseComponent,
     ReportProperty,
     PartSnapshot,
@@ -40,7 +39,7 @@ def test_get_element_type_by_class_valid(input_val, expected):
     Covers:
     - Valid class strings and integers
     """
-    assert ElementTypeModel.get_element_type_by_class(input_val) == expected
+    assert ElementTypes.get_element_type_by_class(input_val) == expected
 
 
 @pytest.mark.parametrize(
@@ -60,7 +59,7 @@ def test_get_element_type_by_class_raises(input_val, expected_exception):
     - Invalid, non-integer, None, and edge cases
     """
     with pytest.raises(expected_exception):
-        ElementTypeModel.get_element_type_by_class(input_val)
+        ElementTypes.get_element_type_by_class(input_val)
 
 
 @pytest.mark.parametrize(
@@ -86,12 +85,11 @@ def test_get_element_type_by_class_raises(input_val, expected_exception):
         ("Steel Brace", "STEEL_BRACE"),
     ],
 )
-def test_element_type_model_valid(input_val, expected_enum):
+def test_element_type_enum_valid(input_val, expected_enum):
     """
-    Checks ElementTypeModel accepts valid values and maps to correct enum.
+    Checks ElementType enum accepts valid values.
     """
-    model = ElementTypeModel(value=input_val)
-    assert model.to_enum().name == expected_enum
+    assert ElementType(input_val).name == expected_enum
 
 
 @pytest.mark.parametrize(
@@ -103,84 +101,12 @@ def test_element_type_model_valid(input_val, expected_enum):
         "Random",
     ],
 )
-def test_element_type_model_invalid(input_val):
+def test_element_type_enum_invalid(input_val):
     """
-    Checks ElementTypeModel raises error for invalid values.
-    """
-    with pytest.raises(ValidationError):
-        ElementTypeModel(value=input_val)
-
-
-@pytest.mark.parametrize(
-    "input_val,expected_enum",
-    [
-        ("Component", "COMPONENT"),
-        ("Connection", "CONNECTION"),
-        ("Custom Part", "CUSTOM_PART"),
-        ("Detail", "DETAIL"),
-        ("Seam", "SEAM"),
-    ],
-)
-def test_component_type_model_valid(input_val, expected_enum):
-    """
-    Checks ComponentTypeModel accepts valid values and maps to correct enum.
-    """
-    model = ComponentTypeModel(value=input_val)
-    assert model.to_enum().name == expected_enum
-
-
-@pytest.mark.parametrize(
-    "input_val",
-    [
-        "componentt",
-        "details",
-        "",
-        "Random",
-    ],
-)
-def test_component_type_model_invalid(input_val):
-    """
-    Checks ComponentTypeModel raises error for invalid values.
-    """
-    with pytest.raises(ValidationError):
-        ComponentTypeModel(value=input_val)
-
-
-@pytest.mark.parametrize(
-    "input_val,expected_enum",
-    [
-        ("Position", "POSITION"),
-        ("GUID", "GUID"),
-        ("Name", "NAME"),
-        ("Profile", "PROFILE"),
-        ("Material", "MATERIAL"),
-        ("Finish", "FINISH"),
-        ("Class", "CLASS"),
-    ],
-)
-def test_element_label_model_valid(input_val, expected_enum):
-    """
-    Checks ElementLabelModel accepts valid values and maps to correct enum.
-    """
-    model = ElementLabelModel(value=input_val)
-    assert model.to_enum().name == expected_enum
-
-
-@pytest.mark.parametrize(
-    "input_val",
-    [
-        "positionn",
-        "guidd",
-        "",
-        "Unknown",
-    ],
-)
-def test_element_label_model_invalid(input_val):
-    """
-    Checks ElementLabelModel raises error for invalid values.
+    Checks ElementType enum raises error for invalid values.
     """
     with pytest.raises(ValueError):
-        ElementLabelModel(value=input_val)
+        ElementType(input_val)
 
 
 @pytest.mark.parametrize(
@@ -454,7 +380,7 @@ class TestBaseComponentCustomPropertiesValidation:
 
 
 class TestGetNumberingForClass:
-    """Tests for ElementTypeModel.get_default_numbering function."""
+    """Tests for ElementTypes.get_default_numbering function."""
 
     @pytest.mark.parametrize(
         "tekla_class, expected_keys",
@@ -467,9 +393,9 @@ class TestGetNumberingForClass:
     )
     def test_get_default_numbering_returns_expected_keys(self, tekla_class, expected_keys):
         """Test that get_default_numbering returns correct keys based on class."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
-        result = ElementTypeModel.get_default_numbering(tekla_class)
+        result = ElementTypes.get_default_numbering(tekla_class)
 
         if expected_keys is None:
             assert result is None
@@ -480,9 +406,9 @@ class TestGetNumberingForClass:
 
     def test_concrete_wall_numbering_only_has_assembly(self):
         """Concrete wall should only have assembly_number, no part_number."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
-        result = ElementTypeModel.get_default_numbering(1)
+        result = ElementTypes.get_default_numbering(1)
         assert result is not None
         assert "assembly_number" in result
         assert "part_number" not in result
@@ -491,9 +417,9 @@ class TestGetNumberingForClass:
 
     def test_steel_beam_numbering_has_both(self):
         """Steel beam should have both part_number and assembly_number."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
-        result = ElementTypeModel.get_default_numbering(100)
+        result = ElementTypes.get_default_numbering(100)
         assert result is not None
         assert "assembly_number" in result
         assert "part_number" in result
@@ -504,9 +430,9 @@ class TestGetNumberingForClass:
 
     def test_unknown_class_returns_none(self):
         """Unknown class should return None."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
-        result = ElementTypeModel.get_default_numbering(9999)
+        result = ElementTypes.get_default_numbering(9999)
         assert result is None
 
 
@@ -620,13 +546,13 @@ class TestNumberingAutoDetectionLogic:
 
     def test_user_provides_only_assembly_gets_part_from_config(self):
         """When user provides assembly but no part, part should come from config."""
-        from tekla_mcp_server.models import ElementTypeModel, NumberingSeries
+        from tekla_mcp_server.models import ElementTypes, NumberingSeries
 
         user_part = None
         user_assembly = NumberingSeries(prefix="MYA", start_number=99)
         tekla_class = 100  # STEEL_BEAM
 
-        numbering = ElementTypeModel.get_default_numbering(tekla_class)
+        numbering = ElementTypes.get_default_numbering(tekla_class)
         assert numbering is not None
 
         resolved_part = user_part
@@ -644,13 +570,13 @@ class TestNumberingAutoDetectionLogic:
 
     def test_user_provides_only_part_gets_assembly_from_config(self):
         """When user provides part but no assembly, assembly should come from config."""
-        from tekla_mcp_server.models import ElementTypeModel, NumberingSeries
+        from tekla_mcp_server.models import ElementTypes, NumberingSeries
 
         user_part = NumberingSeries(prefix="MY-P", start_number=88)
         user_assembly = None
         tekla_class = 100
 
-        numbering = ElementTypeModel.get_default_numbering(tekla_class)
+        numbering = ElementTypes.get_default_numbering(tekla_class)
         assert numbering is not None
 
         resolved_part = user_part
@@ -668,13 +594,13 @@ class TestNumberingAutoDetectionLogic:
 
     def test_user_provides_both_uses_user_values(self):
         """When user provides both, config values are ignored."""
-        from tekla_mcp_server.models import ElementTypeModel, NumberingSeries
+        from tekla_mcp_server.models import ElementTypes, NumberingSeries
 
         user_part = NumberingSeries(prefix="MY-P", start_number=10)
         user_assembly = NumberingSeries(prefix="MYA", start_number=20)
         tekla_class = 100
 
-        numbering = ElementTypeModel.get_default_numbering(tekla_class)
+        numbering = ElementTypes.get_default_numbering(tekla_class)
         assert numbering is not None
 
         resolved_part = user_part
@@ -692,13 +618,13 @@ class TestNumberingAutoDetectionLogic:
 
     def test_user_provides_neither_gets_config(self):
         """When user provides neither, both come from config."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
         user_part = None
         user_assembly = None
         tekla_class = 100
 
-        numbering = ElementTypeModel.get_default_numbering(tekla_class)
+        numbering = ElementTypes.get_default_numbering(tekla_class)
         assert numbering is not None
 
         resolved_part = user_part
@@ -714,11 +640,11 @@ class TestNumberingAutoDetectionLogic:
 
     def test_unknown_class_returns_none_no_override(self):
         """When class not in config, returns None and no override happens."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
         tekla_class = 9999
 
-        numbering = ElementTypeModel.get_default_numbering(tekla_class)
+        numbering = ElementTypes.get_default_numbering(tekla_class)
         assert numbering is None
 
 
@@ -727,23 +653,23 @@ class TestGetDefaultNameForClass:
 
     def test_concrete_wall_returns_name(self):
         """Concrete wall class should return default name."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
-        result = ElementTypeModel.get_default_name(1)
+        result = ElementTypes.get_default_name(1)
         assert result == "WALL"
 
     def test_steel_beam_returns_name(self):
         """Steel beam class should return default name."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
-        result = ElementTypeModel.get_default_name(100)
+        result = ElementTypes.get_default_name(100)
         assert result == "BEAM"
 
     def test_unknown_class_returns_none(self):
         """Unknown class should return None."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
-        result = ElementTypeModel.get_default_name(9999)
+        result = ElementTypes.get_default_name(9999)
         assert result is None
 
 
@@ -752,36 +678,36 @@ class TestNameAutoDetectionLogic:
 
     def test_user_provides_name_uses_user_name(self):
         """When user provides name, it should be used."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
         user_name = "MY_CUSTOM_NAME"
         tekla_class = 100
 
-        default_name = ElementTypeModel.get_default_name(tekla_class)
+        default_name = ElementTypes.get_default_name(tekla_class)
         resolved_name = user_name if user_name else default_name
 
         assert resolved_name == "MY_CUSTOM_NAME"
 
     def test_user_provides_none_gets_default(self):
         """When user provides no name, default from config should be used."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
         user_name = None
         tekla_class = 100
 
-        default_name = ElementTypeModel.get_default_name(tekla_class)
+        default_name = ElementTypes.get_default_name(tekla_class)
         resolved_name = user_name if user_name else default_name
 
         assert resolved_name == "BEAM"
 
     def test_unknown_class_no_override(self):
         """When class not in config, no name override should happen."""
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
 
         user_name = None
         tekla_class = 9999
 
-        default_name = ElementTypeModel.get_default_name(tekla_class)
+        default_name = ElementTypes.get_default_name(tekla_class)
         resolved_name = user_name if user_name else default_name
 
         assert resolved_name is None

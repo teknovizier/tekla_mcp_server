@@ -107,13 +107,7 @@ def run_macro(macro_name: Annotated[str, Field(description="Name of the macro fi
     """
 
     if Operation.IsMacroRunning():
-        logger.error("Cannot run macro '%s': Tekla is busy running another macro", macro_name)
-        return ToolResult(
-            structured_content={
-                "status": "error",
-                "message": "Tekla is busy running another macro",
-            }
-        )
+        raise RuntimeError("Tekla is busy running another macro")
 
     result = Operation.RunMacro(macro_name)
 

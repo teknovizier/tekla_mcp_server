@@ -46,21 +46,9 @@ def copy_properties_from_ifc(
             tekla_targets.append((guid, selected_object))
 
     if not ifc_sources:
-        logger.error("copy_properties_from_ifc failed: No IFC reference objects found in selection")
-        return ToolResult(
-            structured_content={
-                "status": "error",
-                "message": "No IFC reference objects found in selection. Please select IFC references and Tekla parts together.",
-            }
-        )
+        raise ValueError("No IFC reference objects found in selection. Please select IFC references and Tekla parts together.")
     if not tekla_targets:
-        logger.error("copy_properties_from_ifc failed: No Tekla parts found in selection")
-        return ToolResult(
-            structured_content={
-                "status": "error",
-                "message": "No Tekla parts found in selection. Please select IFC references and Tekla parts together.",
-            }
-        )
+        raise ValueError("No Tekla parts found in selection. Please select IFC references and Tekla parts together.")
 
     # Collect bounding boxes for matching
     ifc_bboxes: dict[str, Any] = {}

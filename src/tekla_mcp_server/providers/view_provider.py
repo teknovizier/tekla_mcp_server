@@ -11,7 +11,7 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import ElementLabel, ElementLabelModel
+from tekla_mcp_server.models import ElementLabel
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
@@ -66,10 +66,9 @@ def draw_elements_labels(
         label_value = "Name" if label is None else label
 
     try:
-        label_enum = ElementLabelModel(value=label_value).to_enum()
+        label_enum = ElementLabel(label_value.strip())
     except Exception as e:
-        logger.error("draw_elements_labels failed: Invalid label: %s", str(e))
-        return ToolResult(structured_content={"status": "error", "message": f"Invalid label: {str(e)}"})
+        raise ValueError(f"Invalid label: {e}") from e
 
     resolved_label = None
     unit = None
@@ -242,8 +241,7 @@ def apply_view_filter(
     """
     available = get_filters(".VObjGrp")
     if filter_name not in available:
-        logger.error("apply_view_filter failed: Invalid filter '%s'", filter_name)
-        return ToolResult(structured_content={"status": "error", "message": f"Invalid filter '{filter_name}'", "available_filters": available})
+        raise ValueError(f"Invalid filter '{filter_name}'. Available: {available}")
 
     views = get_active_views()
     for view in views:
@@ -280,8 +278,7 @@ def hide_selected() -> ToolResult:
     selected_objects = TeklaModel().get_selected_objects()
     tekla_list = collect_children(selected_objects)
     if not ModelObjectVisualization.SetTransparency(tekla_list, TemporaryTransparency.HIDDEN):
-        logger.error("Failed to hide selected elements")
-        return ToolResult(structured_content={"status": "error", "message": "Error hiding elements"})
+        raise RuntimeError("Failed to hide selected elements")
 
     logger.info("Hidden %d elements", tekla_list.Count)
     return ToolResult(structured_content={"status": "success", "hidden_elements": tekla_list.Count})
@@ -301,8 +298,7 @@ def color_selected(
     tekla_list = collect_children(selected_objects)
     color = Color(red / 255.0, green / 255.0, blue / 255.0)
     if not ModelObjectVisualization.SetTemporaryState(tekla_list, color):
-        logger.error("Failed to color selected elements")
-        return ToolResult(structured_content={"status": "error", "message": "Error coloring elements"})
+        raise RuntimeError("Failed to color selected elements")
 
     logger.info("Colored %d elements with RGB(%d, %d, %d)", tekla_list.Count, red, green, blue)
     return ToolResult(structured_content={"status": "success", "colored_elements": tekla_list.Count})

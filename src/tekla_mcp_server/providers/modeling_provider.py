@@ -20,7 +20,7 @@ from tekla_mcp_server.models import (
     PlacementResult,
     BatchPlacementResult,
     PointInput,
-    ElementTypeModel,
+    ElementTypes,
     NumberingSeries,
 )
 from tekla_mcp_server.utils import mcp_handler
@@ -42,7 +42,7 @@ def _resolve_numbering_and_name(
     name: str | None = getattr(input_object, "name", None)
 
     if assembly_number is None or part_number is None:
-        numbering = ElementTypeModel.get_default_numbering(input_object.tekla_class)
+        numbering = ElementTypes.get_default_numbering(input_object.tekla_class)
         if numbering:
             if assembly_number is None:
                 assembly_number = numbering.get("assembly_number")
@@ -50,7 +50,7 @@ def _resolve_numbering_and_name(
                 part_number = numbering.get("part_number")
 
     if name is None:
-        name = ElementTypeModel.get_default_name(input_object.tekla_class)
+        name = ElementTypes.get_default_name(input_object.tekla_class)
 
     return part_number, assembly_number, name
 
@@ -127,7 +127,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
     """
     if not beams:
         logger.error("place_beams failed: No beams provided")
-        return ToolResult(structured_content={"status": "error", "message": "No beams provided"})
+        raise ValueError("No beams provided")
 
     model = TeklaModel()
     results: list[PlacementResult] = []
@@ -145,7 +145,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
                 succeeded += 1
             results.append(result)
         except Exception as e:
-            logger.exception("Failed to insert element")
+            logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
     model.commit_changes()
@@ -179,7 +179,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
     """
     if not columns:
         logger.error("place_columns failed: No columns provided")
-        return ToolResult(structured_content={"status": "error", "message": "No columns provided"})
+        raise ValueError("No columns provided")
 
     model = TeklaModel()
     results: list[PlacementResult] = []
@@ -199,7 +199,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
                 succeeded += 1
             results.append(result)
         except Exception as e:
-            logger.exception("Failed to insert element")
+            logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
     model.commit_changes()
@@ -232,7 +232,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
     """
     if not panels:
         logger.error("place_panels failed: No panels provided")
-        return ToolResult(structured_content={"status": "error", "message": "No panels provided"})
+        raise ValueError("No panels provided")
 
     model = TeklaModel()
     results: list[PlacementResult] = []
@@ -250,7 +250,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
                 succeeded += 1
             results.append(result)
         except Exception as e:
-            logger.exception("Failed to insert element")
+            logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
     model.commit_changes()
@@ -284,7 +284,7 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
     """
     if not slabs:
         logger.error("place_slabs failed: No slabs provided")
-        return ToolResult(structured_content={"status": "error", "message": "No slabs provided"})
+        raise ValueError("No slabs provided")
 
     model = TeklaModel()
     results: list[PlacementResult] = []
@@ -317,7 +317,7 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
             else:
                 results.append(PlacementResult(success=False, message="Insert() returned false"))
         except Exception as e:
-            logger.exception("Failed to insert slab")
+            logger.exception("Failed to insert slab: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
     model.commit_changes()
@@ -338,7 +338,7 @@ def delete_selected() -> ToolResult:
 
     if count == 0:
         logger.error("delete_selected failed: No objects selected")
-        return ToolResult(structured_content={"status": "error", "message": "No objects selected"})
+        raise ValueError("No objects selected")
 
     deleted = 0
     for obj in selected:

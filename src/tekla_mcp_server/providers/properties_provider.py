@@ -22,17 +22,13 @@ from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 properties_provider = LocalProvider()
 
 
-def _validate_exactly_two_selected(count: int) -> ToolResult | None:
+def _validate_exactly_two_selected(count: int) -> None:
     if count == 0:
-        logger.error("_validate_exactly_two_selected failed: No elements selected")
-        return ToolResult(structured_content={"status": "error", "message": "No elements selected. Please select two elements."})
+        raise ValueError("No elements selected. Please select two elements.")
     if count == 1:
-        logger.error("_validate_exactly_two_selected failed: Only one element selected")
-        return ToolResult(structured_content={"status": "error", "message": "Only one element selected. Please select two elements."})
+        raise ValueError("Only one element selected. Please select two elements.")
     if count > 2:
-        logger.error("_validate_exactly_two_selected failed: More than two elements selected. Expected 2, got %s.", count)
-        return ToolResult(structured_content={"status": "error", "message": f"More than two elements selected. Expected 2, got {count}."})
-    return None
+        raise ValueError(f"More than two elements selected. Expected 2, got {count}.")
 
 
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -287,7 +283,7 @@ def get_elements_cut_parts() -> ToolResult:
 
     for selected_object in selected_objects:
         if not isinstance(selected_object, Part):
-            logger.error("get_cut_parts failed: Skipping non-Part object: %s", selected_object.GetType())
+            logger.error("get_cut_parts failed: Skipping non-part object: %s", selected_object.GetType())
             continue
         for boolean_part in iterate_boolean_parts(selected_object):
             if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT:
@@ -328,24 +324,20 @@ def compare_elements(
     """
     selected_objects = TeklaModel().get_selected_objects()
 
-    validation_result = _validate_exactly_two_selected(selected_objects.GetSize())
-    if validation_result:
-        return validation_result
+    _validate_exactly_two_selected(selected_objects.GetSize())
 
     parts = list(selected_objects)
     logger.debug("Comparing %s elements: %s vs %s", len(parts), parts[0].GetType(), parts[1].GetType())
     if not ignore_numbering:
         if not all(Operation.IsNumberingUpToDate(part) for part in parts):
-            logger.error("compare_elements snapshots failed: Numbering is not up-to-date for selected elements.")
-            return ToolResult(structured_content={"status": "error", "message": "Numbering is not up-to-date for selected elements."})
+            raise ValueError("Numbering is not up-to-date for selected elements.")
 
     object_a = wrap_model_object(parts[0])
     object_b = wrap_model_object(parts[1])
 
     valid_types = (TeklaPart, TeklaAssembly)
     if not isinstance(object_a, valid_types) or not isinstance(object_b, valid_types):
-        logger.error("compare_elements_snapshots failed: Both objects must be parts or assemblies")
-        return ToolResult(structured_content={"status": "error", "message": "Both objects must be parts or assemblies"})
+        raise TypeError("Both objects must be parts or assemblies")
 
     snapshot_a = object_a.to_snapshot()
     snapshot_b = object_b.to_snapshot()

@@ -77,7 +77,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 
 # Local application
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.providers.selection_provider import add_filter
+from tekla_mcp_server.tekla.filter_builder import add_filter
 ```
 
 ### Inline Imports
@@ -164,7 +164,7 @@ For tools, use `@mcp_handler(scope="tool")` decorator which wraps tools and auto
 - **Providers** (`providers/`) - MCP tool definitions with inline implementations
 - Use `LocalProvider` for organizing tools into modules
 - Tool functions accept model inputs and return dict[str, Any]
-- Use `_to_filter_option()` helper to convert dicts to Pydantic models
+- Use `to_filter_option()` helper from `tekla/filter_builder.py` to convert dicts to Pydantic models
 
 ## MCP Resources (Read-Only Data)
 Resources provide discovery/metadata, not actions:

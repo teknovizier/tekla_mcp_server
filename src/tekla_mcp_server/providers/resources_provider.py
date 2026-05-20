@@ -4,8 +4,6 @@ Resources provider for Tekla MCP server.
 Provides read-only data resources for discovery and metadata.
 """
 
-import json
-
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers import LocalProvider
 
@@ -14,7 +12,7 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.tekla.loader import Grid
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.utils import get_all_materials, get_all_rebar_items, get_macros, get_filters
-from tekla_mcp_server.utils import mcp_handler, parse_coordinate_string, parse_label_string
+from tekla_mcp_server.utils import json_resource, mcp_handler, parse_coordinate_string, parse_label_string
 
 
 resources_provider = LocalProvider()
@@ -31,7 +29,7 @@ def get_component_list() -> ResourceResult:
     """
     data = {comp.get("tekla_name"): key for key, comp in get_config().base_components.items() if comp.get("tekla_name")}
     logger.debug("Retrieved %d components", len(data))
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(data), mime_type="application/json")])
+    return json_resource(data)
 
 
 @resources_provider.resource("tekla://components/{component_key}")
@@ -46,7 +44,7 @@ def get_component_schema(component_key: str) -> ResourceResult:
         custom_props = component.get("custom_properties", {})
         schema = {"description": description, "custom_properties": custom_props}
         logger.debug("Retrieved schema for component '%s'", component_key)
-        return ResourceResult(contents=[ResourceContent(content=json.dumps(schema), mime_type="application/json")])
+        return json_resource(schema)
     logger.warning("Component schema not found for key '%s'", component_key)
     return ResourceResult(contents=[])
 
@@ -59,7 +57,7 @@ def get_materials_resource() -> ResourceResult:
     """
     materials = get_all_materials()
     logger.debug("Retrieved %d materials", len(materials))
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(materials), mime_type="application/json")])
+    return json_resource(materials)
 
 
 @resources_provider.resource("tekla://catalog/rebars")
@@ -70,7 +68,7 @@ def get_rebars_resource() -> ResourceResult:
     """
     rebars = get_all_rebar_items()
     logger.debug("Retrieved %d rebars", len(rebars))
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(rebars), mime_type="application/json")])
+    return json_resource(rebars)
 
 
 @resources_provider.resource("tekla://macros")
@@ -81,7 +79,7 @@ def get_macro_list() -> ResourceResult:
     """
     macros = get_macros()
     logger.debug("Retrieved %d macros", len(macros))
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(macros), mime_type="application/json")])
+    return json_resource(macros)
 
 
 @resources_provider.resource("tekla://element_types")
@@ -92,7 +90,7 @@ def get_element_types() -> ResourceResult:
     """
     element_types = get_config().get_element_types_list()
     logger.debug("Retrieved %d element types", len(element_types))
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(element_types), mime_type="application/json")])
+    return json_resource(element_types)
 
 
 @resources_provider.resource("tekla://filters/selection")
@@ -103,7 +101,7 @@ def get_selection_filter_list() -> ResourceResult:
     """
     filters = get_filters(".SObjGrp")
     logger.debug("Retrieved %d selection filters", len(filters))
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(filters), mime_type="application/json")])
+    return json_resource(filters)
 
 
 @resources_provider.resource("tekla://filters/view")
@@ -114,7 +112,7 @@ def get_view_filter_list() -> ResourceResult:
     """
     filters = get_filters(".VObjGrp")
     logger.debug("Retrieved %d view filters", len(filters))
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(filters), mime_type="application/json")])
+    return json_resource(filters)
 
 
 @resources_provider.resource("tekla://phases")
@@ -141,14 +139,7 @@ def get_phase_list() -> ResourceResult:
         )
 
     logger.debug("Retrieved %d phases, current: %s", len(phase_list), current_phase)
-    return ResourceResult(
-        contents=[
-            ResourceContent(
-                content=json.dumps({"phases": phase_list, "current_phase": current_phase}),
-                mime_type="application/json",
-            )
-        ]
-    )
+    return json_resource({"phases": phase_list, "current_phase": current_phase})
 
 
 @resources_provider.resource("tekla://grids")
@@ -192,14 +183,7 @@ def get_grid_list() -> ResourceResult:
             }
         )
     logger.debug("Retrieved %d grids", len(grid_data))
-    return ResourceResult(
-        contents=[
-            ResourceContent(
-                content=json.dumps({"grids": grid_data}),
-                mime_type="application/json",
-            )
-        ]
-    )
+    return json_resource({"grids": grid_data})
 
 
 @resources_provider.resource("tekla://connection_status")
@@ -211,20 +195,7 @@ def get_connection_status() -> ResourceResult:
     model = TeklaModel()
     model_path = model.model.GetInfo().ModelPath
     logger.debug("Connection status check: %s", model_path)
-    return ResourceResult(
-        contents=[
-            ResourceContent(
-                content=json.dumps(
-                    {
-                        "connected": True,
-                        "model_path": model_path,
-                        "message": "Connected to Tekla model",
-                    }
-                ),
-                mime_type="application/json",
-            )
-        ]
-    )
+    return json_resource({"connected": True, "model_path": model_path, "message": "Connected to Tekla model"})
 
 
 def _parse_context_meta(path) -> dict:
@@ -252,7 +223,7 @@ def get_context_index() -> ResourceResult:
     folder = get_config().context_folder
     index = [_parse_context_meta(f) for f in sorted(folder.glob("*.md"))] if folder.exists() else []
     logger.debug("Retrieved context index: %d files", len(index))
-    return ResourceResult(contents=[ResourceContent(content=json.dumps(index), mime_type="application/json")])
+    return json_resource(index)
 
 
 @resources_provider.resource("project://context/{file}")

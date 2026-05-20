@@ -122,14 +122,14 @@ class LiftingAnchorsHandler:
         Returns:
             Context dict with processing data (number_of_anchors, etc.)
         """
-        from tekla_mcp_server.models import ElementTypeModel
+        from tekla_mcp_server.models import ElementTypes
         from tekla_mcp_server.tekla.loader import Solid, TransformationPlane
         from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
         weight_factor = 1.05
         recess_width_offset = 100.0
 
-        material, element_type = ElementTypeModel.get_element_type_by_class(selected_object.Class)
+        material, element_type = ElementTypes.get_element_type_by_class(selected_object.Class)
         if material != "MATERIAL_CONCRETE":
             raise ValueError(f"Unsupported material type: {material}. Only concrete elements are supported.")
 

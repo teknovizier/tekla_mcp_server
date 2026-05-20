@@ -5,7 +5,7 @@ This module defines core data structures, enumerations, and models used in the p
 import hashlib
 import json
 from enum import Enum
-from typing import Any, ClassVar, Self, Literal
+from typing import Any, Self, Literal
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
 from pydantic_core import PydanticCustomError
@@ -119,39 +119,9 @@ class ElementLabel(Enum):
     CUSTOM = "Custom"
 
 
-# Mappings
-ELEMENT_TYPES = {e.value for e in ElementType}
-COMPONENT_TYPES = {e.value for e in ComponentType}
-ELEMENT_LABELS = {e.value for e in ElementLabel}
 
 
 # Classes
-class EnumWrapper(BaseModel):
-    """
-    A generic base model for validating string inputs against a predefined set of enum values.
-
-    This class is designed to be subclassed by specific enum models,
-    allowing consistent validation logic and error handling across multiple enum types.
-    """
-
-    value: str
-    _valid_values: ClassVar[set[str]] = set()
-    _error_code: ClassVar[str] = "invalid_enum"
-
-    @field_validator("value", mode="after")
-    @classmethod
-    def validate_value(cls, v: str) -> str:
-        """
-        Validates and normalizes the input string.
-        - Strips leading/trailing whitespace
-        - Checks against allowed values
-        """
-        normalized = v.strip()
-        if normalized not in cls._valid_values:
-            raise PydanticCustomError(cls._error_code, f"Invalid value: {v}. Allowed: {', '.join(cls._valid_values)}")
-        return normalized
-
-
 class StringFilterCondition(BaseModel):
     """
     Encapsulates a string filter condition with match type and value.
@@ -268,19 +238,10 @@ class NumericFilterOption(BaseModel):
         return self.logic
 
 
-class ElementTypeModel(EnumWrapper):
+class ElementTypes:
     """
-    Represents a validated element type.
+    Namespace for element-type class lookups backed by the config.
     """
-
-    _valid_values = ELEMENT_TYPES
-    _error_code = "invalid_element_type"
-
-    def to_enum(self) -> ElementType:
-        """
-        Converts the validated string value to a enum.
-        """
-        return ElementType(self.value)
 
     @staticmethod
     def get_class_mapping() -> dict[int, tuple[str, str]]:
@@ -296,7 +257,7 @@ class ElementTypeModel(EnumWrapper):
         """
         if isinstance(tekla_class, str):
             tekla_class = int(tekla_class)
-        result = ElementTypeModel.get_class_mapping().get(tekla_class)
+        result = ElementTypes.get_class_mapping().get(tekla_class)
         if result is None:
             raise ValueError(f"Class number {tekla_class} not found in the list of allowed classes.")
         return result
@@ -329,36 +290,6 @@ class ElementTypeModel(EnumWrapper):
         """
         config = get_config().get_element_types_flat().get(tekla_class)
         return config.get("name") if config else None
-
-
-class ComponentTypeModel(EnumWrapper):
-    """
-    Represents a validated component type.
-    """
-
-    _valid_values = COMPONENT_TYPES
-    _error_code = "invalid_component_type"
-
-    def to_enum(self) -> ComponentType:
-        """
-        Converts the validated string value to a enum.
-        """
-        return ComponentType(self.value)
-
-
-class ElementLabelModel(EnumWrapper):
-    """
-    Represents a validated element label.
-    """
-
-    _valid_values = ELEMENT_LABELS
-    _error_code = "invalid_element_label"
-
-    def to_enum(self) -> ElementLabel:
-        """
-        Converts the validated string value to a enum.
-        """
-        return ElementLabel(self.value)
 
 
 class BaseComponent(BaseModel):
