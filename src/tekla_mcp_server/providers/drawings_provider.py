@@ -12,186 +12,31 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import DrawingType, StringFilterOption, StringMatchType
-from tekla_mcp_server.utils import mcp_handler, rects_intersect, lines_intersect, line_rect_intersect
+from tekla_mcp_server.models import DrawingType, StringFilterOption
+from tekla_mcp_server.utils import mcp_handler
+from tekla_mcp_server.tekla.filter_builder import to_filter_option
+from tekla_mcp_server.tekla.drawing_utils import (
+    get_default_plot_output_folder,
+    matches_string_filter,
+    map_sheet_size_to_paper_size,
+    get_mark_collision_data,
+    check_collisions,
+    OUTPUT_TYPE_MAP,
+    COLOR_MODE_MAP,
+    ORIENTATION_MAP,
+    SCALING_METHOD_MAP,
+)
 from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings, get_drawings_by_marks
-
-from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import (
     DrawingHandler,
-    LeaderLine,
     Mark,
     DrawingColors,
     DPMPrinterAttributes,
-    DotPrintColor,
-    DotPrintOrientationType,
-    DotPrintOutputType,
-    DotPrintPaperSize,
     DotPrintToMultipleSheet,
-    DotPrintScalingType,
 )
 
 
 drawings_provider = LocalProvider()
-
-
-def _get_default_plot_output_folder() -> Path | None:
-    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
-
-    model = TeklaModel()
-    model_path = model.model.GetInfo().ModelPath
-    _, plot_dir = TeklaStructuresSettings.GetAdvancedOption("XS_DRAWING_PLOT_FILE_DIRECTORY", str())
-
-    if not plot_dir:
-        return None
-
-    if Path(plot_dir).is_absolute():
-        return Path(plot_dir).resolve()
-    return (Path(model_path) / plot_dir).absolute()
-
-
-def _parse_filter(filter_option: Any) -> StringFilterOption | None:
-    if isinstance(filter_option, dict):
-        return StringFilterOption.model_validate(filter_option)
-    return filter_option
-
-
-def _matches_string_filter(value: str, filter_option: Any) -> bool:
-    if not filter_option:
-        return True
-
-    conditions = filter_option.conditions
-    if not isinstance(conditions, list):
-        conditions = [conditions]
-
-    logic = filter_option.logic or "AND"
-    results = []
-
-    for cond in conditions:
-        match_type = StringMatchType(cond.match_type)
-        filter_value = cond.value
-
-        if match_type == StringMatchType.IS_EQUAL:
-            matches = value == filter_value
-        elif match_type == StringMatchType.IS_NOT_EQUAL:
-            matches = value != filter_value
-        elif match_type == StringMatchType.CONTAINS:
-            matches = filter_value.lower() in value.lower()
-        elif match_type == StringMatchType.NOT_CONTAINS:
-            matches = filter_value.lower() not in value.lower()
-        elif match_type == StringMatchType.STARTS_WITH:
-            matches = value.lower().startswith(filter_value.lower())
-        elif match_type == StringMatchType.NOT_STARTS_WITH:
-            matches = not value.lower().startswith(filter_value.lower())
-        elif match_type == StringMatchType.ENDS_WITH:
-            matches = value.lower().endswith(filter_value.lower())
-        elif match_type == StringMatchType.NOT_ENDS_WITH:
-            matches = not value.lower().endswith(filter_value.lower())
-        else:
-            matches = False
-
-        results.append(matches)
-
-    if logic == "OR":
-        return any(results)
-    return all(results)
-
-
-def _map_sheet_size_to_paper_size(sheet_width: float, sheet_height: float) -> DotPrintPaperSize | None:
-    width = round(sheet_width)
-    height = round(sheet_height)
-
-    paper_sizes = {
-        (210, 297): DotPrintPaperSize.A4,
-        (297, 210): DotPrintPaperSize.A4,
-        (297, 420): DotPrintPaperSize.A3,
-        (420, 297): DotPrintPaperSize.A3,
-        (420, 594): DotPrintPaperSize.A2,
-        (594, 420): DotPrintPaperSize.A2,
-        (594, 841): DotPrintPaperSize.A1,
-        (841, 594): DotPrintPaperSize.A1,
-        (841, 1189): DotPrintPaperSize.A0,
-        (1189, 841): DotPrintPaperSize.A0,
-    }
-
-    return paper_sizes.get((width, height))
-
-
-def _get_mark_collision_data(mark: Mark) -> dict | None:
-    """Get mark data for both bbox and line collision detection."""
-    result = {"bbox": None, "line": None, "mark": mark}
-
-    # Get bbox using GetAxisAlignedBoundingBox
-    bbox = mark.GetAxisAlignedBoundingBox()
-    if hasattr(bbox, "MinPoint"):
-        min_pt = bbox.MinPoint
-        max_pt = bbox.MaxPoint
-        result["bbox"] = (min_pt.X, min_pt.Y, max_pt.X, max_pt.Y)
-
-    # Get mark insertion point
-    ip = mark.InsertionPoint
-    if ip:
-        ip_x, ip_y = ip.X, ip.Y
-    else:
-        return result
-
-    # Try to get LeaderLine from mark's children
-    leader_start = None
-    leader_end = None
-
-    children = mark.GetObjects()
-    while children.MoveNext():
-        child = children.Current
-        if isinstance(child, LeaderLine):
-            leader_start = child.StartPoint  # Arrow tip
-            leader_end = child.EndPoint  # Point at text edge
-            break
-
-    # Set line data
-    if leader_start and leader_end:
-        result["line"] = ((leader_end.X, leader_end.Y), (leader_start.X, leader_start.Y))
-    elif leader_start:
-        result["line"] = ((ip_x, ip_y), (leader_start.X, leader_start.Y))
-    else:
-        result["line"] = None
-
-    return result
-
-
-def _check_collisions(data_list: list[dict]) -> set[int]:
-    """Check both bbox overlap and line intersections."""
-    colliding: set[int] = set()
-    n = len(data_list)
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            data_i = data_list[i]
-            data_j = data_list[j]
-            is_colliding = False
-
-            # Check bbox overlap
-            if data_i["bbox"] and data_j["bbox"]:
-                if rects_intersect(data_i["bbox"], data_j["bbox"]):
-                    is_colliding = True
-
-            # Check line intersection
-            if data_i["line"] and data_j["line"]:
-                if lines_intersect(data_i["line"][0], data_i["line"][1], data_j["line"][0], data_j["line"][1]):
-                    is_colliding = True
-
-            # Check line vs bbox (both directions)
-            if data_i["line"] and data_j["bbox"]:
-                if line_rect_intersect(data_i["line"][0], data_i["line"][1], data_j["bbox"]):
-                    is_colliding = True
-            if data_i["bbox"] and data_j["line"]:
-                if line_rect_intersect(data_j["line"][0], data_j["line"][1], data_i["bbox"]):
-                    is_colliding = True
-
-            if is_colliding:
-                colliding.add(i)
-                colliding.add(j)
-
-    return colliding
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -232,43 +77,34 @@ def get_drawings(
         }
     }
     """
-    name_filter = _parse_filter(name_filter)
-    mark_filter = _parse_filter(mark_filter)
-    title1_filter = _parse_filter(title1_filter)
-    title2_filter = _parse_filter(title2_filter)
-    title3_filter = _parse_filter(title3_filter)
+    name_filter = to_filter_option(name_filter, StringFilterOption)
+    mark_filter = to_filter_option(mark_filter, StringFilterOption)
+    title1_filter = to_filter_option(title1_filter, StringFilterOption)
+    title2_filter = to_filter_option(title2_filter, StringFilterOption)
+    title3_filter = to_filter_option(title3_filter, StringFilterOption)
 
     drawing_handler = DrawingHandler()
 
     if not drawing_handler.GetConnectionStatus():
         raise ConnectionError("Not connected to Tekla")
 
-    drawings_enum = drawing_handler.GetDrawings()
-
-    all_drawings = wrap_drawings(drawings_enum)
-
+    all_drawings = wrap_drawings(drawing_handler.GetDrawings())
     filtered_drawings = all_drawings
 
     if drawing_type:
         filtered_drawings = [d for d in filtered_drawings if d.drawing_type == drawing_type]
-
     if name_filter:
-        filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.name, name_filter)]
-
+        filtered_drawings = [d for d in filtered_drawings if matches_string_filter(d.name, name_filter)]
     if mark_filter:
-        filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.mark, mark_filter)]
-
+        filtered_drawings = [d for d in filtered_drawings if matches_string_filter(d.mark, mark_filter)]
     if title1_filter:
-        filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.title1, title1_filter)]
-
+        filtered_drawings = [d for d in filtered_drawings if matches_string_filter(d.title1, title1_filter)]
     if title2_filter:
-        filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.title2, title2_filter)]
-
+        filtered_drawings = [d for d in filtered_drawings if matches_string_filter(d.title2, title2_filter)]
     if title3_filter:
-        filtered_drawings = [d for d in filtered_drawings if _matches_string_filter(d.title3, title3_filter)]
+        filtered_drawings = [d for d in filtered_drawings if matches_string_filter(d.title3, title3_filter)]
 
     marks = [d.mark for d in filtered_drawings]
-
     logger.info("Found %s drawings matching filters", len(marks))
 
     return ToolResult(
@@ -308,7 +144,6 @@ def get_drawing_properties(
         )
 
     drawings_data = [{"No": i + 1, **d.to_dict()} for i, d in enumerate(target_drawings)]
-
     logger.info("Retrieved properties for %s drawings", len(drawings_data))
 
     return ToolResult(
@@ -349,7 +184,6 @@ def detect_collisions_between_marks(
 
     for drawing in target_drawings:
         drawing_handler.SetActiveDrawing(drawing.drawing)
-
         view_results: list[dict] = []
 
         try:
@@ -371,16 +205,14 @@ def detect_collisions_between_marks(
 
             mark_data = []
             while mark_objects.MoveNext():
-                obj = mark_objects.Current
-                collision_data = _get_mark_collision_data(obj)
+                collision_data = get_mark_collision_data(mark_objects.Current)
                 if collision_data:
                     mark_data.append(collision_data)
 
             if not mark_data:
                 continue
 
-            colliding_indices = _check_collisions(mark_data)
-
+            colliding_indices = check_collisions(mark_data)
             if not colliding_indices:
                 continue
 
@@ -389,26 +221,21 @@ def detect_collisions_between_marks(
 
             for i, data in enumerate(mark_data):
                 if i in colliding_indices:
-                    mark = data["mark"]
-                    mark.Attributes.Frame.Color = DrawingColors.Red
-                    mark.Modify()
+                    data["mark"].Attributes.Frame.Color = DrawingColors.Red
+                    data["mark"].Modify()
 
-            view_results.append(
-                {
-                    "view": view_name,
-                    "total_marks": len(mark_data),
-                    "colliding_marks": colliding_count,
-                }
-            )
+            view_results.append({
+                "view": view_name,
+                "total_marks": len(mark_data),
+                "colliding_marks": colliding_count,
+            })
 
         if view_results:
-            all_drawings_results.append(
-                {
-                    "mark": drawing.mark,
-                    "name": drawing.name,
-                    "views": view_results,
-                }
-            )
+            all_drawings_results.append({
+                "mark": drawing.mark,
+                "name": drawing.name,
+                "views": view_results,
+            })
             drawing_handler.SaveActiveDrawing()
 
     drawing_handler.CloseActiveDrawing()
@@ -451,12 +278,12 @@ def print_drawings(
         raise ValueError("No drawings found or selected")
 
     if not output_folder:
-        output_folder_path = _get_default_plot_output_folder()
+        output_folder_path = get_default_plot_output_folder()
         if not output_folder_path:
             raise ValueError("No output directory is set")
         output_folder = str(output_folder_path)
 
-    _DEFAULT_ATTRIBUTES = {
+    default_attrs = {
         "printer_name": "PDF-XChange 3.0",
         "output_filename": output_filename,
         "output_type": "PDF",
@@ -467,19 +294,7 @@ def print_drawings(
         "open_when_finished": False,
         "scaling_method": "Auto",
     }
-
-    if printer_attributes:
-        attrs = {**_DEFAULT_ATTRIBUTES, **printer_attributes}
-    else:
-        attrs = _DEFAULT_ATTRIBUTES
-
-    _OUTPUT_TYPE_MAP = {"PDF": DotPrintOutputType.PDF, "Printer": DotPrintOutputType.Printer, "Plot": DotPrintOutputType.Plot, "Image": DotPrintOutputType.Image}
-    _COLOR_MODE_MAP = {"BlackAndWhite": DotPrintColor.BlackAndWhite, "Color": DotPrintColor.Color}
-    _ORIENTATION_MAP = {"Landscape": DotPrintOrientationType.Landscape, "Portrait": DotPrintOrientationType.Portrait}
-    _SCALING_METHOD_MAP = {
-        "Auto": DotPrintScalingType.Auto,
-        "Scale": DotPrintScalingType.Scale,
-    }
+    attrs = {**default_attrs, **printer_attributes} if printer_attributes else default_attrs
 
     results: list[dict] = []
     success_count = 0
@@ -489,7 +304,7 @@ def print_drawings(
             sheet_width = drawing.drawing.Layout.SheetSize.Width
             sheet_height = drawing.drawing.Layout.SheetSize.Height
 
-            paper_size = _map_sheet_size_to_paper_size(sheet_width, sheet_height)
+            paper_size = map_sheet_size_to_paper_size(sheet_width, sheet_height)
             if paper_size is None:
                 logger.warning("Format not supported for drawing %s (size: %sx%s mm)", drawing.mark, sheet_width, sheet_height)
                 results.append({"mark": drawing.mark, "status": "failed", "message": f"Format not supported: sheet size {sheet_width}x{sheet_height} mm does not match A0-A4"})
@@ -497,25 +312,22 @@ def print_drawings(
 
             print_attrs = DPMPrinterAttributes()
             print_attrs.PrinterName = attrs["printer_name"]
-            print_attrs.OutputType = _OUTPUT_TYPE_MAP.get(attrs["output_type"], DotPrintOutputType.PDF)
-            print_attrs.ColorMode = _COLOR_MODE_MAP.get(attrs["color_mode"], DotPrintColor.BlackAndWhite)
-            print_attrs.Orientation = _ORIENTATION_MAP.get(attrs["orientation"], DotPrintOrientationType.Landscape)
+            print_attrs.OutputType = OUTPUT_TYPE_MAP.get(attrs["output_type"], OUTPUT_TYPE_MAP["PDF"])
+            print_attrs.ColorMode = COLOR_MODE_MAP.get(attrs["color_mode"], COLOR_MODE_MAP["BlackAndWhite"])
+            print_attrs.Orientation = ORIENTATION_MAP.get(attrs["orientation"], ORIENTATION_MAP["Landscape"])
             print_attrs.PaperSize = paper_size
             print_attrs.NumberOfCopies = attrs["copies"]
             print_attrs.ScaleFactor = attrs["scale_factor"]
-            print_attrs.ScalingMethod = _SCALING_METHOD_MAP.get(attrs["scaling_method"], DotPrintScalingType.Auto)
+            print_attrs.ScalingMethod = SCALING_METHOD_MAP.get(attrs["scaling_method"], SCALING_METHOD_MAP["Auto"])
             print_attrs.PrintToMultipleSheet = DotPrintToMultipleSheet.Off
 
-            output_filename = attrs["output_filename"]
-            if output_filename and hasattr(drawing, output_filename):
-                print_attrs.OutputFileName = getattr(drawing, output_filename)
-            else:
-                print_attrs.OutputFileName = drawing.mark
+            file_attr = attrs["output_filename"]
+            print_attrs.OutputFileName = getattr(drawing, file_attr) if file_attr and hasattr(drawing, file_attr) else drawing.mark
 
             output_filename_with_ext = print_attrs.OutputFileName + ".pdf"
             output_file = Path(output_folder) / output_filename_with_ext
-
             print_attrs.OpenFileWhenFinished = attrs["open_when_finished"]
+
             result = drawing_handler.PrintDrawing(drawing.drawing, print_attrs, str(output_file))
 
             if result:
