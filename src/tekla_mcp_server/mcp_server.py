@@ -8,6 +8,7 @@ speed-up modeling processes.
 from fastmcp import FastMCP
 from fastmcp.server.transforms import ResourcesAsTools
 
+from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import load_dlls, logger
 from tekla_mcp_server.providers import (
     resources_provider,
@@ -21,21 +22,40 @@ from tekla_mcp_server.providers import (
     ifc_provider,
 )
 
+ALL_PROVIDERS = {
+    "resources": resources_provider,
+    "selection": selection_provider,
+    "view": view_provider,
+    "properties": properties_provider,
+    "operations": operations_provider,
+    "components": components_provider,
+    "drawings": drawings_provider,
+    "modeling": modeling_provider,
+    "ifc": ifc_provider,
+}
 
 mcp = FastMCP("Tekla MCP Server")
 
 
-# Add all providers to the MCP server
-mcp.add_provider(resources_provider)
+# Add providers
+def register_providers() -> None:
+    """
+    Register providers with the MCP server.
+    """
+    enabled = get_config().enabled_providers
+    if enabled is None:
+        for provider in ALL_PROVIDERS.values():
+            mcp.add_provider(provider)
+        logger.info("Active providers: %s", list(ALL_PROVIDERS.keys()))
+        return
 
-mcp.add_provider(selection_provider)
-mcp.add_provider(view_provider)
-mcp.add_provider(properties_provider)
-mcp.add_provider(operations_provider)
-mcp.add_provider(components_provider)
-mcp.add_provider(drawings_provider)
-mcp.add_provider(modeling_provider)
-mcp.add_provider(ifc_provider)
+    active = [name for name in enabled if name in ALL_PROVIDERS]
+    for name in active:
+        mcp.add_provider(ALL_PROVIDERS[name])
+    logger.info("Active providers: %s", active)
+
+
+register_providers()
 
 
 # Run the MCP server locally

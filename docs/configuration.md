@@ -8,6 +8,31 @@ This guide covers all configuration files and environment variables.
 |----------|---------|-------------|
 | `tekla_path` | `C:\Program Files\Tekla Structures\2022.0\bin` | Tekla Structures binary directory |
 | `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
+| `providers` | *(all)* | Optional list of provider names to enable. Omit the key to enable all providers. See [Providers](#providers) below. |
+
+### Providers
+
+Controls which tool groups are registered with the MCP server. Omit `providers` entirely to enable all of them. When the key is present, only the listed names are loaded, unrecognised names are silently skipped.
+
+| Name | Description |
+|------|-------------|
+| `resources` | MCP resources (project context, component definitions, etc.) |
+| `selection` | Select, filter, and inspect model objects |
+| `view` | Camera, views, and visibility controls |
+| `properties` | Read and write element properties and UDAs |
+| `operations` | Numbering, clash detection, and other model operations |
+| `components` | Place and manage Tekla components |
+| `drawings` | Drawing creation and management |
+| `modeling` | Create and modify model objects |
+| `ifc` | IFC export |
+
+**Example**: disable drawings and IFC to reduce tool count:
+
+```json
+{
+  "providers": ["resources", "selection", "view", "properties", "operations", "components", "modeling"]
+}
+```
 
 ### Embeddings
 

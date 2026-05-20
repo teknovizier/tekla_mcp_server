@@ -265,6 +265,11 @@ class Config:
         return _get_tekla_macro_directories()
 
     @property
+    def enabled_providers(self) -> list[str] | None:
+        """List of enabled provider names, or None to enable all."""
+        return _load_settings().get("providers")
+
+    @property
     def context_folder(self) -> Path:
         """Folder containing project context markdown files."""
         folder = _load_settings().get("context_folder", "context")
