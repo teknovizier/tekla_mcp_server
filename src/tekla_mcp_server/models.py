@@ -4,7 +4,7 @@ This module defines core data structures, enumerations, and models used in the p
 
 import hashlib
 import json
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Self, Literal
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
@@ -21,22 +21,42 @@ Plane = Literal["LEFT", "MIDDLE", "RIGHT"]
 Depth = Literal["FRONT", "MIDDLE", "BEHIND"]
 Rotation = Literal["FRONT", "TOP", "BACK", "BELOW"]
 
-DrawingType = Literal["GA", "Assembly", "SinglePart", "CastUnit", "MultiDrawing", "Unknown"]
-SelectionMode = Literal["Assembly", "Main Part"]
-
 
 # Enums
-class BeamType(Enum):
-    """Enum for beam element types."""
+class DrawingType(StrEnum):
+    """
+    Tekla drawing types.
+    """
+
+    GA = "G"
+    ASSEMBLY = "A"
+    SINGLE_PART = "W"
+    CAST_UNIT = "C"
+    MULTIDRAWING = "M"
+
+
+class SelectionMode(StrEnum):
+    """
+    Controls whether selection is done to the assembly or the main part.
+    """
+
+    ASSEMBLY = "Assembly"
+    MAIN_PART = "Main Part"
+
+
+class BeamType(StrEnum):
+    """
+    Tekla beam object subtypes.
+    """
 
     BEAM = "Beam"
     COLUMN = "Column"
     PANEL = "Panel"
 
 
-class StringMatchType(Enum):
+class StringMatchType(StrEnum):
     """
-    Represents the matching types for String objects:
+    Matching operators for string filter conditions.
     """
 
     IS_EQUAL = "Is Equal"
@@ -49,9 +69,9 @@ class StringMatchType(Enum):
     NOT_ENDS_WITH = "Not Ends With"
 
 
-class NumericMatchType(Enum):
+class NumericMatchType(StrEnum):
     """
-    Represents the matching types for Numeric objects:
+    Matching operators for numeric filter conditions.
     """
 
     IS_EQUAL = "Is Equal"
@@ -62,7 +82,7 @@ class NumericMatchType(Enum):
     GREATER_OR_EQUAL = "Greater Or Equal"
 
 
-class ElementType(Enum):
+class ElementType(StrEnum):
     """
     Represents different types of elements in Tekla.
     """
@@ -90,7 +110,7 @@ class ElementType(Enum):
     STEEL_BRACE = "Steel Brace"
 
 
-class ComponentType(Enum):
+class ComponentType(StrEnum):
     """
     Represents different types of components in Tekla.
     """
@@ -102,7 +122,7 @@ class ComponentType(Enum):
     SEAM = "Seam"
 
 
-class ElementLabel(Enum):
+class ElementLabel(StrEnum):
     """
     Represents the supported label types that can be drawn in the Tekla view.
     """
@@ -117,8 +137,6 @@ class ElementLabel(Enum):
     WEIGHT = "Weight"
     PHASE = "Phase"
     CUSTOM = "Custom"
-
-
 
 
 # Classes

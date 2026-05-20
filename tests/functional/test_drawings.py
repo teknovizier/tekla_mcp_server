@@ -26,17 +26,16 @@ class TestGetDrawings:
 
     def test_get_drawings_castunit_type(self):
         """Test filtering by CastUnit drawing type."""
-        result = get_drawings(drawing_type="CastUnit")
+        result = get_drawings(drawing_type="C")
 
         assert result.structured_content["status"] == "success"
         assert result.structured_content["matched_count"] > 0
 
-    def test_get_drawings_unknown_type(self):
-        """Test filtering by Unknown drawing type - should return 0."""
-        result = get_drawings(drawing_type="Unknown")
+    def test_get_drawings_invalid_type(self):
+        """Invalid drawing type is rejected."""
+        result = get_drawings(drawing_type="U")
 
-        assert result.structured_content["status"] == "success"
-        assert result.structured_content["matched_count"] == 0
+        assert result.structured_content["status"] == "error"
 
     def test_get_drawings_with_mark_filter(self):
         """Test filtering by mark using StringFilterOption."""
@@ -57,7 +56,7 @@ class TestGetDrawingProperties:
 
     def test_get_drawing_properties_with_mark(self):
         """Get a GA drawing and check its properties."""
-        drawings_result = get_drawings(drawing_type="GA")
+        drawings_result = get_drawings(drawing_type="G")
         marks = drawings_result.structured_content.get("marks", [])
 
         if not marks:
@@ -67,7 +66,7 @@ class TestGetDrawingProperties:
 
         assert result.structured_content["selected_count"] == 1
         assert len(result.structured_content["drawings"]) == 1
-        assert result.structured_content["drawings"][0]["drawing_type"] == "GA"
+        assert result.structured_content["drawings"][0]["drawing_type"] == "G"
 
 
 class TestDetectCollisionsBetweenMarks:

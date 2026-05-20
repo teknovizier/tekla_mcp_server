@@ -42,7 +42,7 @@ drawings_provider = LocalProvider()
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def get_drawings(
-    drawing_type: Annotated[DrawingType | None, Field(description="Filter by drawing type")] = None,
+    drawing_type: Annotated[DrawingType | None, Field(description="Filter by drawing type: G=GA, A=Assembly, W=SinglePart, C=CastUnit, M=Multidrawing")] = None,
     name_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by drawing name")] = None,
     mark_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by drawing mark")] = None,
     title1_filter: Annotated[dict[str, Any] | StringFilterOption | None, Field(description="Filter by Title 1")] = None,
@@ -57,7 +57,7 @@ def get_drawings(
 
     ## EXAMPLES
     # Get all CastUnit drawings
-    {"drawing_type": "CastUnit"}
+    {"drawing_type": "C"}
 
     # Get drawings with "floor" in name
     {
@@ -91,7 +91,8 @@ def get_drawings(
     all_drawings = wrap_drawings(drawing_handler.GetDrawings())
     filtered_drawings = all_drawings
 
-    if drawing_type:
+    if drawing_type is not None:
+        drawing_type = DrawingType(drawing_type)  # raises ValueError for invalid values
         filtered_drawings = [d for d in filtered_drawings if d.drawing_type == drawing_type]
     if name_filter:
         filtered_drawings = [d for d in filtered_drawings if matches_string_filter(d.name, name_filter)]
