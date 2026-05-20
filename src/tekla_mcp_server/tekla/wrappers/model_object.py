@@ -595,10 +595,10 @@ class TeklaAssembly(TeklaModelObject):
         assembly_start_number: int | None = None,
         phase: int | None = None,
         user_properties: dict[str, Any] | None = None,
-    ) -> dict[str, int]:
+    ) -> dict[str, Any]:
         """
         Sets properties on the assembly.
-        Returns a summary of changes made.
+        Returns a summary of changes made, including a list of per-property errors.
         """
         changes: dict[str, int] = {
             "name": 0,
@@ -607,32 +607,52 @@ class TeklaAssembly(TeklaModelObject):
             "phase": 0,
             "udas": 0,
         }
+        errors: list[dict[str, str]] = []
 
         if name is not None:
-            self.name = name
-            changes["name"] = 1
+            try:
+                self.name = name
+                changes["name"] = 1
+            except Exception as e:
+                errors.append({"property": "name", "reason": str(e)})
 
         if assembly_prefix is not None:
-            self.model_object.AssemblyNumber.Prefix = assembly_prefix
-            self.model_object.Modify()
-            changes["assembly_prefix"] = 1
+            try:
+                self.model_object.AssemblyNumber.Prefix = assembly_prefix
+                self.model_object.Modify()
+                changes["assembly_prefix"] = 1
+            except Exception as e:
+                errors.append({"property": "assembly_prefix", "reason": str(e)})
 
         if assembly_start_number is not None:
-            self.model_object.AssemblyNumber.StartNumber = assembly_start_number
-            self.model_object.Modify()
-            changes["assembly_start_number"] = 1
+            try:
+                self.model_object.AssemblyNumber.StartNumber = assembly_start_number
+                self.model_object.Modify()
+                changes["assembly_start_number"] = 1
+            except Exception as e:
+                errors.append({"property": "assembly_start_number", "reason": str(e)})
 
         if phase is not None:
-            if self.model_object.SetPhase(Phase(phase)):
-                self.model_object.Modify()
-                changes["phase"] = 1
+            try:
+                if self.model_object.SetPhase(Phase(phase)):
+                    self.model_object.Modify()
+                    changes["phase"] = 1
+                else:
+                    errors.append({"property": "phase", "reason": "SetPhase returned False"})
+            except Exception as e:
+                errors.append({"property": "phase", "reason": str(e)})
 
         if user_properties:
             for key, value in user_properties.items():
-                if self.set_user_property(key, value):
-                    changes["udas"] += 1
+                try:
+                    if self.set_user_property(key, value):
+                        changes["udas"] += 1
+                    else:
+                        errors.append({"property": f"uda:{key}", "reason": "SetUserProperty returned False"})
+                except Exception as e:
+                    errors.append({"property": f"uda:{key}", "reason": str(e)})
 
-        return changes
+        return {**changes, "errors": errors}
 
 
 class TeklaPart(TeklaModelObject):
@@ -880,10 +900,10 @@ class TeklaPart(TeklaModelObject):
         assembly_prefix: str | None = None,
         assembly_start_number: int | None = None,
         user_properties: dict[str, Any] | None = None,
-    ) -> dict[str, int]:
+    ) -> dict[str, Any]:
         """
         Sets properties on the part.
-        Returns a summary of changes made.
+        Returns a summary of changes made, including a list of per-property errors.
         """
         changes: dict[str, int] = {
             "name": 0,
@@ -898,58 +918,96 @@ class TeklaPart(TeklaModelObject):
             "assembly_start_number": 0,
             "udas": 0,
         }
+        errors: list[dict[str, str]] = []
 
         if name is not None:
-            self.name = name
-            changes["name"] = 1
+            try:
+                self.name = name
+                changes["name"] = 1
+            except Exception as e:
+                errors.append({"property": "name", "reason": str(e)})
 
         if profile is not None:
-            self.profile = profile
-            changes["profile"] = 1
+            try:
+                self.profile = profile
+                changes["profile"] = 1
+            except Exception as e:
+                errors.append({"property": "profile", "reason": str(e)})
 
         if material is not None:
-            self.material = material
-            changes["material"] = 1
+            try:
+                self.material = material
+                changes["material"] = 1
+            except Exception as e:
+                errors.append({"property": "material", "reason": str(e)})
 
         if tekla_class is not None:
-            self.tekla_class = str(tekla_class)
-            changes["tekla_class"] = 1
+            try:
+                self.tekla_class = str(tekla_class)
+                changes["tekla_class"] = 1
+            except Exception as e:
+                errors.append({"property": "tekla_class", "reason": str(e)})
 
         if finish is not None:
-            self.finish = finish
-            changes["finish"] = 1
+            try:
+                self.finish = finish
+                changes["finish"] = 1
+            except Exception as e:
+                errors.append({"property": "finish", "reason": str(e)})
 
         if part_prefix is not None:
-            self.model_object.PartNumber.Prefix = part_prefix
-            self.model_object.Modify()
-            changes["part_prefix"] = 1
+            try:
+                self.model_object.PartNumber.Prefix = part_prefix
+                self.model_object.Modify()
+                changes["part_prefix"] = 1
+            except Exception as e:
+                errors.append({"property": "part_prefix", "reason": str(e)})
 
         if part_start_number is not None:
-            self.model_object.PartNumber.StartNumber = part_start_number
-            self.model_object.Modify()
-            changes["part_start_number"] = 1
+            try:
+                self.model_object.PartNumber.StartNumber = part_start_number
+                self.model_object.Modify()
+                changes["part_start_number"] = 1
+            except Exception as e:
+                errors.append({"property": "part_start_number", "reason": str(e)})
 
         if assembly_prefix is not None:
-            self.model_object.AssemblyNumber.Prefix = assembly_prefix
-            self.model_object.Modify()
-            changes["assembly_prefix"] = 1
+            try:
+                self.model_object.AssemblyNumber.Prefix = assembly_prefix
+                self.model_object.Modify()
+                changes["assembly_prefix"] = 1
+            except Exception as e:
+                errors.append({"property": "assembly_prefix", "reason": str(e)})
 
         if assembly_start_number is not None:
-            self.model_object.AssemblyNumber.StartNumber = assembly_start_number
-            self.model_object.Modify()
-            changes["assembly_start_number"] = 1
+            try:
+                self.model_object.AssemblyNumber.StartNumber = assembly_start_number
+                self.model_object.Modify()
+                changes["assembly_start_number"] = 1
+            except Exception as e:
+                errors.append({"property": "assembly_start_number", "reason": str(e)})
 
         if phase is not None:
-            if self.model_object.SetPhase(Phase(phase)):
-                self.model_object.Modify()
-                changes["phase"] = 1
+            try:
+                if self.model_object.SetPhase(Phase(phase)):
+                    self.model_object.Modify()
+                    changes["phase"] = 1
+                else:
+                    errors.append({"property": "phase", "reason": "SetPhase returned False"})
+            except Exception as e:
+                errors.append({"property": "phase", "reason": str(e)})
 
         if user_properties:
             for key, value in user_properties.items():
-                if self.set_user_property(key, value):
-                    changes["udas"] += 1
+                try:
+                    if self.set_user_property(key, value):
+                        changes["udas"] += 1
+                    else:
+                        errors.append({"property": f"uda:{key}", "reason": "SetUserProperty returned False"})
+                except Exception as e:
+                    errors.append({"property": f"uda:{key}", "reason": str(e)})
 
-        return changes
+        return {**changes, "errors": errors}
 
     def apply_position(self, position: PositionInput | None):
         if not position:

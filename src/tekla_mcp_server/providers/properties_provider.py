@@ -69,6 +69,7 @@ def set_elements_properties(
     }
     processed_elements = 0
     modified_elements = 0
+    property_errors: list[dict] = []
 
     for selected_object in wrap_model_objects(selected_objects):
         try:
@@ -98,11 +99,15 @@ def set_elements_properties(
                 logger.error("set_elements_properties: Unsupported object type: %s", type(selected_object).__name__)
                 continue
 
+            elem_errors: list[dict] = changes.pop("errors", [])
             for key, value in changes.items():
                 if key in total_changes:
                     total_changes[key] += value
             if any(v > 0 for v in changes.values()):
                 modified_elements += 1
+            if elem_errors:
+                logger.warning("Property errors on %s: %s", selected_object.guid, elem_errors)
+                property_errors.append({"guid": selected_object.guid, "errors": elem_errors})
         except Exception:
             logger.exception("Failed to set properties on %s", selected_object.guid)
         processed_elements += 1
@@ -110,14 +115,16 @@ def set_elements_properties(
     if modified_elements > 0:
         TeklaModel().commit_changes()
 
+    status = "success" if modified_elements > 0 and not property_errors else "partial" if modified_elements > 0 else "warning"
     logger.info("Set properties on %s elements: %s", modified_elements, total_changes)
     return ToolResult(
         structured_content={
-            "status": "success" if modified_elements > 0 else "warning",
+            "status": status,
             "selected_elements": selected_objects.GetSize(),
             "processed_elements": processed_elements,
             "modified_elements": modified_elements,
             "changes_applied": total_changes,
+            "property_errors": property_errors,
         }
     )
 
