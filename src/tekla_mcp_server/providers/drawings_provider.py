@@ -22,7 +22,6 @@ from tekla_mcp_server.tekla.loader import (
     LeaderLine,
     Mark,
     DrawingColors,
-    FrameTypes,
     DPMPrinterAttributes,
     DotPrintColor,
     DotPrintOrientationType,
@@ -392,7 +391,6 @@ def detect_collisions_between_marks(
                 if i in colliding_indices:
                     mark = data["mark"]
                     mark.Attributes.Frame.Color = DrawingColors.Red
-                    mark.Attributes.Frame.Type = FrameTypes.Rectangular
                     mark.Modify()
 
             view_results.append(
