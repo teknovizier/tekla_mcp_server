@@ -56,7 +56,7 @@ See [Reference](docs/reference.md) for complete list of tools and resources.
 
 The server was tested to work with **Tekla 2022** and **Tekla 2026** and may not be compatible with other versions of Tekla Structures.
 
-Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz), [chatmcp](https://github.com/daodao97/chatmcp) and [Claude Desktop](https://claude.ai/download) clients, along with the following language models:
+Verified to work correctly with [Claude Desktop](https://claude.ai/download), [DeepChat](https://deepchat.thinkinai.xyz) and [Goose](https://block.github.io/goose/) clients, along with the following language models:
 - Claude Sonnet 4.6
 - Claude Haiku 4.5
 - DeepSeek-V3
