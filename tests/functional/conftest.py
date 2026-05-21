@@ -10,10 +10,11 @@ if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
 from tekla_mcp_server.models import BeamInput, PanelInput, PointInput, StringMatchType
-from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
+from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum, ModelObjectVisualization, ViewHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.filter_builder import add_filter
 from tekla_mcp_server.providers.modeling_provider import place_panels, place_beams
+from tekla_mcp_server.tekla.utils import get_active_views
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -24,6 +25,17 @@ def init_tekla():
     load_dlls()
     TeklaModel()
     yield
+
+
+@pytest.fixture(scope="session", autouse=True)
+def clear_view_settings():
+    """Reset temporary visualization states and redraw views after the test session."""
+
+    yield
+
+    ModelObjectVisualization.ClearAllTemporaryStates()
+    for view in get_active_views():
+        ViewHandler.RedrawView(view)
 
 
 def cleanup_mcp_test_objects():
