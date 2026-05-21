@@ -283,6 +283,7 @@ def print_drawings(
     if not target_drawings:
         raise ValueError("No drawings found or selected")
 
+    provided_output_folder = output_folder
     if not output_folder:
         output_folder_path = get_default_plot_output_folder()
         if not output_folder_path:
@@ -340,9 +341,9 @@ def print_drawings(
             output_file = Path(output_folder) / output_filename_with_ext
             print_attrs.OpenFileWhenFinished = attrs["open_when_finished"]
 
-            result = drawing_handler.PrintDrawing(drawing.drawing, print_attrs, str(output_file))
+            print_result = drawing_handler.PrintDrawing(drawing.drawing, print_attrs, str(output_file))
 
-            if result:
+            if print_result:
                 success_count += 1
                 results.append({"mark": drawing.mark, "status": "success", "file_name": output_filename_with_ext})
             else:
@@ -354,13 +355,13 @@ def print_drawings(
 
     status = "success" if success_count == len(target_drawings) else "partial" if success_count > 0 else "error"
 
-    return ToolResult(
-        structured_content={
-            "status": status,
-            "total": len(target_drawings),
-            "succeeded": success_count,
-            "failed": len(target_drawings) - success_count,
-            "output_folder": str(output_folder),
-            "results": results,
-        },
-    )
+    result: dict[str, Any] = {
+        "status": status,
+        "total": len(target_drawings),
+        "succeeded": success_count,
+        "failed": len(target_drawings) - success_count,
+        "results": results,
+    }
+    if provided_output_folder:
+        result["output_folder"] = provided_output_folder
+    return ToolResult(structured_content=result)

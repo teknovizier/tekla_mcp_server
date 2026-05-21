@@ -195,10 +195,9 @@ def check_connection_status() -> ResourceResult:
     """
     Returns the current Tekla connection status.
     """
-    model = TeklaModel()
-    model_path = model.model.GetInfo().ModelPath
-    logger.debug("Connection status check: %s", model_path)
-    return json_resource({"connected": True, "model_path": model_path, "message": "Connected to Tekla model"})
+    _ = TeklaModel()
+    logger.debug("Connected to Tekla model")
+    return json_resource({"connected": True, "message": "Connected to Tekla model"})
 
 
 def _parse_context_meta(path) -> dict:

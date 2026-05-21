@@ -66,7 +66,7 @@ Type and default shown where relevant.
 | `tekla://filters/view` | Available Tekla view filter names (`.VObjGrp` files) |
 | `tekla://phases` | All phases in the current model (number, name, comment) and the active phase number |
 | `tekla://grids` | Rectangular grid data: guid, name, X/Y/Z axes with coordinates and labels |
-| `tekla://connection_status` | Current Tekla connection status: connected (bool), model_path, message |
+| `tekla://connection_status` | Current Tekla connection status: connected (bool), message |
 
 Filter resources search in:
 - `XS_FIRM` advanced option directories
