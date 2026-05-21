@@ -7,6 +7,7 @@ Tests operations like boolean cuts, cut part conversion, and macro execution.
 from tekla_mcp_server.providers.operations_provider import (
     check_for_invalid_objects,
     check_for_orphans,
+    clash_check,
     cut_elements_with_zero_class_parts,
     convert_cut_parts_to_real_parts,
     run_macro,
@@ -85,3 +86,48 @@ def test_check_for_invalid_objects_with_selection(model_objects):
     assert "invalid_parts_count" in result.structured_content
     assert "invalid_reinforcements_count" in result.structured_content
     assert "invalid_assemblies_count" in result.structured_content
+
+
+def test_no_clash_separate_walls(model_objects):
+    """Wall A alone - nothing to clash against."""
+    TeklaModel.select_objects([model_objects["test_clash_wall_a"]])
+    result = clash_check()
+    assert result.structured_content["clashes_count"] == 0
+
+
+def test_clash_overlapping_walls(model_objects):
+    """Wall A + Wall B overlap by 500 mm - one CLASH_TYPE_CLASH with overlap >= 0."""
+    TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_b"]])
+    result = clash_check()
+    clashes = result.structured_content["clashes"]
+    assert len(clashes) == 1
+    assert clashes[0]["clash_type"] == "CLASH_TYPE_CLASH"
+    assert clashes[0]["overlap"] >= 0
+
+
+def test_clash_containment(model_objects):
+    """Wall C is entirely inside Wall A - clash type CLASH_TYPE_ISINSIDE."""
+    TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_c"]])
+    result = clash_check()
+    clashes = result.structured_content["clashes"]
+    assert len(clashes) == 1
+    assert clashes[0]["clash_type"] == "CLASH_TYPE_ISINSIDE"
+
+
+def test_clash_result_fields(model_objects):
+    """Each clash record carries the expected object fields."""
+    TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_b"]])
+    result = clash_check()
+    obj = result.structured_content["clashes"][0]["object1"]
+    assert obj["guid"] is not None
+    assert obj["name"] in ("MCP_TEST_CLASH_WALL_A", "MCP_TEST_CLASH_WALL_B")
+    assert obj["profile"] != "N/A"
+    assert obj["material"] != "N/A"
+    assert obj["tekla_class"] == 1
+
+
+def test_exclude_classes_filters_out_clash(model_objects):
+    """Excluding class 1 drops all clashes between class 1 walls."""
+    TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_b"]])
+    result = clash_check(exclude_classes=[1])
+    assert result.structured_content["clashes_count"] == 0

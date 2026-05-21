@@ -14,6 +14,7 @@ from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import CheckResult
 from tekla_mcp_server.utils import mcp_handler
+from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaPart, TeklaReinforcement
 from tekla_mcp_server.tekla.loader import Operation, Part
@@ -344,13 +345,13 @@ def check_for_orphans(
                 elif mode == "rebars":
                     # Set rebar's Father to main part
                     try:
-                        main_part_obj = parent_assembly.main_part.model_object
+                        main_part = parent_assembly.main_part
                     except ValueError:
                         logger.warning("Cannot attach %s: parent assembly %s has no main part", item.guid, parent_assembly.guid)
                         continue
-                    orphan_obj.model_object.Father = main_part_obj
+                    orphan_obj.father = main_part
 
-                    success = main_part_obj.Modify() and orphan_obj.model_object.Modify()
+                    success = main_part.model_object.Modify() and orphan_obj.model_object.Modify()
             except Exception:
                 logger.exception("Failed to attach orphaned %s %s to assembly %s", mode[:-1], item.guid, parent_assembly.guid)
                 continue
@@ -552,7 +553,7 @@ def check_for_invalid_objects() -> ToolResult:
                     reinf_issues.append(f"invalid_grade: '{grade}'")
 
                 # Missing father (not attached to part/assembly)
-                if not obj.model_object.Father:
+                if obj.father is None:
                     reinf_issues.append("no_father")
 
                 if reinf_issues:
@@ -593,3 +594,72 @@ def check_for_invalid_objects() -> ToolResult:
         result_content["invalid_assemblies"] = invalid_assemblies
 
     return ToolResult(structured_content=result_content)
+
+
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def clash_check(
+    min_distance: Annotated[float, Field(description="Minimum clearance in mm for clashes involving reference models and pour objects.", ge=0.0)] = 0.0,
+    between_parts: Annotated[bool, Field(description="Check clashes between Tekla parts")] = True,
+    between_reference_models: Annotated[bool, Field(description="Check clashes between reference models")] = False,
+    objects_inside_reference_models: Annotated[bool, Field(description="Check clashes between Tekla parts and objects inside reference models")] = False,
+    exclude_classes: Annotated[list[int], Field(description="Exclude clash pairs where either object belongs to one of these Tekla classes")] = [],
+) -> ToolResult:
+    """
+    Run clash check against the current selection.
+
+    ## EXAMPLES
+    # Simple clash check excluding class 0
+    clash_check(exclude_classes=[0])
+
+    # Include the IFC reference model in the check
+    clash_check(between_reference_models=True, objects_inside_reference_models=True)
+    """
+
+    model = TeklaModel()
+    selected_objects = model.get_selected_objects()
+
+    handler = TeklaClashCheckHandler()
+    records = handler.run(
+        between_parts=between_parts,
+        between_reference_models=between_reference_models,
+        objects_inside_reference_models=objects_inside_reference_models,
+        min_distance=min_distance,
+    )
+
+    excluded = set(exclude_classes)
+    filtered = []
+    seen_pairs: set[tuple[str, str]] = set()
+
+    def _is_excluded(tekla_class: int | None) -> bool:
+        return bool(excluded and tekla_class is not None and tekla_class in excluded)
+
+    for record in records:
+        if record.object1.guid is None or record.object2.guid is None:
+            continue
+        if _is_excluded(record.object1.tekla_class) or _is_excluded(record.object2.tekla_class):
+            continue
+        pair_key = tuple(sorted((record.object1.guid, record.object2.guid)))
+        if pair_key in seen_pairs:
+            continue
+        seen_pairs.add(pair_key)
+        filtered.append(record)
+
+    logger.info(
+        "clash_check finished: selected=%d, reported=%d, filtered=%d (min_distance=%.1f exclude_classes=%s)",
+        selected_objects.GetSize(),
+        len(records),
+        len(filtered),
+        min_distance,
+        sorted(excluded),
+    )
+
+    return ToolResult(
+        structured_content={
+            "status": "success" if not filtered else "warning",
+            "selected_elements": selected_objects.GetSize(),
+            "reported_clashes": len(records),
+            "clashes_count": len(filtered),
+            "clashes": [c.to_dict() for c in filtered],
+        }
+    )

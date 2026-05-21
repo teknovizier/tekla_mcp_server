@@ -45,6 +45,9 @@ from Tekla.Structures.Model import (
     SingleRebar,
     Grid,
     ReferenceModelObject,
+    ClashCheckHandler,
+    ClashCheckData,
+    Events,
 )
 from Tekla.Structures.Model.Operations import Operation
 from Tekla.Structures.Model.UI import Color, GraphicsDrawer, ModelObjectSelector as ModelObjectSelectorUI, ViewHandler, ModelObjectVisualization, TemporaryTransparency, View
@@ -177,4 +180,7 @@ __all__ = [
     "DotPrintPaperSize",
     "DotPrintToMultipleSheet",
     "DotPrintScalingType",
+    "ClashCheckHandler",
+    "ClashCheckData",
+    "Events",
 ]

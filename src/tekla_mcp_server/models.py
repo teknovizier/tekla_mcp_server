@@ -723,3 +723,14 @@ class CheckResult(BaseModel):
     position: str | None
     tekla_class: int | None
     issues: list[str] = Field(default_factory=list)
+
+
+class ClashCheckObject(BaseModel):
+    """Serializable clash object information."""
+
+    guid: str | None = None
+    name: str = "N/A"
+    profile: str = "N/A"
+    material: str = "N/A"
+    tekla_class: int = 0
+    top_assembly_guid: str | None = None

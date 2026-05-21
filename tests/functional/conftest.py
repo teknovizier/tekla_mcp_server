@@ -9,12 +9,11 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_mcp_server.models import StringMatchType
+from tekla_mcp_server.models import BeamInput, PanelInput, PointInput, StringMatchType
 from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.filter_builder import add_filter
 from tekla_mcp_server.providers.modeling_provider import place_panels, place_beams
-from tekla_mcp_server.models import BeamInput, PanelInput, PointInput
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -58,6 +57,11 @@ def model_objects():
         PanelInput(start_point=PointInput(x=0, y=0, z=12080), end_point=PointInput(x=2000, y=0, z=12080), profile="2000*150", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL7"),
         PanelInput(start_point=PointInput(x=0, y=200, z=0), end_point=PointInput(x=2000, y=200, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL8"),
         PanelInput(start_point=PointInput(x=4000, y=0, z=0), end_point=PointInput(x=6000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=8, name="MCP_TEST_SW1"),
+
+        # Clash check walls
+        PanelInput(start_point=PointInput(x=6000, y=0, z=0), end_point=PointInput(x=8000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CLASH_WALL_A"),
+        PanelInput(start_point=PointInput(x=6000, y=0, z=2500), end_point=PointInput(x=8000, y=0, z=2500), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CLASH_WALL_B"),
+        PanelInput(start_point=PointInput(x=6500, y=0, z=500), end_point=PointInput(x=7500, y=0, z=500), profile="1000*100", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CLASH_WALL_C"),
     ]
 
     slabs = [
@@ -94,6 +98,9 @@ def model_objects():
         "test_wall7": get_single_object(panel_guids[6]),
         "test_wall8": get_single_object(panel_guids[7]),
         "test_sw1": get_single_object(panel_guids[8]),
+        "test_clash_wall_a": get_single_object(panel_guids[9]),
+        "test_clash_wall_b": get_single_object(panel_guids[10]),
+        "test_clash_wall_c": get_single_object(panel_guids[11]),
         "test_slab1": get_single_object(result_slabs.structured_content["results"][0]["guid"]),
         "void1": get_single_object(result_voids.structured_content["results"][0]["guid"]),
         "void2": get_single_object(result_voids.structured_content["results"][1]["guid"]),
@@ -101,3 +108,5 @@ def model_objects():
 
     cleanup_mcp_test_objects()
     model.commit_changes()
+
+

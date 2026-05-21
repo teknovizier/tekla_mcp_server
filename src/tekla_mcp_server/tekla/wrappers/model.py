@@ -16,6 +16,7 @@ from tekla_mcp_server.tekla.loader import (
     Identifier,
     ArrayList,
     Model,
+    ModelObject,
     ModelObjectSelector,
     ModelObjectEnumerator,
     ModelObjectSelectorUI,
@@ -225,6 +226,13 @@ class TeklaModel:
                 objects_to_select.Add(obj)
 
         return objects_to_select
+
+    @log_function_call
+    def get_object_by_guid(self, guid: str) -> ModelObject | None:
+        """
+        Return a single model object by GUID, or None if not found.
+        """
+        return self.model.SelectModelObject(Identifier(guid))
 
     @log_function_call
     def get_objects_by_filter(self, model_filter: FilterExpression | str) -> ModelObjectEnumerator:

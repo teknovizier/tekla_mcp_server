@@ -110,7 +110,7 @@ class TestSanitizeFilename:
             ("Floor 3", "Floor 3"),
             ("Floor/3", "Floor_3"),
             ("Floor\\3", "Floor_3"),
-            ("a:b*c?d\"e<f>g|h", "a_b_c_d_e_f_g_h"),
+            ('a:b*c?d"e<f>g|h', "a_b_c_d_e_f_g_h"),
             ("..\\wall", "_wall"),
             ("../wall", "_wall"),
             ("  spaced  ", "spaced"),

@@ -172,6 +172,17 @@ def wrap_model_objects(model_objects: Iterable) -> Generator[TeklaModelObject, N
             yield wrapped
 
 
+def _get_top_assembly(assembly: ModelObject) -> "TeklaAssembly":
+    """
+    Walks up the object tree and returns the topmost Assembly wrapper.
+    """
+    parent = assembly.GetAssembly()
+    while parent is not None:
+        assembly = parent
+        parent = assembly.GetAssembly()
+    return TeklaAssembly(assembly)
+
+
 class TeklaModelObject:
     """
     A base wrapper class around the Tekla Structures ModelObject object.
@@ -225,44 +236,25 @@ class TeklaModelObject:
 
     @property
     def bounding_box(self) -> BoundingBox | None:
-        """Get bounding box from report properties."""
+        """
+        Get bounding box from report properties.
+        """
         try:
             return BoundingBox(self)
         except Exception:
             return None
 
-    def get_top_level_assembly(self) -> TeklaModelObject | None:
+    def get_top_level_assembly(self) -> "TeklaAssembly | None":
         """
-        Finds and returns the top-level assembly of this Tekla model object.
-
-        It goes up the assembly chain until it reaches the highest one.
-        If there's no assembly, it returns None.
-        If the object itself is an Assembly, it is considered top-level.
-
-        Raises:
-            TypeError: If the returned object is not of type Assembly.
+        Gets top level assembly.
         """
-        obj = self._model_object
-
-        # If it's not an Assembly - get its assembly
-        if not isinstance(obj, Assembly):
-            assembly = obj.GetAssembly()
+        try:
+            assembly = self._model_object.GetAssembly()
+        except Exception:
+            return None
             if assembly is None:
-                logger.warning("No assembly found for object %s.", self.guid)
                 return None
-        else:
-            assembly = obj
-
-        # Always go up if there's a parent
-        parent = assembly.GetAssembly()
-        while parent is not None:
-            assembly = parent
-            parent = assembly.GetAssembly()
-
-        if not isinstance(assembly, Assembly):
-            raise TypeError(f"Expected Assembly object, got {type(assembly).__name__}.")
-
-        return TeklaAssembly(assembly)
+        return _get_top_assembly(assembly)
 
     def get_report_property(self, property_name: str) -> str | int | float:
         """
@@ -541,6 +533,12 @@ class TeklaAssembly(TeklaModelObject):
 
         return total_parts_weight, weight_rebars
 
+    def get_top_level_assembly(self) -> "TeklaAssembly":
+        """
+        Gets the top assembly for the given assembly.
+        """
+        return _get_top_assembly(self._model_object)
+
     def get_all_children(self, include_all: bool = True) -> list[ModelObject]:
         """
         Returns all model objects belonging to this assembly.
@@ -794,6 +792,16 @@ class TeklaPart(TeklaModelObject):
         total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
 
         return total_parts_weight, weight_rebars
+
+    def get_top_level_assembly(self) -> TeklaAssembly | None:
+        """
+        Gets the part's containing assembly and walk up to the top.
+        """
+        assembly = self._model_object.GetAssembly()
+        if assembly is None:
+            logger.warning("No assembly found for part %s.", self.guid)
+            return None
+        return _get_top_assembly(assembly)
 
     def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
         """
@@ -1308,3 +1316,30 @@ class TeklaReinforcement(TeklaModelObject):
         Sets the Tekla class of the reinforcement element.
         """
         self._set_property("Class", str(value))
+
+    @property
+    def father(self) -> TeklaModelObject | None:
+        """
+        The part the reinforcement element is attached to.
+        """
+        raw = self.model_object.Father
+        if raw is None:
+            return None
+        return wrap_model_object(raw)
+
+    @father.setter
+    def father(self, value: TeklaModelObject | None) -> None:
+        """
+        Sets the father part of this reinforcement element.
+        """
+        self.model_object.Father = value.model_object if value is not None else None
+
+    def get_top_level_assembly(self) -> TeklaAssembly | None:
+        """
+        Returns the top-level assembly of the reinforcement's father part.
+        """
+        host = self.father
+        if host is None:
+            logger.warning("No Father found for reinforcement %s.", self.guid)
+            return None
+        return host.get_top_level_assembly()
