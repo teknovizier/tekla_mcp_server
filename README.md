@@ -54,15 +54,17 @@ See [Reference](docs/reference.md) for complete list of tools and resources.
 
 ### Compatibility
 
-The server was tested to work with **only Tekla 2022** and may not be compatible with other versions of Tekla Structures.
+The server was tested to work with **Tekla 2022** and **Tekla 2026** and may not be compatible with other versions of Tekla Structures.
 
-Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz) and [chatmcp](https://github.com/daodao97/chatmcp) clients, along with the following language models:
-- GPT-4o
+Verified to work correctly with [DeepChat](https://deepchat.thinkinai.xyz), [chatmcp](https://github.com/daodao97/chatmcp) and [Claude Desktop](https://claude.ai/download) clients, along with the following language models:
+- Claude Sonnet 4.6
+- Claude Haiku 4.5
 - DeepSeek-V3
 - DeepSeek-V4-Flash
 - Gemini 2.0 Flash
 - Gemini 2.5 Flash
 - Qwen3
+- GPT-4o
 - gpt-oss
 
 ## Installation
