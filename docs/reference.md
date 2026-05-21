@@ -31,7 +31,7 @@ Type and default shown where relevant.
 | View | `hide_selected` | Hide selected elements in the active view | - |
 | View | `color_selected` | Color selected elements with an RGB colour | **`red`** (int, 0–255), **`green`** (int, 0–255), **`blue`** (int, 0–255) |
 | View | `apply_view_filter` | Apply a saved view filter to the active view | **`filter_name`** (str) |
-| Operations | `cut_elements_with_zero_class_parts` | Boolean-cut selected elements using class-0 parts | `delete_cutting_parts` (bool, default: `false`) |
+| Operations | `cut_elements_with_cutters` | Boolean-cut selected elements using parts identified by class or GUID | `cutter_class` (int \| null), `cutter_guids` (list[str] \| null) - exactly one required, `delete_cutting_parts` (bool, default: `false`) |
 | Operations | `convert_cut_parts_to_real_parts` | Convert all cut parts in selected elements into standalone model parts | - |
 | Operations | `check_for_orphans` | Find orphaned embeds or rebars inside the bounding box of selected elements. Optionally attach orphans to their parent assembly | **`mode`** (str): `"embeds"` \| `"rebars"`, `attach` (bool, default: `false`) |
 | Operations | `check_for_invalid_objects` | Find invalid objects (missing profile/material, bad geometry, no parent) among selected elements and their bounding boxes | - |

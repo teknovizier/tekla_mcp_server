@@ -37,18 +37,35 @@ REINFORCEMENT_CLASSES: set[int] = _get_tekla_classes("MATERIAL_REINFORCEMENT")
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
-def cut_elements_with_zero_class_parts(delete_cutting_parts: Annotated[bool, Field(description="Remove cutting parts after cuts are applied")] = False) -> ToolResult:
+def cut_elements_with_cutters(
+    cutter_class: Annotated[int | None, Field(description="Tekla class of the parts to use as cutters")] = None,
+    cutter_guids: Annotated[list[str] | None, Field(description="GUIDs of the parts to use as cutters")] = None,
+    delete_cutting_parts: Annotated[bool, Field(description="Remove cutting parts after cuts are applied")] = False,
+) -> ToolResult:
     """
-    Performs boolean cuts on selected model objects using parts in class 0.
+    Performs boolean cuts on selected model objects.
+
+    Provide exactly one of:
+    - `cutter_class`: use all parts with the specified Tekla class as cutters
+    - `cutter_guids`: use specific parts as cutters (useful in multi-step workflows)
     """
+    if (cutter_class is None) == (cutter_guids is None):
+        raise ValueError("Provide exactly one of 'cutter_class' or 'cutter_guids'")
+
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
 
+    if cutter_class is not None:
+        raw_cutters = model.get_objects_by_class(cutter_class)
+        label = f"class {cutter_class}"
+    else:
+        raw_cutters = model.get_objects_by_guid(cutter_guids)
+        label = f"{len(cutter_guids)} GUIDs"
+
     processed_elements = 0
     performed_cuts = 0
-    objects_to_select = model.get_objects_by_class(0)
-    cutters = list(wrap_model_objects(objects_to_select))
-    logger.debug("Processing %d selected objects with %d cutters", selected_objects.GetSize(), len(cutters))
+    cutters = list(wrap_model_objects(raw_cutters))
+    logger.debug("Processing %d selected objects with %d cutters (%s)", selected_objects.GetSize(), len(cutters), label)
     if cutters:
         for selected_object in wrap_model_objects(selected_objects):
             element_had_cut = False
@@ -61,9 +78,8 @@ def cut_elements_with_zero_class_parts(delete_cutting_parts: Annotated[bool, Fie
     if performed_cuts:
         model.commit_changes()
         logger.info("Performed %s cuts on %s elements", performed_cuts, processed_elements)
-
-    if not performed_cuts:
-        logger.warning("cut_elements_with_zero_class_parts failed: No cuts performed")
+    else:
+        logger.warning("cut_elements_with_cutters: No cuts performed (%s)", label)
 
     return ToolResult(
         structured_content={

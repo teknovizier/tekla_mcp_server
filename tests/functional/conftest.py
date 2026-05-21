@@ -72,6 +72,7 @@ def model_objects():
 
     voids = [
         BeamInput(start_point=PointInput(x=3000, y=0, z=1000), end_point=PointInput(x=3000, y=200, z=1000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_WALL3"),
+        BeamInput(start_point=PointInput(x=3000, y=0, z=4020), end_point=PointInput(x=3000, y=200, z=4020), profile="D400", material="Concrete_Undefined", tekla_class=555, name="MCP_TEST_VOID_GUID_WALL4"),
         BeamInput(
             start_point=PointInput(x=3000, y=0, z=10000), end_point=PointInput(x=3000, y=200, z=10000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_FLOATING"
         ),
@@ -104,6 +105,7 @@ def model_objects():
         "test_slab1": get_single_object(result_slabs.structured_content["results"][0]["guid"]),
         "void1": get_single_object(result_voids.structured_content["results"][0]["guid"]),
         "void2": get_single_object(result_voids.structured_content["results"][1]["guid"]),
+        "void3": get_single_object(result_voids.structured_content["results"][2]["guid"]),
     }
 
     cleanup_mcp_test_objects()

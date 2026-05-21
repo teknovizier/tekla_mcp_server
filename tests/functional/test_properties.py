@@ -372,10 +372,10 @@ def test_get_elements_properties_invalid_and_missing_report_properties(model_obj
 
 def test_get_elements_cut_parts_with_cuts(model_objects):
     """Tests get_elements_cut_parts: elements with cut parts."""
-    from tekla_mcp_server.providers.operations_provider import cut_elements_with_zero_class_parts
+    from tekla_mcp_server.providers.operations_provider import cut_elements_with_cutters
 
     TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
-    cut_elements_with_zero_class_parts(delete_cutting_parts=False)
+    cut_elements_with_cutters(cutter_class=0, delete_cutting_parts=False)
 
     TeklaModel.select_objects([model_objects["test_wall3"]])
     result = get_elements_cut_parts()

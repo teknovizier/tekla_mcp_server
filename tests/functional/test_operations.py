@@ -8,7 +8,7 @@ from tekla_mcp_server.providers.operations_provider import (
     check_for_invalid_objects,
     check_for_orphans,
     clash_check,
-    cut_elements_with_zero_class_parts,
+    cut_elements_with_cutters,
     convert_cut_parts_to_real_parts,
     run_macro,
 )
@@ -41,12 +41,30 @@ def test_check_for_orphans_rebars_mode(model_objects):
     assert "orphaned_rebar_objects_count" in result.structured_content
 
 
-def test_cut_elements_with_zero_class_parts(model_objects):
-    """Tests cut_elements_with_zero_class_parts tool."""
+def test_cut_elements_with_cutters_by_class(model_objects):
+    """Tests cut_elements_with_cutters using cutting_class."""
     TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
-    result = cut_elements_with_zero_class_parts(delete_cutting_parts=False)
+    result = cut_elements_with_cutters(cutter_class=0, delete_cutting_parts=False)
     assert result.structured_content["status"] == "success"
     assert result.structured_content["selected_elements"] == 2
+
+
+def test_cut_elements_with_cutters_by_guid(model_objects):
+    """Tests cut_elements_with_cutters using cutter_guids."""
+    cutter_guid = model_objects["void2"].Identifier.GUID.ToString()
+    TeklaModel.select_objects([model_objects["test_wall4"]])
+    result = cut_elements_with_cutters(cutter_guids=[cutter_guid], delete_cutting_parts=False)
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_elements"] == 1
+    assert result.structured_content["performed_cuts"] >= 1
+
+
+def test_cut_elements_with_cutters_invalid_guid(model_objects):
+    """Tests cut_elements_with_cutters with a non-existent GUID returns warning."""
+    TeklaModel.select_objects([model_objects["test_wall3"]])
+    result = cut_elements_with_cutters(cutter_guids=["00000000-0000-0000-0000-000000000000"])
+    assert result.structured_content["status"] == "warning"
+    assert result.structured_content["performed_cuts"] == 0
 
 
 def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):
