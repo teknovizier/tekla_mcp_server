@@ -7,6 +7,7 @@ import pytest
 from tekla_mcp_server.utils import (
     find_normalized_match,
     normalize_attribute_name,
+    format_coordinate_string,
     parse_coordinate_string,
     parse_label_string,
     sanitize_filename,
@@ -66,6 +67,23 @@ class TestParseCoordinateString:
     )
     def test_parse_coordinate_string(self, coord_str, expected):
         assert parse_coordinate_string(coord_str) == expected
+
+
+class TestFormatCoordinateString:
+    @pytest.mark.parametrize(
+        "coords,expected",
+        [
+            ([], ""),
+            ([0], "0"),
+            ([0, 5000, 10000], "0 5000 5000"),
+            ([1000, 1000], "1000 0"),
+            ([0, 6000, 12000, 18000], "0 6000 6000 6000"),
+            ([0.0, 5000.5, 7500.0], "0 5000.5 2499.5"),
+            ([-1000, 0, 1000], "-1000 1000 1000"),
+        ],
+    )
+    def test_format_coordinate_string(self, coords, expected):
+        assert format_coordinate_string(coords) == expected
 
 
 class TestParseLabelString:

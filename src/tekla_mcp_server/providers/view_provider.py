@@ -117,7 +117,7 @@ def draw_elements_labels(
                         ElementLabel.PROFILE: selected_object.profile,
                         ElementLabel.MATERIAL: selected_object.material,
                         ElementLabel.FINISH: selected_object.finish,
-                        ElementLabel.CLASS: selected_object.tekla_class,
+                        ElementLabel.CLASS: str(selected_object.tekla_class),
                         ElementLabel.PHASE: str(selected_object.phase),
                         ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
                     }

@@ -81,7 +81,7 @@ def test_basic_properties(wall1):
     assert wall1.profile == "3000*200"
     assert wall1.material == "Concrete_Undefined"
     assert wall1.finish == ""
-    assert wall1.tekla_class == "1"
+    assert wall1.tekla_class == 1
 
 
 def test_main_part_property(wall1):
@@ -297,7 +297,7 @@ def test_part_get_properties(wall1):
     assert props["name"] == "TEST_WALL1"
     assert props["profile"] == "3000*200"
     assert props["material"] == "Concrete_Undefined"
-    assert props["tekla_class"] == "1"
+    assert props["tekla_class"] == 1
 
 
 def test_part_set_properties_profile(wall1):
@@ -328,9 +328,9 @@ def test_part_set_properties_tekla_class(wall1):
     """Checks that TeklaPart class can be changed using set_properties."""
     original_class = wall1.tekla_class
 
-    changes = wall1.set_properties(tekla_class="2")
+    changes = wall1.set_properties(tekla_class=2)
     assert changes["tekla_class"] == 1
-    assert wall1.tekla_class == "2"
+    assert wall1.tekla_class == 2
 
     wall1.set_properties(tekla_class=original_class)
     assert wall1.tekla_class == original_class

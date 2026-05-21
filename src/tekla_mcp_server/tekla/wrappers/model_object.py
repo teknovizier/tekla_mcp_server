@@ -466,7 +466,9 @@ class TeklaAssembly(TeklaModelObject):
 
     @name.setter
     def name(self, value: str) -> None:
-        """Sets the name of the assembly."""
+        """
+        Sets the name of the assembly.
+        """
         self._set_property("Name", value)
 
     @property
@@ -723,16 +725,22 @@ class TeklaPart(TeklaModelObject):
         self._set_property("Finish", value)
 
     @property
-    def tekla_class(self) -> str:
+    def tekla_class(self) -> int:
         """
-        Returns the Tekla class of the part.
+        Returns the Tekla class of the part as an integer.
+
+        Tekla exposes Class as a string, but semantically it is a numeric
+        category. Non-numeric values are normalized to 0.
         """
-        return self.model_object.Class
+        try:
+            return int(self.model_object.Class)
+        except (TypeError, ValueError):
+            return 0
 
     @tekla_class.setter
-    def tekla_class(self, value: str) -> None:
+    def tekla_class(self, value: int | str) -> None:
         """Sets the Tekla class of the part."""
-        self._set_property("Class", value)
+        self._set_property("Class", str(value))
 
     @property
     def part_number(self) -> NumberingSeries:
@@ -899,7 +907,7 @@ class TeklaPart(TeklaModelObject):
         name: str | None = None,
         profile: str | None = None,
         material: str | None = None,
-        tekla_class: str | None = None,
+        tekla_class: int | None = None,
         finish: str | None = None,
         phase: int | None = None,
         part_prefix: str | None = None,
@@ -950,7 +958,7 @@ class TeklaPart(TeklaModelObject):
 
         if tekla_class is not None:
             try:
-                self.tekla_class = str(tekla_class)
+                self.tekla_class = tekla_class
                 changes["tekla_class"] = 1
             except Exception as e:
                 errors.append({"property": "tekla_class", "reason": str(e)})
@@ -1276,17 +1284,27 @@ class TeklaReinforcement(TeklaModelObject):
 
     @name.setter
     def name(self, value: str) -> None:
-        """Sets the name of the reinforcement element."""
+        """
+        Sets the name of the reinforcement element.
+        """
         self._set_property("Name", value)
 
     @property
-    def tekla_class(self) -> str:
+    def tekla_class(self) -> int:
         """
-        Returns the Tekla class of the reinforcement element.
+        Returns the Tekla class of the reinforcement element as an integer.
+
+        Tekla exposes Class as a string, but semantically it is a numeric
+        category. Non-numeric values are normalized to 0.
         """
-        return self.model_object.Class
+        try:
+            return int(self.model_object.Class)
+        except (TypeError, ValueError):
+            return 0
 
     @tekla_class.setter
-    def tekla_class(self, value: str) -> None:
-        """Sets the Tekla class of the reinforcement element."""
-        self._set_property("Class", value)
+    def tekla_class(self, value: int | str) -> None:
+        """
+        Sets the Tekla class of the reinforcement element.
+        """
+        self._set_property("Class", str(value))

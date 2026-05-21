@@ -23,7 +23,7 @@ from tekla_mcp_server.models import (
     ElementTypes,
     NumberingSeries,
 )
-from tekla_mcp_server.utils import mcp_handler
+from tekla_mcp_server.utils import format_coordinate_string, mcp_handler
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_objects, wrap_model_object
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import Grid, Operation, Point, Vector
@@ -32,18 +32,6 @@ from tekla_mcp_server.tekla.loader import Grid, Operation, Point, Vector
 modeling_provider = LocalProvider()
 
 T = TypeVar("T", BeamInput, ColumnInput, PanelInput)
-
-
-def _to_tekla_coords(coords: list[float]) -> str:
-    """Convert absolute coordinates to Tekla's incremental grid format.
-
-    Tekla stores the first axis value as an absolute position and subsequent
-    values as spacings (differences), e.g. [0, 5000, 10000] → "0 5000 5000".
-    """
-    if not coords:
-        return ""
-    values = [coords[0]] + [coords[i] - coords[i - 1] for i in range(1, len(coords))]
-    return " ".join(str(int(v)) if v == int(v) else str(v) for v in values)
 
 
 def _collect_parts(obj: TeklaModelObject) -> list[TeklaPart]:
@@ -452,9 +440,9 @@ def place_grid(
     grid = Grid()
     if name:
         grid.Name = name
-    grid.CoordinateX = _to_tekla_coords(x)
-    grid.CoordinateY = _to_tekla_coords(y)
-    grid.CoordinateZ = _to_tekla_coords(resolved_z) if resolved_z else ""
+    grid.CoordinateX = format_coordinate_string(x)
+    grid.CoordinateY = format_coordinate_string(y)
+    grid.CoordinateZ = format_coordinate_string(resolved_z) if resolved_z else ""
     if x_labels:
         grid.LabelX = " ".join(x_labels)
     if y_labels:

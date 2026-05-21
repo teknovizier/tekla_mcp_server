@@ -216,7 +216,7 @@ def check_for_orphans(
             if not main:
                 continue
 
-            part_class = int(main.tekla_class)
+            part_class = main.tekla_class
             if part_class not in EMBEDDED_DETAILS_CLASSES:
                 # Filter to embeds classes only
                 continue
@@ -259,7 +259,7 @@ def check_for_orphans(
                 # Skip non-reinforcement objects
                 continue
 
-            reinforcement_class = int(candidate.tekla_class)
+            reinforcement_class = candidate.tekla_class
             if reinforcement_class not in REINFORCEMENT_CLASSES:
                 # Filter to reinforcement classes only
                 continue
@@ -503,7 +503,7 @@ def check_for_invalid_objects() -> ToolResult:
                             guid=guid,
                             name=obj.name,
                             position=obj.position,
-                            tekla_class=int(obj.tekla_class),
+                            tekla_class=obj.tekla_class,
                             issues=issues,
                         )
                     )
@@ -519,12 +519,13 @@ def check_for_invalid_objects() -> ToolResult:
                     assembly_issues.append("no_main_part")
 
                 if assembly_issues:
+                    wrapped_main = wrap_model_object(main_part) if main_part else None
                     invalid_assemblies.append(
                         CheckResult(
                             guid=guid,
                             name=obj.name,
                             position=obj.position,
-                            tekla_class=int(main_part.Class) if main_part else None,
+                            tekla_class=wrapped_main.tekla_class if wrapped_main else None,
                             issues=assembly_issues,
                         )
                     )
@@ -560,7 +561,7 @@ def check_for_invalid_objects() -> ToolResult:
                             guid=guid,
                             name=obj.name,
                             position=obj.position,
-                            tekla_class=int(obj.tekla_class),
+                            tekla_class=obj.tekla_class,
                             issues=reinf_issues,
                         )
                     )

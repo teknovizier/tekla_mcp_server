@@ -20,7 +20,7 @@ def test_set_elements_properties(model_objects):
     """Tests set_elements_properties function with assemblies."""
     TeklaModel.select_objects([model_objects["test_wall7"]])
 
-    result = set_elements_properties(name="MCP_TEST_NEW_NAME", profile="2000*150", material="C16/20", tekla_class="8", finish="FR")
+    result = set_elements_properties(name="MCP_TEST_NEW_NAME", profile="2000*150", material="C16/20", tekla_class=8, finish="FR")
     assert result.structured_content["status"] == "success"
     assert result.structured_content["processed_elements"] == 1
     assert result.structured_content["modified_elements"] == 1
@@ -37,7 +37,7 @@ def test_set_elements_properties(model_objects):
     assert parts[0]["name"] == "MCP_TEST_NEW_NAME"
     assert parts[0]["profile"] == "2000*150"
     assert parts[0]["material"] == "C16/20"
-    assert parts[0]["tekla_class"] == "8"
+    assert parts[0]["tekla_class"] == 8
     assert parts[0]["finish"] == "FR"
 
 
@@ -96,7 +96,7 @@ def test_set_elements_properties_all_part_properties(model_objects):
         name="MCP_PART_ALL_TEST",
         profile="2500*300",
         material="C50/60",
-        tekla_class="9",
+        tekla_class=9,
         finish="R",
         phase=2,
     )
@@ -117,7 +117,7 @@ def test_set_elements_properties_all_part_properties(model_objects):
     assert parts[0]["name"] == "MCP_PART_ALL_TEST"
     assert parts[0]["profile"] == "2500*300"
     assert parts[0]["material"] == "C50/60"
-    assert parts[0]["tekla_class"] == "9"
+    assert parts[0]["tekla_class"] == 9
     assert parts[0]["finish"] == "R"
     assert parts[0]["phase"] == 2
 
@@ -192,7 +192,7 @@ def test_set_elements_properties_multiple_elements(model_objects):
     """Tests set_elements_properties on multiple elements."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
 
-    result = set_elements_properties(tekla_class="77")
+    result = set_elements_properties(tekla_class=77)
     assert result.structured_content["status"] == "success"
     assert result.structured_content["processed_elements"] == 2
     assert result.structured_content["modified_elements"] == 2

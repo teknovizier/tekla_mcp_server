@@ -183,6 +183,22 @@ def parse_coordinate_string(coord_str: str) -> list[float]:
     return result
 
 
+def format_coordinate_string(coords: list[float]) -> str:
+    """
+    Convert absolute coordinates to Tekla's incremental grid format.
+
+    Args:
+        coords: Absolute coordinate values
+
+    Returns:
+        Whitespace-separated incremental string, or an empty string if input is empty
+    """
+    if not coords:
+        return ""
+    values = [coords[0]] + [coords[i] - coords[i - 1] for i in range(1, len(coords))]
+    return " ".join(str(int(v)) if v == int(v) else str(v) for v in values)
+
+
 def parse_label_string(label_str: str) -> list[str]:
     """
     Parse a label string like 'A B C D' into a list of strings.
