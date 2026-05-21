@@ -22,43 +22,21 @@ from tekla_mcp_server.providers import (
     ifc_provider,
 )
 
-ALL_PROVIDERS = {
-    "resources": resources_provider,
-    "selection": selection_provider,
-    "view": view_provider,
-    "properties": properties_provider,
-    "operations": operations_provider,
-    "components": components_provider,
-    "drawings": drawings_provider,
-    "modeling": modeling_provider,
-    "ifc": ifc_provider,
-}
 
 mcp = FastMCP("Tekla MCP Server")
 
 
-# Add providers
-def register_providers() -> None:
-    """
-    Register providers with the MCP server.
-    """
-    enabled = get_config().enabled_providers
-    if enabled is None:
-        for provider in ALL_PROVIDERS.values():
-            mcp.add_provider(provider)
-        logger.info("Active providers: %s", list(ALL_PROVIDERS.keys()))
-        return
+# Add all providers to the MCP server
+mcp.add_provider(resources_provider)
 
-    active = [name for name in enabled if name in ALL_PROVIDERS]
-    unknown = [name for name in enabled if name not in ALL_PROVIDERS]
-    if unknown:
-        logger.warning("Unknown providers in settings.json: %s", unknown)
-    for name in active:
-        mcp.add_provider(ALL_PROVIDERS[name])
-    logger.info("Active providers: %s", active)
-
-
-register_providers()
+mcp.add_provider(selection_provider)
+mcp.add_provider(view_provider)
+mcp.add_provider(properties_provider)
+mcp.add_provider(operations_provider)
+mcp.add_provider(components_provider)
+mcp.add_provider(drawings_provider)
+mcp.add_provider(modeling_provider)
+mcp.add_provider(ifc_provider)
 
 
 # Run the MCP server locally
@@ -80,6 +58,13 @@ if __name__ == "__main__":
                 logger.info("Embeddings ready")
         except (ImportError, ValueError) as e:
             logger.warning("Embeddings validation failed: %s. Continuing without embeddings", e)
+
+    disabled = get_config().excluded_tags
+    if disabled:
+        mcp.disable(tags=disabled)
+        logger.info("Disabled tags: %s", disabled)
+    else:
+        logger.info("All tools enabled")
 
     mcp.add_transform(ResourcesAsTools(mcp))
 

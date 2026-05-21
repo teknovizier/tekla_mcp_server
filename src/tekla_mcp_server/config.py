@@ -265,9 +265,12 @@ class Config:
         return _get_tekla_macro_directories()
 
     @property
-    def enabled_providers(self) -> list[str] | None:
-        """List of enabled provider names, or None to enable all."""
-        return _load_settings().get("providers")
+    def excluded_tags(self) -> set[str]:
+        """Set of tool tags to hide from the LLM."""
+        tags = _load_settings().get("excluded_tags")
+        if tags is None:
+            return set()
+        return set(tags)
 
     @property
     def context_folder(self) -> Path:

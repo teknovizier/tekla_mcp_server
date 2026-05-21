@@ -117,7 +117,7 @@ def get_drawings(
     )
 
 
-@drawings_provider.tool(tags={"catalog"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def get_drawing_properties(
     marks: Annotated[list[str] | None, Field(description="List of drawing marks to get properties for")] = None,

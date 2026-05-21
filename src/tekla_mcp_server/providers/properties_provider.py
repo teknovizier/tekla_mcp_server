@@ -272,7 +272,7 @@ def get_elements_properties(
     )
 
 
-@properties_provider.tool(tags={"catalog"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def get_elements_cut_parts() -> ToolResult:
     """
