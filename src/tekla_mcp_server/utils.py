@@ -116,15 +116,44 @@ def mcp_handler(scope: Literal["tool", "resource"] = "tool") -> Callable:
 
 
 def json_resource(data: Any) -> ResourceResult:
-    """Wrap JSON-serialisable data as a single-item ResourceResult."""
+    """
+    Wrap JSON-serialisable data as a single-item ResourceResult.
+
+    Args:
+        data: JSON-serialisable payload
+
+    Returns:
+        ResourceResult containing the payload as 'application/json' content
+    """
     return ResourceResult(contents=[ResourceContent(content=json.dumps(data), mime_type="application/json")])
 
 
-def parse_coordinate_string(coord_str: str) -> list[float]:
-    """Parse coordinate string like '0.0 4900.0 400.0 4900.0' into list of floats.
+def sanitize_filename(raw: str) -> str | None:
+    """
+    Replace characters that are invalid in Windows filenames.
 
-    First value is kept as-is. Second+ values are added to accumulated total.
+    Args:
+        raw: Filename to sanitize
+
+    Returns:
+        Sanitized filename, or None if nothing usable remains after sanitization
+    """
+    cleaned = re.sub(r'[\\/:*?"<>|]', "_", raw).strip(" .")
+    return cleaned or None
+
+
+def parse_coordinate_string(coord_str: str) -> list[float]:
+    """
+    Parse a coordinate string like '0.0 4900.0 400.0 4900.0' into a list of floats.
+
+    First value is kept as-is. Second+ values are added to the accumulated total.
     Supports 'N*VALUE' syntax to repeat a value N times.
+
+    Args:
+        coord_str: Whitespace-separated coordinate string
+
+    Returns:
+        List of accumulated float coordinates, or an empty list if input is empty
     """
     if not coord_str:
         return []
@@ -155,7 +184,15 @@ def parse_coordinate_string(coord_str: str) -> list[float]:
 
 
 def parse_label_string(label_str: str) -> list[str]:
-    """Parse label string like 'A B C D' into list of strings."""
+    """
+    Parse a label string like 'A B C D' into a list of strings.
+
+    Args:
+        label_str: Whitespace-separated label string
+
+    Returns:
+        List of trimmed labels, or an empty list if input is empty
+    """
     if not label_str:
         return []
     return [label.strip() for label in label_str.strip().split() if label.strip()]

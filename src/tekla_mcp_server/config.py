@@ -30,8 +30,8 @@ def _get_config_dir() -> Path:
     return Path(env_dir)
 
 
-# Config JSON files are cached for the process lifetime.
-# Edits only take effect after restart.
+# Config JSON files are read once and cached for the lifetime of the process.
+# Changes to settings.json do not take effect until the MCP server is restarted.
 @lru_cache(maxsize=8)
 def _load_json(filename: str) -> dict[str, Any]:
     """

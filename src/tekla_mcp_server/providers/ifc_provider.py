@@ -36,10 +36,10 @@ def copy_properties_from_ifc(
     tekla_targets: list[tuple[str, TeklaModelObject]] = []
 
     for selected_object in wrap_model_objects(selected_objects):
-        # Use GUID from report properties: native Tekla objects may not have valid GUID
-        guid = str(selected_object.get_report_property("GUID"))
         if selected_object is None:
             continue
+        # Use GUID from report properties: native Tekla objects may not have valid GUID
+        guid = str(selected_object.get_report_property("GUID"))
         if isinstance(selected_object, TeklaReferenceModelObject):
             ifc_sources.append((guid, selected_object))
         else:

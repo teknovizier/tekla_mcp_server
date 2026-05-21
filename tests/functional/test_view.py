@@ -71,6 +71,13 @@ def test_apply_view_filter():
     assert result.structured_content["filter_name"] == "standard"
 
 
+def test_apply_view_filter_invalid_name():
+    """Unknown filter name raises ValueError and is reported as an error."""
+    result = apply_view_filter(filter_name="MCP_NONEXISTENT_FILTER")
+    assert result.structured_content["status"] == "error"
+    assert "MCP_NONEXISTENT_FILTER" in result.structured_content["message"]
+
+
 def test_show_only_selected(model_objects):
     """Tests show_only_selected function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])

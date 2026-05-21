@@ -85,7 +85,7 @@ class TeklaModel:
                 last_exception = e
                 logger.warning("Connection attempt %d/%d failed: %s", attempt + 1, max_retries, e)
                 if attempt < max_retries - 1:
-                    time.sleep(self._retry_delay * (attempt + 1))  # Exponential backoff
+                    time.sleep(self._retry_delay * (attempt + 1))  # Linear backoff (1s, 2s, 3s, ...)
 
         self._model = None
         self._initialized = False

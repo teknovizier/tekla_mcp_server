@@ -16,11 +16,22 @@ from tekla_mcp_server.models import CheckResult
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaPart, TeklaReinforcement
-from tekla_mcp_server.tekla.loader import Operation
+from tekla_mcp_server.tekla.loader import Operation, Part
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items
 
 
 operations_provider = LocalProvider()
+
+
+def _get_tekla_classes(material_key: str) -> set[int]:
+    """Get all tekla_classes for a material group from the config."""
+    material = get_config().element_types.get(material_key, {})
+    return {tekla_class for type_config in material.values() for tekla_class in type_config.get("tekla_classes", [])}
+
+
+# Class IDs for filtering candidates in orphan-detection tools
+EMBEDDED_DETAILS_CLASSES: set[int] = _get_tekla_classes("MATERIAL_EMBEDDED")
+REINFORCEMENT_CLASSES: set[int] = _get_tekla_classes("MATERIAL_REINFORCEMENT")
 
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -75,6 +86,9 @@ def convert_cut_parts_to_real_parts() -> ToolResult:
     processed_elements = 0
     inserted_booleans = 0
     for selected_object in selected_objects:
+        if not isinstance(selected_object, Part):
+            logger.debug("convert_cut_parts_to_real_parts: skipping non-part object: %s", selected_object.GetType())
+            continue
         for boolean_part in iterate_boolean_parts(selected_object):
             if boolean_part.OperativePart.Insert():
                 inserted_booleans += 1
@@ -138,16 +152,6 @@ def check_for_orphans(
     selected_objects = model.get_selected_objects()
 
     tolerance = get_tolerance()
-
-    def _get_tekla_classes(material_key: str) -> set[int]:
-        """Get all tekla_classes for a material group."""
-        material = get_config().element_types.get(material_key, {})
-
-        return {tekla_class for type_config in material.values() for tekla_class in type_config.get("tekla_classes", [])}
-
-    # Load class IDs from config for filtering candidates
-    EMBEDDED_DETAILS_CLASSES = _get_tekla_classes("MATERIAL_EMBEDDED")
-    REINFORCEMENT_CLASSES = _get_tekla_classes("MATERIAL_REINFORCEMENT")
 
     def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
         """Collect all rebar GUIDs from main part and secondary parts."""
@@ -328,24 +332,28 @@ def check_for_orphans(
 
             success = False
 
-            # Different attachment methods for embeds vs rebars
-            if mode == "embeds":
-                # Add embed assembly to parent assembly
-                added = parent_assembly.model_object.Add(orphan_obj)
+            try:
+                # Different attachment methods for embeds vs rebars
+                if mode == "embeds":
+                    # Add embed assembly to parent assembly
+                    added = parent_assembly.model_object.Add(orphan_obj)
 
-                if added:
-                    success = parent_assembly.model_object.Modify() and orphan_obj.Modify()
+                    if added:
+                        success = parent_assembly.model_object.Modify() and orphan_obj.Modify()
 
-            elif mode == "rebars":
-                # Set rebar's Father to main part
-                try:
-                    main_part_obj = parent_assembly.main_part.model_object
-                except ValueError:
-                    logger.warning("Cannot attach %s: parent assembly %s has no main part", item.guid, parent_assembly.guid)
-                    continue
-                orphan_obj.model_object.Father = main_part_obj
+                elif mode == "rebars":
+                    # Set rebar's Father to main part
+                    try:
+                        main_part_obj = parent_assembly.main_part.model_object
+                    except ValueError:
+                        logger.warning("Cannot attach %s: parent assembly %s has no main part", item.guid, parent_assembly.guid)
+                        continue
+                    orphan_obj.model_object.Father = main_part_obj
 
-                success = main_part_obj.Modify() and orphan_obj.model_object.Modify()
+                    success = main_part_obj.Modify() and orphan_obj.model_object.Modify()
+            except Exception:
+                logger.exception("Failed to attach orphaned %s %s to assembly %s", mode[:-1], item.guid, parent_assembly.guid)
+                continue
 
             if not success:
                 logger.warning(
@@ -480,10 +488,14 @@ def check_for_invalid_objects() -> ToolResult:
                     issues.append("invalid_solid")
 
                 # Zero or negative volume
-                volume = float(obj.get_report_property("VOLUME"))
-                epsilon = 0.0001
-                if volume <= epsilon:
-                    issues.append("zero_volume")
+                try:
+                    volume = float(obj.get_report_property("VOLUME"))
+                    epsilon = 0.0001
+                    if volume <= epsilon:
+                        issues.append("zero_volume")
+                except Exception as e:
+                    logger.warning("Failed to read VOLUME for %s: %s", guid, e)
+                    issues.append("volume_unreadable")
 
                 if issues:
                     invalid_parts.append(

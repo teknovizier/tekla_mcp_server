@@ -459,3 +459,17 @@ def test_place_grid_with_name_and_z(grid_cleanup):
     assert result.structured_content["status"] == "success"
     assert result.structured_content["name"] == "MCP_TEST_GRID"
     grid_cleanup.append(result.structured_content["guid"])
+
+
+def test_place_grid_requires_two_x_coords():
+    """Single X coordinate is rejected by validation."""
+    result = place_grid(x=[0], y=[0, 5000])
+    assert result.structured_content["status"] == "error"
+    assert "X coordinates" in result.structured_content["message"]
+
+
+def test_place_grid_requires_two_y_coords():
+    """Single Y coordinate is rejected by validation."""
+    result = place_grid(x=[0, 5000], y=[0])
+    assert result.structured_content["status"] == "error"
+    assert "Y coordinates" in result.structured_content["message"]

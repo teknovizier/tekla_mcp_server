@@ -9,6 +9,7 @@ from tekla_mcp_server.utils import (
     normalize_attribute_name,
     parse_coordinate_string,
     parse_label_string,
+    sanitize_filename,
 )
 
 
@@ -81,3 +82,35 @@ class TestParseLabelString:
     )
     def test_parse_label_string(self, label_str, expected):
         assert parse_label_string(label_str) == expected
+
+
+class TestSanitizeFilename:
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("Floor_3", "Floor_3"),
+            ("Floor 3", "Floor 3"),
+            ("Floor/3", "Floor_3"),
+            ("Floor\\3", "Floor_3"),
+            ("a:b*c?d\"e<f>g|h", "a_b_c_d_e_f_g_h"),
+            ("..\\wall", "_wall"),
+            ("../wall", "_wall"),
+            ("  spaced  ", "spaced"),
+            ("...dots...", "dots"),
+            ("name.with.dots", "name.with.dots"),
+        ],
+    )
+    def test_sanitize_returns_cleaned_string(self, raw, expected):
+        assert sanitize_filename(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "",
+            "   ",
+            "...",
+            " . . ",
+        ],
+    )
+    def test_sanitize_returns_none_when_nothing_remains(self, raw):
+        assert sanitize_filename(raw) is None

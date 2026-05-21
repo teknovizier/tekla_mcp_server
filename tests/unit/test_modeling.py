@@ -190,6 +190,27 @@ class TestPanelInput:
         assert panel.end_point.z == 3000
 
 
+class TestToTeklaCoords:
+    """Tests for _to_tekla_coords helper (absolute -> Tekla incremental format)."""
+
+    @pytest.mark.parametrize(
+        "coords,expected",
+        [
+            ([], ""),
+            ([0], "0"),
+            ([0, 5000, 10000], "0 5000 5000"),
+            ([1000, 1000], "1000 0"),
+            ([0, 6000, 12000, 18000], "0 6000 6000 6000"),
+            ([0.0, 5000.5, 7500.0], "0 5000.5 2499.5"),
+            ([-1000, 0, 1000], "-1000 1000 1000"),
+        ],
+    )
+    def test_to_tekla_coords(self, coords, expected):
+        from tekla_mcp_server.providers.modeling_provider import _to_tekla_coords
+
+        assert _to_tekla_coords(coords) == expected
+
+
 class TestPlacementResult:
     """Tests for PlacementResult model."""
 

@@ -50,6 +50,9 @@ def register_providers() -> None:
         return
 
     active = [name for name in enabled if name in ALL_PROVIDERS]
+    unknown = [name for name in enabled if name not in ALL_PROVIDERS]
+    if unknown:
+        logger.warning("Unknown providers in settings.json: %s", unknown)
     for name in active:
         mcp.add_provider(ALL_PROVIDERS[name])
     logger.info("Active providers: %s", active)

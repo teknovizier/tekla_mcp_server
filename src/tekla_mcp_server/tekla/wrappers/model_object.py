@@ -139,6 +139,7 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         - TeklaContourPlate if the object is a ContourPlate
         - TeklaPart if the object is a Part
         - TeklaReferenceModelObject if the object is a ReferenceModelObject
+        - TeklaReinforcement if the object is a TeklaReinforcement
         - TeklaModelObject for any other object types
     """
     if isinstance(model_object, Assembly):
@@ -385,14 +386,20 @@ class TeklaModelObject:
         Helper to set a property on the model object.
 
         Args:
-            prop_name: Name of the property (supports dotted paths like "Profile.ProfileString")
+            prop_name: Name of the property. Supports dotted paths up to two levels
+                deep (e.g. "Profile.ProfileString"). Deeper paths raise ValueError.
             value: Value to set
+
+        Raises:
+            ValueError: If the property path is too deep.
         """
-        if "." in prop_name:
-            parts = prop_name.split(".")
+        parts = prop_name.split(".")
+        if len(parts) == 1:
+            setattr(self.model_object, parts[0], value)
+        elif len(parts) == 2:
             setattr(getattr(self.model_object, parts[0]), parts[1], value)
         else:
-            setattr(self.model_object, prop_name, value)
+            raise ValueError(f"Property path too deep: '{prop_name}'")
         self.model_object.Modify()
 
 

@@ -89,7 +89,7 @@ def _process_seam_or_connection(
     if count > 2:
         raise ValueError(f"More than two elements selected. Expected 2, got {count}.")
 
-    processed_elements = 0
+    processed_element_pairs = 0
     processed_components = 0
 
     wall_pairs = get_wall_pairs(selected_objects)
@@ -97,8 +97,9 @@ def _process_seam_or_connection(
         success = callback(model, component, pair[1], pair[0], *args, **kwargs)
         if success:
             processed_components += success
+        processed_element_pairs += 1
     model.commit_changes()
-    logger.info("Processed %s elements, %s components", processed_elements, processed_components)
+    logger.info("Processed %s elements, %s components", processed_element_pairs, processed_components)
     errors = custom_properties_errors or []
     status = "success" if processed_components else "error"
     if errors:
@@ -107,7 +108,7 @@ def _process_seam_or_connection(
         structured_content={
             "status": status,
             "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
+            "processed_element_pairs": processed_element_pairs,
             "inserted_components": processed_components,
             "custom_properties_errors": errors,
         }

@@ -154,7 +154,10 @@ def get_grid_list() -> ResourceResult:
     while enumerator.MoveNext():
         grid = enumerator.Current
 
-        # Tekla may have more labels than axis coordinates, extra labels are ignored
+        # Coordinates and labels are trimmed to the same length (min of the two).
+        # If Tekla has more labels than coordinates, the extra labels are dropped.
+        # If there are more coordinates than labels, the unlabeled axis lines are
+        # also dropped from the response.
         x_coords = parse_coordinate_string(grid.CoordinateX)
         x_labels = parse_label_string(grid.LabelX)
         y_coords = parse_coordinate_string(grid.CoordinateY)
@@ -188,7 +191,7 @@ def get_grid_list() -> ResourceResult:
 
 @resources_provider.resource("tekla://connection_status")
 @mcp_handler(scope="resource")
-def get_connection_status() -> ResourceResult:
+def check_connection_status() -> ResourceResult:
     """
     Returns the current Tekla connection status.
     """

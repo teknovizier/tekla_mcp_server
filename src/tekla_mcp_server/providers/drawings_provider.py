@@ -13,7 +13,7 @@ from pydantic import Field
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption
-from tekla_mcp_server.utils import mcp_handler
+from tekla_mcp_server.utils import mcp_handler, sanitize_filename
 from tekla_mcp_server.tekla.filter_builder import to_filter_option
 from tekla_mcp_server.tekla.drawing_utils import (
     get_default_plot_output_folder,
@@ -183,63 +183,68 @@ def detect_collisions_between_marks(
     all_drawings_results: list[dict] = []
     total_colliding_marks = 0
 
-    for drawing in target_drawings:
-        drawing_handler.SetActiveDrawing(drawing.drawing)
-        view_results: list[dict] = []
-
-        try:
-            sheet = drawing.drawing.GetSheet()
-            views_enum = sheet.GetAllViews()
-        except Exception:
-            logger.debug("Failed to open sheet for drawing, skipping")
-            continue
-
-        while views_enum.MoveNext():
-            view = views_enum.Current
-            view_name = view.Name or ""
+    try:
+        for drawing in target_drawings:
+            drawing_handler.SetActiveDrawing(drawing.drawing)
+            view_results: list[dict] = []
 
             try:
-                mark_objects = view.GetAllObjects(Mark)
+                sheet = drawing.drawing.GetSheet()
+                views_enum = sheet.GetAllViews()
             except Exception:
-                logger.debug("Failed to get marks for view %s, skipping", view_name)
+                logger.debug("Failed to open sheet for drawing, skipping")
                 continue
 
-            mark_data = []
-            while mark_objects.MoveNext():
-                collision_data = get_mark_collision_data(mark_objects.Current)
-                if collision_data:
-                    mark_data.append(collision_data)
+            while views_enum.MoveNext():
+                view = views_enum.Current
+                view_name = view.Name or ""
 
-            if not mark_data:
-                continue
+                try:
+                    mark_objects = view.GetAllObjects(Mark)
+                except Exception:
+                    logger.debug("Failed to get marks for view %s, skipping", view_name)
+                    continue
 
-            colliding_indices = check_collisions(mark_data)
-            if not colliding_indices:
-                continue
+                mark_data = []
+                while mark_objects.MoveNext():
+                    collision_data = get_mark_collision_data(mark_objects.Current)
+                    if collision_data:
+                        mark_data.append(collision_data)
 
-            colliding_count = len(colliding_indices)
-            total_colliding_marks += colliding_count
+                if not mark_data:
+                    continue
 
-            for i, data in enumerate(mark_data):
-                if i in colliding_indices:
-                    data["mark"].Attributes.Frame.Color = DrawingColors.Red
-                    data["mark"].Modify()
+                colliding_indices = check_collisions(mark_data)
+                if not colliding_indices:
+                    continue
 
-            view_results.append({
-                "view": view_name,
-                "total_marks": len(mark_data),
-                "colliding_marks": colliding_count,
-            })
+                colliding_count = len(colliding_indices)
+                total_colliding_marks += colliding_count
 
-        if view_results:
-            all_drawings_results.append({
-                "mark": drawing.mark,
-                "name": drawing.name,
-                "views": view_results,
-            })
-            drawing_handler.SaveActiveDrawing()
+                for i, data in enumerate(mark_data):
+                    if i in colliding_indices:
+                        data["mark"].Attributes.Frame.Color = DrawingColors.Red
+                        data["mark"].Modify()
 
-    drawing_handler.CloseActiveDrawing()
+                view_results.append(
+                    {
+                        "view": view_name,
+                        "total_marks": len(mark_data),
+                        "colliding_marks": colliding_count,
+                    }
+                )
+
+            if view_results:
+                all_drawings_results.append(
+                    {
+                        "mark": drawing.mark,
+                        "name": drawing.name,
+                        "views": view_results,
+                    }
+                )
+                drawing_handler.SaveActiveDrawing()
+    finally:
+        drawing_handler.CloseActiveDrawing()
 
     logger.info("Collision detection complete: %d total colliding marks", total_colliding_marks)
     return ToolResult(
@@ -295,7 +300,7 @@ def print_drawings(
         "open_when_finished": False,
         "scaling_method": "Auto",
     }
-    attrs = {**default_attrs, **printer_attributes} if printer_attributes else default_attrs
+    attrs = {**default_attrs, **(printer_attributes or {})}
 
     results: list[dict] = []
     success_count = 0
@@ -323,9 +328,15 @@ def print_drawings(
             print_attrs.PrintToMultipleSheet = DotPrintToMultipleSheet.Off
 
             file_attr = attrs["output_filename"]
-            print_attrs.OutputFileName = getattr(drawing, file_attr) if isinstance(file_attr, str) and hasattr(drawing, file_attr) else drawing.mark
+            raw_name = getattr(drawing, file_attr) if isinstance(file_attr, str) and hasattr(drawing, file_attr) else drawing.mark
+            safe_name = sanitize_filename(str(raw_name))
+            if safe_name is None:
+                logger.warning("Drawing %s has no valid filename after sanitization", drawing.mark)
+                results.append({"mark": drawing.mark, "status": "failed", "message": "No valid filename after sanitization"})
+                continue
+            print_attrs.OutputFileName = safe_name
 
-            output_filename_with_ext = print_attrs.OutputFileName + ".pdf"
+            output_filename_with_ext = safe_name + ".pdf"
             output_file = Path(output_folder) / output_filename_with_ext
             print_attrs.OpenFileWhenFinished = attrs["open_when_finished"]
 

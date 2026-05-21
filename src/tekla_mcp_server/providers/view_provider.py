@@ -93,39 +93,43 @@ def draw_elements_labels(
     drawn_labels = 0
 
     for selected_object in wrap_model_objects(selected_objects):
-        if label_enum == ElementLabel.CUSTOM:
-            if skip_custom_label:
-                continue
-            value = selected_object.get_report_property(resolved_label)
-            text = f"{resolved_label} = {value}{unit}"
-        else:
-            if isinstance(selected_object, TeklaAssembly):
-                assembly_labels = {
-                    ElementLabel.POSITION: selected_object.position,
-                    ElementLabel.GUID: selected_object.guid,
-                    ElementLabel.NAME: selected_object.name,
-                    ElementLabel.PHASE: str(selected_object.phase),
-                    ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
-                }
-                text = assembly_labels.get(label_enum, selected_object.name)
-            elif isinstance(selected_object, TeklaPart):
-                part_labels = {
-                    ElementLabel.POSITION: selected_object.position,
-                    ElementLabel.GUID: selected_object.guid,
-                    ElementLabel.NAME: selected_object.name,
-                    ElementLabel.PROFILE: selected_object.profile,
-                    ElementLabel.MATERIAL: selected_object.material,
-                    ElementLabel.FINISH: selected_object.finish,
-                    ElementLabel.CLASS: selected_object.tekla_class,
-                    ElementLabel.PHASE: str(selected_object.phase),
-                    ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
-                }
-                text = part_labels.get(label_enum, selected_object.name)
+        try:
+            if label_enum == ElementLabel.CUSTOM:
+                if skip_custom_label:
+                    continue
+                value = selected_object.get_report_property(resolved_label)
+                text = f"{resolved_label} = {value}{unit}"
             else:
-                continue
-        if drawer.DrawText(selected_object.cog, text, Color(*color_black)):
-            drawn_labels += 1
-        processed_elements += 1
+                if isinstance(selected_object, TeklaAssembly):
+                    assembly_labels = {
+                        ElementLabel.POSITION: selected_object.position,
+                        ElementLabel.GUID: selected_object.guid,
+                        ElementLabel.NAME: selected_object.name,
+                        ElementLabel.PHASE: str(selected_object.phase),
+                        ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
+                    }
+                    text = assembly_labels.get(label_enum, selected_object.name)
+                elif isinstance(selected_object, TeklaPart):
+                    part_labels = {
+                        ElementLabel.POSITION: selected_object.position,
+                        ElementLabel.GUID: selected_object.guid,
+                        ElementLabel.NAME: selected_object.name,
+                        ElementLabel.PROFILE: selected_object.profile,
+                        ElementLabel.MATERIAL: selected_object.material,
+                        ElementLabel.FINISH: selected_object.finish,
+                        ElementLabel.CLASS: selected_object.tekla_class,
+                        ElementLabel.PHASE: str(selected_object.phase),
+                        ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
+                    }
+                    text = part_labels.get(label_enum, selected_object.name)
+                else:
+                    continue
+            if drawer.DrawText(selected_object.cog, text, Color(*color_black)):
+                drawn_labels += 1
+            processed_elements += 1
+        except Exception as e:
+            logger.warning("Failed to draw label for %s: %s", selected_object.guid, e)
+            continue
     logger.info("Drawn '%s' labels on %s elements", label_enum.value, drawn_labels)
     if drawn_labels and not resolution_errors:
         status = "success"
@@ -246,7 +250,8 @@ def apply_view_filter(
     views = get_active_views()
     for view in views:
         view.ViewFilter = filter_name
-        view.Modify()
+        if not view.Modify():
+            raise RuntimeError(f"Failed to apply view filter '{filter_name}' to view '{view.Name}'")
 
     logger.info("Applied view filter '%s' to %d views", filter_name, len(views))
     return ToolResult(structured_content={"status": "success", "filter_name": filter_name, "views_modified": len(views)})
@@ -287,9 +292,9 @@ def hide_selected() -> ToolResult:
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def color_selected(
-    red: Annotated[int, Field(description="Red component (0-255)")],
-    green: Annotated[int, Field(description="Green component (0-255)")],
-    blue: Annotated[int, Field(description="Blue component (0-255)")],
+    red: Annotated[int, Field(description="Red component (0-255)", ge=0, le=255)],
+    green: Annotated[int, Field(description="Green component (0-255)", ge=0, le=255)],
+    blue: Annotated[int, Field(description="Blue component (0-255)", ge=0, le=255)],
 ) -> ToolResult:
     """
     Colors the selected elements in the Tekla view with the specified color.

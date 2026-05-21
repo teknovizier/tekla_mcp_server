@@ -66,7 +66,11 @@ class TestGetDrawingProperties:
 
         assert result.structured_content["selected_count"] == 1
         assert len(result.structured_content["drawings"]) == 1
-        assert result.structured_content["drawings"][0]["drawing_type"] == "G"
+        drawing = result.structured_content["drawings"][0]
+        assert drawing["drawing_type"] == "G"
+        # Revision_mark must always be present
+        assert "revision_mark" in drawing
+        assert drawing["revision_mark"] is None or isinstance(drawing["revision_mark"], str)
 
 
 class TestDetectCollisionsBetweenMarks:

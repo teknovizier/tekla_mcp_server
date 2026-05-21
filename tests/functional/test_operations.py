@@ -30,6 +30,16 @@ def test_check_for_orphans_with_selection(model_objects):
     assert "orphaned_embeds_count" in result.structured_content
 
 
+def test_check_for_orphans_rebars_mode(model_objects):
+    """Tests check_for_orphans in rebars mode (separate code path from embeds)."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = check_for_orphans(mode="rebars")
+    assert result.structured_content["status"] in ["success", "warning"]
+    assert result.structured_content["selected_elements"] == 1
+    assert "rebar_objects_evaluated" in result.structured_content
+    assert "orphaned_rebar_objects_count" in result.structured_content
+
+
 def test_cut_elements_with_zero_class_parts(model_objects):
     """Tests cut_elements_with_zero_class_parts tool."""
     TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])

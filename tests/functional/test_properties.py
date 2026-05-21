@@ -9,6 +9,8 @@ from tekla_mcp_server.providers.properties_provider import (
     set_elements_properties,
     get_elements_cut_parts,
     compare_elements,
+    clear_elements_udas,
+    get_elements_coordinates,
 )
 from tekla_mcp_server.providers.selection_provider import select_elements_assemblies_or_main_parts
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -432,3 +434,99 @@ def test_compare_three_elements(model_objects):
 
     assert result.structured_content["status"] == "error"
     assert "More than two elements" in result.structured_content["message"]
+
+
+def test_clear_elements_udas_all(model_objects):
+    """Set a UDA then clear all UDAs, expect the cleared count to be > 0."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    set_elements_properties(user_properties={"MCP_TEST_UDA_TO_CLEAR": "ToBeCleared"})
+
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = clear_elements_udas()
+
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["cleared_udas"] >= 1
+
+
+def test_clear_elements_udas_specific(model_objects):
+    """Clearing a specific UDA by name leaves other UDAs intact."""
+    TeklaModel.select_objects([model_objects["test_wall2"]])
+    set_elements_properties(user_properties={"MCP_TEST_UDA_A": "ValueA", "MCP_TEST_UDA_B": "ValueB"})
+
+    TeklaModel.select_objects([model_objects["test_wall2"]])
+    result = clear_elements_udas(uda_names=["MCP_TEST_UDA_A"])
+
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["cleared_udas"] == 1
+
+
+def test_get_elements_coordinates_beam(model_objects):
+    """Get coordinates for a placed beam (test_slab1 is a beam-typed object)."""
+    TeklaModel.select_objects([model_objects["test_slab1"]])
+    result = get_elements_coordinates()
+
+    assert result.structured_content["status"] == "success"
+    elements = result.structured_content["elements"]
+    assert len(elements) == 1
+    assert elements[0]["type"] == "Beam"
+    assert "start_point" in elements[0]
+    assert "end_point" in elements[0]
+    assert {"x", "y", "z"} <= set(elements[0]["start_point"].keys())
+    assert "start_point_offset" in elements[0]
+    assert "end_point_offset" in elements[0]
+
+
+def test_get_elements_coordinates_empty_selection():
+    """No selection: tool returns an error."""
+    TeklaModel.clear_selection()
+    result = get_elements_coordinates()
+    assert result.structured_content["status"] == "error"
+
+
+def test_compare_elements_no_selection():
+    """Zero elements selected: _validate_exactly_two_selected count=0 branch."""
+    TeklaModel.clear_selection()
+    result = compare_elements(ignore_numbering=True)
+    assert result.structured_content["status"] == "error"
+
+
+def test_compare_elements_single_element(model_objects):
+    """One element selected: _validate_exactly_two_selected count=1 branch."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = compare_elements(ignore_numbering=True)
+    assert result.structured_content["status"] == "error"
+    assert "two elements" in result.structured_content["message"].lower()
+
+
+def test_set_elements_properties_no_op(model_objects):
+    """No properties provided: tool returns warning, no changes applied."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = set_elements_properties()
+    assert result.structured_content["modified_elements"] == 0
+    assert all(count == 0 for count in result.structured_content["changes_applied"].values())
+
+
+def test_set_elements_properties_reports_property_errors_field(model_objects):
+    """`property_errors` field is always present in the response (added in commit cb4e8b2)."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = set_elements_properties(name="MCP_TEST_ERR_FIELD")
+    assert "property_errors" in result.structured_content
+    assert isinstance(result.structured_content["property_errors"], list)
+
+
+def test_get_elements_properties_snapshot_mode(model_objects):
+    """Snapshot mode returns parts/assemblies lists with full PartSnapshot / AssemblySnapshot dumps."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_elements_assemblies_or_main_parts(mode="Main Part")
+    result = get_elements_properties(snapshot_mode=True)
+
+    assert result.structured_content["status"] == "success"
+    assert "parts" in result.structured_content
+    assert "assemblies" in result.structured_content
+    assert "errors" in result.structured_content
+    parts = result.structured_content["parts"]
+    assert len(parts) >= 1
+    # Snapshots are richer than the flat view: cutparts/welds/reinforcements keys exist
+    assert "cutparts" in parts[0]
+    assert "welds" in parts[0]
+    assert "reinforcements" in parts[0]

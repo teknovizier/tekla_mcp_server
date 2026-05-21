@@ -129,3 +129,18 @@ def test_modify_components_invalid_properties(model_objects):
         custom_properties={"NonExistentProperty": 123},
     )
     assert result.structured_content["status"] == "error"
+
+
+def test_put_components_no_selection():
+    """No selection: put_components returns an error."""
+    TeklaModel.clear_selection()
+    result = put_components(component_name="MeshBars")
+    assert result.structured_content["status"] == "error"
+
+
+def test_remove_components_no_matching(model_objects):
+    """Selected element with no matching component: removed count is 0, status is success."""
+    TeklaModel.select_objects([model_objects["test_wall6"]])
+    result = remove_components(component_name="MeshBars")
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["removed_components"] == 0
