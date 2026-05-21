@@ -65,7 +65,7 @@ def model_objects():
         PanelInput(start_point=PointInput(x=2000, y=0, z=0), end_point=PointInput(x=4000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL3"),
         PanelInput(start_point=PointInput(x=2000, y=0, z=3020), end_point=PointInput(x=4000, y=0, z=3020), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL4"),
         PanelInput(start_point=PointInput(x=0, y=0, z=6040), end_point=PointInput(x=2000, y=0, z=6040), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),
-        PanelInput(start_point=PointInput(x=0, y=0, z=9060), end_point=PointInput(x=2000, y=0, z=9060), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),
+        PanelInput(start_point=PointInput(x=0, y=0, z=9060), end_point=PointInput(x=2000, y=0, z=9060), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),  # Name must match the previous object for the comparison tool test
         PanelInput(start_point=PointInput(x=0, y=0, z=12080), end_point=PointInput(x=2000, y=0, z=12080), profile="2000*150", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL7"),
         PanelInput(start_point=PointInput(x=0, y=200, z=0), end_point=PointInput(x=2000, y=200, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL8"),
         PanelInput(start_point=PointInput(x=4000, y=0, z=0), end_point=PointInput(x=6000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=8, name="MCP_TEST_SW1"),
@@ -94,30 +94,34 @@ def model_objects():
     result_slabs = place_beams(beams=slabs)
     result_voids = place_beams(beams=voids)
 
-    def get_single_object(guid: str):
-        objects = model.get_objects_by_guid([guid])
-        return objects[0] if objects else None
-
     panel_guids = [r["guid"] for r in result_panels.structured_content["results"]]
+    slab_guids = [r["guid"] for r in result_slabs.structured_content["results"]]
+    void_guids = [r["guid"] for r in result_voids.structured_content["results"]]
+
+    all_objects = list(model.get_objects_by_guid(panel_guids + slab_guids + void_guids))
+    p = all_objects[: len(panel_guids)]
+    s = all_objects[len(panel_guids) : len(panel_guids) + len(slab_guids)]
+    v = all_objects[len(panel_guids) + len(slab_guids) :]
+
     yield {
         "model": model,
-        "walls": [get_single_object(g) for g in panel_guids[:4]],
-        "test_wall1": get_single_object(panel_guids[0]),
-        "test_wall2": get_single_object(panel_guids[1]),
-        "test_wall3": get_single_object(panel_guids[2]),
-        "test_wall4": get_single_object(panel_guids[3]),
-        "test_wall5": get_single_object(panel_guids[4]),
-        "test_wall6": get_single_object(panel_guids[5]),
-        "test_wall7": get_single_object(panel_guids[6]),
-        "test_wall8": get_single_object(panel_guids[7]),
-        "test_sw1": get_single_object(panel_guids[8]),
-        "test_clash_wall_a": get_single_object(panel_guids[9]),
-        "test_clash_wall_b": get_single_object(panel_guids[10]),
-        "test_clash_wall_c": get_single_object(panel_guids[11]),
-        "test_slab1": get_single_object(result_slabs.structured_content["results"][0]["guid"]),
-        "void1": get_single_object(result_voids.structured_content["results"][0]["guid"]),
-        "void2": get_single_object(result_voids.structured_content["results"][1]["guid"]),
-        "void3": get_single_object(result_voids.structured_content["results"][2]["guid"]),
+        "walls": p[:4],
+        "test_wall1": p[0],
+        "test_wall2": p[1],
+        "test_wall3": p[2],
+        "test_wall4": p[3],
+        "test_wall5": p[4],
+        "test_wall6": p[5],
+        "test_wall7": p[6],
+        "test_wall8": p[7],
+        "test_sw1": p[8],
+        "test_clash_wall_a": p[9],
+        "test_clash_wall_b": p[10],
+        "test_clash_wall_c": p[11],
+        "test_slab1": s[0],
+        "void1": v[0],
+        "void2": v[1],
+        "void3": v[2],
     }
 
     cleanup_mcp_test_objects()
