@@ -49,7 +49,9 @@ def cut_elements_with_cutters(
     - `cutter_class`: use all parts with the specified Tekla class as cutters
     - `cutter_guids`: use specific parts as cutters (useful in multi-step workflows)
     """
-    if (cutter_class is None) == (cutter_guids is None):
+    if cutter_class is None and cutter_guids is None:
+        raise ValueError("Provide exactly one of 'cutter_class' or 'cutter_guids'")
+    if cutter_class is not None and cutter_guids is not None:
         raise ValueError("Provide exactly one of 'cutter_class' or 'cutter_guids'")
 
     model = TeklaModel()
@@ -59,6 +61,7 @@ def cut_elements_with_cutters(
         raw_cutters = model.get_objects_by_class(cutter_class)
         label = f"class {cutter_class}"
     else:
+        assert cutter_guids is not None  # narrowed by the guards above
         raw_cutters = model.get_objects_by_guid(cutter_guids)
         label = f"{len(cutter_guids)} GUIDs"
 
