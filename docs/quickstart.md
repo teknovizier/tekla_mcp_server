@@ -32,6 +32,7 @@ uv pip install -r requirements-dev.txt
 2. **element_types.json**: Copy `config/element_types.sample.json` to `config/element_types.json` and set Tekla classes and numbering prefixes.
 3. **semantic_overrides.json**: Copy `config/semantic_overrides.sample.json` to `config/semantic_overrides.json` for attribute name overrides.
 4. **base_components.json**: Copy `config/base_components.sample.json` to `config/base_components.json` and configure available components.
+5. **report_properties.json**: Copy `config/report_properties.sample.json` to `config/report_properties.json`.
 
 ## Running the Server
 
