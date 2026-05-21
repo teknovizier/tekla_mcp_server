@@ -36,7 +36,9 @@ uv pip install -r requirements-dev.txt
 
 ## Running the Server
 
-Configure `mcp_server.py` as a custom server in your MCP client:
+Configure `mcp_server.py` as a custom server in your MCP client. For client-specific installation instructions see the [MCP Installation Guide](https://mcp-install-instructions.alpic.cloud/servers/tekla-mcp-server).
+
+You will need to update the JSON configuration with your own paths. Replace all `C:\\path\\to\\...` placeholders with the actual locations on your machine:
 
 ```json
 {
