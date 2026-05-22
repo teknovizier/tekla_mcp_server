@@ -9,10 +9,17 @@ This guide covers all configuration files and environment variables.
 | `tekla_path` | `C:\Program Files\Tekla Structures\2022.0\bin` | Tekla Structures binary directory |
 | `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
 | `excluded_tags` | `[]` | List of tool tags to hide from the LLM. Leave empty to expose all tools. See [Tool Visibility](#tool-visibility) below. |
+| `read_only` | `false` | When `true`, hides all tools marked as destructive. Selection, view and query tools remain available. |
 
 ### Tool Visibility
 
-Controls which tools are exposed to the LLM. All tools are enabled by default. Use `excluded_tags` to opt out specific groups. The server starts with everything on, you only list what you want to hide.
+Controls which tools are exposed to the LLM. All tools are enabled by default. Use `read_only` to hide all destructive tools at once or `excluded_tags` to opt out specific groups.
+
+#### `read_only`
+
+When set to `true`, hides every tool annotated with `destructiveHint=true`. Selection, view, and query tools remain fully available - only tools that write or modify the model are hidden. Use this for inspection or review sessions where accidental model changes must be prevented.
+
+#### `excluded_tags`
 
 | Tag | Tools covered | Notes |
 |-----|--------------|-------|
@@ -25,6 +32,13 @@ Controls which tools are exposed to the LLM. All tools are enabled by default. U
 | `drawings` | Drawing creation and management | |
 | `modeling` | Create and modify model objects | |
 | `ifc` | IFC export | |
+
+**Example:** hide modeling and IFC tools:
+```json
+{ "excluded_tags": ["modeling", "ifc"] }
+```
+
+Both settings compose: `excluded_tags` and `read_only` can be active simultaneously.
 
 
 ### Embeddings

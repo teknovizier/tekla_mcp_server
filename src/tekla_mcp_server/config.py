@@ -265,6 +265,11 @@ class Config:
         return _get_tekla_macro_directories()
 
     @property
+    def read_only(self) -> bool:
+        """When True, hide all tools marked as destructive from the LLM."""
+        return bool(_load_settings().get("read_only", False))
+
+    @property
     def excluded_tags(self) -> set[str]:
         """Set of tool tags to hide from the LLM."""
         tags = _load_settings().get("excluded_tags")

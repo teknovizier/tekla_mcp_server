@@ -6,7 +6,7 @@ speed-up modeling processes.
 """
 
 from fastmcp import FastMCP
-from fastmcp.server.transforms import ResourcesAsTools
+from fastmcp.server.transforms import ResourcesAsTools, Transform
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import load_dlls, logger
@@ -21,6 +21,13 @@ from tekla_mcp_server.providers import (
     modeling_provider,
     ifc_provider,
 )
+
+
+class ReadOnlyFilter(Transform):
+    """Hides tools marked as destructive from the LLM."""
+
+    async def list_tools(self, tools):
+        return [t for t in tools if not (t.annotations and t.annotations.destructiveHint)]
 
 
 mcp = FastMCP("Tekla MCP Server")
@@ -59,12 +66,14 @@ if __name__ == "__main__":
         except (ImportError, ValueError) as e:
             logger.warning("Embeddings validation failed: %s. Continuing without embeddings", e)
 
+    if get_config().read_only:
+        mcp.add_transform(ReadOnlyFilter())
+        logger.info("Read-only mode: destructive tools hidden")
+
     disabled = get_config().excluded_tags
     if disabled:
         mcp.disable(tags=disabled)
-        logger.info("Disabled tags: %s", disabled)
-    else:
-        logger.info("All tools enabled")
+        logger.info("Disabled tools with tags: %s", disabled)
 
     mcp.add_transform(ResourcesAsTools(mcp))
 
