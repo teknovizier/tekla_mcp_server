@@ -7,6 +7,7 @@ This file defines basic rules for AI agents and human contributors working on th
 - Change only files directly related to the request
 - Don't add new dependencies without approval
 - Never use Tekla API in unit tests
+- All `Tekla.*` type imports must go through `tekla/loader.py` - never use `import clr` or `from Tekla.*` directly anywhere else
 - Keep existing style and structure unless told otherwise
 - Make changes minimal, focused, and consistent
 - Never remove existing comments, keep them as they are unless explicitly instructed otherwise
@@ -43,12 +44,14 @@ This file defines basic rules for AI agents and human contributors working on th
 - Do not commit files from this folder to version control
 - Production-ready code must be moved to proper locations
 
-### Before Committing
+### Quality Checks
+
+Run after **all non-trivial changes** (not only before committing - skip only for minor edits like typo fixes):
 1. Check: `uv run ruff check .`
 2. Fix: `uv run ruff check --fix .`
 3. Format: `uv run ruff format .`
 4. Type check: `uv run mypy .`
-5. Run tests: `uv run pytest tests/`
+5. Run tests: `uv run pytest tests/unit/`
 
 ---
 
@@ -200,7 +203,7 @@ Resources provide discovery/metadata, not actions:
 - Use **tools** for filtering, searching, or any non-trivial logic
 - Never expose large datasets as resources
 
-## How to Add a Tool
+## How to Add or Modify a Tool
 
 ### 1. Add MCP Tool (providers/*.py)
 
@@ -211,20 +214,27 @@ from tekla_mcp_server.utils import mcp_handler
 
 my_provider = LocalProvider()
 
-@my_provider.tool()
+@my_provider.tool(tags={"category"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def my_new_feature(param: str) -> ToolResult:
+def my_new_feature(
+    param: Annotated[str, Field(description="Description visible to MCP clients")],
+) -> ToolResult:
     """Tool description for MCP users."""
     # Implementation here
     return ToolResult(
         structured_content={
-            "status": "success",
+            "status": "success",  # success | warning | partial
             "result": param,
         }
     )
 ```
 
-### 2. Add to Documentation
+### 2. Write Tests
+
+- Unit tests in `tests/unit/test_<module>.py` for pure logic (no Tekla API - mock it)
+- Functional tests in `tests/functional/` if Tekla model state must be touched
+
+### 3. Add to Documentation
 
 Add the new tool to `docs/reference.md` with:
 - Tool name and description
@@ -242,11 +252,14 @@ Resources return discovery/metadata, not actions.
 @mcp_handler(scope="resource")
 def get_example_data() -> ResourceResult:
     """Get example data."""
-    return ResourceResult(
-        contents=[
-            ResourceContent(content={"key": "value"}, mime_type="application/json")
-        ]
-    )
+    return json_resource({"key": "value"})  # JSON - use json_resource() helper
+
+# Non-JSON (e.g. markdown):
+@resources_provider.resource("example://doc")
+@mcp_handler(scope="resource")
+def get_example_doc() -> ResourceResult:
+    """Get markdown document."""
+    return ResourceResult(contents=[ResourceContent(content="# Title\nText", mime_type="text/markdown")])
 ```
 
 ### 2. Add to Documentation
@@ -258,9 +271,10 @@ Add the new resource to `docs/reference.md` with resource name and description.
 # Part 4: Code Patterns
 
 ## Code Patterns
-- Use `TeklaModel` class from `tekla/wrappers/model.py` (singleton pattern via `lru_cache`)
+- Use `TeklaModel` class from `tekla/wrappers/model.py` (singleton pattern)
 - Always `model.commit_changes()` after modifications
-- Use `wrap_model_objects()` from `tekla/wrappers/model_object.py` for conversion
+- Use `wrap_model_objects()` from `tekla/wrappers/model_object.py` for conversion, silently skips unsupported object types
+- `model.get_selected_objects()` raises `ValueError` if nothing is selected
 
 ## Component Handler System
 The component handler system provides a plugin-like architecture for specialized Tekla components.
@@ -320,6 +334,7 @@ def _helper_function(param: str) -> dict[str, Any]:
 ## Configuration
 - Settings in `config/settings.json`
 - Use `get_config()` from `config.py` for centralized access
+- Config files are `@lru_cache` backed - changes do not take effect until the MCP server is restarted
 - Environment variables: `TEKLA_MCP_LOG_LEVEL`, `TEKLA_MCP_LOG_FILE_PATH`, `TEKLA_MCP_CONFIG_DIR`
 
 ## Performance Guidelines
@@ -352,26 +367,48 @@ def _helper_function(param: str) -> dict[str, Any]:
 
 ```
 tekla_mcp_server/
-├── src/tekla_mcp_server/     # Source code
-│   ├── __init__.py
-│   ├── config.py              # Configuration management
-│   ├── embeddings.py          # Embedding model loading
-│   ├── init.py                # Logging, DLL loading
-│   ├── mcp_server.py          # Main server
-│   ├── models.py              # Data models, enums
-│   ├── utils.py               # Decorators and utilities
-│   ├── providers/             # MCP tool definitions
-│   └── tekla/                 # Tekla-specific modules
-│       ├── loader.py          # DLL loading (pythonnet)
-│       ├── wrappers/       # Tekla wrapper classes
-│       ├── utils.py           # Tekla API helpers
-│       ├── template_attrs_parser.py  # Template attribute parsing
-│       └── component_handlers.py   # Component handlers
-├── config/                    # Configuration JSON files
+├── src/tekla_mcp_server/
+│   ├── config.py                        # Configuration management
+│   ├── embeddings.py                    # Semantic attribute resolution
+│   ├── init.py                          # Logger and DLL loading
+│   ├── mcp_server.py                    # Main server entrypoint
+│   ├── models.py                        # Data models and enums
+│   ├── utils.py                         # Shared decorators and utilities
+│   ├── providers/
+│   │   ├── components_provider.py       # put/get/modify/remove_components
+│   │   ├── drawings_provider.py         # get_drawings, print_drawings, ...
+│   │   ├── ifc_provider.py              # copy_properties_from_ifc
+│   │   ├── modeling_provider.py         # place_beams/columns/panels/slabs, move, grid
+│   │   ├── operations_provider.py       # cut, orphans, clash_check, macro, ...
+│   │   ├── properties_provider.py       # get/set_elements_properties, compare, ...
+│   │   ├── resources_provider.py        # All MCP resources (tekla://, project://)
+│   │   ├── selection_provider.py        # select_elements_by_filter/guid/name
+│   │   └── view_provider.py             # color, zoom, hide, labels, filters
+│   └── tekla/
+│       ├── loader.py                    # Single source for all Tekla.* DLL imports
+│       ├── clash_check.py               # Clash detection logic
+│       ├── component_handlers.py        # Component handler registry and implementations
+│       ├── drawing_utils.py             # Drawing helpers
+│       ├── filter_builder.py            # Filter expression builder helpers
+│       ├── snapshot_builder.py          # Part/Assembly snapshot construction
+│       ├── template_attrs_parser.py     # Report property type resolution
+│       ├── utils.py                     # Tekla-API-side helpers
+│       └── wrappers/
+│           ├── drawing.py               # Drawing wrapper
+│           ├── model.py                 # TeklaModel singleton
+│           └── model_object.py          # TeklaModelObject, TeklaPart, TeklaAssembly, ...
+├── config/
+│   ├── base_components.json             # Component definitions + handler config
+│   ├── element_types.json               # Element type -> Tekla class mapping
+│   ├── report_properties.json           # Report property definitions
+│   ├── semantic_overrides.json          # Embedding search overrides
+│   ├── settings.json                    # Server settings
+│   └── context/                         # project://context markdown files
 ├── tests/
-│   ├── unit/                  # Unit tests
-│   └── functional/            # Functional tests
-├── docs/                      # Documentation
+│   ├── unit/                            # Pure Python tests - no Tekla API
+│   └── functional/                      # Live model tests - use MCP_TEST_ prefix
+├── docs/
+│   └── reference.md                     # Tool and resource reference (keep up to date)
 └── pyproject.toml
 ```
 
