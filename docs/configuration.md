@@ -31,7 +31,7 @@ When set to `true`, hides every tool annotated with `destructiveHint=true`. Sele
 | `components` | Place and manage Tekla components | |
 | `drawings` | Drawing creation and management | |
 | `modeling` | Create and modify model objects | |
-| `ifc` | IFC export | |
+| `ifc` | IFC operations | |
 
 **Example:** hide modeling and IFC tools:
 ```json
@@ -71,6 +71,14 @@ Set `embeddings.embedding_model` to HuggingFace ID or local path:
   }
 }
 ```
+
+### Tolerances
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `tolerances.default` | `20.0` | Default spatial tolerance in mm, used for bounding-box searches |
+| `tolerances.wall_pairing` | `50.0` | Tolerance used for wall pairing operations in mm |
+| `tolerances.center_tolerance_factor` | `0.05` | Relative factor for center-point tolerance (fraction of element size) |
 
 ## Element Types (`element_types.json`)
 

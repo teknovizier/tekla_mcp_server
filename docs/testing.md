@@ -13,6 +13,8 @@ The project includes unit tests and functional tests.
 - `test_tekla_model_object.py`: Tekla ModelObject wrappers
 - `test_tekla_template_attrs_parser.py`: Template attribute parsing
 - `test_component_handlers.py`: Component handler plugins
+- `test_embeddings.py`: Semantic attribute resolution
+- `test_modeling.py`: Modeling utilities
 
 ### Functional Tests (`tests/functional/`)
 - `conftest.py`: Shared fixtures and utilities
@@ -22,6 +24,8 @@ The project includes unit tests and functional tests.
 - `test_operations.py`: Boolean cuts, cut part conversion, macros
 - `test_properties.py`: Property get/set, UDAs, numbering, comparison
 - `test_drawings.py`: Drawing retrieval and properties
+- `test_ifc.py`: IFC operations
+- `test_modeling.py`: Modeling operations (beams, columns, grids, etc.)
 
 ## Running Tests
 

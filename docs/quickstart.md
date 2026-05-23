@@ -20,14 +20,14 @@ uv pip install -r requirements-dev.txt
 |----------|---------|-------------|
 | `tekla_path` | `C:\Program Files\Tekla Structures\2022.0\bin` | Tekla Structures binary directory |
 | `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
-| `read_only` | `false` | When `true`, hides all destructive tools. Selection and query tools remain available. |
-| `excluded_tags` | `[]` | List of tool tags to hide from the LLM. See [configuration guide](configuration.md#tool-visibility). |
+| `read_only` | `false` | When `true`, hides all destructive tools. Selection, view, and query tools remain available |
+| `excluded_tags` | `[]` | List of tool tags to hide from the LLM. See [configuration guide](configuration.md#tool-visibility) |
 | `embeddings.enabled` | `true` | Enable semantic attribute search |
 | `embeddings.embedding_model` | `teknovizier/minilm-tekla-attr-embed-v1` | HuggingFace model or local path |
 | `embeddings.embedding_spread_threshold` | `0.1` | Min stddev for auto-resolution (0-1) |
 | `embeddings.embedding_minimum_threshold` | `0.8` | Min confidence score (0-1) |
-| `tolerances.default` | `20.0` | Default spatial tolerance in mm |
-| `tolerances.wall_pairing` | `50.0` | Tolerance used for wall pairing in mm |
+| `tolerances.default` | `20.0` | Default spatial tolerance in mm, used for bounding-box searches |
+| `tolerances.wall_pairing` | `50.0` | Tolerance used for wall pairing operations in mm |
 | `tolerances.center_tolerance_factor` | `0.05` | Relative factor for center-point tolerance |
 
 2. **element_types.json**: Copy `config/element_types.sample.json` to `config/element_types.json` and set Tekla classes and numbering prefixes.
