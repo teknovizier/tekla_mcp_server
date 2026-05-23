@@ -17,7 +17,7 @@ from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaPart, TeklaReinforcement
-from tekla_mcp_server.tekla.loader import Operation, Part
+from tekla_mcp_server.tekla.loader import Operation
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items
 
 
@@ -33,6 +33,158 @@ def _get_tekla_classes(material_key: str) -> set[int]:
 # Class IDs for filtering candidates in orphan-detection tools
 EMBEDDED_DETAILS_CLASSES: set[int] = _get_tekla_classes("MATERIAL_EMBEDDED")
 REINFORCEMENT_CLASSES: set[int] = _get_tekla_classes("MATERIAL_REINFORCEMENT")
+
+
+def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
+    """Return GUIDs of all reinforcement attached to element, across main part and all secondaries."""
+    guids: set[str] = set()
+
+    try:
+        reinfs = element.main_part.model_object.GetReinforcements()
+    except ValueError:
+        reinfs = None
+
+    if reinfs is not None:
+        for rebar in wrap_model_objects(reinfs):
+            if rebar:
+                guids.add(rebar.guid)
+
+    for sec in element.model_object.GetSecondaries():
+        sec_reinfs = sec.GetReinforcements()
+        for rebar in wrap_model_objects(sec_reinfs):
+            if rebar:
+                guids.add(rebar.guid)
+
+    return guids
+
+
+def _check_element_bounding_box_embeds(
+    element: TeklaAssembly,
+    target_assembly_guids: set[str],
+    tolerance: float,
+) -> tuple[list, list[CheckResult], int]:
+    """
+    Find embedded details physically inside element that are not attached to any of target assemblies.
+
+    The bounding-box search is a fast spatial pre-filter. Each surviving candidate is then
+    tested for actual containment via ray-casting and for correct assembly parentage.
+    """
+    candidates = get_candidates_in_bounding_box(element, tolerance)
+
+    orphaned: list[CheckResult] = []
+    orphaned_objects: list = []
+    processed_guids: set[str] = set()
+    evaluated = 0
+
+    for candidate in candidates:
+        # Candidates may be parts belonging to a multi-part embed, promote to assembly
+        # so we evaluate and report at assembly level rather than per-part
+        assembly_obj = None
+        wrapped_assembly = None
+
+        if isinstance(candidate, TeklaAssembly):
+            wrapped_assembly = candidate
+            assembly_obj = candidate.model_object
+        elif isinstance(candidate, TeklaPart):
+            assembly_obj = candidate.model_object.GetAssembly()
+            if assembly_obj:
+                wrapped_assembly = wrap_model_object(assembly_obj)
+
+        if not assembly_obj or not wrapped_assembly:
+            continue
+
+        # A multi-part embed yields multiple candidates that resolve to the same assembly, process each assembly once
+        assembly_guid = wrapped_assembly.guid
+        if assembly_guid in processed_guids:
+            continue
+
+        try:
+            main = wrapped_assembly.main_part
+        except ValueError:
+            continue
+        if not main:
+            continue
+
+        # Only embedded-detail classes are relevant, other nearby objects are ignored
+        part_class = main.tekla_class
+        if part_class not in EMBEDDED_DETAILS_CLASSES:
+            continue
+
+        # Skip embeds that are in the bounding box but outside the element's actual solid
+        if not main.is_inside(element.main_part):
+            continue
+
+        evaluated += 1
+        processed_guids.add(assembly_guid)
+
+        # An embed is orphaned when its parent assembly isn't one of the assemblies we're
+        # checking against - i.e. it's physically inside the element but not attached to it
+        parent = assembly_obj.GetAssembly()
+        parent_guid = parent.Identifier.GUID.ToString() if parent else None
+
+        if parent_guid not in target_assembly_guids:
+            orphaned.append(
+                CheckResult(
+                    guid=assembly_guid,
+                    name=main.name,
+                    position=main.position,
+                    tekla_class=part_class,
+                )
+            )
+            orphaned_objects.append(assembly_obj)
+
+    logger.debug("Found %d orphaned embeds for element %s", len(orphaned), element.guid)
+    return orphaned_objects, orphaned, evaluated
+
+
+def _check_element_bounding_box_rebars(
+    element: TeklaAssembly,
+    element_reinforcement_guids: set[str],
+    tolerance: float,
+) -> tuple[list, list[CheckResult], int]:
+    """
+    Find reinforcement objects inside element that are not in element_reinforcement_guids.
+
+    Candidates are pre-filtered by bounding box, then tested for containment to exclude
+    rebars that belong to adjacent elements. GUID membership determines attachment.
+    """
+    candidates = get_candidates_in_bounding_box(element, tolerance)
+    if not candidates:
+        return [], [], 0
+
+    orphaned: list[CheckResult] = []
+    orphaned_objects: list = []
+    evaluated = 0
+
+    for candidate in candidates:
+        if not isinstance(candidate, TeklaReinforcement):
+            continue
+
+        # Only reinforcement classes are relevant, other nearby objects are ignored
+        reinforcement_class = candidate.tekla_class
+        if reinforcement_class not in REINFORCEMENT_CLASSES:
+            continue
+
+        # Skip rebars that are in the bounding box but outside the element's actual solid
+        if not candidate.is_inside(element.main_part):
+            continue
+
+        evaluated += 1
+
+        # A rebar is orphaned when it's physically inside the element but not in its reinforcement set
+        if candidate.guid not in element_reinforcement_guids:
+            orphaned.append(
+                CheckResult(
+                    guid=candidate.guid,
+                    name=candidate.name,
+                    position=candidate.position,
+                    tekla_class=reinforcement_class,
+                )
+            )
+            orphaned_objects.append(candidate)
+
+    logger.debug("Found %d orphaned rebars for element %s", len(orphaned), element.guid)
+    return orphaned_objects, orphaned, evaluated
 
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -105,11 +257,11 @@ def convert_cut_parts_to_real_parts() -> ToolResult:
 
     processed_elements = 0
     inserted_booleans = 0
-    for selected_object in selected_objects:
-        if not isinstance(selected_object, Part):
+    for selected_object in wrap_model_objects(selected_objects):
+        if not isinstance(selected_object, TeklaPart):
             logger.debug("convert_cut_parts_to_real_parts: skipping non-part object: %s", selected_object.GetType())
             continue
-        for boolean_part in iterate_boolean_parts(selected_object):
+        for boolean_part in iterate_boolean_parts(selected_object.model_object):
             if boolean_part.OperativePart.Insert():
                 inserted_booleans += 1
         processed_elements += 1
@@ -173,134 +325,6 @@ def check_for_orphans(
 
     tolerance = get_tolerance()
 
-    def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
-        """Collect all rebar GUIDs from main part and secondary parts."""
-        guids: set[str] = set()
-
-        try:
-            reinfs = element.main_part.model_object.GetReinforcements()
-        except ValueError:
-            reinfs = None
-
-        if reinfs is not None:
-            for rebar in wrap_model_objects(reinfs):
-                if rebar:
-                    guids.add(rebar.guid)
-
-        for sec in element.model_object.GetSecondaries():
-            sec_reinfs = sec.GetReinforcements()
-            for rebar in wrap_model_objects(sec_reinfs):
-                if rebar:
-                    guids.add(rebar.guid)
-
-        return guids
-
-    # Check bounding box of a single element for orphaned embeds
-    def _check_element_bounding_box_embeds(
-        element: TeklaAssembly,
-        target_assembly_guids: set[str],
-    ) -> tuple[list, list[CheckResult], int]:
-        candidates = get_candidates_in_bounding_box(element, tolerance)
-
-        orphaned: list[CheckResult] = []
-        orphaned_objects: list = []
-        processed_guids: set[str] = set()
-        evaluated = 0
-
-        for candidate in candidates:
-            # Get assembly from candidate (or part's assembly)
-            assembly_obj = None
-            wrapped_assembly = None
-
-            if isinstance(candidate, TeklaAssembly):
-                wrapped_assembly = candidate
-                assembly_obj = candidate.model_object
-            elif isinstance(candidate, TeklaPart):
-                assembly_obj = candidate.model_object.GetAssembly()
-                if assembly_obj:
-                    wrapped_assembly = wrap_model_object(assembly_obj)
-
-            if not assembly_obj or not wrapped_assembly:
-                continue
-
-            # Skip already processed assemblies
-            assembly_guid = wrapped_assembly.guid
-            if assembly_guid in processed_guids:
-                continue
-
-            # Get main part class
-            try:
-                main = wrapped_assembly.main_part
-            except ValueError:
-                continue
-            if not main:
-                continue
-
-            part_class = main.tekla_class
-            if part_class not in EMBEDDED_DETAILS_CLASSES:
-                # Filter to embeds classes only
-                continue
-
-            evaluated += 1
-            processed_guids.add(assembly_guid)
-
-            # Check if attached to target assembly (orphan if parent differs)
-            parent = assembly_obj.GetAssembly()
-            parent_guid = parent.Identifier.GUID.ToString() if parent else None
-
-            if parent_guid not in target_assembly_guids:
-                orphaned.append(
-                    CheckResult(
-                        guid=assembly_guid,
-                        name=main.name,
-                        position=main.position,
-                        tekla_class=part_class,
-                    )
-                )
-                orphaned_objects.append(assembly_obj)
-
-        logger.debug("Found %d orphaned embeds for element %s", len(orphaned), element.guid)
-        return orphaned_objects, orphaned, evaluated
-
-    # Check bounding box of a single element for orphaned rebars
-    def _check_element_bounding_box_rebars(element: TeklaAssembly, element_reinforcement_guids: set[str]) -> tuple[list, list[CheckResult], int]:
-        candidates = get_candidates_in_bounding_box(element, tolerance)
-        if not candidates:
-            return [], [], 0
-
-        orphaned: list[CheckResult] = []
-        orphaned_objects: list = []
-        evaluated = 0
-
-        # Filter candidates to reinforcement classes and check attachment
-        for candidate in candidates:
-            # Get reinforcement class directly
-            if not isinstance(candidate, TeklaReinforcement):
-                # Skip non-reinforcement objects
-                continue
-
-            reinforcement_class = candidate.tekla_class
-            if reinforcement_class not in REINFORCEMENT_CLASSES:
-                # Filter to reinforcement classes only
-                continue
-
-            evaluated += 1
-
-            # Orphan if rebar's GUID is not in element's reinforcement set (not attached)
-            if candidate.guid not in element_reinforcement_guids:
-                orphaned.append(
-                    CheckResult(
-                        guid=candidate.guid,
-                        name=candidate.name,
-                        position=candidate.position,
-                        tekla_class=reinforcement_class,
-                    )
-                )
-                orphaned_objects.append(candidate)
-
-        logger.debug("Found %d orphaned rebars for element %s", len(orphaned), element.guid)
-        return orphaned_objects, orphaned, evaluated
-
     # Main loop: process each selected element, find orphans, optionally attach
     orphaned_elements: list[CheckResult] = []
     orphaned_guids: set[str] = set()
@@ -319,17 +343,17 @@ def check_for_orphans(
 
         # Run mode-specific orphan detection
         if mode == "embeds":
-            # Check if candidates have different parent (orphan)
             orphaned_objects, orphaned, evaluated = _check_element_bounding_box_embeds(
                 parent_assembly,
                 {parent_assembly.guid},
+                tolerance,
             )
 
         elif mode == "rebars":
-            # Check if rebars are in element's reinforcement set (orphan if not found)
             orphaned_objects, orphaned, evaluated = _check_element_bounding_box_rebars(
                 parent_assembly,
                 _get_reinforcement_guids(parent_assembly),
+                tolerance,
             )
 
         total_evaluated += evaluated

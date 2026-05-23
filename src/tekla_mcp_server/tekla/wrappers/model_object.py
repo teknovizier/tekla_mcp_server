@@ -23,8 +23,10 @@ from tekla_mcp_server.tekla.loader import (
     ModelObject,
     Offset,
     Point,
+    LineSegment,
     Position,
     Reinforcement,
+    Solid,
     Hashtable,
     Phase,
     ReferenceModelObject,
@@ -127,6 +129,70 @@ class BoundingBox:
         adaptive_tol = max(center_tol_factor * diag, tol)
 
         return dist <= adaptive_tol
+
+
+class SolidGeometryMixin:
+    """Mixin for wrapped model objects that support Tekla solid geometry queries."""
+
+    @property
+    def model_object(self) -> ModelObject:
+        raise NotImplementedError
+
+    def is_inside(self, other: TeklaModelObject) -> bool:
+        """
+        Return True if this object likely intersects or lies inside `other`
+        using a lightweight ray-cast test against Tekla solids.
+
+        A ray is cast from the center of the overlapping AABB region between
+        the two solids. If the ray intersects `other` in the forward direction,
+        the objects are treated as intersecting/contained.
+
+        The ray direction is intentionally non-axis-aligned to reduce grazing
+        hits on orthogonal faces.
+
+        Notes:
+        - This is a fast heuristic, not an exact solid-solid intersection test.
+        - Concave geometry (L/T/custom contour shapes) is handled better than
+          pure AABB overlap checks.
+        - Near-tangent, thin, or highly complex geometry may still produce
+          false positives or false negatives depending on kernel tolerances.
+        - Any geometry/kernel failure conservatively returns True to avoid
+          accidentally filtering valid candidates.
+        """
+        try:
+            # Prefer NORMAL solids because they include cuts/fittings/booleans and therefore
+            # better represent the final physical geometry in the model.
+            # Some Tekla object types do not support explicit
+            # SolidCreationTypeEnum.NORMAL, so fall back to the default GetSolid()
+            try:
+                solid_other = other.model_object.GetSolid(Solid.SolidCreationTypeEnum.NORMAL)
+            except Exception:
+                solid_other = other.model_object.GetSolid()
+            try:
+                solid_self = self.model_object.GetSolid(Solid.SolidCreationTypeEnum.NORMAL)
+            except Exception:
+                solid_self = self.model_object.GetSolid()
+            if not solid_other or not solid_self:
+                return True
+            cand_min = solid_self.MinimumPoint
+            cand_max = solid_self.MaximumPoint
+            elem_min = solid_other.MinimumPoint
+            elem_max = solid_other.MaximumPoint
+            cx = (max(cand_min.X, elem_min.X) + min(cand_max.X, elem_max.X)) * 0.5
+            cy = (max(cand_min.Y, elem_min.Y) + min(cand_max.Y, elem_max.Y)) * 0.5
+            cz = (max(cand_min.Z, elem_min.Z) + min(cand_max.Z, elem_max.Z)) * 0.5
+            dx, dy, dz = 1.2345e6, 0.9182e6, 0.4571e6
+            ray = LineSegment(Point(cx, cy, cz), Point(cx + dx, cy + dy, cz + dz))
+            hits = solid_other.Intersect(ray)
+            count = 0
+            if hits is not None:
+                for i in range(hits.Count):
+                    q = hits[i]
+                    if (q.X - cx) * dx + (q.Y - cy) * dy + (q.Z - cz) * dz > 0:
+                        count += 1
+            return count > 0
+        except Exception:
+            return True
 
 
 def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
@@ -662,7 +728,7 @@ class TeklaAssembly(TeklaModelObject):
         return {**changes, "errors": errors}
 
 
-class TeklaPart(TeklaModelObject):
+class TeklaPart(TeklaModelObject, SolidGeometryMixin):
     """
     A wrapper class around the Tekla Structures Part object.
     """
@@ -1271,7 +1337,7 @@ class TeklaContourPlate(TeklaPart):
         return tekla_slab.finalize_placement(part_number, assembly_number)
 
 
-class TeklaReinforcement(TeklaModelObject):
+class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
     """
     A wrapper class around the Tekla Structures Reinforcement object.
     """
