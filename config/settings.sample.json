@@ -12,6 +12,7 @@
     "tolerances": {
         "default": 20.0,
         "wall_pairing": 50.0,
-        "center_tolerance_factor": 0.05
+        "center_tolerance_factor": 0.05,
+        "comparison": 0.01
     }
 }

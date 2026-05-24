@@ -11,6 +11,7 @@ from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from pydantic import Field
 
+from tekla_mcp_server.config import get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -330,7 +331,7 @@ def compare_elements(
     """
     selected_objects = TeklaModel().get_selected_objects()
 
-    tolerance = 0.01
+    tolerance = get_tolerance("comparison", default=0.01)
 
     _validate_at_least_two_selected(selected_objects.GetSize())
 
