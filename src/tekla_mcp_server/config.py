@@ -312,6 +312,14 @@ class Config:
         return None
 
     @lru_cache
+    def get_component_by_tekla_name(self, tekla_name: str) -> dict[str, Any] | None:
+        """Returns the component definition dict for the given tekla_name."""
+        for comp in self.base_components.values():
+            if comp.get("tekla_name") == tekla_name:
+                return comp
+        return None
+
+    @lru_cache
     def get_report_props(self, key: str) -> list[str]:
         """Returns report property list for the given object type key."""
         return self.report_properties.get(key, [])

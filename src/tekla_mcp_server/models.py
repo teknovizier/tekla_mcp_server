@@ -343,8 +343,7 @@ class BaseComponent(BaseModel):
         if not name:
             raise ValueError("'name' required for custom_properties validation")
 
-        base_components = get_config().base_components
-        component_def = next((c for c in base_components.values() if c.get("tekla_name") == name), None)
+        component_def = get_config().get_component_by_tekla_name(name)
         schema = component_def.get("custom_properties") if component_def else None
         if not schema:
             return v
@@ -373,12 +372,7 @@ class BaseComponent(BaseModel):
         """
         Initializes private attributes after model creation.
         """
-        base_components = get_config().base_components
-        component_def = None
-        for key, comp in base_components.items():
-            if comp.get("tekla_name") == self.name:
-                component_def = comp
-                break
+        component_def = get_config().get_component_by_tekla_name(self.name)
 
         self._number = component_def.get("number", -1) if component_def else -1
         self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT
