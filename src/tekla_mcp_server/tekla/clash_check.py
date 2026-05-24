@@ -28,20 +28,20 @@ class TeklaClashCheckData:
     Exposes the four properties of the underlying record plus a `to_dict` serialiser.
     """
 
-    def __init__(self, raw: Any):
+    def __init__(self, raw: Any, cache: dict[str, Any]) -> None:
         self._raw = raw
         # Built on the main thread after the engine finishes
-        self.object1: ClashCheckObject = self._build(raw.Object1)
-        self.object2: ClashCheckObject = self._build(raw.Object2)
+        self.object1: ClashCheckObject = self._build(raw.Object1, cache)
+        self.object2: ClashCheckObject = self._build(raw.Object2, cache)
 
     @staticmethod
-    def _build(obj: Any) -> ClashCheckObject:
+    def _build(obj: Any, cache: dict[str, Any]) -> ClashCheckObject:
         _na = "N/A"
         ref = wrap_model_object(obj)
         if ref is None:
             return ClashCheckObject()
 
-        fetched = wrap_model_object(TeklaModel().get_object_by_guid(ref.guid))
+        fetched = cache.get(ref.guid)
         if fetched is None:
             return ClashCheckObject()
 
@@ -157,7 +157,18 @@ class TeklaClashCheckHandler:
         finally:
             self._unsubscribe()
 
+        # Build GUID cache
+        guid_cache: dict[str, Any] = {}
+        for raw in self._raw_records:
+            for raw_obj in (raw.Object1, raw.Object2):
+                ref = wrap_model_object(raw_obj)
+                if ref is not None and ref.guid not in guid_cache:
+                    fetched = wrap_model_object(TeklaModel().get_object_by_guid(ref.guid))
+                    if fetched is not None:
+                        guid_cache[ref.guid] = fetched
+        logger.debug("Built clash GUID cache: %d unique objects for %d records", len(guid_cache), len(self._raw_records))
+
         # Build on the main thread
-        records = [TeklaClashCheckData(r) for r in self._raw_records]
+        records = [TeklaClashCheckData(r, guid_cache) for r in self._raw_records]
         logger.debug("ClashCheckHandler.run collected %d records (engine reported %d)", len(records), self._last_count)
         return records
