@@ -22,13 +22,11 @@ from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 properties_provider = LocalProvider()
 
 
-def _validate_exactly_two_selected(count: int) -> None:
+def _validate_at_least_two_selected(count: int) -> None:
     if count == 0:
-        raise ValueError("No elements selected. Please select two elements.")
+        raise ValueError("No elements selected. Please select at least two elements.")
     if count == 1:
-        raise ValueError("Only one element selected. Please select two elements.")
-    if count > 2:
-        raise ValueError(f"More than two elements selected. Expected 2, got {count}.")
+        raise ValueError("Only one element selected. Please select at least two elements.")
 
 
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -322,7 +320,8 @@ def compare_elements(
     ignore_numbering: Annotated[bool, Field(description="Skip numbering check")] = False,
 ) -> ToolResult:
     """
-    Compares two selected Tekla parts or assemblies and returns a summary of changes.
+    Compares all selected Tekla parts or assemblies with each other.
+    Requires at least two elements to be selected.
 
     ## RULES
     - Only use information explicitly present in the diff. Do not infer or assume changes.
@@ -331,55 +330,26 @@ def compare_elements(
     """
     selected_objects = TeklaModel().get_selected_objects()
 
-    _validate_exactly_two_selected(selected_objects.GetSize())
+    tolerance = 0.01
+
+    _validate_at_least_two_selected(selected_objects.GetSize())
 
     parts = list(selected_objects)
-    logger.debug("Comparing %s elements: %s vs %s", len(parts), parts[0].GetType(), parts[1].GetType())
+    logger.debug("Comparing %d elements", len(parts))
     if not ignore_numbering:
         if not all(Operation.IsNumberingUpToDate(part) for part in parts):
             raise ValueError("Numbering is not up-to-date for selected elements.")
 
-    object_a = wrap_model_object(parts[0])
-    object_b = wrap_model_object(parts[1])
-
     valid_types = (TeklaPart, TeklaAssembly)
-    if not isinstance(object_a, valid_types) or not isinstance(object_b, valid_types):
-        raise TypeError("Both objects must be parts or assemblies")
-
-    snapshot_a = object_a.to_snapshot()
-    snapshot_b = object_b.to_snapshot()
-
-    snapshot_a_normalized = snapshot_a.normalize(0.01)
-    snapshot_b_normalized = snapshot_b.normalize(0.01)
-
-    diff_a = snapshot_a_normalized.to_diff_view()
-    diff_b = snapshot_b_normalized.to_diff_view()
 
     IGNORED_KEYS = {"id", "guid"}
 
     def _canonical(value: Any) -> Any:
         if isinstance(value, dict):
             return tuple((k, _canonical(v)) for k, v in sorted(value.items()) if k.lower() not in IGNORED_KEYS)
-
         if isinstance(value, list):
-            return tuple(_canonical(v) for v in value)  # <-- KEEP ORDER
-
+            return tuple(_canonical(v) for v in value)
         return value
-
-    def _compute_diff(a: Any, b: Any) -> Any:
-        canon_a, canon_b = _canonical(a), _canonical(b)
-        if canon_a == canon_b:
-            return None
-        if isinstance(a, dict) and isinstance(b, dict):
-            diff = {}
-            for key in sorted(set(a) | set(b)):
-                if key.lower() in IGNORED_KEYS:
-                    continue
-                d = _compute_diff(a.get(key), b.get(key))
-                if d is not None:
-                    diff[key] = d
-            return diff or None
-        return [a, b]
 
     def _strip_ignored(value: Any) -> Any:
         if isinstance(value, dict):
@@ -388,26 +358,78 @@ def compare_elements(
             return [_strip_ignored(v) for v in value]
         return value
 
-    diff_a_clean = _strip_ignored(diff_a)
-    diff_b_clean = _strip_ignored(diff_b)
+    def _diff_values(values: list[Any]) -> Any:
+        """
+        Recursively compute a diff across N per-element values, stripping identical sub-values.
 
-    if _canonical(diff_a_clean) == _canonical(diff_b_clean):
-        logger.info("Elements are identical")
-        return ToolResult(structured_content={"status": "success", "identical": True, "message": "Elements are identical"})
+        Returns None when all values are identical.
+        """
+        if len({_canonical(v) for v in values}) == 1:
+            return None  # all identical - strip entirely
 
-    diff = _compute_diff(diff_a_clean, diff_b_clean)
+        if all(isinstance(v, dict) for v in values):
+            all_keys: set[str] = set()
+            for v in values:
+                all_keys.update(v.keys())
+            result: dict[str, Any] = {}
+            for key in sorted(all_keys):
+                child = _diff_values([v.get(key) for v in values])
+                if child is not None:
+                    result[key] = child
+            return result or None
 
-    logger.info("Elements have differences")
-    return ToolResult(
-        content=diff,
-        structured_content={
-            "status": "success",
-            "identical": False,
-            "part_a_raw": snapshot_a_normalized.model_dump(),
-            "part_b_raw": snapshot_b_normalized.model_dump(),
-            "message": "Elements have differences",
-        },
-    )
+        if all(isinstance(v, list) for v in values):
+            lengths = {len(v) for v in values}
+            if len(lengths) == 1:  # same length - recurse positionally
+                n = next(iter(lengths))
+                items = [_diff_values([v[i] for v in values]) for i in range(n)]
+                if any(item is not None for item in items):
+                    return items  # None entries mark identical positions
+                return None
+
+        return values  # primitives or mismatched shapes - show raw values per element
+
+    def _compute_multi_diff(snap_views: list[dict]) -> dict[str, Any] | None:
+        """Top-level diff: for each field that differs across any element, recurse into it."""
+        all_keys: set[str] = set()
+        for snap in snap_views:
+            all_keys.update(snap.keys())
+        diff: dict[str, Any] = {}
+        for key in sorted(all_keys):
+            d = _diff_values([snap.get(key) for snap in snap_views])
+            if d is not None:
+                diff[key] = d
+        return diff if diff else None
+
+    guids: list[str] = []
+    snap_views: list[dict] = []
+    raws: list[dict] = []
+
+    for part in parts:
+        obj = wrap_model_object(part)
+        if not isinstance(obj, valid_types):
+            raise TypeError(f"Element must be a part or assembly, got {type(obj).__name__}")
+        snapshot = obj.to_snapshot().normalize(tolerance)
+        guids.append(obj.guid)
+        snap_views.append(_strip_ignored(snapshot.to_diff_view()))
+        raws.append(snapshot.model_dump())
+
+    diff = _compute_multi_diff(snap_views)
+    identical = diff is None
+
+    logger.info("compare_elements: %d elements, identical=%s", len(guids), identical)
+
+    # When not identical: guids for alignment + the diff (only fields that vary)
+    # When identical: minimal confirmation, no diff key.
+    if identical:
+        content_out: dict[str, Any] = {"guids": guids, "identical": True}
+    else:
+        content_out = {"guids": guids, "identical": False, "diff": diff}
+
+    sc_out: dict[str, Any] = {"status": "success", "guids": guids, "identical": identical, "raws": raws}
+    if diff is not None:
+        sc_out["diff"] = diff
+    return ToolResult(content=content_out, structured_content=sc_out)
 
 
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": False, "destructiveHint": True})

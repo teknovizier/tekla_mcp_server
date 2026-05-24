@@ -404,25 +404,32 @@ def test_compare_elements_numbering_not_up_to_date(model_objects):
 
 
 def test_compare_identical_parts(model_objects):
-    """Tests compare_elements: identical parts."""
+    """Tests compare_elements: identical parts → identical=True, no diff key."""
     TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
     result = compare_elements(ignore_numbering=True)
 
-    assert result.structured_content["status"] == "success"
-    assert result.structured_content["identical"] is True
+    sc = result.structured_content
+    assert sc["status"] == "success"
+    assert sc["identical"] is True
+    assert len(sc["guids"]) == 2
+    assert "diff" not in sc
 
 
 def test_compare_different_parts_different_profile(model_objects):
-    """Tests compare_elements: different profiles."""
+    """Tests compare_elements: different profiles → identical=False, diff is present."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
     result = compare_elements(ignore_numbering=True)
 
-    assert result.structured_content["status"] == "success"
-    assert result.structured_content["identical"] is False
+    sc = result.structured_content
+    assert sc["status"] == "success"
+    assert sc["identical"] is False
+    assert "diff" in sc
+    assert isinstance(sc["diff"], dict)
+    assert sc["diff"]  # must be non-empty
 
 
 def test_compare_three_elements(model_objects):
-    """Tests compare_elements with three elements - should error."""
+    """Tests compare_elements with three elements: guids list has 3 entries."""
     TeklaModel.select_objects(
         [
             model_objects["test_wall1"],
@@ -432,8 +439,116 @@ def test_compare_three_elements(model_objects):
     )
     result = compare_elements(ignore_numbering=True)
 
-    assert result.structured_content["status"] == "error"
-    assert "More than two elements" in result.structured_content["message"]
+    sc = result.structured_content
+    assert sc["status"] == "success"
+    assert len(sc["guids"]) == 3
+    assert len(sc["raws"]) == 3
+
+
+def test_compare_guids_contains_all_selected(model_objects):
+    """guids must contain one non-empty string per selected element."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
+    result = compare_elements(ignore_numbering=True)
+
+    sc = result.structured_content
+    assert len(sc["guids"]) == 2
+    assert all(isinstance(g, str) and g for g in sc["guids"])
+
+
+def test_compare_diff_values_aligned_with_guids(model_objects):
+    """Every leaf value list in diff must have exactly len(guids) entries at any nesting depth."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
+    result = compare_elements(ignore_numbering=True)
+
+    sc = result.structured_content
+    assert sc["identical"] is False
+    n = len(sc["guids"])
+
+    def check_leaf_lengths(val: object, path: str = "") -> None:
+        if isinstance(val, list):
+            assert len(val) == n, f"diff[{path}] has {len(val)} entries, expected {n}"
+        elif isinstance(val, dict):
+            for k, v in val.items():
+                check_leaf_lengths(v, f"{path}.{k}" if path else k)
+
+    for field, value in sc["diff"].items():
+        check_leaf_lengths(value, field)
+
+
+def test_compare_identical_has_no_diff_key(model_objects):
+    """When all elements are identical, no diff key is present in the response."""
+    TeklaModel.select_objects([model_objects["test_wall5"], model_objects["test_wall6"]])
+    result = compare_elements(ignore_numbering=True)
+
+    assert result.structured_content["identical"] is True
+    assert "diff" not in result.structured_content
+
+
+def test_compare_mixed_results(model_objects):
+    """3 elements where one has a different profile: identical=False, all diff leaves are len-3."""
+    # wall5 and wall6 share profile/material/class/name; wall7 has a different profile.
+    # Selection order from Tekla is not guaranteed — assert only on aggregate properties.
+    TeklaModel.select_objects(
+        [
+            model_objects["test_wall5"],
+            model_objects["test_wall6"],
+            model_objects["test_wall7"],
+        ]
+    )
+    result = compare_elements(ignore_numbering=True)
+
+    sc = result.structured_content
+    assert sc["status"] == "success"
+    assert len(sc["guids"]) == 3
+    assert sc["identical"] is False
+    assert "diff" in sc
+
+    def check_leaf_lengths(val: object, path: str = "") -> None:
+        if isinstance(val, list):
+            assert len(val) == 3, f"diff[{path}] has {len(val)} entries, expected 3"
+        elif isinstance(val, dict):
+            for k, v in val.items():
+                check_leaf_lengths(v, f"{path}.{k}" if path else k)
+
+    for field, value in sc["diff"].items():
+        check_leaf_lengths(value, field)
+
+
+def test_compare_diff_contains_only_differing_values(model_objects):
+    """Every leaf list in diff must contain at least 2 distinct values - identical fields must be stripped."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
+    result = compare_elements(ignore_numbering=True)
+
+    sc = result.structured_content
+    assert sc["identical"] is False
+
+    def assert_leaf_values_differ(val: object, path: str = "") -> None:
+        if isinstance(val, list):
+            distinct = {str(v) for v in val}
+            assert len(distinct) > 1, f"diff[{path}] has all-identical values - should have been stripped: {val}"
+        elif isinstance(val, dict):
+            for k, v in val.items():
+                assert_leaf_values_differ(v, f"{path}.{k}" if path else k)
+
+    for field, value in sc["diff"].items():
+        assert_leaf_values_differ(value, field)
+
+
+def test_compare_content_excludes_raws_and_status(model_objects):
+    """content must only carry guids/identical/diff - not raws, status, or other structured_content fields."""
+    import json
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
+    result = compare_elements(ignore_numbering=True)
+
+    # Parse the JSON text
+    content_text = result.content[0].text
+    content = json.loads(content_text)
+
+    assert "guids" in content
+    assert "identical" in content
+    assert "diff" in content
+    assert "raws" not in content
+    assert "status" not in content
 
 
 def test_clear_elements_udas_all(model_objects):
@@ -484,14 +599,14 @@ def test_get_elements_coordinates_empty_selection():
 
 
 def test_compare_elements_no_selection():
-    """Zero elements selected: _validate_exactly_two_selected count=0 branch."""
+    """Zero elements selected: _validate_at_least_two_selected count=0 branch."""
     TeklaModel.clear_selection()
     result = compare_elements(ignore_numbering=True)
     assert result.structured_content["status"] == "error"
 
 
 def test_compare_elements_single_element(model_objects):
-    """One element selected: _validate_exactly_two_selected count=1 branch."""
+    """One element selected: _validate_at_least_two_selected count=1 branch."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
     result = compare_elements(ignore_numbering=True)
     assert result.structured_content["status"] == "error"
