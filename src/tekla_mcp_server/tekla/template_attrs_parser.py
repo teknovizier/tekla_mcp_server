@@ -77,6 +77,9 @@ class TemplateAttributeParser:
             cls._load_attributes_from_file(file_path)
 
         cls._loaded = True
+        if not is_embeddings_enabled():
+            logger.info("Embeddings disabled: attribute resolution uses exact and override matching only")
+
         logger.info("Tekla attribute definitions loaded and cached: %d attributes", len(cls._cache))
 
     @classmethod
@@ -132,9 +135,6 @@ class TemplateAttributeParser:
         min_threshold = get_config().embedding_minimum_threshold
         top_k = 10
 
-        if not cls._embeddings_cache:
-            logger.warning("Embeddings not loaded - semantic resolution disabled")
-
         resolved, errors = [], []
 
         for query in queries:
@@ -164,7 +164,8 @@ class TemplateAttributeParser:
             if failed_no_cands:
                 logger.warning("No candidates: %s", failed_no_cands)
             if failed_no_match:
-                logger.warning("No match: %s", failed_no_match)
+                log = logger.debug if not cls._embeddings_cache else logger.warning
+                log("No match: %s", failed_no_match)
 
         return {"resolved": resolved, "errors": errors}
 
