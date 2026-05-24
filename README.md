@@ -27,28 +27,29 @@
 
 # Tekla MCP Server
 
-This server facilitates interaction with **Tekla Structures**, helping users automate and accelerate modeling workflows. It acts as a bridge between AI agents or MCP-compatible clients and Tekla, exposing resources and tools for selection, component insertion, property management and view operations.
+This server enables interaction with **Tekla Structures**, helping users automate and accelerate modeling workflows. It acts as a bridge between AI agents or MCP-compatible clients and Tekla, exposing resources and tools for selection, component insertion, property management, modeling and view operations. A **read-only mode** is available for safe query-only access.
 
 > #### 📌 What is MCP?
 >
-> *MCP* stands for **Model Context Protocol**, and it is a communication protocol introduced by Anthropic to enable more efficient and secure interactions between large language models and other systems, such as human users or other AI agents.
+> *MCP* stands for **Model Context Protocol**, a communication protocol introduced by Anthropic to enable efficient and secure interactions between large language models and external systems.
 >
-> **Tekla MCP Server** uses AI-powered natural language processing to make interactions more intuitive, allowing user to work with tools using plain text.
+> **Tekla MCP Server** uses AI-powered natural language processing to translate human intent into Tekla operations, allowing users to interact with tools using plain text.
 
 To use this server, one must first install and configure an MCP client.
 
 ### Features
 
-- **Modular Architecture**: Powered by FastMCP 3.0, with toolset organization through modular providers (Selection, View, Properties, Components, Operations, Drawing).
+- **Modular Architecture**: Powered by FastMCP 3.0, with toolset organization through modular providers (Selection, View, Properties, Components, Operations, Drawing, Modeling, IFC).
 
-- **Resource Discovery**: Auto‑detection of available filters, macros, components, and custom requirements and instructions.
+- **Resource Discovery**: Auto‑detection of available filters, macros, components, Tekla phases, grids, material and rebar catalogs and project context files.
 
-- **Component Handler Plugin System**: Flexible plugin model for Tekla components with lifecycle hooks, e.g., `Lifting Anchors` component select anchors based on element weight and auto‑calculates anchor placement according to center of gravity.
+- **Component Handler Plugin System**: Flexible plugin model for Tekla components with lifecycle hooks, e.g., `Lifting Anchors` component selects anchors based on element weight and auto‑calculates anchor placement according to center of gravity.
 
 - **LLM‑Powered Component Property Understanding**: Natural language mapping like "concrete cover thickness" → actual Tekla component property.
 
-- **Semantic Attribute Mapping**: Hybrid semantic system (MiniLM + LLM fallback) for mapping user‑friendly names to Tekla attributes.
+- **Semantic Attribute Mapping**: Hybrid semantic system (MiniLM embedding model + LLM fallback) for mapping user‑friendly names to Tekla attributes.
 
+- **Flexible Access Control**: Possibility to run in read-only mode for safe query-only access and to hide specific tool categories based on project or workflow needs.
 
 See [Reference](docs/reference.md) for complete list of tools and resources.
 
