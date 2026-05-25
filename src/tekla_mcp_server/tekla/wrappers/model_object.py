@@ -847,17 +847,12 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         """
         weight_main_part = float(self.get_report_property("WEIGHT"))
 
-        weight_secondaries = 0.0
-        weight_subassemblies = 0.0
         weight_rebars = 0.0
-
         for rebar in wrap_model_objects(self.model_object.GetReinforcements()):
             weight_rebar = rebar.get_report_property("WEIGHT_TOTAL")
             weight_rebars += float(weight_rebar)
 
-        total_parts_weight = weight_main_part + weight_secondaries + weight_subassemblies
-
-        return total_parts_weight, weight_rebars
+        return weight_main_part, weight_rebars
 
     def get_top_level_assembly(self) -> TeklaAssembly | None:
         """
@@ -1275,7 +1270,8 @@ class TeklaContourPlate(TeklaPart):
 
     @contour_points.setter
     def contour_points(self, points: list[Point]) -> None:
-        """Sets the contour points of the slab."""
+        """Sets the contour points of the slab, replacing any existing points."""
+        self.model_object.Contour.ContourPoints.Clear()
         for pt in points:
             contour_point = ContourPoint()
             contour_point.X = pt.x
@@ -1399,6 +1395,7 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
         Sets the father part of this reinforcement element.
         """
         self.model_object.Father = value.model_object if value is not None else None
+        self.model_object.Modify()
 
     def get_top_level_assembly(self) -> TeklaAssembly | None:
         """
