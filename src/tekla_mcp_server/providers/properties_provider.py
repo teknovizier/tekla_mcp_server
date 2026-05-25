@@ -384,9 +384,7 @@ def compare_elements(
             if len(lengths) == 1:  # same length - recurse positionally
                 n = next(iter(lengths))
                 items = [_diff_values([v[i] for v in values]) for i in range(n)]
-                if any(item is not None for item in items):
-                    return items  # None entries mark identical positions
-                return None
+                return [item for item in items if item is not None]
 
         return values  # primitives or mismatched shapes - show raw values per element
 
