@@ -179,22 +179,40 @@ def test_select_elements_by_guid(model_objects):
     """Tests select_elements_by_guid function."""
     result = select_elements_by_guid(guids=[])
     assert result.structured_content["status"] == "warning"
+    assert result.structured_content["selected_guids"] == []
+    assert result.structured_content["missing_guids"] == []
 
     result = select_elements_by_guid(guids=[""])
     assert result.structured_content["status"] == "warning"
+    assert result.structured_content["selected_guids"] == []
+    assert result.structured_content["missing_guids"] == [""]
 
-    result = select_elements_by_guid(guids=["MCP_TEST_WALL2"])
+    nonexistent = "MCP_TEST_WALL2"
+    result = select_elements_by_guid(guids=[nonexistent])
     assert result.structured_content["status"] == "warning"
+    assert result.structured_content["selected_guids"] == []
+    assert result.structured_content["missing_guids"] == [nonexistent]
 
     wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
     result = select_elements_by_guid(guids=[wall2_guid])
     assert result.structured_content["status"] == "success"
     assert result.structured_content["selected_elements"] == 1
+    assert result.structured_content["selected_guids"] == [wall2_guid]
+    assert result.structured_content["missing_guids"] == []
 
     wall1_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
     result = select_elements_by_guid(guids=[wall1_guid, wall2_guid])
     assert result.structured_content["status"] == "success"
     assert result.structured_content["selected_elements"] == 2
+    assert set(result.structured_content["selected_guids"]) == {wall1_guid, wall2_guid}
+    assert result.structured_content["missing_guids"] == []
+
+    # partial: one valid, one not found
+    result = select_elements_by_guid(guids=[wall1_guid, nonexistent])
+    assert result.structured_content["status"] == "partial"
+    assert result.structured_content["selected_elements"] == 1
+    assert result.structured_content["selected_guids"] == [wall1_guid]
+    assert result.structured_content["missing_guids"] == [nonexistent]
 
 
 @pytest.mark.parametrize("mode,expected_count", [("Assembly", 2), ("Main Part", 2)])

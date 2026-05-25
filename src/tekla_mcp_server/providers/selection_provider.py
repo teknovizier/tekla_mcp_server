@@ -312,13 +312,28 @@ def select_elements_by_guid(
     Selects elements by their GUID.
     """
     model = TeklaModel()
-    objects_to_select = model.get_objects_by_guid(guids)
+    objects_to_select = ArrayList()
+    selected_guids: list[str] = []
+    missing_guids: list[str] = []
+
+    for guid in guids:
+        obj = model.get_object_by_guid(guid)
+        if obj is not None:
+            objects_to_select.Add(obj)
+            selected_guids.append(guid)
+        else:
+            missing_guids.append(guid)
+
     TeklaModel.select_objects(objects_to_select)
-    logger.info("Selected %s elements by GUID", objects_to_select.Count)
+    logger.info("Selected %s/%s elements by GUID (missing: %s)", len(selected_guids), len(guids), missing_guids)
+
+    status = "success" if selected_guids and not missing_guids else ("partial" if selected_guids else "warning")
     return ToolResult(
         structured_content={
-            "status": "success" if objects_to_select.Count else "warning",
-            "selected_elements": objects_to_select.Count,
+            "status": status,
+            "selected_elements": len(selected_guids),
+            "selected_guids": selected_guids,
+            "missing_guids": missing_guids,
         }
     )
 
