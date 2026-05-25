@@ -140,24 +140,16 @@ class SolidGeometryMixin:
 
     def is_inside(self, other: TeklaModelObject) -> bool:
         """
-        Return True if this object likely intersects or lies inside `other`
-        using a lightweight ray-cast test against Tekla solids.
+        Return True if this object lies inside `other` using an odd/even ray-cast test.
 
-        A ray is cast from the center of the overlapping AABB region between
-        the two solids. If the ray intersects `other` in the forward direction,
-        the objects are treated as intersecting/contained.
-
-        The ray direction is intentionally non-axis-aligned to reduce grazing
-        hits on orthogonal faces.
+        A ray is cast from the center of the overlapping AABB region in a non-axis-aligned
+        direction to avoid grazing hits. Only forward-half-space intersections are counted.
+        An odd count means the origin is inside the solid, an even count means outside.
 
         Notes:
-        - This is a fast heuristic, not an exact solid-solid intersection test.
-        - Concave geometry (L/T/custom contour shapes) is handled better than
-          pure AABB overlap checks.
-        - Near-tangent, thin, or highly complex geometry may still produce
-          false positives or false negatives depending on kernel tolerances.
-        - Any geometry/kernel failure conservatively returns True to avoid
-          accidentally filtering valid candidates.
+        - Concave geometry (L/T/custom contour shapes) is handled correctly.
+        - Near-tangent or very thin geometry may still produce false positives or negatives.
+        - Any geometry/kernel failure conservatively returns True to avoid false negatives.
         """
         try:
             # Prefer NORMAL solids because they include cuts/fittings/booleans and therefore
@@ -190,7 +182,7 @@ class SolidGeometryMixin:
                     q = hits[i]
                     if (q.X - cx) * dx + (q.Y - cy) * dy + (q.Z - cz) * dz > 0:
                         count += 1
-            return count > 0
+            return count % 2 == 1
         except Exception:
             return True
 
