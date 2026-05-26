@@ -144,8 +144,8 @@ def test_clash_result_fields(model_objects):
     assert obj["tekla_class"] == 1
 
 
-def test_exclude_classes_filters_out_clash(model_objects):
-    """Excluding class 1 drops all clashes between class 1 walls."""
+def test_exclude_filter_filters_out_clash(model_objects):
+    """Excluding objects matched by the 'standard' filter drops all clashes between those walls."""
     TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_b"]])
-    result = clash_check(exclude_classes=[1])
+    result = clash_check(exclude_filter="standard")
     assert result.structured_content["clashes_count"] == 0

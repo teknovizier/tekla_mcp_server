@@ -665,14 +665,14 @@ def clash_check(
     between_parts: Annotated[bool, Field(description="Check clashes between Tekla parts")] = True,
     between_reference_models: Annotated[bool, Field(description="Check clashes between reference models")] = False,
     objects_inside_reference_models: Annotated[bool, Field(description="Check clashes between Tekla parts and objects inside reference models")] = False,
-    exclude_classes: Annotated[list[int], Field(description="Exclude clash pairs where either object belongs to one of these Tekla classes")] = [],
+    exclude_filter: Annotated[str | None, Field(description="Name of a saved Tekla selection filter. Clash pairs where either object matches the filter are excluded.")] = None,
 ) -> ToolResult:
     """
     Run clash check against the current selection.
 
     ## EXAMPLES
-    # Simple clash check excluding class 0
-    clash_check(exclude_classes=[0])
+    # Exclude objects matching a saved Tekla filter
+    clash_check(exclude_filter="REINFORCEMENT")
 
     # Include the IFC reference model in the check
     clash_check(between_reference_models=True, objects_inside_reference_models=True)
@@ -689,17 +689,23 @@ def clash_check(
         min_distance=min_distance,
     )
 
-    excluded = set(exclude_classes)
+    # Build a set of GUIDs that match the named Tekla selection filter
+    excluded_by_filter: set[str] = set()
+    if exclude_filter:
+        unique_guids = {r.object1.guid for r in records if r.object1.guid} | {r.object2.guid for r in records if r.object2.guid}
+        for guid in unique_guids:
+            raw_obj = model.get_object_by_guid(guid)
+            if raw_obj is not None and Operation.ObjectMatchesToFilter(raw_obj, exclude_filter):
+                excluded_by_filter.add(guid)
+        logger.debug("exclude_filter=%r matched %d/%d unique GUIDs", exclude_filter, len(excluded_by_filter), len(unique_guids))
+
     filtered = []
     seen_pairs: set[tuple[str, str]] = set()
-
-    def _is_excluded(tekla_class: int | None) -> bool:
-        return bool(excluded and tekla_class is not None and tekla_class in excluded)
 
     for record in records:
         if record.object1.guid is None or record.object2.guid is None:
             continue
-        if _is_excluded(record.object1.tekla_class) or _is_excluded(record.object2.tekla_class):
+        if record.object1.guid in excluded_by_filter or record.object2.guid in excluded_by_filter:
             continue
         pair_key = tuple(sorted((record.object1.guid, record.object2.guid)))
         if pair_key in seen_pairs:
@@ -708,12 +714,12 @@ def clash_check(
         filtered.append(record)
 
     logger.info(
-        "clash_check finished: selected=%d, reported=%d, filtered=%d (min_distance=%.1f exclude_classes=%s)",
+        "clash_check finished: selected=%d, reported=%d, filtered=%d (min_distance=%.1f exclude_filter=%r)",
         selected_objects.GetSize(),
         len(records),
         len(filtered),
         min_distance,
-        sorted(excluded),
+        exclude_filter,
     )
 
     return ToolResult(
