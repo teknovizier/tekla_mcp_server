@@ -22,9 +22,8 @@ The project includes unit tests and functional tests.
 - `test_selection.py`: Element selection by filter, GUID, assembly
 - `test_view.py`: View operations (labels, zoom, filters)
 - `test_operations.py`: Boolean cuts, cut part conversion, macros
-- `test_properties.py`: Property get/set, UDAs, numbering, comparison
+- `test_properties.py`: Property get/set, UDAs, numbering, comparison, IFC property copy
 - `test_drawings.py`: Drawing retrieval and properties
-- `test_ifc.py`: IFC operations
 - `test_modeling.py`: Modeling operations (beams, columns, grids, etc.)
 
 ## Running Tests

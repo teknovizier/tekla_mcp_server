@@ -24,6 +24,7 @@ Type and default shown where relevant.
 | Properties | `clear_elements_udas` | Clear UDAs from selected parts and assemblies. Clears all UDAs if no names provided | `uda_names` (list[str], optional) |
 | Properties | `get_elements_coordinates` | Get coordinates of selected elements: start/end points and offsets for beams, contour points for slabs | - |
 | Properties | `compare_elements` | Compare two selected elements and return detailed differences (properties, UDAs, cut parts, welds, reinforcements) | `ignore_numbering` (bool, default: `false`) |
+| Properties | `copy_properties_from_ifc` | Copy properties from IFC reference objects to matching Tekla elements by bounding-box overlap | **`user_properties`** (dict[str, str]): IFC property name → Tekla UDA name |
 | View | `draw_elements_labels` | Draw temporary labels on selected elements. Parts show position, GUID, name, profile, material, finish, class, weight. Assemblies show position, GUID, name, weight | `label` (str, optional), `custom_label` (str, optional) |
 | View | `zoom_to_selection` | Zoom the active rendered view to fit selected elements | - |
 | View | `redraw_view` | Redraw the active view | - |
@@ -48,7 +49,6 @@ Type and default shown where relevant.
 | Modeling | `move_elements` | Move or copy selected elements by a displacement vector. Assemblies are expanded to all constituent parts recursively. `copy=true` keeps originals and creates new elements at the displaced position | `dx` (float, mm, default: `0`), `dy` (float, mm, default: `0`), `dz` (float, mm, default: `0`), `copy` (bool, default: `false`) - all optional |
 | Modeling | `place_grid` | Place a rectangular grid in the Tekla model | **`x`** (list[float], mm), **`y`** (list[float], mm), `z` (list[float], mm), `x_labels` (list[str]), `y_labels` (list[str]), `z_labels` (list[str]), `origin` (PointInput), `name` (str) |
 | Modeling | `delete_selected` | Delete all selected elements | - |
-| IFC | `copy_properties_from_ifc` | Copy properties from IFC reference objects to matching Tekla elements by bounding-box overlap | **`user_properties`** (dict[str, str]): IFC property name → Tekla UDA name |
 
 ## Resources
 

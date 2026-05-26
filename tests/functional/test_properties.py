@@ -1,7 +1,8 @@
 """
 Functional tests for properties_provider.
 
-Tests getting and setting element properties, UDAs, numbering, cut parts, and comparison.
+Tests getting and setting element properties, UDAs, numbering, cut parts, comparison
+and IFC property copy operations.
 """
 
 from tekla_mcp_server.providers.properties_provider import (
@@ -11,6 +12,7 @@ from tekla_mcp_server.providers.properties_provider import (
     compare_elements,
     clear_elements_udas,
     get_elements_coordinates,
+    copy_properties_from_ifc,
 )
 from tekla_mcp_server.providers.selection_provider import select_elements_assemblies_or_main_parts
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -645,3 +647,23 @@ def test_get_elements_properties_snapshot_mode(model_objects):
     assert "cutparts" in parts[0]
     assert "welds" in parts[0]
     assert "reinforcements" in parts[0]
+
+
+def test_copy_properties_from_ifc_only_tekla_selected_returns_error(model_objects):
+    """Select only a Tekla wall without any IFC references: expect error."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+
+    result = copy_properties_from_ifc(user_properties={})
+
+    assert result.structured_content["status"] == "error"
+    assert "no ifc" in result.structured_content["message"].lower()
+
+
+def test_copy_properties_from_ifc_both_tekla_walls_returns_error(model_objects):
+    """Select two Tekla walls without IFC references: expect error."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+
+    result = copy_properties_from_ifc(user_properties={})
+
+    assert result.structured_content["status"] == "error"
+    assert "no ifc" in result.structured_content["message"].lower()
