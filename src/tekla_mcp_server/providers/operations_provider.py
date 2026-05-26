@@ -171,17 +171,26 @@ def _check_element_bounding_box_rebars(
 
         evaluated += 1
 
-        # A rebar is orphaned when it's physically inside the element but not in its reinforcement set
-        if candidate.guid not in element_reinforcement_guids:
-            orphaned.append(
-                CheckResult(
-                    guid=candidate.guid,
-                    name=candidate.name,
-                    position=candidate.position,
-                    tekla_class=reinforcement_class,
-                )
+        # Rebar is correctly attached to this element - not orphaned
+        if candidate.guid in element_reinforcement_guids:
+            continue
+
+        # Starter bars: rebar belongs to a neighboring element and
+        # legitimately reaches into this one. Recognised by the bar still lying
+        # inside the solid of its actual father part.
+        father = candidate.father
+        if father is not None and candidate.is_inside(father):
+            continue
+
+        orphaned.append(
+            CheckResult(
+                guid=candidate.guid,
+                name=candidate.name,
+                position=candidate.position,
+                tekla_class=reinforcement_class,
             )
-            orphaned_objects.append(candidate)
+        )
+        orphaned_objects.append(candidate)
 
     logger.debug("Found %d orphaned rebars for element %s", len(orphaned), element.guid)
     return orphaned_objects, orphaned, evaluated
