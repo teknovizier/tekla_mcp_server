@@ -69,6 +69,11 @@ def _check_element_bounding_box_embeds(
     The bounding-box search is a fast spatial pre-filter. Each surviving candidate is then
     tested for actual containment via ray-casting and for correct assembly parentage.
     """
+    try:
+        element_main = element.main_part
+    except ValueError:
+        return [], [], 0
+
     candidates = get_candidates_in_bounding_box(element, tolerance)
 
     orphaned: list[CheckResult] = []
@@ -99,19 +104,17 @@ def _check_element_bounding_box_embeds(
             continue
 
         try:
-            main = wrapped_assembly.main_part
+            candidate_main = wrapped_assembly.main_part
         except ValueError:
-            continue
-        if not main:
             continue
 
         # Only embedded-detail classes are relevant, other nearby objects are ignored
-        part_class = main.tekla_class
+        part_class = candidate_main.tekla_class
         if part_class not in EMBEDDED_DETAILS_CLASSES:
             continue
 
         # Skip embeds that are in the bounding box but outside the element's actual solid
-        if not main.is_inside(element.main_part):
+        if not candidate_main.is_inside(element_main):
             continue
 
         evaluated += 1
@@ -126,8 +129,8 @@ def _check_element_bounding_box_embeds(
             orphaned.append(
                 CheckResult(
                     guid=assembly_guid,
-                    name=main.name,
-                    position=main.position,
+                    name=candidate_main.name,
+                    position=candidate_main.position,
                     tekla_class=part_class,
                 )
             )
@@ -148,6 +151,11 @@ def _check_element_bounding_box_rebars(
     Candidates are pre-filtered by bounding box, then tested for containment to exclude
     rebars that belong to adjacent elements. GUID membership determines attachment.
     """
+    try:
+        element_main = element.main_part
+    except ValueError:
+        return [], [], 0
+
     candidates = get_candidates_in_bounding_box(element, tolerance)
     if not candidates:
         return [], [], 0
@@ -166,7 +174,7 @@ def _check_element_bounding_box_rebars(
             continue
 
         # Skip rebars that are in the bounding box but outside the element's actual solid
-        if not candidate.is_inside(element.main_part):
+        if not candidate.is_inside(element_main):
             continue
 
         evaluated += 1
@@ -567,12 +575,14 @@ def check_for_invalid_objects() -> ToolResult:
                 assembly_issues: list[str] = []
 
                 # Missing main part
-                main_part = obj.model_object.GetMainPart()
-                if main_part is None:
+                try:
+                    main = obj.main_part
+                except ValueError:
                     assembly_issues.append("no_main_part")
+                    main = None
 
                 if assembly_issues:
-                    wrapped_main = wrap_model_object(main_part) if main_part else None
+                    wrapped_main = wrap_model_object(main) if main else None
                     invalid_assemblies.append(
                         CheckResult(
                             guid=guid,
