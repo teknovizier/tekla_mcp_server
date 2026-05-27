@@ -665,21 +665,37 @@ def clash_check(
     between_parts: Annotated[bool, Field(description="Check clashes between Tekla parts")] = True,
     between_reference_models: Annotated[bool, Field(description="Check clashes between reference models")] = False,
     objects_inside_reference_models: Annotated[bool, Field(description="Check clashes between Tekla parts and objects inside reference models")] = False,
-    exclude_filter: Annotated[str | None, Field(description="Name of a saved Tekla selection filter. Clash pairs where either object matches the filter are excluded.")] = None,
+    filter_name: Annotated[str | None, Field(description="Name of a saved Tekla selection filter. Only objects matching the filter are then selected before the clash check runs")] = None,
 ) -> ToolResult:
     """
     Run clash check against the current selection.
 
     ## EXAMPLES
-    # Exclude objects matching a saved Tekla filter
-    clash_check(exclude_filter="REINFORCEMENT")
+    # Check only objects matching a saved filter
+    clash_check(filter_name="CONCRETE_PARTS")
 
     # Include the IFC reference model in the check
     clash_check(between_reference_models=True, objects_inside_reference_models=True)
     """
 
     model = TeklaModel()
-    selected_objects = model.get_selected_objects()
+    selected_objects = list(model.get_selected_objects())
+
+    if filter_name:
+        to_select = []
+        for raw_obj in selected_objects:
+            wrapped = wrap_model_object(raw_obj)
+            if isinstance(wrapped, TeklaAssembly):
+                for child in wrapped.get_all_children(include_all=True):
+                    if Operation.ObjectMatchesToFilter(child, filter_name):
+                        to_select.append(child)
+            else:
+                if Operation.ObjectMatchesToFilter(raw_obj, filter_name):
+                    to_select.append(raw_obj)
+        TeklaModel.select_objects(to_select)
+        logger.debug("filter_name=%r: pre-selected %d parts for clash check", filter_name, len(to_select))
+
+    checked_count = model.get_selected_objects().GetSize()
 
     handler = TeklaClashCheckHandler()
     records = handler.run(
@@ -689,45 +705,24 @@ def clash_check(
         min_distance=min_distance,
     )
 
-    # Build a set of GUIDs that match the named Tekla selection filter
-    excluded_by_filter: set[str] = set()
-    if exclude_filter:
-        unique_guids = {r.object1.guid for r in records if r.object1.guid} | {r.object2.guid for r in records if r.object2.guid}
-        for guid in unique_guids:
-            raw_obj = model.get_object_by_guid(guid)
-            if raw_obj is not None and Operation.ObjectMatchesToFilter(raw_obj, exclude_filter):
-                excluded_by_filter.add(guid)
-        logger.debug("exclude_filter=%r matched %d/%d unique GUIDs", exclude_filter, len(excluded_by_filter), len(unique_guids))
-
-    filtered = []
-    seen_pairs: set[tuple[str, str]] = set()
-
-    for record in records:
-        if record.object1.guid is None or record.object2.guid is None:
-            continue
-        if record.object1.guid in excluded_by_filter or record.object2.guid in excluded_by_filter:
-            continue
-        pair_key = tuple(sorted((record.object1.guid, record.object2.guid)))
-        if pair_key in seen_pairs:
-            continue
-        seen_pairs.add(pair_key)
-        filtered.append(record)
+    if filter_name:
+        TeklaModel.select_objects(selected_objects)
 
     logger.info(
-        "clash_check finished: selected=%d, reported=%d, filtered=%d (min_distance=%.1f exclude_filter=%r)",
-        selected_objects.GetSize(),
+        "clash_check finished: selected=%d, checked=%d, clashes=%d (min_distance=%.1f filter_name=%r)",
+        len(selected_objects),
+        checked_count,
         len(records),
-        len(filtered),
         min_distance,
-        exclude_filter,
+        filter_name,
     )
 
     return ToolResult(
         structured_content={
-            "status": "success" if not filtered else "warning",
-            "selected_elements": selected_objects.GetSize(),
-            "reported_clashes": len(records),
-            "clashes_count": len(filtered),
-            "clashes": [c.to_dict() for c in filtered],
+            "status": "success" if not records else "warning",
+            "selected_elements": len(selected_objects),
+            "checked_objects": checked_count,
+            "clashes_count": len(records),
+            "clashes": [c.to_dict() for c in records],
         }
     )

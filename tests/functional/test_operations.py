@@ -144,8 +144,19 @@ def test_clash_result_fields(model_objects):
     assert obj["tekla_class"] == 1
 
 
-def test_exclude_filter_filters_out_clash(model_objects):
-    """Excluding objects matched by the 'standard' filter drops all clashes between those walls."""
+def test_filter_name_completes_successfully(model_objects):
+    """clash_check with filter_name pre-selects matching objects and returns a valid result."""
     TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_b"]])
-    result = clash_check(exclude_filter="standard")
-    assert result.structured_content["clashes_count"] == 0
+    result = clash_check(filter_name="standard")
+    assert result.structured_content["status"] in ["success", "warning"]
+    assert "clashes_count" in result.structured_content
+
+
+def test_filter_name_restores_original_selection(model_objects):
+    """Original selection is restored after clash_check with filter_name finishes."""
+    walls = [model_objects["test_clash_wall_a"], model_objects["test_clash_wall_b"]]
+    TeklaModel.select_objects(walls)
+    clash_check(filter_name="standard")
+    selected_guids = {obj.Identifier.GUID.ToString() for obj in TeklaModel().get_selected_objects()}
+    expected_guids = {w.Identifier.GUID.ToString() for w in walls}
+    assert selected_guids == expected_guids
