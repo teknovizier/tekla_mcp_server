@@ -474,7 +474,7 @@ def clear_elements_udas(
                     selected_object.set_user_property(key, float(-2147483648))
                 cleared_udas += 1
 
-            selected_object.model_object.Modify()
+            selected_object.modify()
 
             if isinstance(selected_object, TeklaPart):
                 modified_parts += 1

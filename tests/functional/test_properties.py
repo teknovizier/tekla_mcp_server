@@ -539,6 +539,7 @@ def test_compare_diff_contains_only_differing_values(model_objects):
 def test_compare_content_excludes_raws_and_status(model_objects):
     """content must only carry guids/identical/diff - not raws, status, or other structured_content fields."""
     import json
+
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
     result = compare_elements(ignore_numbering=True)
 

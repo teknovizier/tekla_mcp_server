@@ -65,15 +65,20 @@ def model_objects():
         PanelInput(start_point=PointInput(x=2000, y=0, z=0), end_point=PointInput(x=4000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL3"),
         PanelInput(start_point=PointInput(x=2000, y=0, z=3020), end_point=PointInput(x=4000, y=0, z=3020), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL4"),
         PanelInput(start_point=PointInput(x=0, y=0, z=6040), end_point=PointInput(x=2000, y=0, z=6040), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),
-        PanelInput(start_point=PointInput(x=0, y=0, z=9060), end_point=PointInput(x=2000, y=0, z=9060), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"),  # Name must match the previous object for the comparison tool test
+        PanelInput(
+            start_point=PointInput(x=0, y=0, z=9060), end_point=PointInput(x=2000, y=0, z=9060), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL5"
+        ),  # Name must match the previous object for the comparison tool test
         PanelInput(start_point=PointInput(x=0, y=0, z=12080), end_point=PointInput(x=2000, y=0, z=12080), profile="2000*150", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL7"),
         PanelInput(start_point=PointInput(x=0, y=200, z=0), end_point=PointInput(x=2000, y=200, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL8"),
         PanelInput(start_point=PointInput(x=4000, y=0, z=0), end_point=PointInput(x=6000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=8, name="MCP_TEST_SW1"),
-
         # Clash check walls
         PanelInput(start_point=PointInput(x=6000, y=0, z=0), end_point=PointInput(x=8000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CLASH_WALL_A"),
-        PanelInput(start_point=PointInput(x=6000, y=0, z=2500), end_point=PointInput(x=8000, y=0, z=2500), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CLASH_WALL_B"),
-        PanelInput(start_point=PointInput(x=6500, y=0, z=500), end_point=PointInput(x=7500, y=0, z=500), profile="1000*100", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CLASH_WALL_C"),
+        PanelInput(
+            start_point=PointInput(x=6000, y=0, z=2500), end_point=PointInput(x=8000, y=0, z=2500), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CLASH_WALL_B"
+        ),
+        PanelInput(
+            start_point=PointInput(x=6500, y=0, z=500), end_point=PointInput(x=7500, y=0, z=500), profile="1000*100", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CLASH_WALL_C"
+        ),
     ]
 
     slabs = [
@@ -84,7 +89,9 @@ def model_objects():
 
     voids = [
         BeamInput(start_point=PointInput(x=3000, y=0, z=1000), end_point=PointInput(x=3000, y=200, z=1000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_WALL3"),
-        BeamInput(start_point=PointInput(x=3000, y=0, z=4020), end_point=PointInput(x=3000, y=200, z=4020), profile="D400", material="Concrete_Undefined", tekla_class=555, name="MCP_TEST_VOID_GUID_WALL4"),
+        BeamInput(
+            start_point=PointInput(x=3000, y=0, z=4020), end_point=PointInput(x=3000, y=200, z=4020), profile="D400", material="Concrete_Undefined", tekla_class=555, name="MCP_TEST_VOID_GUID_WALL4"
+        ),
         BeamInput(
             start_point=PointInput(x=3000, y=0, z=10000), end_point=PointInput(x=3000, y=200, z=10000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_FLOATING"
         ),
@@ -126,5 +133,3 @@ def model_objects():
 
     cleanup_mcp_test_objects()
     model.commit_changes()
-
-

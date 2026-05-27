@@ -400,7 +400,7 @@ def check_for_orphans(
                     added = parent_assembly.model_object.Add(orphan_obj)
 
                     if added:
-                        success = parent_assembly.model_object.Modify() and orphan_obj.Modify()
+                        success = parent_assembly.modify() and orphan_obj.Modify()
 
                 elif mode == "rebars":
                     # Set rebar's Father to main part
@@ -411,7 +411,7 @@ def check_for_orphans(
                         continue
                     orphan_obj.father = main_part
 
-                    success = main_part.model_object.Modify() and orphan_obj.model_object.Modify()
+                    success = main_part.modify() and orphan_obj.modify()
             except Exception:
                 logger.exception("Failed to attach orphaned %s %s to assembly %s", mode[:-1], item.guid, parent_assembly.guid)
                 continue
@@ -544,7 +544,7 @@ def check_for_invalid_objects() -> ToolResult:
                     issues.append(f"invalid_material: '{material}'")
 
                 # Invalid solid
-                solid = obj.model_object.GetSolid()
+                solid = obj.get_solid()
                 if not solid or not solid.IsValid():
                     issues.append("invalid_solid")
 
@@ -603,7 +603,7 @@ def check_for_invalid_objects() -> ToolResult:
                     reinf_issues.append("invalid_geometry")
 
                 # Invalid solid
-                solid = obj.model_object.GetSolid()
+                solid = obj.get_solid()
                 if not solid or not solid.IsValid():
                     reinf_issues.append("invalid_solid")
 

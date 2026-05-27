@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Generator, Iterable
-from typing import Any
+from typing import Any, overload
 
 from tekla_mcp_server.config import get_tolerance
 from tekla_mcp_server.init import logger
@@ -138,6 +138,12 @@ class SolidGeometryMixin:
     def model_object(self) -> ModelObject:
         raise NotImplementedError
 
+    def get_solid(self) -> Solid:
+        """
+        Returns the solid of the model object.
+        """
+        return self.model_object.GetSolid()
+
     def is_inside(self, other: TeklaModelObject) -> bool:
         """
         Return True if this object lies inside `other` using an odd/even ray-cast test.
@@ -154,18 +160,22 @@ class SolidGeometryMixin:
         try:
             # Prefer NORMAL solids because they include cuts/fittings/booleans and therefore
             # better represent the final physical geometry in the model.
-            # Some Tekla object types do not support explicit
-            # SolidCreationTypeEnum.NORMAL, so fall back to the default GetSolid()
-            try:
-                solid_other = other.model_object.GetSolid(Solid.SolidCreationTypeEnum.NORMAL)
-            except Exception:
-                solid_other = other.model_object.GetSolid()
-            try:
-                solid_self = self.model_object.GetSolid(Solid.SolidCreationTypeEnum.NORMAL)
-            except Exception:
-                solid_self = self.model_object.GetSolid()
-            if not solid_other or not solid_self:
+            # Some Tekla object types do not support explicit SolidCreationTypeEnum.NORMAL, so fall back to the default GetSolid()
+            if isinstance(other, TeklaPart):
+                solid_other = other.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
+            elif isinstance(other, SolidGeometryMixin):
+                solid_other = other.get_solid()
+            else:
+                return True  # Conservatively assume True
+            if isinstance(self, TeklaPart):
+                solid_self = self.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
+            elif isinstance(self, SolidGeometryMixin):
+                solid_self = self.get_solid()
+            else:
+                return True  # Conservatively assume True
+            if not solid_other or not solid_other.IsValid() or not solid_self or not solid_self.IsValid():
                 return True
+
             cand_min = solid_self.MinimumPoint
             cand_max = solid_self.MaximumPoint
             elem_min = solid_other.MinimumPoint
@@ -184,7 +194,7 @@ class SolidGeometryMixin:
                         count += 1
             return count % 2 == 1
         except Exception:
-            return True
+            return True  # Conservatively assume True
 
 
 def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
@@ -302,6 +312,20 @@ class TeklaModelObject:
         except Exception:
             return None
 
+    def modify(self) -> bool:
+        """
+        Commits pending property changes to the model.
+        Returns True if successful.
+        """
+        return self.model_object.Modify()
+
+    def delete(self) -> bool:
+        """
+        Deletes the object from the model.
+        Returns True if successful.
+        """
+        return self.model_object.Delete()
+
     def get_top_level_assembly(self) -> "TeklaAssembly | None":
         """
         Gets top level assembly.
@@ -310,8 +334,8 @@ class TeklaModelObject:
             assembly = self._model_object.GetAssembly()
         except Exception:
             return None
-            if assembly is None:
-                return None
+        if assembly is None:
+            return None
         return _get_top_assembly(assembly)
 
     def get_report_property(self, property_name: str) -> str | int | float:
@@ -450,7 +474,7 @@ class TeklaModelObject:
             setattr(getattr(self.model_object, parts[0]), parts[1], value)
         else:
             raise ValueError(f"Property path too deep: '{prop_name}'")
-        self.model_object.Modify()
+        self.modify()
 
 
 class TeklaReferenceModelObject(TeklaModelObject):
@@ -534,7 +558,7 @@ class TeklaAssembly(TeklaModelObject):
         """Sets the assembly numbering series."""
         self.model_object.AssemblyNumber.Prefix = value.prefix
         self.model_object.AssemblyNumber.StartNumber = value.start_number
-        self.model_object.Modify()
+        self.modify()
 
     @property
     def main_part(self) -> TeklaModelObject:
@@ -684,7 +708,7 @@ class TeklaAssembly(TeklaModelObject):
         if assembly_prefix is not None:
             try:
                 self.model_object.AssemblyNumber.Prefix = assembly_prefix
-                self.model_object.Modify()
+                self.modify()
                 changes["assembly_prefix"] = 1
             except Exception as e:
                 errors.append({"property": "assembly_prefix", "reason": str(e)})
@@ -692,7 +716,7 @@ class TeklaAssembly(TeklaModelObject):
         if assembly_start_number is not None:
             try:
                 self.model_object.AssemblyNumber.StartNumber = assembly_start_number
-                self.model_object.Modify()
+                self.modify()
                 changes["assembly_start_number"] = 1
             except Exception as e:
                 errors.append({"property": "assembly_start_number", "reason": str(e)})
@@ -700,7 +724,7 @@ class TeklaAssembly(TeklaModelObject):
         if phase is not None:
             try:
                 if self.model_object.SetPhase(Phase(phase)):
-                    self.model_object.Modify()
+                    self.modify()
                     changes["phase"] = 1
                 else:
                     errors.append({"property": "phase", "reason": "SetPhase returned False"})
@@ -724,6 +748,21 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
     """
     A wrapper class around the Tekla Structures Part object.
     """
+
+    @overload
+    def get_solid(self) -> Solid: ...
+
+    @overload
+    def get_solid(self, creation_type: Solid.SolidCreationTypeEnum) -> Solid: ...
+    def get_solid(self, creation_type: Solid.SolidCreationTypeEnum = None) -> Solid:
+        """
+        Returns the solid of the part.
+        Pass a SolidCreationTypeEnum for a specific solid type.
+        """
+        if creation_type is None:
+            return self.model_object.GetSolid()
+
+        return self.model_object.GetSolid(creation_type)
 
     @property
     def position(self) -> str:
@@ -811,7 +850,7 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         """Sets the part numbering series."""
         self.model_object.PartNumber.Prefix = value.prefix
         self.model_object.PartNumber.StartNumber = value.start_number
-        self.model_object.Modify()
+        self.modify()
 
     @property
     def assembly_number(self) -> NumberingSeries:
@@ -826,7 +865,7 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         """Sets the assembly numbering series."""
         self.model_object.AssemblyNumber.Prefix = value.prefix
         self.model_object.AssemblyNumber.StartNumber = value.start_number
-        self.model_object.Modify()
+        self.modify()
 
     @property
     def weight(self) -> tuple[float, float]:
@@ -873,12 +912,12 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         props["assembly_start_number"] = self.assembly_number.start_number
         return props
 
-    def has_spatial_overlap(self, other: TeklaModelObject) -> bool:
+    def has_spatial_overlap(self, other: SolidGeometryMixin) -> bool:
         """
-        Checks whether the bounding boxes of this Tekla part and another TeklaModelObject intersect.
+        Checks whether the bounding boxes of this Tekla part and another SolidGeometryMixin object intersect.
         """
-        solid_self = self.model_object.GetSolid()
-        solid_other = other.model_object.GetSolid()
+        solid_self = self.get_solid()
+        solid_other = other.get_solid()
 
         if not (solid_self and solid_other):
             return False
@@ -922,7 +961,7 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
             if volume_after < volume_before:
                 if delete_cutting_part:
                     guid = cutting_part.guid
-                    if cutting_part.model_object.Delete():
+                    if cutting_part.delete():
                         logger.debug("Cutting part %s deleted after boolean cut", guid)
 
                 logger.debug("Boolean cut successful. Volume before: %s, after: %s", volume_before, volume_after)
@@ -1034,7 +1073,7 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         if part_prefix is not None:
             try:
                 self.model_object.PartNumber.Prefix = part_prefix
-                self.model_object.Modify()
+                self.modify()
                 changes["part_prefix"] = 1
             except Exception as e:
                 errors.append({"property": "part_prefix", "reason": str(e)})
@@ -1042,7 +1081,7 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         if part_start_number is not None:
             try:
                 self.model_object.PartNumber.StartNumber = part_start_number
-                self.model_object.Modify()
+                self.modify()
                 changes["part_start_number"] = 1
             except Exception as e:
                 errors.append({"property": "part_start_number", "reason": str(e)})
@@ -1050,7 +1089,7 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         if assembly_prefix is not None:
             try:
                 self.model_object.AssemblyNumber.Prefix = assembly_prefix
-                self.model_object.Modify()
+                self.modify()
                 changes["assembly_prefix"] = 1
             except Exception as e:
                 errors.append({"property": "assembly_prefix", "reason": str(e)})
@@ -1058,7 +1097,7 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         if assembly_start_number is not None:
             try:
                 self.model_object.AssemblyNumber.StartNumber = assembly_start_number
-                self.model_object.Modify()
+                self.modify()
                 changes["assembly_start_number"] = 1
             except Exception as e:
                 errors.append({"property": "assembly_start_number", "reason": str(e)})
@@ -1066,7 +1105,7 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         if phase is not None:
             try:
                 if self.model_object.SetPhase(Phase(phase)):
-                    self.model_object.Modify()
+                    self.modify()
                     changes["phase"] = 1
                 else:
                     errors.append({"property": "phase", "reason": "SetPhase returned False"})
@@ -1152,7 +1191,7 @@ class TeklaBeam(TeklaPart):
         offset.Dx = value.dx
         offset.Dy = value.dy
         offset.Dz = value.dz
-        self.model_object.Modify()
+        self.modify()
 
     @property
     def end_point_offset(self) -> Offset:
@@ -1166,7 +1205,7 @@ class TeklaBeam(TeklaPart):
         offset.Dx = value.dx
         offset.Dy = value.dy
         offset.Dz = value.dz
-        self.model_object.Modify()
+        self.modify()
 
     def apply_defaults(self, beam_type: BeamType) -> "TeklaBeam":
         """Apply default position settings based on beam type."""
@@ -1270,7 +1309,7 @@ class TeklaContourPlate(TeklaPart):
             contour_point.Y = pt.y
             contour_point.Z = pt.z
             self.model_object.AddContourPoint(contour_point)
-        self.model_object.Modify()
+        self.modify()
 
     def apply_defaults(self) -> "TeklaContourPlate":
         """Apply default position settings for a slab."""
@@ -1387,7 +1426,7 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
         Sets the father part of this reinforcement element.
         """
         self.model_object.Father = value.model_object if value is not None else None
-        self.model_object.Modify()
+        self.modify()
 
     def get_top_level_assembly(self) -> TeklaAssembly | None:
         """
