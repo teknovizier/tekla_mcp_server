@@ -331,7 +331,8 @@ def select_elements_by_guid(
     return ToolResult(
         structured_content={
             "status": status,
-            "selected_elements": len(selected_guids),
+            "requested_count": len(guids),
+            "selected_count": len(selected_guids),
             "selected_guids": selected_guids,
             "missing_guids": missing_guids,
         }
