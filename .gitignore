@@ -8,6 +8,10 @@ __pycache__/
 .opencode/
 .vscode/
 
+# BMad
+_bmad/
+_bmad-output/
+
 # Environment
 .env
 
