@@ -92,6 +92,7 @@ class TeklaClashCheckHandler:
         self._raw_records: list[Any] = []
         self._done = threading.Event()
         self._last_count: int = 0
+        self._subscribed = False
 
     def _on_clash_detected(self, clash_data: Any) -> None:
         self._raw_records.append(clash_data)  # Store raw records only
@@ -101,25 +102,35 @@ class TeklaClashCheckHandler:
         self._done.set()
 
     def _subscribe(self) -> None:
+        if self._subscribed:
+            logger.warning("Already subscribed to clash check events")
+            return
+
         self._raw_records = []
         self._done.clear()
         self._last_count = 0
+        self._subscribed = True
         self._events.ClashDetected += self._on_clash_detected
         self._events.ClashCheckDone += self._on_clash_check_done
         self._events.Register()
 
     def _unsubscribe(self) -> None:
+        if not self._subscribed:
+            logger.debug("Not currently subscribed to clash check events")
+            return
+
         try:
             self._events.UnRegister()
         finally:
             try:
                 self._events.ClashDetected -= self._on_clash_detected
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to unsubscribe ClashDetected handler: %s", e)
             try:
                 self._events.ClashCheckDone -= self._on_clash_check_done
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to unsubscribe ClashCheckDone handler: %s", e)
+            self._subscribed = False
 
     def stop(self) -> bool:
         """Forwards to ClashCheckHandler.StopClashCheck."""
@@ -157,7 +168,10 @@ class TeklaClashCheckHandler:
         finally:
             self._unsubscribe()
 
-        # Build GUID cache
+        # Build GUID cache directly from wrapped objects without re-lookups
+        # NOTE: `raw_obj` is the lightweight reference from the clash record.
+        # To access full Tekla object properties (e.g. name, profile, material), refetch via `get_object_by_guid(wrapped.guid)`.
+        # The cache stores current wraps so downstream code can do the full refetch when needed.
         guid_cache: dict[str, Any] = {}
         for raw in self._raw_records:
             for raw_obj in (raw.Object1, raw.Object2):
