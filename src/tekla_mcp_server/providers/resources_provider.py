@@ -195,9 +195,13 @@ def check_connection_status() -> ResourceResult:
     """
     Returns the current Tekla connection status.
     """
-    _ = TeklaModel()
-    logger.debug("Connected to Tekla model")
-    return json_resource({"connected": True, "message": "Connected to Tekla model"})
+    try:
+        _ = TeklaModel()
+        logger.debug("Connected to Tekla model")
+        return json_resource({"connected": True, "message": "Connected to Tekla model"})
+    except Exception as e:
+        logger.warning("Failed to connect to Tekla model: %s", e)
+        return json_resource({"connected": False, "message": f"Failed to connect: {str(e)}"})
 
 
 def _parse_context_meta(path) -> dict:
