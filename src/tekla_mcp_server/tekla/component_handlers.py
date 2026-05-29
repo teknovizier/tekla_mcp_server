@@ -36,6 +36,7 @@ class HandlerRegistry:
     """
 
     _instances: dict[str, Any] = {}
+    _failures: dict[str, str] = {}
 
     @classmethod
     def get(cls, tekla_name: str) -> Any | None:
@@ -46,7 +47,7 @@ class HandlerRegistry:
         if tekla_name in cls._instances:
             return cls._instances[tekla_name]
 
-        # Find matching config
+        # Find matching config and instantiate all handlers
         base_components = get_config().base_components
 
         for config in base_components.values():
@@ -57,6 +58,9 @@ class HandlerRegistry:
             handler_name = handler_info.get("name")
             handler_config = handler_info.get("config")
 
+            if handler_name in cls._failures:
+                continue
+
             handler_cls = HANDLERS.get(handler_name)
             if not handler_cls:
                 continue
@@ -64,8 +68,9 @@ class HandlerRegistry:
             try:
                 instance = handler_cls(handler_config) if handler_config else handler_cls()
                 cls._instances[instance.tekla_name] = instance
-            except Exception:
+            except Exception as e:
                 logger.exception("Failed to instantiate handler '%s'", handler_name)
+                cls._failures[handler_name] = str(e)
 
         return cls._instances.get(tekla_name)
 
@@ -82,6 +87,7 @@ class HandlerRegistry:
         Clear registry.
         """
         cls._instances.clear()
+        cls._failures.clear()
 
 
 @register_handler
