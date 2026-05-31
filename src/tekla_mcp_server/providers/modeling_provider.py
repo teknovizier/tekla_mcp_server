@@ -469,16 +469,17 @@ def place_grid(
         grid.Origin = Point(origin.x, origin.y, origin.z)
 
     model = TeklaModel()
-    if grid.Insert():
-        commit_success = model.commit_changes()
-        if not commit_success:
-            logger.error("commit_changes() failed after inserting grid")
-            raise RuntimeError("Grid insertion failed: commit_changes() returned false")
-        guid = grid.Identifier.GUID.ToString()
-        logger.info("Placed grid guid=%s (x=%d, y=%d, z=%d lines)", guid, len(x), len(y), len(resolved_z))
-        return ToolResult(structured_content={"status": "success", "guid": guid, "name": grid.Name})
+    if not grid.Insert():
+        raise RuntimeError("Grid.Insert() returned false")
 
-    raise RuntimeError("Grid.Insert() returned false")
+    commit_success = model.commit_changes()
+    if not commit_success:
+        logger.error("commit_changes() failed after inserting grid")
+        raise RuntimeError("Grid insertion failed: commit_changes() returned false")
+    guid = grid.Identifier.GUID.ToString()
+    logger.info("Placed grid guid=%s (x=%d, y=%d, z=%d lines)", guid, len(x), len(y), len(resolved_z))
+    return ToolResult(structured_content={"status": "success", "guid": guid, "name": grid.Name})
+
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
