@@ -18,7 +18,7 @@ from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaPart, TeklaReinforcement
 from tekla_mcp_server.tekla.loader import Operation
-from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items
+from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items, get_filters
 
 
 operations_provider = LocalProvider()
@@ -690,6 +690,10 @@ def clash_check(
     selected_objects = list(model.get_selected_objects())
 
     if filter_name:
+        available_filters = get_filters(".SObjGrp")
+        if filter_name not in available_filters:
+            raise ValueError(f"Filter '{filter_name}' not found. Available filters: {available_filters}")
+
         to_select = []
         for raw_obj in selected_objects:
             wrapped = wrap_model_object(raw_obj)
@@ -700,21 +704,27 @@ def clash_check(
             else:
                 if Operation.ObjectMatchesToFilter(raw_obj, filter_name):
                     to_select.append(raw_obj)
+
+        if not to_select:
+            raise ValueError(f"Filter '{filter_name}' matched 0 objects in current selection ({len(selected_objects)} selected)")
+
         TeklaModel.select_objects(to_select)
         logger.debug("filter_name=%r: pre-selected %d parts for clash check", filter_name, len(to_select))
 
     checked_count = model.get_selected_objects().GetSize()
 
     handler = TeklaClashCheckHandler()
-    records = handler.run(
-        between_parts=between_parts,
-        between_reference_models=between_reference_models,
-        objects_inside_reference_models=objects_inside_reference_models,
-        min_distance=min_distance,
-    )
-
-    if filter_name:
-        TeklaModel.select_objects(selected_objects)
+    records = []
+    try:
+        records = handler.run(
+            between_parts=between_parts,
+            between_reference_models=between_reference_models,
+            objects_inside_reference_models=objects_inside_reference_models,
+            min_distance=min_distance,
+        )
+    finally:
+        if filter_name:
+            TeklaModel.select_objects(selected_objects)
 
     logger.info(
         "clash_check finished: selected=%d, checked=%d, clashes=%d (min_distance=%.1f filter_name=%r)",
