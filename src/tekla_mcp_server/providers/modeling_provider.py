@@ -96,14 +96,14 @@ def _commit_or_fail(
     results: list[PlacementResult],
     succeeded: int,
     commit_success: bool,
-    item_type: str,
-) -> tuple[list[PlacementResult], int]:
-    """Replace all results with failure records when commit fails; return updated results and succeeded count."""
+    action_description: str,
+) -> tuple[list[PlacementResult], int, bool]:
+    """Replace all results with failure records when commit fails, return (results, succeeded, commit_success)."""
     if not commit_success:
-        logger.error("commit_changes() failed after placing %d %s", succeeded, item_type)
+        logger.error("commit_changes() failed after %s", action_description)
         results = [PlacementResult(success=False, message="Commit failed: changes not persisted") for _ in results]
         succeeded = 0
-    return results, succeeded
+    return results, succeeded, commit_success
 
 
 def _to_tool_result(
@@ -115,7 +115,7 @@ def _to_tool_result(
     """Convert batch placement results to ToolResult."""
     return ToolResult(
         structured_content=BatchPlacementResult(
-            success=succeeded == total,
+            success=succeeded == total and total > 0,
             total=total,
             succeeded=succeeded,
             failed=total - succeeded,
@@ -171,7 +171,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
             logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    results, succeeded = _commit_or_fail(results, succeeded, model.commit_changes(), "beams")
+    results, succeeded, _ = _commit_or_fail(results, succeeded, model.commit_changes(), f"placing {succeeded} beams")
     logger.info("Placed %d of %d beams", succeeded, len(beams))
     return _to_tool_result(results, len(beams), succeeded, "beams")
 
@@ -224,7 +224,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
             logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    results, succeeded = _commit_or_fail(results, succeeded, model.commit_changes(), "columns")
+    results, succeeded, _ = _commit_or_fail(results, succeeded, model.commit_changes(), f"placing {succeeded} columns")
     logger.info("Placed %d of %d columns", succeeded, len(columns))
     return _to_tool_result(results, len(columns), succeeded, "columns")
 
@@ -274,7 +274,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
             logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    results, succeeded = _commit_or_fail(results, succeeded, model.commit_changes(), "panels")
+    results, succeeded, _ = _commit_or_fail(results, succeeded, model.commit_changes(), f"placing {succeeded} panels")
     logger.info("Placed %d of %d panels", succeeded, len(panels))
     return _to_tool_result(results, len(panels), succeeded, "panels")
 
@@ -340,43 +340,25 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
             logger.exception("Failed to insert slab: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    results, succeeded = _commit_or_fail(results, succeeded, model.commit_changes(), "slabs")
+    results, succeeded, _ = _commit_or_fail(results, succeeded, model.commit_changes(), f"placing {succeeded} slabs")
     logger.info("Placed %d of %d slabs", succeeded, len(slabs))
     return _to_tool_result(results, len(slabs), succeeded, "slabs")
 
 
-@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-@mcp_handler(scope="tool")
-def move_elements(
-    dx: Annotated[float, Field(description="Displacement in X direction (mm)")] = 0.0,
-    dy: Annotated[float, Field(description="Displacement in Y direction (mm)")] = 0.0,
-    dz: Annotated[float, Field(description="Displacement in Z direction (mm)")] = 0.0,
-    copy: Annotated[bool, Field(description="When True, creates a copy at the new position and keeps the original in place")] = False,
-) -> ToolResult:
-    """
-    Moves or copies all selected elements by the given displacement vector.
+def _move_or_copy_elements(dx: float, dy: float, dz: float, copy: bool) -> ToolResult:
+    action = "Copied" if copy else "Moved"
+    verb = "copying" if copy else "moving"
+    op = "copy" if copy else "move"
+    if dx == 0.0 and dy == 0.0 and dz == 0.0:
+        logger.error("%s_elements failed: all displacements are zero", op)
+        raise ValueError("At least one displacement (dx, dy, dz) must be non-zero")
 
-    ## COORDINATE SYSTEM
-    X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
-
-    ## EXAMPLES
-    # Move selected elements 1000 mm in X
-    move_elements(dx=1000)
-
-    # Copy selected elements 500 mm diagonally, keeping originals
-    move_elements(dx=500, dy=500, copy=True)
-    """
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
-
-    if selected_objects.GetSize() == 0:
-        logger.error("move_elements failed: No elements selected")
-        raise ValueError("No objects selected")
 
     move_vec = Vector(dx, dy, dz)
     results: list[PlacementResult] = []
     succeeded = 0
-    failed = 0
 
     for obj in wrap_model_objects(selected_objects):
         for part in _collect_parts(obj):
@@ -388,23 +370,15 @@ def move_elements(
                 succeeded += 1
                 results.append(PlacementResult(success=True, guid=part.guid))
             except Exception as e:
-                logger.exception("Failed to %s part %s: %s", "copy" if copy else "move", part.guid, str(e))
+                logger.exception("Failed to %s part %s: %s", op, part.guid, str(e))
                 results.append(PlacementResult(success=False, message=str(e)))
-                failed += 1
 
-    total = succeeded + failed
-    commit_success = model.commit_changes()
-    if not commit_success:
-        logger.error("commit_changes() failed after moving/copying %d elements", succeeded)
-        results = [PlacementResult(success=False, message="Commit failed: changes not persisted") for _ in results]
-        succeeded = 0
-        failed = total
-
-    action = "Copied" if copy else "Moved"
+    total = len(results)
+    results, succeeded, commit_success = _commit_or_fail(results, succeeded, model.commit_changes(), f"{verb} {succeeded} elements")
     logger.info("%s %d of %d elements (dx=%.0f dy=%.0f dz=%.0f)", action, succeeded, total, dx, dy, dz)
     return ToolResult(
         structured_content=BatchPlacementResult(
-            success=failed == 0 and total > 0 and commit_success,
+            success=succeeded == total and total > 0,
             total=total,
             succeeded=succeeded,
             failed=total - succeeded,
@@ -412,6 +386,48 @@ def move_elements(
             message=f"{action} {succeeded} of {total} elements" if commit_success else f"Commit failed: {action} reverted",
         ).model_dump(mode="json", exclude_none=True)
     )
+
+
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def move_elements(
+    dx: Annotated[float, Field(description="Displacement in X direction (mm)")] = 0.0,
+    dy: Annotated[float, Field(description="Displacement in Y direction (mm)")] = 0.0,
+    dz: Annotated[float, Field(description="Displacement in Z direction (mm)")] = 0.0,
+) -> ToolResult:
+    """
+    Moves all selected elements by a displacement offset relative to their current positions.
+
+    ## COORDINATE SYSTEM
+    X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
+    dx, dy, dz are relative offsets - not absolute coordinates.
+
+    ## EXAMPLES
+    # Move selected elements 1000 mm in X
+    move_elements(dx=1000)
+    """
+    return _move_or_copy_elements(dx, dy, dz, copy=False)
+
+
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def copy_elements(
+    dx: Annotated[float, Field(description="Displacement in X direction (mm)")] = 0.0,
+    dy: Annotated[float, Field(description="Displacement in Y direction (mm)")] = 0.0,
+    dz: Annotated[float, Field(description="Displacement in Z direction (mm)")] = 0.0,
+) -> ToolResult:
+    """
+    Copies all selected elements by a displacement offset relative to their current positions.
+
+    ## COORDINATE SYSTEM
+    X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
+    dx, dy, dz are relative offsets - not absolute coordinates.
+
+    ## EXAMPLES
+    # Copy selected elements 500 mm diagonally
+    copy_elements(dx=500, dy=500)
+    """
+    return _move_or_copy_elements(dx, dy, dz, copy=True)
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -490,11 +506,7 @@ def delete_selected() -> ToolResult:
     """
     model = TeklaModel()
     selected = model.get_selected_objects()
-    count = selected.GetSize() if selected else 0
-
-    if count == 0:
-        logger.error("delete_selected failed: No objects selected")
-        raise ValueError("No objects selected")
+    count = selected.GetSize()
 
     deleted = 0
     for obj in selected:

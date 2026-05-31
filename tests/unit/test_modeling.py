@@ -242,8 +242,9 @@ class TestCommitOrFail:
         from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
 
         results = self._make_results(3)
-        out_results, out_succeeded = _commit_or_fail(results, 3, True, "beams")
+        out_results, out_succeeded, out_commit = _commit_or_fail(results, 3, True, "beams")
         assert out_succeeded == 3
+        assert out_commit is True
         assert all(r.success for r in out_results)
         assert out_results[0].guid == "GUID0"
 
@@ -252,15 +253,16 @@ class TestCommitOrFail:
         from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
 
         results = self._make_results(3)
-        _, out_succeeded = _commit_or_fail(results, 3, False, "beams")
+        _, out_succeeded, out_commit = _commit_or_fail(results, 3, False, "beams")
         assert out_succeeded == 0
+        assert out_commit is False
 
     def test_commit_failure_replaces_all_results_with_generic_message(self):
         """When commit fails, all PlacementResults get the generic commit-failure message."""
         from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
 
         results = self._make_results(2)
-        out_results, _ = _commit_or_fail(results, 2, False, "panels")
+        out_results, _, __ = _commit_or_fail(results, 2, False, "panels")
         assert len(out_results) == 2
         assert all(not r.success for r in out_results)
         assert all("Commit failed" in r.message for r in out_results)
@@ -270,7 +272,7 @@ class TestCommitOrFail:
         from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
 
         results = self._make_results(4)
-        out_results, _ = _commit_or_fail(results, 4, False, "slabs")
+        out_results, _, __ = _commit_or_fail(results, 4, False, "slabs")
         assert len(out_results) == 4
 
     def test_commit_success_with_mixed_results(self):
@@ -281,8 +283,9 @@ class TestCommitOrFail:
             PlacementResult(success=True, guid="G1", message="OK"),
             PlacementResult(success=False, message="Insert failed"),
         ]
-        out_results, out_succeeded = _commit_or_fail(results, 1, True, "columns")
+        out_results, out_succeeded, out_commit = _commit_or_fail(results, 1, True, "columns")
         assert out_succeeded == 1
+        assert out_commit is True
         assert out_results[0].success is True
         assert out_results[1].success is False
         assert out_results[1].message == "Insert failed"
