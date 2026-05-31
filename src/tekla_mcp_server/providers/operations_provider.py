@@ -346,15 +346,19 @@ def check_for_orphans(
     orphaned_elements: list[CheckResult] = []
     orphaned_guids: set[str] = set()
     attached_elements: list[CheckResult] = []
+    skipped_elements: list[str] = []
     total_evaluated = 0
 
     for obj in wrap_model_objects(selected_objects):
         if not isinstance(obj, (TeklaPart, TeklaAssembly)):
+            skipped_elements.append(obj.guid)
+            logger.debug("Skipping non-part/assembly object: %s", obj.guid)
             continue
 
         # Get top-level assembly for checking attachment
         parent_assembly = obj.get_top_level_assembly()
         if parent_assembly is None:
+            skipped_elements.append(obj.guid)
             logger.debug("No top-level assembly for %s, skipping", obj.guid)
             continue
 
@@ -458,6 +462,10 @@ def check_for_orphans(
         f"{prefix}_evaluated": total_evaluated,
         f"orphaned_{prefix}_count": len(orphaned_elements),
     }
+
+    if skipped_elements:
+        result_content["skipped_elements"] = skipped_elements
+        result_content["skipped_count"] = len(skipped_elements)
 
     if orphaned_elements:
         if attach:
