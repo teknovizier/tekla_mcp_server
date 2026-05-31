@@ -22,11 +22,15 @@ from tekla_mcp_server.providers import (
 )
 
 
-class ReadOnlyFilter(Transform):
-    """Hides tools marked as destructive from the LLM."""
+class ReadOnlyToolFilter(Transform):
+    """Shows only tools marked as read-only to the LLM.
+
+    A tool with no annotations (or readOnlyHint unset) is hidden, so a
+    tool that someone forgets to annotate never silently leaks into read-only mode.
+    """
 
     async def list_tools(self, tools):
-        return [t for t in tools if not (t.annotations and t.annotations.destructiveHint)]
+        return [t for t in tools if t.annotations and t.annotations.readOnlyHint]
 
 
 mcp = FastMCP("Tekla MCP Server")
@@ -65,8 +69,8 @@ if __name__ == "__main__":
             logger.warning("Embeddings validation failed: %s. Continuing without embeddings", e)
 
     if get_config().read_only:
-        mcp.add_transform(ReadOnlyFilter())
-        logger.info("Read-only mode: destructive tools hidden")
+        mcp.add_transform(ReadOnlyToolFilter())
+        logger.info("Read-only mode: only read-only tools shown")
 
     disabled = get_config().excluded_tags
     if disabled:

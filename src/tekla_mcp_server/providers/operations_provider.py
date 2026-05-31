@@ -342,7 +342,7 @@ def run_macro(macro_name: Annotated[str, Field(description="Name of the macro fi
     )
 
 
-@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def check_for_orphans(
     mode: Annotated[Literal["embeds", "rebars"], Field(description="Check mode: embeds or rebars")],

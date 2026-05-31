@@ -125,7 +125,7 @@ def _to_tool_result(
     )
 
 
-@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List of beam definitions")] = None) -> ToolResult:
     """
@@ -176,7 +176,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
     return _to_tool_result(results, len(beams), succeeded, "beams")
 
 
-@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description="List of column definitions")] = None) -> ToolResult:
     """
@@ -229,7 +229,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
     return _to_tool_result(results, len(columns), succeeded, "columns")
 
 
-@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="List of wall panels definitions")] = None) -> ToolResult:
     """
@@ -279,7 +279,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
     return _to_tool_result(results, len(panels), succeeded, "panels")
 
 
-@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List of slab definitions")] = None) -> ToolResult:
     """
@@ -409,7 +409,7 @@ def move_elements(
     return _move_or_copy_elements(dx, dy, dz, copy=False)
 
 
-@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def copy_elements(
     dx: Annotated[float, Field(description="Displacement in X direction (mm)")] = 0.0,
@@ -430,7 +430,7 @@ def copy_elements(
     return _move_or_copy_elements(dx, dy, dz, copy=True)
 
 
-@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def place_grid(
     x: Annotated[list[float], Field(description="Absolute X axis coordinates (mm), e.g. [0, 5000, 10000]")],
@@ -497,7 +497,6 @@ def place_grid(
     return ToolResult(structured_content={"status": "success", "guid": guid, "name": grid.Name})
 
 
-
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def delete_selected() -> ToolResult:
@@ -538,7 +537,7 @@ def delete_selected() -> ToolResult:
     )
 
 
-@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def create_phase(
     phase_number: Annotated[int, Field(description="Phase number to create (must not already exist in the model)", ge=1)],

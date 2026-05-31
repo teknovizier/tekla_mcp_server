@@ -58,7 +58,7 @@ STANDARD_NUMERIC_EXPRESSION_MAP = {
 selection_provider = LocalProvider()
 
 
-@selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def select_elements_by_filter(
     element_type: Annotated[str | None, Field(description="Named element type (e.g., 'Wall', 'Steel Beam')")] = None,
@@ -283,7 +283,7 @@ def select_elements_by_filter(
     )
 
 
-@selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def select_elements_by_filter_name(
     filter_name: Annotated[str, Field(description="Name of the Tekla filter to apply")],
@@ -303,7 +303,7 @@ def select_elements_by_filter_name(
     )
 
 
-@selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def select_elements_by_guid(
     guids: Annotated[list[str], Field(description="List of GUIDs to select")],
@@ -339,7 +339,7 @@ def select_elements_by_guid(
     )
 
 
-@selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def select_elements_assemblies_or_main_parts(
     mode: Annotated[SelectionMode, Field(description="Selection mode: 'Assembly' or 'Main Part'")],

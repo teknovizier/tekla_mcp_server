@@ -9,15 +9,15 @@ This guide covers all configuration files and environment variables.
 | `tekla_path` | `C:\Program Files\Tekla Structures\2022.0\bin` | Tekla Structures binary directory |
 | `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
 | `excluded_tags` | `[]` | List of tool tags to hide from the LLM. Leave empty to expose all tools. See [Tool Visibility](#tool-visibility) below. |
-| `read_only` | `false` | When `true`, hides all tools marked as destructive. Selection, view and query tools remain available. |
+| `read_only` | `false` | When `true`, shows only tools marked as read-only. Query, selection, and view/navigation tools remain available, anything that writes the model is hidden. |
 
 ### Tool Visibility
 
-Controls which tools are exposed to the LLM. All tools are enabled by default. Use `read_only` to hide all destructive tools at once or `excluded_tags` to opt out specific groups.
+Controls which tools are exposed to the LLM. All tools are enabled by default. Use `read_only` to expose only read-only tools at once or `excluded_tags` to opt out specific groups.
 
 #### `read_only`
 
-When set to `true`, hides every tool annotated with `destructiveHint=true`. Selection, view, and query tools remain fully available - only tools that write or modify the model are hidden. Use this for inspection or review sessions where accidental model changes must be prevented.
+When set to `true`, exposes **only** tools annotated with `readOnlyHint=true` (any tool without that annotation is hidden). Query tools plus selection and view/navigation tools remain fully available - these are transient UI actions that write nothing to the model, so inspection workflows still work (e.g. select objects, then read their properties). Every tool that writes the model, additive or destructive, is hidden. Use this for inspection or review sessions where accidental model changes must be prevented.
 
 #### `excluded_tags`
 

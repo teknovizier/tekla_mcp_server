@@ -257,7 +257,7 @@ def detect_collisions_between_marks(
     )
 
 
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def print_drawings(
     marks: Annotated[list[str] | None, Field(description="List of drawing marks to process")] = None,

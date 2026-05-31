@@ -174,7 +174,7 @@ def _modify_single_component(model: TeklaModel, component: BaseComponent, select
     return counter
 
 
-@components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def put_components(
     component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
