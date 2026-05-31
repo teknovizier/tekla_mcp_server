@@ -72,16 +72,13 @@ def draw_elements_labels(
 
     resolved_label = None
     unit = None
-    resolution_errors: list[dict[str, Any]] = []
-    skip_custom_label = False
 
     if label_enum == ElementLabel.CUSTOM and custom_label:
         resolution = TemplateAttributeParser.resolve_attributes([custom_label])
         errors = resolution.get("errors", [])
         if errors:
-            candidates = resolution.get("candidates", {})
-            resolution_errors.append({"query": custom_label, "candidates": candidates.get(custom_label, [])})
-            skip_custom_label = True
+            candidates = resolution.get("candidates", {}).get(custom_label, [])
+            raise ValueError(f"Failed to resolve custom label '{custom_label}'. Candidates: {candidates}")
         else:
             resolved_label = resolution["resolved"][0]
             custom_property = TemplateAttributeParser.get_attribute(resolved_label)
@@ -95,8 +92,6 @@ def draw_elements_labels(
     for selected_object in wrap_model_objects(selected_objects):
         try:
             if label_enum == ElementLabel.CUSTOM:
-                if skip_custom_label:
-                    continue
                 value = selected_object.get_report_property(resolved_label)
                 text = f"{resolved_label} = {value}{unit}"
             else:
@@ -131,19 +126,13 @@ def draw_elements_labels(
             logger.warning("Failed to draw label for %s: %s", selected_object.guid, e)
             continue
     logger.info("Drawn '%s' labels on %s elements", label_enum.value, drawn_labels)
-    if drawn_labels and not resolution_errors:
-        status = "success"
-    elif drawn_labels and resolution_errors:
-        status = "partial"
-    else:
-        status = "error"
+    status = "success" if drawn_labels > 0 else "warning"
     return ToolResult(
         structured_content={
             "status": status,
             "selected_elements": selected_objects.GetSize(),
             "processed_elements": processed_elements,
             "drawn_labels": drawn_labels,
-            "resolution_errors": resolution_errors,
         }
     )
 
