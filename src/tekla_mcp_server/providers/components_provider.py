@@ -49,34 +49,34 @@ def _process_detail_or_component(
     *args: Any,
     **kwargs: Any,
 ) -> ToolResult:
-    processed_elements = 0
-    processed_components = 0
+    processed_count = 0
+    processed_components_count = 0
     for selected_object in selected_objects:
         if isinstance(selected_object, Beam):
             success = callback(model, component, selected_object, *args, **kwargs)
             if success:
-                processed_components += success
-            processed_elements += 1
+                processed_components_count += success
+            processed_count += 1
 
     commit_success: bool | None = None
-    if processed_components > 0:
+    if processed_components_count > 0:
         commit_success = model.commit_changes()
         if not commit_success:
-            logger.error("commit_changes() failed after processing %s components", processed_components)
+            logger.error("commit_changes() failed after processing %s components", processed_components_count)
 
     if commit_success is False:
         status = "error"
-    elif processed_components:
+    elif processed_components_count:
         status = "success"
     else:
         status = "warning"
 
-    logger.info("Processed %s elements, %s components", processed_elements, processed_components)
+    logger.info("Processed %s elements, %s components", processed_count, processed_components_count)
     result: dict = {
         "status": status,
-        "selected_elements": selected_objects.GetSize(),
-        "processed_elements": processed_elements,
-        "processed_components": processed_components,
+        "selected_count": selected_objects.GetSize(),
+        "processed_count": processed_count,
+        "processed_components_count": processed_components_count,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
@@ -98,35 +98,35 @@ def _process_seam_or_connection(
     if count > 2:
         raise ValueError(f"More than two elements selected. Expected 2, got {count}.")
 
-    processed_element_pairs = 0
-    processed_components = 0
+    processed_pairs_count = 0
+    processed_components_count = 0
 
     wall_pairs = get_wall_pairs(selected_objects)
     for pair in wall_pairs:
         success = callback(model, component, pair[1], pair[0], *args, **kwargs)
         if success:
-            processed_components += success
-        processed_element_pairs += 1
+            processed_components_count += success
+        processed_pairs_count += 1
 
     commit_success: bool | None = None
-    if processed_components > 0:
+    if processed_components_count > 0:
         commit_success = model.commit_changes()
         if not commit_success:
-            logger.error("commit_changes() failed after processing %s component pairs", processed_components)
+            logger.error("commit_changes() failed after processing %s component pairs", processed_components_count)
 
     if commit_success is False:
         status = "error"
-    elif processed_components:
+    elif processed_components_count:
         status = "success"
     else:
         status = "warning"
 
-    logger.info("Processed %s element pairs, %s components", processed_element_pairs, processed_components)
+    logger.info("Processed %s element pairs, %s components", processed_pairs_count, processed_components_count)
     result: dict = {
         "status": status,
-        "selected_elements": selected_objects.GetSize(),
-        "processed_element_pairs": processed_element_pairs,
-        "inserted_components": processed_components,
+        "selected_count": selected_objects.GetSize(),
+        "processed_pairs_count": processed_pairs_count,
+        "processed_components_count": processed_components_count,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
@@ -236,8 +236,8 @@ def remove_components(component_name: Annotated[str, Field(description="The Tekl
     logger.info("Total components removed: %s", counter)
     result: dict = {
         "status": status,
-        "selected_elements": selected_objects.GetSize(),
-        "removed_components": counter,
+        "selected_count": selected_objects.GetSize(),
+        "removed_components_count": counter,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success

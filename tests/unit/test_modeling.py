@@ -240,6 +240,7 @@ class TestCommitOrFail:
     def test_commit_success_leaves_results_unchanged(self):
         """When commit succeeds, results and succeeded count are untouched."""
         from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
+
         results = self._make_results(3)
         out_results, out_succeeded = _commit_or_fail(results, 3, True, "beams")
         assert out_succeeded == 3
@@ -249,6 +250,7 @@ class TestCommitOrFail:
     def test_commit_failure_resets_succeeded_to_zero(self):
         """When commit fails, succeeded count becomes 0."""
         from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
+
         results = self._make_results(3)
         _, out_succeeded = _commit_or_fail(results, 3, False, "beams")
         assert out_succeeded == 0
@@ -256,6 +258,7 @@ class TestCommitOrFail:
     def test_commit_failure_replaces_all_results_with_generic_message(self):
         """When commit fails, all PlacementResults get the generic commit-failure message."""
         from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
+
         results = self._make_results(2)
         out_results, _ = _commit_or_fail(results, 2, False, "panels")
         assert len(out_results) == 2
@@ -265,6 +268,7 @@ class TestCommitOrFail:
     def test_commit_failure_preserves_result_count(self):
         """Result list length is unchanged even on commit failure."""
         from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
+
         results = self._make_results(4)
         out_results, _ = _commit_or_fail(results, 4, False, "slabs")
         assert len(out_results) == 4
@@ -272,6 +276,7 @@ class TestCommitOrFail:
     def test_commit_success_with_mixed_results(self):
         """Commit success with pre-existing failures preserves original per-item state."""
         from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
+
         results = [
             PlacementResult(success=True, guid="G1", message="OK"),
             PlacementResult(success=False, message="Insert failed"),

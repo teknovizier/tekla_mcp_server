@@ -26,8 +26,8 @@ def test_check_for_orphans_with_selection(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
     result = check_for_orphans(mode="embeds")
     assert result.structured_content["status"] in ["success", "warning"]
-    assert result.structured_content["selected_elements"] == 1
-    assert "embeds_evaluated" in result.structured_content
+    assert result.structured_content["selected_count"] == 1
+    assert "embeds_evaluated_count" in result.structured_content
     assert "orphaned_embeds_count" in result.structured_content
 
 
@@ -36,8 +36,8 @@ def test_check_for_orphans_rebars_mode(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
     result = check_for_orphans(mode="rebars")
     assert result.structured_content["status"] in ["success", "warning"]
-    assert result.structured_content["selected_elements"] == 1
-    assert "rebar_objects_evaluated" in result.structured_content
+    assert result.structured_content["selected_count"] == 1
+    assert "rebar_objects_evaluated_count" in result.structured_content
     assert "orphaned_rebar_objects_count" in result.structured_content
 
 
@@ -46,7 +46,8 @@ def test_cut_elements_with_cutters_by_class(model_objects):
     TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
     result = cut_elements_with_cutters(cutter_class=0, delete_cutting_parts=False)
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["selected_elements"] == 2
+    assert result.structured_content["selected_count"] == 2
+    assert result.structured_content["processed_count"] >= 1
 
 
 def test_cut_elements_with_cutters_by_guid(model_objects):
@@ -55,8 +56,9 @@ def test_cut_elements_with_cutters_by_guid(model_objects):
     TeklaModel.select_objects([model_objects["test_wall4"]])
     result = cut_elements_with_cutters(cutter_guids=[cutter_guid], delete_cutting_parts=False)
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["selected_elements"] == 1
-    assert result.structured_content["performed_cuts"] >= 1
+    assert result.structured_content["selected_count"] == 1
+    assert result.structured_content["performed_cuts_count"] >= 1
+    assert result.structured_content["processed_count"] == 1
 
 
 def test_cut_elements_with_cutters_invalid_guid(model_objects):
@@ -64,7 +66,7 @@ def test_cut_elements_with_cutters_invalid_guid(model_objects):
     TeklaModel.select_objects([model_objects["test_wall3"]])
     result = cut_elements_with_cutters(cutter_guids=["00000000-0000-0000-0000-000000000000"])
     assert result.structured_content["status"] == "warning"
-    assert result.structured_content["performed_cuts"] == 0
+    assert result.structured_content["performed_cuts_count"] == 0
 
 
 def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):
@@ -72,6 +74,7 @@ def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     result = convert_cut_parts_to_real_parts()
     assert result.structured_content["status"] == "warning"
+    assert result.structured_content["processed_count"] == 2
 
 
 def test_convert_cut_parts_to_real_parts_with_cut(model_objects):
@@ -79,6 +82,7 @@ def test_convert_cut_parts_to_real_parts_with_cut(model_objects):
     TeklaModel.select_objects([model_objects["test_wall3"]])
     result = convert_cut_parts_to_real_parts()
     assert result.structured_content["status"] == "success"
+    assert result.structured_content["processed_count"] == 1
 
 
 def test_run_macro_nonexistent():
@@ -100,10 +104,10 @@ def test_check_for_invalid_objects_with_selection(model_objects):
     result = check_for_invalid_objects()
     assert result.structured_content["status"] in ["success", "warning"]
     assert result.structured_content["selected_count"] == 1
-    assert "total_evaluated" in result.structured_content
-    assert "invalid_parts_count" in result.structured_content
-    assert "invalid_reinforcements_count" in result.structured_content
-    assert "invalid_assemblies_count" in result.structured_content
+    assert result.structured_content["total_evaluated_count"] >= 1
+    assert result.structured_content["invalid_parts_count"] >= 0
+    assert result.structured_content["invalid_reinforcements_count"] >= 0
+    assert result.structured_content["invalid_assemblies_count"] >= 0
 
 
 def test_no_clash_separate_walls(model_objects):

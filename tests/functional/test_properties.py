@@ -24,8 +24,8 @@ def test_set_elements_properties(model_objects):
 
     result = set_elements_properties(name="MCP_TEST_NEW_NAME", profile="2000*150", material="C16/20", tekla_class=8, finish="FR")
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["processed_elements"] == 1
-    assert result.structured_content["modified_elements"] == 1
+    assert result.structured_content["processed_count"] == 1
+    assert result.structured_content["modified_count"] == 1
     assert result.structured_content["changes_applied"]["name"] == 1
     assert result.structured_content["changes_applied"]["profile"] == 1
     assert result.structured_content["changes_applied"]["material"] == 1
@@ -50,7 +50,7 @@ def test_set_elements_properties_with_user_properties(model_objects):
     user_props = {"MCP_TEST_UDA1": "TestValue1", "MCP_TEST_UDA2": "TestValue2"}
     result = set_elements_properties(user_properties=user_props)
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["processed_elements"] == 1
+    assert result.structured_content["processed_count"] == 1
     assert result.structured_content["changes_applied"]["udas"] == 2
 
 
@@ -103,7 +103,7 @@ def test_set_elements_properties_all_part_properties(model_objects):
         phase=2,
     )
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["modified_elements"] == 1
+    assert result.structured_content["modified_count"] == 1
     assert result.structured_content["changes_applied"]["name"] == 1
     assert result.structured_content["changes_applied"]["profile"] == 1
     assert result.structured_content["changes_applied"]["material"] == 1
@@ -135,7 +135,7 @@ def test_set_elements_properties_all_assembly_properties(model_objects):
         phase=3,
     )
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["modified_elements"] == 1
+    assert result.structured_content["modified_count"] == 1
     assert result.structured_content["changes_applied"]["name"] == 1
     assert result.structured_content["changes_applied"]["assembly_prefix"] == 1
     assert result.structured_content["changes_applied"]["assembly_start_number"] == 1
@@ -196,8 +196,8 @@ def test_set_elements_properties_multiple_elements(model_objects):
 
     result = set_elements_properties(tekla_class=77)
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["processed_elements"] == 2
-    assert result.structured_content["modified_elements"] == 2
+    assert result.structured_content["processed_count"] == 2
+    assert result.structured_content["modified_count"] == 2
     assert result.structured_content["changes_applied"]["tekla_class"] == 2
 
 
@@ -383,7 +383,7 @@ def test_get_elements_cut_parts_with_cuts(model_objects):
     result = get_elements_cut_parts()
 
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["selected_elements"] == 1
+    assert result.structured_content["selected_count"] == 1
 
 
 def test_get_elements_cut_parts_without_cuts(model_objects):
@@ -392,8 +392,8 @@ def test_get_elements_cut_parts_without_cuts(model_objects):
     result = get_elements_cut_parts()
 
     assert result.structured_content["status"] == "warning"
-    assert result.structured_content["selected_elements"] == 1
-    assert result.structured_content["total_cut_parts"] == 0
+    assert result.structured_content["selected_count"] == 1
+    assert result.structured_content["total_cut_parts_count"] == 0
 
 
 def test_compare_elements_numbering_not_up_to_date(model_objects):
@@ -563,7 +563,7 @@ def test_clear_elements_udas_all(model_objects):
     result = clear_elements_udas()
 
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["cleared_udas"] >= 1
+    assert result.structured_content["cleared_udas_count"] >= 1
 
 
 def test_clear_elements_udas_specific(model_objects):
@@ -575,7 +575,7 @@ def test_clear_elements_udas_specific(model_objects):
     result = clear_elements_udas(uda_names=["MCP_TEST_UDA_A"])
 
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["cleared_udas"] == 1
+    assert result.structured_content["cleared_udas_count"] == 1
 
 
 def test_get_elements_coordinates_beam(model_objects):
@@ -620,7 +620,7 @@ def test_set_elements_properties_no_op(model_objects):
     """No properties provided: tool returns warning, no changes applied."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
     result = set_elements_properties()
-    assert result.structured_content["modified_elements"] == 0
+    assert result.structured_content["modified_count"] == 0
     assert all(count == 0 for count in result.structured_content["changes_applied"].values())
 
 

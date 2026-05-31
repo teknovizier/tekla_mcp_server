@@ -65,8 +65,8 @@ def set_elements_properties(
         "phase": 0,
         "udas": 0,
     }
-    processed_elements = 0
-    modified_elements = 0
+    processed_count = 0
+    modified_count = 0
     property_errors: list[dict] = []
 
     for selected_object in wrap_model_objects(selected_objects):
@@ -102,29 +102,29 @@ def set_elements_properties(
                 if key in total_changes:
                     total_changes[key] += value
             if any(v > 0 for v in changes.values()):
-                modified_elements += 1
+                modified_count += 1
             if elem_errors:
                 logger.warning("Property errors on %s: %s", selected_object.guid, elem_errors)
                 property_errors.append({"guid": selected_object.guid, "errors": elem_errors})
         except Exception:
             logger.exception("Failed to set properties on %s", selected_object.guid)
-        processed_elements += 1
+        processed_count += 1
 
     commit_success: bool | None = None
-    if modified_elements > 0:
+    if modified_count > 0:
         commit_success = TeklaModel().commit_changes()
         if not commit_success:
-            logger.error("commit_changes() failed after modifying %s elements", modified_elements)
+            logger.error("commit_changes() failed after modifying %s elements", modified_count)
 
     if commit_success is False:
         status = "error"
         message = "Changes were not persisted. Commit failed (possible constraint violation or locked objects)."
-    elif modified_elements > 0 and property_errors:
+    elif modified_count > 0 and property_errors:
         status = "partial"
-        message = f"Modified {modified_elements} elements with some errors"
-    elif modified_elements > 0:
+        message = f"Modified {modified_count} elements with some errors"
+    elif modified_count > 0:
         status = "success"
-        message = f"Successfully modified {modified_elements} elements"
+        message = f"Successfully modified {modified_count} elements"
     else:
         status = "warning"
         message = "No elements were modified"
@@ -133,9 +133,9 @@ def set_elements_properties(
     result: dict = {
         "status": status,
         "message": message,
-        "selected_elements": selected_objects.GetSize(),
-        "processed_elements": processed_elements,
-        "modified_elements": modified_elements,
+        "selected_count": selected_objects.GetSize(),
+        "processed_count": processed_count,
+        "modified_count": modified_count,
         "changes_applied": total_changes,
         "property_errors": property_errors,
     }
@@ -166,7 +166,7 @@ def get_elements_properties(
     """
     selected_objects = TeklaModel().get_selected_objects()
 
-    processed_elements = 0
+    processed_count = 0
 
     # Snapshot mode
     if snapshot_mode:
@@ -180,7 +180,7 @@ def get_elements_properties(
                     parts.append(obj.to_snapshot().model_dump())
                 elif isinstance(obj, TeklaAssembly):
                     assemblies.append(obj.to_snapshot().model_dump())
-                processed_elements += 1
+                processed_count += 1
             except Exception as e:
                 logger.exception("Failed to build snapshot for %s: %s", obj.guid, str(e))
                 errors.append({"guid": obj.guid, "error": str(e)})
@@ -190,8 +190,8 @@ def get_elements_properties(
         return ToolResult(
             structured_content={
                 "status": "success" if total > 0 else "warning",
-                "selected_elements": selected_objects.GetSize(),
-                "processed_elements": processed_elements,
+                "selected_count": selected_objects.GetSize(),
+                "processed_count": processed_count,
                 "parts": parts,
                 "assemblies": assemblies,
                 "errors": errors,
@@ -230,9 +230,9 @@ def get_elements_properties(
             flat_assemblies.append(props)
         elif isinstance(selected_object, TeklaPart):
             flat_parts.append(props)
-        processed_elements += 1
+        processed_count += 1
 
-    logger.info("Retrieved properties for %s elements", processed_elements)
+    logger.info("Retrieved properties for %s elements", processed_count)
     status = "success" if flat_assemblies or flat_parts or reference_objects else "error"
     if resolution_errors or extraction_errors:
         status = "partial"
@@ -276,8 +276,8 @@ def get_elements_properties(
         content=content_json,
         structured_content={
             "status": status,
-            "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
+            "selected_count": selected_objects.GetSize(),
+            "processed_count": processed_count,
             "assemblies": flat_assemblies,
             "parts": flat_parts,
             "reference_objects": reference_objects,
@@ -295,7 +295,7 @@ def get_elements_cut_parts() -> ToolResult:
     """
     selected_objects = TeklaModel().get_selected_objects()
 
-    processed_elements = 0
+    processed_count = 0
     parts_with_cuts: list[dict[str, Any]] = []
     total_cut_parts = 0
 
@@ -329,15 +329,15 @@ def get_elements_cut_parts() -> ToolResult:
                 }
             )
 
-        processed_elements += 1
+        processed_count += 1
 
     logger.info("Found %s cut parts in %s elements with cuts", total_cut_parts, len(parts_with_cuts))
     return ToolResult(
         structured_content={
             "status": "success" if parts_with_cuts else "warning",
-            "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
-            "total_cut_parts": total_cut_parts,
+            "selected_count": selected_objects.GetSize(),
+            "processed_count": processed_count,
+            "total_cut_parts_count": total_cut_parts,
             "parts_with_cuts": parts_with_cuts,
         },
     )
@@ -526,9 +526,10 @@ def clear_elements_udas(
     logger.info("Cleared %s UDAs from %s parts and %s assemblies", cleared_udas, modified_parts, modified_assemblies)
     result: dict = {
         "status": status,
-        "cleared_udas": cleared_udas,
-        "modified_parts": modified_parts,
-        "modified_assemblies": modified_assemblies,
+        "selected_count": selected_objects.GetSize(),
+        "cleared_udas_count": cleared_udas,
+        "modified_parts_count": modified_parts,
+        "modified_assemblies_count": modified_assemblies,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success

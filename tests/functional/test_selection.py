@@ -222,3 +222,5 @@ def test_select_elements_assemblies(model_objects, mode, expected_count):
     result = select_elements_assemblies_or_main_parts(mode=mode)
     assert result.structured_content["status"] == "success"
     assert result.structured_content["selected_count"] == expected_count
+    mode_key = "selected_assemblies_count" if mode == "Assembly" else "selected_main_parts_count"
+    assert result.structured_content[mode_key] == expected_count

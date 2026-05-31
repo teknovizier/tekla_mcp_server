@@ -98,7 +98,7 @@ def test_modify_components_success(model_objects):
         custom_properties={"TopAsBott": 1, "NumberBarsBottSec": 4, "SpacBarsBottSec": 300.0, "BottDiaSec": "12"},
     )
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["processed_components"] >= 1
+    assert result.structured_content["processed_components_count"] >= 1
 
     result = get_components()
     comp = next(c for c in result.structured_content["elements"][0]["components"] if c["name"] == "MeshBars")
@@ -117,7 +117,7 @@ def test_modify_components_no_matching_component(model_objects):
         custom_properties={"RecessLength": 200.0},
     )
     assert result.structured_content["status"] == "warning"
-    assert result.structured_content["processed_components"] == 0
+    assert result.structured_content["processed_components_count"] == 0
     assert "commit_success" not in result.structured_content
 
 
@@ -144,5 +144,5 @@ def test_remove_components_no_matching(model_objects):
     TeklaModel.select_objects([model_objects["test_wall6"]])
     result = remove_components(component_name="MeshBars")
     assert result.structured_content["status"] == "warning"
-    assert result.structured_content["removed_components"] == 0
+    assert result.structured_content["removed_components_count"] == 0
     assert "commit_success" not in result.structured_content

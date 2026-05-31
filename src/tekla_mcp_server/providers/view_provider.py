@@ -4,7 +4,7 @@ View tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
@@ -86,8 +86,8 @@ def draw_elements_labels(
 
     color_black = (0.0, 0.0, 0.0)
     drawer = GraphicsDrawer()
-    processed_elements = 0
-    drawn_labels = 0
+    processed_count = 0
+    drawn_labels_count = 0
 
     for selected_object in wrap_model_objects(selected_objects):
         try:
@@ -120,19 +120,19 @@ def draw_elements_labels(
                 else:
                     continue
             if drawer.DrawText(selected_object.cog, text, Color(*color_black)):
-                drawn_labels += 1
-            processed_elements += 1
+                drawn_labels_count += 1
+            processed_count += 1
         except Exception as e:
             logger.warning("Failed to draw label for %s: %s", selected_object.guid, e)
             continue
-    logger.info("Drawn '%s' labels on %s elements", label_enum.value, drawn_labels)
-    status = "success" if drawn_labels > 0 else "warning"
+    logger.info("Drawn '%s' labels on %s elements", label_enum.value, drawn_labels_count)
+    status = "success" if drawn_labels_count > 0 else "warning"
     return ToolResult(
         structured_content={
             "status": status,
-            "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
-            "drawn_labels": drawn_labels,
+            "selected_count": selected_objects.GetSize(),
+            "processed_count": processed_count,
+            "drawn_labels_count": drawn_labels_count,
         }
     )
 
@@ -146,7 +146,7 @@ def zoom_to_selection() -> ToolResult:
     tekla_model = TeklaModel()
     selected_objects = tekla_model.get_selected_objects()
 
-    processed_elements = 0
+    processed_count = 0
 
     min_x = min_y = min_z = float("inf")
     max_x = max_y = max_z = float("-inf")
@@ -174,29 +174,27 @@ def zoom_to_selection() -> ToolResult:
         max_y = max(max_y, ep.Y)
         max_z = max(max_z, ep.Z)
 
-        processed_elements += 1
+        processed_count += 1
 
-    if processed_elements == 0:
+    if processed_count == 0:
         logger.warning("zoom_to_selection: no parts or assemblies in selection")
-        return ToolResult(
-            structured_content={
-                "status": "warning",
-                "selected_elements": selected_objects.GetSize(),
-                "processed_elements": 0,
-                "message": "No parts or assemblies in selection to zoom to",
-            }
-        )
+        status = "warning"
+        extra: dict = {"message": "No parts or assemblies in selection to zoom to"}
+    else:
+        min_point = Point(min_x, min_y, min_z)
+        max_point = Point(max_x, max_y, max_z)
+        bbox = AABB(min_point, max_point)
+        zoom_result = ViewHandler.ZoomToBoundingBox(bbox)
+        logger.info("Zoomed to bounding box: %s", bbox)
+        status = "success" if zoom_result else "warning"
+        extra = {}
 
-    min_point = Point(min_x, min_y, min_z)
-    max_point = Point(max_x, max_y, max_z)
-    bbox = AABB(min_point, max_point)
-    result = ViewHandler.ZoomToBoundingBox(bbox)
-    logger.info("Zoomed to bounding box: %s", bbox)
     return ToolResult(
         structured_content={
-            "status": "success" if result else "warning",
-            "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
+            "status": status,
+            "selected_count": selected_objects.GetSize(),
+            "processed_count": processed_count,
+            **extra,
         }
     )
 
@@ -258,7 +256,7 @@ def show_only_selected() -> ToolResult:
     return ToolResult(
         structured_content={
             "status": "success",
-            "selected_elements": selected_objects.GetSize(),
+            "selected_count": selected_objects.GetSize(),
         }
     )
 
@@ -275,7 +273,7 @@ def hide_selected() -> ToolResult:
         raise RuntimeError("Failed to hide selected elements")
 
     logger.info("Hidden %d elements", tekla_list.Count)
-    return ToolResult(structured_content={"status": "success", "hidden_elements": tekla_list.Count})
+    return ToolResult(structured_content={"status": "success", "hidden_count": tekla_list.Count})
 
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": False, "destructiveHint": False})
@@ -295,4 +293,4 @@ def color_selected(
         raise RuntimeError("Failed to color selected elements")
 
     logger.info("Colored %d elements with RGB(%d, %d, %d)", tekla_list.Count, red, green, blue)
-    return ToolResult(structured_content={"status": "success", "colored_elements": tekla_list.Count})
+    return ToolResult(structured_content={"status": "success", "colored_count": tekla_list.Count})

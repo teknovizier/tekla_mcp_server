@@ -141,16 +141,22 @@ def tool_example(param: str, count: int) -> dict[str, Any]:
 ## Error Handling
 Use `@mcp_handler(scope="tool")` on every tool and `@mcp_handler(scope="resource")` on every resource. The decorator catches all exceptions and converts them into the correct error response automatically.
 
-**Never return a `ToolResult` with `status: "error"` directly.** Raise an exception instead - the decorator handles the conversion.
+**Never return a `ToolResult` before the normal end of the function.** Raise an exception instead - let the `@mcp_handler` decorator catch it and convert it.
 
 ```python
-# Correct
+# Correct - raise, don't return
 if not items:
     raise ValueError("No items provided")
 
-# Wrong: do not do this
+# Wrong: do not return early with a ToolResult
 if not items:
     return ToolResult(structured_content={"status": "error", "message": "No items provided"})
+
+# Wrong: do not return early before the single normal return at the end
+result = compute(...)
+if not result:
+    return ToolResult(structured_content={"status": "error", "message": "computation failed"})
+return ToolResult(structured_content={"status": "success", "result": result})
 ```
 
 | Scope | Return Type | Error Format |

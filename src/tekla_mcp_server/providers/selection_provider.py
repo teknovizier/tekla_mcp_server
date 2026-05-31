@@ -379,6 +379,6 @@ def select_elements_assemblies_or_main_parts(
             "status": "success" if filtered_parts.Count else "warning",
             "selected_count": selected_objects.GetSize(),
             "processed_count": processed_count,
-            selected_object_types: filtered_parts.Count,
+            f"{selected_object_types}_count": filtered_parts.Count,
         }
     )

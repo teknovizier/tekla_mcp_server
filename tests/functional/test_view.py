@@ -22,7 +22,7 @@ def test_draw_elements_labels(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     result = draw_elements_labels()
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["selected_elements"] == 2
+    assert result.structured_content["selected_count"] == 2
 
     view_enum = ViewHandler.GetAllViews()
     while view_enum.MoveNext():
@@ -34,7 +34,7 @@ def test_draw_elements_labels_with_label(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     result = draw_elements_labels(label="Profile")
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["selected_elements"] == 2
+    assert result.structured_content["selected_count"] == 2
 
 
 def test_draw_elements_labels_with_valid_custom_label(model_objects):

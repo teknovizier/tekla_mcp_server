@@ -234,7 +234,7 @@ def cut_elements_with_cutters(
         raw_cutters = model.get_objects_by_guid(cutter_guids)
         label = f"{len(cutter_guids)} GUIDs"
 
-    processed_elements = 0
+    processed_count = 0
     performed_cuts = 0
     cutters = list(wrap_model_objects(raw_cutters))
     logger.debug("Processing %d selected objects with %d cutters (%s)", selected_objects.GetSize(), len(cutters), label)
@@ -246,7 +246,7 @@ def cut_elements_with_cutters(
                     performed_cuts += 1
                     element_had_cut = True
             if element_had_cut:
-                processed_elements += 1
+                processed_count += 1
     commit_success: bool | None = None
     if performed_cuts:
         commit_success = model.commit_changes()
@@ -254,7 +254,7 @@ def cut_elements_with_cutters(
             logger.error("commit_changes() failed after performing %d cuts", performed_cuts)
             status = "error"
         else:
-            logger.info("Performed %s cuts on %s elements", performed_cuts, processed_elements)
+            logger.info("Performed %s cuts on %s elements", performed_cuts, processed_count)
             status = "success"
     else:
         logger.warning("cut_elements_with_cutters: No cuts performed (%s)", label)
@@ -262,9 +262,9 @@ def cut_elements_with_cutters(
 
     result: dict = {
         "status": status,
-        "selected_elements": selected_objects.GetSize(),
-        "processed_elements": processed_elements,
-        "performed_cuts": performed_cuts,
+        "selected_count": selected_objects.GetSize(),
+        "processed_count": processed_count,
+        "performed_cuts_count": performed_cuts,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
@@ -280,24 +280,24 @@ def convert_cut_parts_to_real_parts() -> ToolResult:
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
 
-    processed_elements = 0
-    inserted_booleans = 0
+    processed_count = 0
+    converted_booleans_count = 0
     for selected_object in wrap_model_objects(selected_objects):
         if not isinstance(selected_object, TeklaPart):
             logger.debug("convert_cut_parts_to_real_parts: skipping non-part object: %s", selected_object.GetType())
             continue
         for boolean_part in iterate_boolean_parts(selected_object.model_object):
             if boolean_part.OperativePart.Insert():
-                inserted_booleans += 1
-        processed_elements += 1
+                converted_booleans_count += 1
+        processed_count += 1
     commit_success: bool | None = None
-    if inserted_booleans > 0:
+    if converted_booleans_count > 0:
         commit_success = model.commit_changes()
         if not commit_success:
-            logger.error("commit_changes() failed after converting %d boolean parts", inserted_booleans)
+            logger.error("commit_changes() failed after converting %d boolean parts", converted_booleans_count)
             status = "error"
         else:
-            logger.info("Inserted %s boolean parts as real parts", inserted_booleans)
+            logger.info("Inserted %s boolean parts as real parts", converted_booleans_count)
             status = "success"
     else:
         logger.warning("convert_cut_parts_to_real_parts failed: No boolean parts converted")
@@ -305,9 +305,9 @@ def convert_cut_parts_to_real_parts() -> ToolResult:
 
     result: dict = {
         "status": status,
-        "selected_elements": selected_objects.GetSize(),
-        "processed_elements": processed_elements,
-        "converted_booleans": inserted_booleans,
+        "selected_count": selected_objects.GetSize(),
+        "processed_count": processed_count,
+        "converted_booleans_count": converted_booleans_count,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
@@ -481,8 +481,8 @@ def check_for_orphans(
 
     result_content = {
         "status": status,
-        "selected_elements": selected_objects.GetSize(),
-        f"{prefix}_evaluated": total_evaluated,
+        "selected_count": selected_objects.GetSize(),
+        f"{prefix}_evaluated_count": total_evaluated,
         f"orphaned_{prefix}_count": len(orphaned_elements),
     }
     if commit_success is not None:
@@ -673,7 +673,7 @@ def check_for_invalid_objects() -> ToolResult:
     result_content = {
         "status": "success" if not invalid_parts and not invalid_reinforcements and not invalid_assemblies else "warning",
         "selected_count": selected_objects.GetSize(),
-        "total_evaluated": total_evaluated,
+        "total_evaluated_count": total_evaluated,
         "invalid_parts_count": len(invalid_parts),
         "invalid_reinforcements_count": len(invalid_reinforcements),
         "invalid_assemblies_count": len(invalid_assemblies),
@@ -763,8 +763,8 @@ def clash_check(
     return ToolResult(
         structured_content={
             "status": "success" if not records else "warning",
-            "selected_elements": len(selected_objects),
-            "checked_objects": checked_count,
+            "selected_count": len(selected_objects),
+            "checked_objects_count": checked_count,
             "clashes_count": len(records),
             "clashes": [c.to_dict() for c in records],
         }
