@@ -24,9 +24,9 @@ class TestGetDrawings:
         assert result.structured_content["status"] == "success"
         assert result.structured_content["matched_count"] >= 3
 
-    def test_get_drawings_castunit_type(self):
-        """Test filtering by CastUnit drawing type."""
-        result = get_drawings(drawing_type="C")
+    def test_get_drawings_ga_type(self):
+        """Test filtering by GA drawing type."""
+        result = get_drawings(drawing_type="G")
 
         assert result.structured_content["status"] == "success"
         assert result.structured_content["matched_count"] > 0

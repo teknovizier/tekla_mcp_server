@@ -31,10 +31,10 @@ def test_remove_lifting_anchors(model_objects):
 
 
 def test_put_components_invalid_component(model_objects):
-    """Tests put_components with an invalid component name."""
+    """Tests put_components with an invalid component name, no work done."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
     result = put_components(component_name="NonExistentComponent")
-    assert result.structured_content["status"] == "error"
+    assert result.structured_content["status"] == "warning"
 
 
 def test_put_components_with_custom_properties(model_objects):
@@ -110,14 +110,15 @@ def test_modify_components_success(model_objects):
 
 
 def test_modify_components_no_matching_component(model_objects):
-    """Tests modify_components returns error when component not found."""
+    """Tests modify_components returns warning when component not found, no work done."""
     TeklaModel.select_objects([model_objects["test_wall8"]])
     result = modify_components(
         component_name="NonExistingComponent",
         custom_properties={"RecessLength": 200.0},
     )
-    assert result.structured_content["status"] == "error"
+    assert result.structured_content["status"] == "warning"
     assert result.structured_content["processed_components"] == 0
+    assert "commit_success" not in result.structured_content
 
 
 def test_modify_components_invalid_properties(model_objects):
@@ -139,8 +140,9 @@ def test_put_components_no_selection():
 
 
 def test_remove_components_no_matching(model_objects):
-    """Selected element with no matching component: removed count is 0, status is success."""
+    """Selected element with no matching component: removed count is 0, status is warning, no commit attempted."""
     TeklaModel.select_objects([model_objects["test_wall6"]])
     result = remove_components(component_name="MeshBars")
-    assert result.structured_content["status"] == "success"
+    assert result.structured_content["status"] == "warning"
     assert result.structured_content["removed_components"] == 0
+    assert "commit_success" not in result.structured_content

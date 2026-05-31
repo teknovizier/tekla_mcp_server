@@ -247,20 +247,28 @@ def cut_elements_with_cutters(
                     element_had_cut = True
             if element_had_cut:
                 processed_elements += 1
+    commit_success: bool | None = None
     if performed_cuts:
-        model.commit_changes()
-        logger.info("Performed %s cuts on %s elements", performed_cuts, processed_elements)
+        commit_success = model.commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after performing %d cuts", performed_cuts)
+            status = "error"
+        else:
+            logger.info("Performed %s cuts on %s elements", performed_cuts, processed_elements)
+            status = "success"
     else:
         logger.warning("cut_elements_with_cutters: No cuts performed (%s)", label)
+        status = "warning"
 
-    return ToolResult(
-        structured_content={
-            "status": "success" if performed_cuts else "warning",
-            "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
-            "performed_cuts": performed_cuts,
-        }
-    )
+    result: dict = {
+        "status": status,
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "performed_cuts": performed_cuts,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)
 
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -282,21 +290,28 @@ def convert_cut_parts_to_real_parts() -> ToolResult:
             if boolean_part.OperativePart.Insert():
                 inserted_booleans += 1
         processed_elements += 1
+    commit_success: bool | None = None
     if inserted_booleans > 0:
-        model.commit_changes()
-        logger.info("Inserted %s boolean parts as real parts", inserted_booleans)
-
-    if not inserted_booleans:
+        commit_success = model.commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after converting %d boolean parts", inserted_booleans)
+            status = "error"
+        else:
+            logger.info("Inserted %s boolean parts as real parts", inserted_booleans)
+            status = "success"
+    else:
         logger.warning("convert_cut_parts_to_real_parts failed: No boolean parts converted")
+        status = "warning"
 
-    return ToolResult(
-        structured_content={
-            "status": "success" if inserted_booleans else "warning",
-            "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
-            "converted_booleans": inserted_booleans,
-        }
-    )
+    result: dict = {
+        "status": status,
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "converted_booleans": inserted_booleans,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)
 
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -440,8 +455,11 @@ def check_for_orphans(
             )
 
     # Commit all attached orphans in single transaction
+    commit_success: bool | None = None
     if attach and attached_elements:
-        model.commit_changes()
+        commit_success = model.commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after attaching %d orphaned %s", len(attached_elements), mode)
 
     # Warn if no candidates evaluated (no geometry or wrong object types selected)
     if total_evaluated == 0:
@@ -454,7 +472,12 @@ def check_for_orphans(
     prefix = "embeds" if mode == "embeds" else "rebar_objects"
 
     remaining_orphans = len(orphaned_elements) - len(attached_elements)
-    status = "success" if remaining_orphans == 0 else "warning"
+    if commit_success is False:
+        status = "error"
+    elif remaining_orphans == 0:
+        status = "success"
+    else:
+        status = "warning"
 
     result_content = {
         "status": status,
@@ -462,6 +485,8 @@ def check_for_orphans(
         f"{prefix}_evaluated": total_evaluated,
         f"orphaned_{prefix}_count": len(orphaned_elements),
     }
+    if commit_success is not None:
+        result_content["commit_success"] = commit_success
 
     if skipped_elements:
         result_content["skipped_elements"] = skipped_elements

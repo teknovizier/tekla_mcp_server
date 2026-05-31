@@ -92,6 +92,20 @@ def _place_beam_element(
     return False, PlacementResult(success=False, message="Insert() returned false")
 
 
+def _commit_or_fail(
+    results: list[PlacementResult],
+    succeeded: int,
+    commit_success: bool,
+    item_type: str,
+) -> tuple[list[PlacementResult], int]:
+    """Replace all results with failure records when commit fails; return updated results and succeeded count."""
+    if not commit_success:
+        logger.error("commit_changes() failed after placing %d %s", succeeded, item_type)
+        results = [PlacementResult(success=False, message="Commit failed: changes not persisted") for _ in results]
+        succeeded = 0
+    return results, succeeded
+
+
 def _to_tool_result(
     results: list[PlacementResult],
     total: int,
@@ -157,8 +171,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
             logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    model.commit_changes()
-
+    results, succeeded = _commit_or_fail(results, succeeded, model.commit_changes(), "beams")
     logger.info("Placed %d of %d beams", succeeded, len(beams))
     return _to_tool_result(results, len(beams), succeeded, "beams")
 
@@ -211,8 +224,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
             logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    model.commit_changes()
-
+    results, succeeded = _commit_or_fail(results, succeeded, model.commit_changes(), "columns")
     logger.info("Placed %d of %d columns", succeeded, len(columns))
     return _to_tool_result(results, len(columns), succeeded, "columns")
 
@@ -262,8 +274,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
             logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    model.commit_changes()
-
+    results, succeeded = _commit_or_fail(results, succeeded, model.commit_changes(), "panels")
     logger.info("Placed %d of %d panels", succeeded, len(panels))
     return _to_tool_result(results, len(panels), succeeded, "panels")
 
@@ -329,8 +340,7 @@ def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List
             logger.exception("Failed to insert slab: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    model.commit_changes()
-
+    results, succeeded = _commit_or_fail(results, succeeded, model.commit_changes(), "slabs")
     logger.info("Placed %d of %d slabs", succeeded, len(slabs))
     return _to_tool_result(results, len(slabs), succeeded, "slabs")
 
@@ -382,19 +392,24 @@ def move_elements(
                 results.append(PlacementResult(success=False, message=str(e)))
                 failed += 1
 
-    model.commit_changes()
-
     total = succeeded + failed
+    commit_success = model.commit_changes()
+    if not commit_success:
+        logger.error("commit_changes() failed after moving/copying %d elements", succeeded)
+        results = [PlacementResult(success=False, message="Commit failed: changes not persisted") for _ in results]
+        succeeded = 0
+        failed = total
+
     action = "Copied" if copy else "Moved"
     logger.info("%s %d of %d elements (dx=%.0f dy=%.0f dz=%.0f)", action, succeeded, total, dx, dy, dz)
     return ToolResult(
         structured_content=BatchPlacementResult(
-            success=failed == 0 and total > 0,
+            success=failed == 0 and total > 0 and commit_success,
             total=total,
             succeeded=succeeded,
-            failed=failed,
+            failed=total - succeeded,
             results=results,
-            message=f"{action} {succeeded} of {total} elements",
+            message=f"{action} {succeeded} of {total} elements" if commit_success else f"Commit failed: {action} reverted",
         ).model_dump(mode="json", exclude_none=True)
     )
 
@@ -455,7 +470,10 @@ def place_grid(
 
     model = TeklaModel()
     if grid.Insert():
-        model.commit_changes()
+        commit_success = model.commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after inserting grid")
+            raise RuntimeError("Grid insertion failed: commit_changes() returned false")
         guid = grid.Identifier.GUID.ToString()
         logger.info("Placed grid guid=%s (x=%d, y=%d, z=%d lines)", guid, len(x), len(y), len(resolved_z))
         return ToolResult(structured_content={"status": "success", "guid": guid, "name": grid.Name})
@@ -482,14 +500,26 @@ def delete_selected() -> ToolResult:
         if obj.Delete():
             deleted += 1
 
-    model.commit_changes()
+    commit_success = model.commit_changes()
+    if not commit_success:
+        logger.error("commit_changes() failed after deleting %d objects", deleted)
+        deleted = 0
+        status = "error"
+        message = "Delete failed: commit_changes() returned false"
+    elif deleted == count:
+        status = "success"
+        message = f"Deleted {deleted} of {count} objects"
+    else:
+        status = "warning"
+        message = f"Deleted {deleted} of {count} objects"
 
-    logger.info("Deleted %d of %d objects", deleted, count)
+    logger.info("Deleted %d of %d objects (commit: %s)", deleted, count, commit_success)
     return ToolResult(
         structured_content={
-            "status": "success" if deleted == count else "warning",
+            "status": status,
             "total_selected": count,
             "total_deleted": deleted,
-            "message": f"Deleted {deleted} of {count} objects",
+            "commit_success": commit_success,
+            "message": message,
         }
     )

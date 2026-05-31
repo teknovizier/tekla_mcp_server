@@ -57,21 +57,30 @@ def _process_detail_or_component(
             if success:
                 processed_components += success
             processed_elements += 1
-    model.commit_changes()
-    logger.info("Processed %s elements, %s components", processed_elements, processed_components)
-    errors = custom_properties_errors or []
-    status = "success" if processed_components else "error"
-    if errors:
+
+    commit_success: bool | None = None
+    if processed_components > 0:
+        commit_success = model.commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after processing %s components", processed_components)
+
+    if commit_success is False:
+        status = "error"
+    elif processed_components:
+        status = "success"
+    else:
         status = "warning"
-    return ToolResult(
-        structured_content={
-            "status": status,
-            "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
-            "processed_components": processed_components,
-            "custom_properties_errors": errors,
-        }
-    )
+
+    logger.info("Processed %s elements, %s components", processed_elements, processed_components)
+    result: dict = {
+        "status": status,
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "processed_components": processed_components,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)
 
 
 def _process_seam_or_connection(
@@ -98,21 +107,30 @@ def _process_seam_or_connection(
         if success:
             processed_components += success
         processed_element_pairs += 1
-    model.commit_changes()
-    logger.info("Processed %s elements, %s components", processed_element_pairs, processed_components)
-    errors = custom_properties_errors or []
-    status = "success" if processed_components else "error"
-    if errors:
+
+    commit_success: bool | None = None
+    if processed_components > 0:
+        commit_success = model.commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after processing %s component pairs", processed_components)
+
+    if commit_success is False:
+        status = "error"
+    elif processed_components:
+        status = "success"
+    else:
         status = "warning"
-    return ToolResult(
-        structured_content={
-            "status": status,
-            "selected_elements": selected_objects.GetSize(),
-            "processed_element_pairs": processed_element_pairs,
-            "inserted_components": processed_components,
-            "custom_properties_errors": errors,
-        }
-    )
+
+    logger.info("Processed %s element pairs, %s components", processed_element_pairs, processed_components)
+    result: dict = {
+        "status": status,
+        "selected_elements": selected_objects.GetSize(),
+        "processed_element_pairs": processed_element_pairs,
+        "inserted_components": processed_components,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)
 
 
 @ensure_transformation_plane
@@ -203,15 +221,27 @@ def remove_components(component_name: Annotated[str, Field(description="The Tekl
             if comp.Number == component.number and comp.Name == component.name:
                 if comp.Delete():
                     counter += 1
-    model.commit_changes()
+    commit_success: bool | None = None
+    if counter > 0:
+        commit_success = model.commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after removing %s components", counter)
+
+    if commit_success is False:
+        status = "error"
+    elif counter > 0:
+        status = "success"
+    else:
+        status = "warning"
     logger.info("Total components removed: %s", counter)
-    return ToolResult(
-        structured_content={
-            "status": "success",
-            "selected_elements": selected_objects.GetSize(),
-            "removed_components": counter,
-        }
-    )
+    result: dict = {
+        "status": status,
+        "selected_elements": selected_objects.GetSize(),
+        "removed_components": counter,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)
 
 
 @components_provider.tool(tags={"components"}, annotations={"readOnlyHint": True, "destructiveHint": False})

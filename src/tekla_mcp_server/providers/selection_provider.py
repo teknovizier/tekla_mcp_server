@@ -276,7 +276,7 @@ def select_elements_by_filter(
     return ToolResult(
         structured_content={
             "status": "partial" if has_resolution_errors else ("success" if count else "warning"),
-            "selected_elements": count,
+            "selected_count": count,
             "string_resolution_errors": string_resolution_errors,
             "numeric_resolution_errors": numeric_resolution_errors,
         }
@@ -298,7 +298,7 @@ def select_elements_by_filter_name(
     return ToolResult(
         structured_content={
             "status": "success" if objects_to_select.GetSize() else "warning",
-            "selected_elements": objects_to_select.GetSize(),
+            "selected_count": objects_to_select.GetSize(),
         }
     )
 
@@ -349,7 +349,7 @@ def select_elements_assemblies_or_main_parts(
     """
     selected_objects = TeklaModel().get_selected_objects()
 
-    processed_elements = 0
+    processed_count = 0
     selected_object_types = "selected_assemblies" if mode == "Assembly" else "selected_main_parts"
 
     filtered_parts = ArrayList()
@@ -370,15 +370,15 @@ def select_elements_assemblies_or_main_parts(
             except ValueError:
                 logger.warning("Assembly %s has no main part, skipping", assembly.guid)
                 continue
-        processed_elements += 1
+        processed_count += 1
 
     TeklaModel.select_objects(filtered_parts)
     logger.info("Selected %s elements as '%s'", filtered_parts.Count, mode)
     return ToolResult(
         structured_content={
             "status": "success" if filtered_parts.Count else "warning",
-            "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
+            "selected_count": selected_objects.GetSize(),
+            "processed_count": processed_count,
             selected_object_types: filtered_parts.Count,
         }
     )

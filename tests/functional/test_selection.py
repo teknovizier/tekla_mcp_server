@@ -22,7 +22,7 @@ def test_select_elements_by_filter_name(model_objects):
 
     result = select_elements_by_filter_name(filter_name="standard")
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["selected_elements"]
+    assert result.structured_content["selected_count"]
 
 
 def test_select_elements_by_filter_no_filters_returns_error(model_objects):
@@ -196,21 +196,21 @@ def test_select_elements_by_guid(model_objects):
     wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
     result = select_elements_by_guid(guids=[wall2_guid])
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["selected_elements"] == 1
+    assert result.structured_content["selected_count"] == 1
     assert result.structured_content["selected_guids"] == [wall2_guid]
     assert result.structured_content["missing_guids"] == []
 
     wall1_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
     result = select_elements_by_guid(guids=[wall1_guid, wall2_guid])
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["selected_elements"] == 2
+    assert result.structured_content["selected_count"] == 2
     assert set(result.structured_content["selected_guids"]) == {wall1_guid, wall2_guid}
     assert result.structured_content["missing_guids"] == []
 
     # partial: one valid, one not found
     result = select_elements_by_guid(guids=[wall1_guid, nonexistent])
     assert result.structured_content["status"] == "partial"
-    assert result.structured_content["selected_elements"] == 1
+    assert result.structured_content["selected_count"] == 1
     assert result.structured_content["selected_guids"] == [wall1_guid]
     assert result.structured_content["missing_guids"] == [nonexistent]
 
@@ -221,4 +221,4 @@ def test_select_elements_assemblies(model_objects, mode, expected_count):
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     result = select_elements_assemblies_or_main_parts(mode=mode)
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["selected_elements"] == expected_count
+    assert result.structured_content["selected_count"] == expected_count

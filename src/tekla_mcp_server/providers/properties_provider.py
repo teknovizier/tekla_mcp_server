@@ -111,21 +111,38 @@ def set_elements_properties(
             logger.exception("Failed to set properties on %s", selected_object.guid)
         processed_elements += 1
 
+    commit_success: bool | None = None
     if modified_elements > 0:
-        TeklaModel().commit_changes()
+        commit_success = TeklaModel().commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after modifying %s elements", modified_elements)
 
-    status = "success" if modified_elements > 0 and not property_errors else "partial" if modified_elements > 0 else "warning"
-    logger.info("Set properties on %s elements: %s", modified_elements, total_changes)
-    return ToolResult(
-        structured_content={
-            "status": status,
-            "selected_elements": selected_objects.GetSize(),
-            "processed_elements": processed_elements,
-            "modified_elements": modified_elements,
-            "changes_applied": total_changes,
-            "property_errors": property_errors,
-        }
-    )
+    if commit_success is False:
+        status = "error"
+        message = "Changes were not persisted. Commit failed (possible constraint violation or locked objects)."
+    elif modified_elements > 0 and property_errors:
+        status = "partial"
+        message = f"Modified {modified_elements} elements with some errors"
+    elif modified_elements > 0:
+        status = "success"
+        message = f"Successfully modified {modified_elements} elements"
+    else:
+        status = "warning"
+        message = "No elements were modified"
+
+    logger.info("Set properties result: %s — %s", status, message)
+    result: dict = {
+        "status": status,
+        "message": message,
+        "selected_elements": selected_objects.GetSize(),
+        "processed_elements": processed_elements,
+        "modified_elements": modified_elements,
+        "changes_applied": total_changes,
+        "property_errors": property_errors,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)
 
 
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -483,18 +500,28 @@ def clear_elements_udas(
         except Exception:
             logger.exception("Failed to clear UDAs on %s", selected_object.guid)
 
+    commit_success: bool | None = None
     if cleared_udas > 0:
-        TeklaModel().commit_changes()
+        commit_success = TeklaModel().commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after clearing %d UDAs", cleared_udas)
 
+    if commit_success is False:
+        status = "error"
+    elif cleared_udas > 0:
+        status = "success"
+    else:
+        status = "warning"
     logger.info("Cleared %s UDAs from %s parts and %s assemblies", cleared_udas, modified_parts, modified_assemblies)
-    return ToolResult(
-        structured_content={
-            "status": "success" if cleared_udas > 0 else "warning",
-            "cleared_udas": cleared_udas,
-            "modified_parts": modified_parts,
-            "modified_assemblies": modified_assemblies,
-        }
-    )
+    result: dict = {
+        "status": status,
+        "cleared_udas": cleared_udas,
+        "modified_parts": modified_parts,
+        "modified_assemblies": modified_assemblies,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)
 
 
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
