@@ -281,6 +281,13 @@ class TeklaModelObject:
         return self.model_object.Identifier.GUID.ToString()
 
     @property
+    def element_type(self) -> str:
+        """
+        Returns the Tekla C# class name of the model object (e.g. 'Beam', 'ContourPlate', 'Assembly').
+        """
+        return type(self._model_object).__name__
+
+    @property
     def phase(self) -> int:
         """
         Returns the phase number of the Tekla model object.

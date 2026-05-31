@@ -487,3 +487,57 @@ def test_assembly_set_properties_phase(wall1):
     assert assembly.phase == 3
 
     assembly.set_properties(phase=original_phase)
+
+
+def test_element_type_beam(wall1):
+    """Checks that element_type returns the Tekla C# class name 'Beam' for a beam part."""
+    assert wall1.element_type == "Beam"
+
+
+def test_element_type_assembly(wall1):
+    """Checks that element_type returns 'Assembly' for an assembly wrapper."""
+    assembly = wall1.get_top_level_assembly()
+    assert assembly.element_type == "Assembly"
+
+
+def test_bounding_box_not_none(wall1):
+    """Checks that bounding_box returns a BoundingBox instance for a valid part."""
+    bb = wall1.bounding_box
+    assert bb is not None
+
+
+def test_bounding_box_axes_ordered(wall1):
+    """Checks that min <= max on every axis of the bounding box."""
+    bb = wall1.bounding_box
+    assert bb.min_x <= bb.max_x
+    assert bb.min_y <= bb.max_y
+    assert bb.min_z <= bb.max_z
+
+
+def test_bounding_box_centroid_is_midpoint(wall1):
+    """Checks that centroid equals (min+max)/2 on each axis."""
+    bb = wall1.bounding_box
+    cx, cy, cz = bb.centroid
+    assert cx == pytest.approx((bb.min_x + bb.max_x) / 2)
+    assert cy == pytest.approx((bb.min_y + bb.max_y) / 2)
+    assert cz == pytest.approx((bb.min_z + bb.max_z) / 2)
+
+
+def test_bounding_box_centroid_matches_geometry(wall1):
+    """Checks all three centroid coordinates against the known beam geometry (2000 mm long, 3000 mm tall, 200 mm deep)."""
+    bb = wall1.bounding_box
+    cx, cy, cz = bb.centroid
+    assert cx == pytest.approx(1000.0, abs=1.0)
+    assert cy == pytest.approx(0.0, abs=1.0)
+    assert cz == pytest.approx(1500.0, abs=1.0)
+
+
+def test_bounding_box_min_max_coordinates(wall1):
+    """Checks explicit min/max coordinates for all axes of the beam placed at origin."""
+    bb = wall1.bounding_box
+    assert bb.min_x == pytest.approx(0.0, abs=1.0)
+    assert bb.max_x == pytest.approx(2000.0, abs=1.0)
+    assert bb.min_y == pytest.approx(-100.0, abs=1.0)
+    assert bb.max_y == pytest.approx(100.0, abs=1.0)
+    assert bb.min_z == pytest.approx(0.0, abs=1.0)
+    assert bb.max_z == pytest.approx(3000.0, abs=1.0)

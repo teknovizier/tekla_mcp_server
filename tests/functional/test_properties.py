@@ -5,6 +5,8 @@ Tests getting and setting element properties, UDAs, numbering, cut parts, compar
 and IFC property copy operations.
 """
 
+import pytest
+
 from tekla_mcp_server.providers.properties_provider import (
     get_elements_properties,
     set_elements_properties,
@@ -12,6 +14,7 @@ from tekla_mcp_server.providers.properties_provider import (
     compare_elements,
     clear_elements_udas,
     get_elements_coordinates,
+    get_elements_bounding_boxes,
     copy_properties_from_ifc,
 )
 from tekla_mcp_server.providers.selection_provider import select_elements_assemblies_or_main_parts
@@ -668,3 +671,86 @@ def test_copy_properties_from_ifc_both_tekla_walls_returns_error(model_objects):
 
     assert result.structured_content["status"] == "error"
     assert "no ifc" in result.structured_content["message"].lower()
+
+
+def test_get_elements_bounding_boxes_wall(model_objects):
+    """Tests bounding box for a wall panel: structure, element_type, and geometry."""
+    TeklaModel.select_objects([model_objects["test_wall2"]])
+    result = get_elements_bounding_boxes()
+
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_count"] == 1
+    assert result.structured_content["processed_count"] == 1
+
+    elements = result.structured_content["elements"]
+    assert len(elements) == 1
+
+    e = elements[0]
+    assert "guid" in e
+    assert e["element_type"] == "Beam"
+    assert {"x", "y", "z"} == set(e["min"].keys())
+    assert {"x", "y", "z"} == set(e["max"].keys())
+    assert {"x", "y", "z"} == set(e["centroid"].keys())
+
+    assert e["min"]["x"] <= e["max"]["x"]
+    assert e["min"]["y"] <= e["max"]["y"]
+    assert e["min"]["z"] <= e["max"]["z"]
+
+    # test_wall2: (0,0,3020) → (2000,0,3020), profile "3000*200"
+    # Tekla positions the beam so the profile extends from the reference line upward (+Z).
+    # Y-extent matches the profile width (200), Y-centroid is 0 (centered).
+    assert e["max"]["x"] - e["min"]["x"] == pytest.approx(2000.0, abs=1.0)
+    assert e["max"]["y"] - e["min"]["y"] == pytest.approx(200.0, abs=1.0)
+    assert e["max"]["z"] - e["min"]["z"] == pytest.approx(3000.0, abs=1.0)
+    assert e["centroid"]["x"] == pytest.approx(1000.0, abs=1.0)
+    assert e["centroid"]["y"] == pytest.approx(0.0, abs=1.0)
+    assert e["centroid"]["z"] == pytest.approx(4520.0, abs=1.0)
+
+
+def test_get_elements_bounding_boxes_slab(model_objects):
+    """Tests bounding box for a slab beam: structure, element_type, and Y extent."""
+    TeklaModel.select_objects([model_objects["test_slab1"]])
+    result = get_elements_bounding_boxes()
+
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_count"] == 1
+    assert result.structured_content["processed_count"] == 1
+
+    elements = result.structured_content["elements"]
+    assert len(elements) == 1
+
+    e = elements[0]
+    assert e["element_type"] == "Beam"
+    assert {"x", "y", "z"} == set(e["min"].keys())
+    assert {"x", "y", "z"} == set(e["max"].keys())
+    assert {"x", "y", "z"} == set(e["centroid"].keys())
+
+    assert e["min"]["x"] <= e["max"]["x"]
+    assert e["min"]["y"] <= e["max"]["y"]
+    assert e["min"]["z"] <= e["max"]["z"]
+
+    # test_slab1: (1000,0,3020) → (1000,6000,3020) - beam along Y axis
+    assert e["max"]["y"] - e["min"]["y"] == pytest.approx(6000.0, abs=1.0)
+    assert e["centroid"]["y"] == pytest.approx(3000.0, abs=1.0)
+
+
+def test_get_elements_bounding_boxes_multiple(model_objects):
+    """Tests bounding boxes for wall and slab selected together: two distinct results."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_slab1"]])
+    result = get_elements_bounding_boxes()
+
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_count"] == 2
+    assert result.structured_content["processed_count"] == 2
+
+    elements = result.structured_content["elements"]
+    assert len(elements) == 2
+
+    for e in elements:
+        assert "guid" in e
+        assert e["element_type"] == "Beam"
+        assert e["min"]["x"] <= e["max"]["x"]
+        assert e["min"]["y"] <= e["max"]["y"]
+        assert e["min"]["z"] <= e["max"]["z"]
+
+    assert len({e["guid"] for e in elements}) == 2

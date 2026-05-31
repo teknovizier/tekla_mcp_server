@@ -577,10 +577,63 @@ def get_elements_coordinates() -> ToolResult:
                 }
             )
 
-    logger.info("Retrieved coordinates for %s elements", len(elements))
+    logger.info("Retrieved coordinates for %d of %d elements", len(elements), selected_objects.GetSize())
     return ToolResult(
         structured_content={
             "status": "success" if elements else "warning",
+            "selected_count": selected_objects.GetSize(),
+            "processed_count": len(elements),
+            "elements": elements,
+        }
+    )
+
+
+@properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def get_elements_bounding_boxes() -> ToolResult:
+    """
+    Get bounding boxes for all selected Tekla elements.
+
+    ## OUTPUT
+    Each element entry contains:
+    - element_type: Tekla class name (Beam, ContourPlate, Assembly, etc.)
+    - min/max: Corner coordinates {x, y, z} in model units (mm)
+    - centroid: Center point {x, y, z}
+    """
+    selected_objects = TeklaModel().get_selected_objects()
+
+    elements: list[dict[str, Any]] = []
+
+    for obj in wrap_model_objects(selected_objects):
+        bb = obj.bounding_box
+        if bb is None:
+            continue
+        cx, cy, cz = bb.centroid
+        elements.append(
+            {
+                "guid": obj.guid,
+                "element_type": obj.element_type,
+                "min": {"x": bb.min_x, "y": bb.min_y, "z": bb.min_z},
+                "max": {"x": bb.max_x, "y": bb.max_y, "z": bb.max_z},
+                "centroid": {"x": cx, "y": cy, "z": cz},
+            }
+        )
+
+    selected_count = selected_objects.GetSize()
+    processed_count = len(elements)
+    if processed_count == 0:
+        status = "warning"
+    elif processed_count < selected_count:
+        status = "partial"
+    else:
+        status = "success"
+
+    logger.info("Retrieved bounding boxes for %d of %d elements", processed_count, selected_count)
+    return ToolResult(
+        structured_content={
+            "status": status,
+            "selected_count": selected_count,
+            "processed_count": processed_count,
             "elements": elements,
         }
     )
