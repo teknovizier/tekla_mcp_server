@@ -6,14 +6,17 @@ Tests beam, column, and panel placement operations.
 
 import pytest
 
-from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, place_slabs, delete_selected, move_elements, place_grid
+from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, place_slabs, delete_selected, move_elements, place_grid, create_phase
 from tekla_mcp_server.models import BeamInput, ColumnInput, PanelInput, SlabInput, PointInput, PositionInput
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly
 
 
+_TEST_PHASE_MIN_NUMBER = 9900
+
+
 def cleanup_modeling_test_objects():
-    """Clean up test objects created by modeling tests."""
+    """Clean up test objects and phases created by modeling tests."""
     from tekla_mcp_server.models import StringMatchType
     from tekla_mcp_server.tekla.loader import BinaryFilterExpressionCollection, PartFilterExpressions, ObjectFilterExpressions, TeklaStructuresDatabaseTypeEnum
     from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -25,11 +28,18 @@ def cleanup_modeling_test_objects():
     add_filter(filter_collection, PartFilterExpressions.Name(), "MCP_TEST_", StringMatchType.STARTS_WITH)
 
     test_objects = model.get_objects_by_filter(filter_collection)
-
     if test_objects:
         for test_obj in test_objects:
             test_obj.Delete()
-        model.commit_changes()
+
+    phases_to_delete = [
+        p for p in model.get_phases()
+        if p.PhaseNumber >= _TEST_PHASE_MIN_NUMBER or (p.PhaseName or "").startswith("MCP_TEST_")
+    ]
+    for phase in phases_to_delete:
+        phase.Delete()
+
+    model.commit_changes()
 
 
 @pytest.fixture(autouse=True)
@@ -473,3 +483,37 @@ def test_place_grid_requires_two_y_coords():
     result = place_grid(x=[0, 5000], y=[0])
     assert result.structured_content["status"] == "error"
     assert "Y coordinates" in result.structured_content["message"]
+
+
+def test_create_phase_number_only():
+    """Creates a phase with number only; verifies return value and model persistence."""
+    result = create_phase(phase_number=9901)
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["phase_number"] == 9901
+    assert result.structured_content["phase_name"] == ""
+    existing = {p.PhaseNumber for p in TeklaModel().get_phases()}
+    assert 9901 in existing
+
+
+def test_create_phase_with_name():
+    """Creates a phase with number and name; verifies return value and model persistence."""
+    result = create_phase(phase_number=9902, name="MCP_TEST_PHASE")
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["phase_number"] == 9902
+    assert result.structured_content["phase_name"] == "MCP_TEST_PHASE"
+    phases = {p.PhaseNumber: p.PhaseName for p in TeklaModel().get_phases()}
+    assert 9902 in phases
+    assert phases[9902] == "MCP_TEST_PHASE"
+
+
+def test_create_phase_duplicate_returns_error():
+    """Second call with same phase number returns error containing 'already exists'.
+
+    If the first call fails (mcp_handler returns error dict, not raises), the second
+    call will also fail but with a different message — the assertion on 'already exists'
+    would then fail, surfacing the underlying problem correctly.
+    """
+    create_phase(phase_number=9903)
+    result = create_phase(phase_number=9903)
+    assert result.structured_content["status"] == "error"
+    assert "already exists" in result.structured_content["message"]

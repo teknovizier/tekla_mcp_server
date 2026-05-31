@@ -26,7 +26,7 @@ from tekla_mcp_server.models import (
 from tekla_mcp_server.utils import format_coordinate_string, mcp_handler
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_objects, wrap_model_object
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.loader import Grid, Operation, Point, Vector
+from tekla_mcp_server.tekla.loader import Grid, Operation, Phase, Point, Vector
 
 
 modeling_provider = LocalProvider()
@@ -522,5 +522,40 @@ def delete_selected() -> ToolResult:
             "total_deleted": deleted,
             "commit_success": commit_success,
             "message": message,
+        }
+    )
+
+
+@modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def create_phase(
+    phase_number: Annotated[int, Field(description="Phase number to create (must not already exist in the model)", ge=1)],
+    name: Annotated[str | None, Field(description="Optional phase name")] = None,
+) -> ToolResult:
+    """
+    Creates a new phase in the Tekla model.
+    """
+    model = TeklaModel()
+    existing_numbers = {p.PhaseNumber for p in model.get_phases()}
+    if phase_number in existing_numbers:
+        raise ValueError(f"Phase {phase_number} already exists")
+
+    phase = Phase(phase_number)
+    if name is not None:
+        phase.PhaseName = name
+    if not phase.Insert():
+        raise RuntimeError(f"Phase.Insert() returned false for phase {phase_number}")
+
+    commit_success = model.commit_changes()
+    if not commit_success:
+        logger.error("commit_changes() failed after creating phase %d", phase_number)
+        raise RuntimeError("Phase creation failed: commit_changes() returned false")
+
+    logger.info("Created phase %d (name=%s)", phase_number, name)
+    return ToolResult(
+        structured_content={
+            "status": "success",
+            "phase_number": phase_number,
+            "phase_name": name or "",
         }
     )

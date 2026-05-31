@@ -50,6 +50,7 @@ Type and default shown where relevant.
 | Modeling | `move_elements` | Move or copy selected elements by a displacement vector. Assemblies are expanded to all constituent parts recursively. `copy=true` keeps originals and creates new elements at the displaced position | `dx` (float, mm, default: `0`), `dy` (float, mm, default: `0`), `dz` (float, mm, default: `0`), `copy` (bool, default: `false`) - all optional |
 | Modeling | `place_grid` | Place a rectangular grid in the Tekla model | **`x`** (list[float], mm), **`y`** (list[float], mm), `z` (list[float], mm), `x_labels` (list[str]), `y_labels` (list[str]), `z_labels` (list[str]), `origin` (PointInput), `name` (str) |
 | Modeling | `delete_selected` | Delete all selected elements | - |
+| Modeling | `create_phase` | Create a new phase in the Tekla model | **`phase_number`** (int), `name` (str, optional) |
 
 ## Resources
 

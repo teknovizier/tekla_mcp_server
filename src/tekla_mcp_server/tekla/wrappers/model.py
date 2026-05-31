@@ -20,6 +20,7 @@ from tekla_mcp_server.tekla.loader import (
     ModelObjectSelector,
     ModelObjectEnumerator,
     ModelObjectSelectorUI,
+    PhaseCollection,
     FilterExpression,
     BinaryFilterOperatorType,
     BinaryFilterExpressionCollection,
@@ -260,6 +261,11 @@ class TeklaModel:
             return ModelObjectEnumerator()  # Empty
 
         return objects_to_select
+
+    @log_function_call
+    def get_phases(self) -> PhaseCollection:
+        """Return all phases defined in the model."""
+        return self.model.GetPhases()
 
     @staticmethod
     def select_objects(model_objects: Iterable) -> bool:

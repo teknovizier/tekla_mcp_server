@@ -122,7 +122,7 @@ def get_phase_list() -> ResourceResult:
     Returns a list of all phases in the current Tekla model.
     """
     tekla_model = TeklaModel()
-    phases = tekla_model.model.GetPhases()
+    phases = tekla_model.get_phases()
 
     phase_list = []
     current_phase = None
