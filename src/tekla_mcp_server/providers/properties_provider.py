@@ -4,7 +4,6 @@ Properties tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from collections import Counter
 from typing import Any, Annotated
 
 from fastmcp.server.providers import LocalProvider
@@ -16,7 +15,7 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBeam, TeklaContourPlate, TeklaModelObject, TeklaPart, TeklaReferenceModelObject, wrap_model_object, wrap_model_objects
-from tekla_mcp_server.tekla.loader import Part, BooleanPart, Operation
+from tekla_mcp_server.tekla.loader import BooleanPart, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 
@@ -292,42 +291,54 @@ def get_elements_properties(
 @mcp_handler(scope="tool")
 def get_elements_cut_parts() -> ToolResult:
     """
-    Find all cut parts in the selected Tekla elements and return a summary grouped by profile.
-
-    ## OUTPUT
-    - Return the result table in Markdown format EXACTLY as provided by the tool.
-    - DO NOT reformat, truncate, or modify anything, including spacing, columns, or headers.
-    - ALWAYS show the full table. DO NOT remove any rows or columns.
+    Find all boolean cut parts in the selected Tekla elements, grouped by parent part.
     """
     selected_objects = TeklaModel().get_selected_objects()
 
     processed_elements = 0
-    cut_parts_by_profile: Counter[str] = Counter()
+    parts_with_cuts: list[dict[str, Any]] = []
+    total_cut_parts = 0
 
-    for selected_object in selected_objects:
-        if not isinstance(selected_object, Part):
-            logger.error("get_cut_parts failed: Skipping non-part object: %s", selected_object.GetType())
+    for selected_object in wrap_model_objects(selected_objects):
+        if not isinstance(selected_object, TeklaPart):
+            logger.error("get_elements_cut_parts: Skipping non-part object: %s", type(selected_object).__name__)
             continue
-        for boolean_part in iterate_boolean_parts(selected_object):
+
+        cuts: list[dict[str, Any]] = []
+        for boolean_part in iterate_boolean_parts(selected_object.model_object):
             if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT:
-                profile = boolean_part.OperativePart.Profile.ProfileString
-                cut_parts_by_profile[profile] += 1
+                cutting_part = wrap_model_object(boolean_part.OperativePart)
+                if cutting_part is None:
+                    logger.warning("get_elements_cut_parts: could not wrap OperativePart for boolean on %s, skipping", selected_object.guid)
+                    continue
+                cuts.append(
+                    {
+                        "type": "BOOLEAN_CUT",
+                        "cutting_part_guid": cutting_part.guid,
+                        "cutting_profile": cutting_part.profile if isinstance(cutting_part, TeklaPart) else "N/A",
+                    }
+                )
+                total_cut_parts += 1
+
+        if cuts:
+            parts_with_cuts.append(
+                {
+                    "part_guid": selected_object.guid,
+                    "cut_count": len(cuts),
+                    "cuts": cuts,
+                }
+            )
+
         processed_elements += 1
 
-    cut_parts_sorted_by_profile = sorted(cut_parts_by_profile.items(), key=lambda x: x[0])
-
-    content_json = [{"No": i + 1, "Profile": profile, "Count": count} for i, (profile, count) in enumerate(cut_parts_sorted_by_profile)]
-
-    total_cut_parts = sum(cut_parts_by_profile.values())
-    logger.info("Found %s cut parts across %s profiles in %s elements", total_cut_parts, len(cut_parts_sorted_by_profile), processed_elements)
+    logger.info("Found %s cut parts in %s elements with cuts", total_cut_parts, len(parts_with_cuts))
     return ToolResult(
-        content=content_json,
         structured_content={
-            "status": "success" if cut_parts_sorted_by_profile else "warning",
+            "status": "success" if parts_with_cuts else "warning",
             "selected_elements": selected_objects.GetSize(),
             "processed_elements": processed_elements,
             "total_cut_parts": total_cut_parts,
-            "cut_parts_list": cut_parts_sorted_by_profile,
+            "parts_with_cuts": parts_with_cuts,
         },
     )
 
