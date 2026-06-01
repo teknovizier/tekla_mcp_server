@@ -886,15 +886,32 @@ def clash_check(
     )
 
 
+def _report_format(path: Path) -> tuple[str, bool]:
+    """Return (format_label, is_readable_as_text) based on file extension."""
+    suffix = path.suffix.lower()
+    if suffix in {".xlsx", ".xls", ".xlsm", ".xlsb"}:
+        return "excel", False
+    if suffix == ".pdf":
+        return "pdf", False
+    if suffix in {".html", ".htm"}:
+        return "html", True
+    if suffix == ".csv":
+        return "csv", True
+    if suffix == ".xsr":
+        return "xsr", True
+    return "text", True
+
+
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def create_report(
     template_name: Annotated[str, Field(description="Report template name, e.g. 'Cast_Unit_List'")],
     output_filename: Annotated[str | None, Field(description="Output file name without extension. If omitted, the template name is used")] = None,
-    output_folder: Annotated[str | None, Field(description="Output folder. When omitted, the default Tekla report output directory is used.")] = None,
+    output_folder: Annotated[str | None, Field(description="Output folder. When omitted, the default Tekla report output directory is used")] = None,
     title1: Annotated[str, Field(description="First title for the created report")] = "",
     title2: Annotated[str, Field(description="Second title for the created report")] = "",
     title3: Annotated[str, Field(description="Third title for the created report")] = "",
+    return_full_content: Annotated[bool, Field(description="When True, return the complete report text instead of the preview for readable formats")] = False,
 ) -> ToolResult:
     """
     Create a Tekla report from the currently selected model objects.
@@ -980,16 +997,44 @@ def create_report(
     if settled:
         try:
             size_bytes = report_path.stat().st_size
-            preview_max = get_report_preview_max_chars()
-            content_preview: str | None = None
-            content_truncated = False
-            if preview_max > 0:
-                # Read only preview_max + 1 chars: enough to fill the preview and to
-                # detect truncation, without loading a huge report fully into memory.
-                with report_path.open("r", encoding="utf-8", errors="replace") as f:
-                    chunk = f.read(preview_max + 1)
-                content_preview = chunk[:preview_max]
-                content_truncated = len(chunk) > preview_max
+            fmt, text_readable = _report_format(report_path)
+            result["format"] = fmt
+
+            result["content_readable"] = text_readable
+            result["size_bytes"] = size_bytes
+
+            if return_full_content:
+                if not text_readable:
+                    result["status"] = "warning"
+                    result["message"] = f"Report is in {fmt.upper()} format and cannot be returned as text. The file is available in the Tekla report output directory."
+                else:
+                    # Cap full-content reads to avoid loading pathologically large reports into memory.
+                    preview_max = get_report_preview_max_chars()
+                    full_content_max = preview_max * 10 if preview_max > 0 else 0
+                    with report_path.open("r", encoding="utf-8", errors="replace") as f:
+                        if full_content_max > 0:
+                            chunk = f.read(full_content_max + 1)
+                            result["content"] = chunk[:full_content_max]
+                            result["content_truncated"] = len(chunk) > full_content_max
+                        else:
+                            result["content"] = f.read()
+                            result["content_truncated"] = False
+                    result["status"] = "success"
+            else:
+                preview_max = get_report_preview_max_chars()
+                content_preview: str | None = None
+                content_truncated = False
+                if preview_max > 0 and text_readable:
+                    # Read only preview_max + 1 chars: enough to fill the preview and to
+                    # detect truncation, without loading a huge report fully into memory.
+                    with report_path.open("r", encoding="utf-8", errors="replace") as f:
+                        chunk = f.read(preview_max + 1)
+                    content_preview = chunk[:preview_max]
+                    content_truncated = len(chunk) > preview_max
+                result["status"] = "success"
+                if content_preview is not None:
+                    result["content_preview"] = content_preview
+                    result["content_truncated"] = content_truncated
         except OSError as e:
             # The file is on disk but not readable yet (locked by Tekla / sharing
             # violation on Windows, or not a regular file). Report a warning rather
@@ -997,19 +1042,12 @@ def create_report(
             logger.warning("create_report: report file not readable yet: %s", e)
             result["status"] = "warning"
             result["message"] = "Report was created but could not be read yet, it may still be in use. Try again shortly."
-        else:
-            result["status"] = "success"
-            result["size_bytes"] = size_bytes
-            if content_preview is not None:
-                result["content_preview"] = content_preview
-                result["content_truncated"] = content_truncated
     else:
         result["status"] = "warning"
         result["message"] = "Report was submitted but the file did not appear on disk within the timeout period."
 
-    # Normally the default output directory is not exposed (only the file name is
-    # returned). On a warning the caller needs the folder to locate the file once
-    # it eventually lands, so include it regardless.
+    # Always include the folder when the caller provided one, or on warnings — the
+    # caller needs it to locate the file once it eventually lands on disk.
     if user_provided_folder or result["status"] == "warning":
         result["output_folder"] = output_folder
 
