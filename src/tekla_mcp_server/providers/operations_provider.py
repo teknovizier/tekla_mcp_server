@@ -286,7 +286,7 @@ def cut_elements_with_cutters(
 
     result: dict = {
         "status": status,
-        "elements_count": selected_objects.GetSize(),
+        "selected_count": selected_objects.GetSize(),
         "processed_count": processed_count,
         "performed_cuts_count": performed_cuts,
     }
@@ -329,7 +329,7 @@ def convert_cut_parts_to_real_parts() -> ToolResult:
 
     result: dict = {
         "status": status,
-        "elements_count": selected_objects.GetSize(),
+        "selected_count": selected_objects.GetSize(),
         "processed_count": processed_count,
         "converted_booleans_count": converted_booleans_count,
     }
@@ -425,7 +425,7 @@ def check_for_orphans(
     result_content: dict = {
         "status": "warning" if orphaned else "success",
         "mode": mode,
-        "elements_count": selected_objects.GetSize(),
+        "selected_count": selected_objects.GetSize(),
         "evaluated_count": len(evaluated_guids),
         "orphaned_count": len(orphaned),
         "orphaned": orphaned,
@@ -787,7 +787,7 @@ def check_for_invalid_objects() -> ToolResult:
 
     result_content = {
         "status": "success" if not invalid_parts and not invalid_reinforcements and not invalid_assemblies else "warning",
-        "elements_count": selected_objects.GetSize(),
+        "selected_count": selected_objects.GetSize(),
         "total_evaluated_count": total_evaluated,
         "invalid_parts_count": len(invalid_parts),
         "invalid_reinforcements_count": len(invalid_reinforcements),
@@ -878,7 +878,7 @@ def clash_check(
     return ToolResult(
         structured_content={
             "status": "success" if not records else "warning",
-            "elements_count": len(selected_objects),
+            "selected_count": len(selected_objects),
             "checked_objects_count": checked_count,
             "clashes_count": len(records),
             "clashes": [c.to_dict() for c in records],
@@ -973,7 +973,7 @@ def create_report(
 
     result: dict[str, Any] = {
         "template_name": template_name,
-        "elements_count": selected_objects.GetSize(),
+        "selected_count": selected_objects.GetSize(),
         "file_name": report_path.name,
     }
 

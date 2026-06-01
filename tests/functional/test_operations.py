@@ -39,7 +39,7 @@ def test_check_for_orphans_with_selection(model_objects):
     result = check_for_orphans(mode="subassemblies")
     assert result.structured_content["status"] in ["success", "warning"]
     assert result.structured_content["mode"] == "subassemblies"
-    assert result.structured_content["elements_count"] == 1
+    assert result.structured_content["selected_count"] == 1
     assert result.structured_content["evaluated_count"] >= 0
     assert result.structured_content["orphaned_count"] >= 0
     assert isinstance(result.structured_content["orphaned"], list)
@@ -51,7 +51,7 @@ def test_check_for_orphans_rebars_mode(model_objects):
     result = check_for_orphans(mode="rebars")
     assert result.structured_content["status"] in ["success", "warning"]
     assert result.structured_content["mode"] == "rebars"
-    assert result.structured_content["elements_count"] == 1
+    assert result.structured_content["selected_count"] == 1
     assert result.structured_content["evaluated_count"] >= 0
     assert result.structured_content["orphaned_count"] >= 0
     assert isinstance(result.structured_content["orphaned"], list)
@@ -146,7 +146,7 @@ def test_cut_elements_with_cutters_by_class(model_objects):
     TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
     result = cut_elements_with_cutters(cutter_class=0, delete_cutting_parts=False)
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["elements_count"] == 2
+    assert result.structured_content["selected_count"] == 2
     assert result.structured_content["processed_count"] >= 1
 
 
@@ -156,7 +156,7 @@ def test_cut_elements_with_cutters_by_guid(model_objects):
     TeklaModel.select_objects([model_objects["test_wall4"]])
     result = cut_elements_with_cutters(cutter_guids=[cutter_guid], delete_cutting_parts=False)
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["elements_count"] == 1
+    assert result.structured_content["selected_count"] == 1
     assert result.structured_content["performed_cuts_count"] >= 1
     assert result.structured_content["processed_count"] == 1
 
@@ -174,7 +174,7 @@ def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
     result = convert_cut_parts_to_real_parts()
     assert result.structured_content["status"] == "warning"
-    assert result.structured_content["elements_count"] == 2
+    assert result.structured_content["selected_count"] == 2
     assert result.structured_content["processed_count"] == 2
 
 
@@ -183,7 +183,7 @@ def test_convert_cut_parts_to_real_parts_with_cut(model_objects):
     TeklaModel.select_objects([model_objects["test_wall3"]])
     result = convert_cut_parts_to_real_parts()
     assert result.structured_content["status"] == "success"
-    assert result.structured_content["elements_count"] == 1
+    assert result.structured_content["selected_count"] == 1
     assert result.structured_content["processed_count"] == 1
 
 
@@ -205,7 +205,7 @@ def test_check_for_invalid_objects_with_selection(model_objects):
     TeklaModel.select_objects([model_objects["test_wall1"]])
     result = check_for_invalid_objects()
     assert result.structured_content["status"] in ["success", "warning"]
-    assert result.structured_content["elements_count"] == 1
+    assert result.structured_content["selected_count"] == 1
     assert result.structured_content["total_evaluated_count"] >= 1
     assert result.structured_content["invalid_parts_count"] >= 0
     assert result.structured_content["invalid_reinforcements_count"] >= 0
@@ -216,7 +216,7 @@ def test_no_clash_separate_walls(model_objects):
     """Wall A alone - nothing to clash against."""
     TeklaModel.select_objects([model_objects["test_clash_wall_a"]])
     result = clash_check()
-    assert result.structured_content["elements_count"] == 1
+    assert result.structured_content["selected_count"] == 1
     assert result.structured_content["clashes_count"] == 0
 
 
@@ -224,7 +224,7 @@ def test_clash_overlapping_walls(model_objects):
     """Wall A + Wall B overlap by 500 mm - one CLASH_TYPE_CLASH with overlap >= 0."""
     TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_b"]])
     result = clash_check()
-    assert result.structured_content["elements_count"] == 2
+    assert result.structured_content["selected_count"] == 2
     clashes = result.structured_content["clashes"]
     assert len(clashes) == 1
     assert clashes[0]["clash_type"] == "CLASH_TYPE_CLASH"
@@ -235,7 +235,7 @@ def test_clash_containment(model_objects):
     """Wall C is entirely inside Wall A - clash type CLASH_TYPE_ISINSIDE."""
     TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_c"]])
     result = clash_check()
-    assert result.structured_content["elements_count"] == 2
+    assert result.structured_content["selected_count"] == 2
     clashes = result.structured_content["clashes"]
     assert len(clashes) == 1
     assert clashes[0]["clash_type"] == "CLASH_TYPE_ISINSIDE"
@@ -285,7 +285,7 @@ def test_create_report_custom_filename_and_folder(model_objects, tmp_path):
 
     assert result.structured_content["status"] == "success"
     assert result.structured_content["template_name"] == "Cast_Unit_List"
-    assert result.structured_content["elements_count"] == 2
+    assert result.structured_content["selected_count"] == 2
     assert result.structured_content["file_name"] == "my_report.xsr"
     assert result.structured_content["output_folder"] == str(tmp_path)
     assert result.structured_content["size_bytes"] > 0
