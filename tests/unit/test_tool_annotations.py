@@ -17,11 +17,7 @@ PROVIDERS_DIR = Path(__file__).resolve().parents[2] / "src" / "tekla_mcp_server"
 
 def _is_tool_decorator(decorator: ast.expr) -> bool:
     """True for `@<something>.tool(...)` decorator calls."""
-    return (
-        isinstance(decorator, ast.Call)
-        and isinstance(decorator.func, ast.Attribute)
-        and decorator.func.attr == "tool"
-    )
+    return isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute) and decorator.func.attr == "tool"
 
 
 def _annotations_dict(decorator: ast.Call) -> ast.Dict | None:

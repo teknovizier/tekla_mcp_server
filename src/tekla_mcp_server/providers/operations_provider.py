@@ -12,11 +12,11 @@ from fastmcp.tools import ToolResult
 
 from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import CheckResult
+from tekla_mcp_server.models import CheckResult, AttachmentPair
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaPart, TeklaReinforcement
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaModelObject, TeklaPart, TeklaReinforcement, ZERO_GUID
 from tekla_mcp_server.tekla.loader import Operation
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items, get_filters
 
@@ -62,24 +62,23 @@ def _check_element_bounding_box_embeds(
     element: TeklaAssembly,
     target_assembly_guids: set[str],
     tolerance: float,
-) -> tuple[list, list[CheckResult], int]:
+) -> tuple[list[CheckResult], set[str]]:
     """
-    Find embedded details physically inside element that are not attached to any of target assemblies.
+    Find embedded details inside element that are not attached to it.
 
-    The bounding-box search is a fast spatial pre-filter. Each surviving candidate is then
-    tested for actual containment via ray-casting and for correct assembly parentage.
+    Uses bounding box to find candidates, then checks containment and parent assembly.
+
+    Returns (orphaned, evaluated_guids) with deduplicated GUIDs.
     """
     try:
         element_main = element.main_part
     except ValueError:
-        return [], [], 0
+        return [], set()
 
     candidates = get_candidates_in_bounding_box(element, tolerance)
 
     orphaned: list[CheckResult] = []
-    orphaned_objects: list = []
     processed_guids: set[str] = set()
-    evaluated = 0
 
     for candidate in candidates:
         # Candidates may be parts belonging to a multi-part embed, promote to assembly
@@ -117,7 +116,6 @@ def _check_element_bounding_box_embeds(
         if not candidate_main.is_inside(element_main):
             continue
 
-        evaluated += 1
         processed_guids.add(assembly_guid)
 
         # An embed is orphaned when its parent assembly isn't one of the assemblies we're
@@ -134,35 +132,33 @@ def _check_element_bounding_box_embeds(
                     tekla_class=part_class,
                 )
             )
-            orphaned_objects.append(assembly_obj)
-
     logger.debug("Found %d orphaned embeds for element %s", len(orphaned), element.guid)
-    return orphaned_objects, orphaned, evaluated
+    return orphaned, processed_guids
 
 
 def _check_element_bounding_box_rebars(
     element: TeklaAssembly,
     element_reinforcement_guids: set[str],
     tolerance: float,
-) -> tuple[list, list[CheckResult], int]:
+) -> tuple[list[CheckResult], set[str]]:
     """
-    Find reinforcement objects inside element that are not in element_reinforcement_guids.
+    Find rebars inside element that are not in element_reinforcement_guids.
 
-    Candidates are pre-filtered by bounding box, then tested for containment to exclude
-    rebars that belong to adjacent elements. GUID membership determines attachment.
+    Uses bounding box to find candidates, then checks containment and attachment status.
+
+    Returns (orphaned, evaluated_guids) with deduplicated GUIDs.
     """
     try:
         element_main = element.main_part
     except ValueError:
-        return [], [], 0
+        return [], set()
 
     candidates = get_candidates_in_bounding_box(element, tolerance)
     if not candidates:
-        return [], [], 0
+        return [], set()
 
     orphaned: list[CheckResult] = []
-    orphaned_objects: list = []
-    evaluated = 0
+    evaluated_guids: set[str] = set()
 
     for candidate in candidates:
         if not isinstance(candidate, TeklaReinforcement):
@@ -177,7 +173,7 @@ def _check_element_bounding_box_rebars(
         if not candidate.is_inside(element_main):
             continue
 
-        evaluated += 1
+        evaluated_guids.add(candidate.guid)
 
         # Rebar is correctly attached to this element - not orphaned
         if candidate.guid in element_reinforcement_guids:
@@ -187,7 +183,7 @@ def _check_element_bounding_box_rebars(
         # legitimately reaches into this one. Recognised by the bar still lying
         # inside the solid of its actual father part.
         father = candidate.father
-        if father is not None and candidate.is_inside(father):
+        if father is not None and father.guid != ZERO_GUID and candidate.is_inside(father):
             continue
 
         orphaned.append(
@@ -198,10 +194,8 @@ def _check_element_bounding_box_rebars(
                 tekla_class=reinforcement_class,
             )
         )
-        orphaned_objects.append(candidate)
-
     logger.debug("Found %d orphaned rebars for element %s", len(orphaned), element.guid)
-    return orphaned_objects, orphaned, evaluated
+    return orphaned, evaluated_guids
 
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -342,27 +336,25 @@ def run_macro(macro_name: Annotated[str, Field(description="Name of the macro fi
     )
 
 
-@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def check_for_orphans(
-    mode: Annotated[Literal["embeds", "rebars"], Field(description="Check mode: embeds or rebars")],
-    attach: Annotated[bool, Field(description="If true, attach orphaned elements to their parent assembly")] = False,
+    mode: Annotated[Literal["subassemblies", "rebars"], Field(description="Check mode: 'subassemblies' (embedded detail assemblies) or 'rebars' (reinforcement)")],
 ) -> ToolResult:
     """
-    Check for embedded details or reinforcement bars not attached to selected elements.
-    Returns orphaned objects.
+    Find sub-assemblies or rebars inside selected elements that are not attached.
+
+    Read-only. Returns pairs of `{object_guid, target_guid}`. Pipe into `attach_assemblies`
+    or `attach_rebars` to fix.
     """
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
-
     tolerance = get_tolerance()
 
-    # Main loop: process each selected element, find orphans, optionally attach
-    orphaned_elements: list[CheckResult] = []
+    orphaned: list[dict] = []
     orphaned_guids: set[str] = set()
-    attached_elements: list[CheckResult] = []
     skipped_elements: list[str] = []
-    total_evaluated = 0
+    evaluated_guids: set[str] = set()
 
     for obj in wrap_model_objects(selected_objects):
         if not isinstance(obj, (TeklaPart, TeklaAssembly)):
@@ -370,136 +362,229 @@ def check_for_orphans(
             logger.debug("Skipping non-part/assembly object: %s", obj.guid)
             continue
 
-        # Get top-level assembly for checking attachment
+        # The top-level assembly is where this orphan would attach
         parent_assembly = obj.get_top_level_assembly()
         if parent_assembly is None:
             skipped_elements.append(obj.guid)
             logger.debug("No top-level assembly for %s, skipping", obj.guid)
             continue
 
-        # Run mode-specific orphan detection
-        if mode == "embeds":
-            orphaned_objects, orphaned, evaluated = _check_element_bounding_box_embeds(
-                parent_assembly,
-                {parent_assembly.guid},
-                tolerance,
-            )
+        if mode == "subassemblies":
+            orphans, ev_guids = _check_element_bounding_box_embeds(parent_assembly, {parent_assembly.guid}, tolerance)
+        else:  # "rebars"
+            orphans, ev_guids = _check_element_bounding_box_rebars(parent_assembly, _get_reinforcement_guids(parent_assembly), tolerance)
 
-        elif mode == "rebars":
-            orphaned_objects, orphaned, evaluated = _check_element_bounding_box_rebars(
-                parent_assembly,
-                _get_reinforcement_guids(parent_assembly),
-                tolerance,
-            )
+        evaluated_guids |= ev_guids
 
-        total_evaluated += evaluated
-
-        # Deduplicate: same orphan may be found near multiple selected elements
-        for item, orphan_obj in zip(orphaned, orphaned_objects):
-            if item.guid in orphaned_guids:
+        # Skip duplicates: same orphan may overlap multiple selected elements
+        for item in orphans:
+            if item.guid in orphaned_guids or item.guid == parent_assembly.guid:
                 continue
-
-            orphaned_elements.append(item)
             orphaned_guids.add(item.guid)
+            entry = item.model_dump(mode="json")
+            entry.pop("issues", None)
+            entry["object_guid"] = entry.pop("guid")
+            entry["target_guid"] = parent_assembly.guid
+            orphaned.append(entry)
 
-            if not attach:
-                continue
+    if not evaluated_guids:
+        logger.warning("No %s candidates evaluated: selection may lack geometry or contain none (selected: %d)", mode, selected_objects.GetSize())
 
-            # Skip self-attachment: don't attach element to itself
-            if item.guid == parent_assembly.guid:
-                logger.debug("Skipping self-attachment for %s", item.guid)
-                continue
+    logger.info("check_for_orphans(%s): selected=%d, evaluated=%d, orphaned=%d", mode, selected_objects.GetSize(), len(evaluated_guids), len(orphaned))
 
-            success = False
-
-            try:
-                # Different attachment methods for embeds vs rebars
-                if mode == "embeds":
-                    # Add embed assembly to parent assembly
-                    added = parent_assembly.model_object.Add(orphan_obj)
-
-                    if added:
-                        success = parent_assembly.modify() and orphan_obj.Modify()
-
-                elif mode == "rebars":
-                    # Set rebar's Father to main part
-                    try:
-                        main_part = parent_assembly.main_part
-                    except ValueError:
-                        logger.warning("Cannot attach %s: parent assembly %s has no main part", item.guid, parent_assembly.guid)
-                        continue
-                    orphan_obj.father = main_part
-
-                    success = main_part.modify() and orphan_obj.modify()
-            except Exception:
-                logger.exception("Failed to attach orphaned %s %s to assembly %s", mode[:-1], item.guid, parent_assembly.guid)
-                continue
-
-            if not success:
-                logger.warning(
-                    "Failed to attach orphaned %s %s to assembly %s",
-                    mode[:-1],
-                    item.guid,
-                    parent_assembly.guid,
-                )
-
-                continue
-
-            attached_elements.append(item)
-
-            logger.info(
-                "Attached orphaned %s %s to assembly %s",
-                mode[:-1],
-                item.guid,
-                parent_assembly.guid,
-            )
-
-    # Commit all attached orphans in single transaction
-    commit_success: bool | None = None
-    if attach and attached_elements:
-        commit_success = model.commit_changes()
-        if not commit_success:
-            logger.error("commit_changes() failed after attaching %d orphaned %s", len(attached_elements), mode)
-
-    # Warn if no candidates evaluated (no geometry or wrong object types selected)
-    if total_evaluated == 0:
-        logger.warning("No %s found: selected objects may not have valid geometry or no %s present (selected: %d)", mode, mode, selected_objects.GetSize())
-
-    logger.info(
-        "Finished check for orphaned %s: selected=%d, evaluated=%d, orphaned=%d, attached=%d", mode, selected_objects.GetSize(), total_evaluated, len(orphaned_elements), len(attached_elements)
-    )
-
-    prefix = "embeds" if mode == "embeds" else "rebar_objects"
-
-    remaining_orphans = len(orphaned_elements) - len(attached_elements)
-    if commit_success is False:
-        status = "error"
-    elif remaining_orphans == 0:
-        status = "success"
-    else:
-        status = "warning"
-
-    result_content = {
-        "status": status,
+    result_content: dict = {
+        "status": "warning" if orphaned else "success",
+        "mode": mode,
         "selected_count": selected_objects.GetSize(),
-        f"{prefix}_evaluated_count": total_evaluated,
-        f"orphaned_{prefix}_count": len(orphaned_elements),
+        "evaluated_count": len(evaluated_guids),
+        "orphaned_count": len(orphaned),
+        "orphaned": orphaned,
     }
-    if commit_success is not None:
-        result_content["commit_success"] = commit_success
-
     if skipped_elements:
         result_content["skipped_elements"] = skipped_elements
         result_content["skipped_count"] = len(skipped_elements)
 
-    if orphaned_elements:
-        if attach:
-            result_content[f"attached_{prefix}_count"] = len(attached_elements)
-            result_content[f"attached_{prefix}"] = attached_elements
+    return ToolResult(structured_content=result_content)
+
+
+def _resolve_pair(model: TeklaModel, object_guid: str, target_guid: str) -> tuple[TeklaModelObject, TeklaModelObject, None] | tuple[None, None, str]:
+    """Look up both GUIDs. Returns (obj, target, None) or (None, None, reason)."""
+    raw_orphan = model.get_object_by_guid(object_guid)
+    if raw_orphan is None:
+        return None, None, "object_not_found"
+    raw_target = model.get_object_by_guid(target_guid)
+    if raw_target is None:
+        return None, None, "target_not_found"
+    orphan = wrap_model_object(raw_orphan)
+    if orphan is None:
+        return None, None, "unsupported_object_type"
+    target = wrap_model_object(raw_target)
+    if target is None:
+        return None, None, "unsupported_target_type"
+    return orphan, target, None
+
+
+def _is_valid_assembly_pair(obj, target) -> bool:
+    """Object and target must both be assemblies."""
+    return isinstance(obj, TeklaAssembly) and isinstance(target, TeklaAssembly)
+
+
+def _is_valid_rebar_pair(obj, target) -> bool:
+    """Object must be reinforcement and the target an assembly."""
+    return isinstance(obj, TeklaReinforcement) and isinstance(target, TeklaAssembly)
+
+
+def _attach_assembly(obj: TeklaAssembly, target: TeklaAssembly) -> str | None:
+    """Add object assembly into target assembly.
+
+    Returns None on success. Returns a reason string if adding the assembly failed.
+    If `Add` succeeds but `modify()` fails later, we log a warning but still return
+    None - the change is already in the transaction and will be committed.
+    """
+    try:
+        added = target.model_object.Add(obj.model_object)
+    except Exception:
+        logger.exception("Add() raised attaching %s to %s", obj.guid, target.guid)
+        return "add_failed"
+    if not added:
+        return "add_failed"
+    for label, modify in (("object", obj.modify), ("target", target.modify)):
+        try:
+            if not modify():
+                logger.warning("%s.modify() returned False after attaching %s; committing anyway", label, obj.guid)
+        except Exception:
+            logger.exception("%s.modify() raised after attaching %s; committing anyway", label, obj.guid)
+    return None
+
+
+def _attach_rebar(obj: TeklaReinforcement, target: TeklaAssembly) -> str | None:
+    """Set rebar father to target's main part.
+
+    Returns None on success. Returns a reason string if the target has no main part
+    or if setting the father fails. If the father is set but `modify()` fails later,
+    we log a warning but still return None - the change is already in the transaction.
+    """
+    try:
+        main_part = target.main_part
+    except ValueError:
+        return "no_main_part"
+    try:
+        obj.father = main_part
+    except Exception:
+        logger.exception("Setting father raised for %s", obj.guid)
+        return "attach_error"
+    for label, modify in (("main_part", main_part.modify), ("object", obj.modify)):
+        try:
+            if not modify():
+                logger.warning("%s.modify() returned False after re-parenting %s; committing anyway", label, obj.guid)
+        except Exception:
+            logger.exception("%s.modify() raised after re-parenting %s; committing anyway", label, obj.guid)
+    return None
+
+
+def _batch_attach(mode: str, pairs: list[AttachmentPair], attach_fn, valid_fn) -> ToolResult:
+    """Attach each pair in one batch commit. Skip bad pairs and report. Empty input returns success with nothing done.
+
+    Items in `skipped` failed before changing the model. Only `attach_fn` returning a
+    reason means the model was never modified for that pair.
+    """
+    model = TeklaModel()
+    staged: list[str] = []
+    skipped: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    for pair in pairs:
+        # Drop exact duplicate pairs so a GUID can't be double-counted in `attached`
+        key = (pair.object_guid, pair.target_guid)
+        if key in seen:
+            skipped.append({"object_guid": pair.object_guid, "reason": "duplicate_pair"})
+            continue
+        seen.add(key)
+
+        # Same GUID means the object would attach to itself - always invalid
+        if pair.object_guid == pair.target_guid:
+            skipped.append({"object_guid": pair.object_guid, "reason": "self_attach"})
+            continue
+
+        obj, target, fail_reason = _resolve_pair(model, pair.object_guid, pair.target_guid)
+        if fail_reason is not None:
+            skipped.append({"object_guid": pair.object_guid, "reason": fail_reason})
+            continue
+
+        if not valid_fn(obj, target):
+            skipped.append({"object_guid": pair.object_guid, "reason": "wrong_type"})
+            continue
+
+        try:
+            fail_reason = attach_fn(obj, target)
+        except Exception:
+            logger.exception("Unexpected error attaching %s to %s", pair.object_guid, pair.target_guid)
+            fail_reason = "attach_error"
+
+        if fail_reason is None:
+            staged.append(pair.object_guid)
         else:
-            result_content[f"orphaned_{prefix}"] = orphaned_elements
+            skipped.append({"object_guid": pair.object_guid, "reason": fail_reason})
+
+    # Only report as attached if the commit succeeds
+    attached: list[str] = []
+    commit_success: bool | None = None
+    if staged:
+        commit_success = model.commit_changes()
+        if commit_success:
+            attached = staged
+        else:
+            logger.error("commit_changes() failed; %d staged %s not persisted", len(staged), mode)
+            skipped.extend({"object_guid": guid, "reason": "commit_failed"} for guid in staged)
+
+    if commit_success is False:
+        status = "error"
+    elif attached and skipped:
+        status = "warning"
+    elif skipped:
+        status = "error"
+    else:
+        status = "success"
+
+    logger.info("attach_%s: attached=%d, skipped=%d, commit=%s", mode, len(attached), len(skipped), commit_success)
+
+    result_content: dict = {
+        "status": status,
+        "mode": mode,
+        "attached_count": len(attached),
+        "attached": attached,
+        "skipped": skipped,
+    }
+    if commit_success is not None:
+        result_content["commit_success"] = commit_success
 
     return ToolResult(structured_content=result_content)
+
+
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def attach_assemblies(
+    pairs: Annotated[list[AttachmentPair], Field(description="Object and target assembly pairs to attach")],
+) -> ToolResult:
+    """
+    Attach assemblies to target assemblies.
+
+    Each pair adds the assembly into the target assembly.
+    """
+    return _batch_attach("subassemblies", pairs, _attach_assembly, _is_valid_assembly_pair)
+
+
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def attach_rebars(
+    pairs: Annotated[list[AttachmentPair], Field(description="Rebar and target assembly pairs to attach")],
+) -> ToolResult:
+    """
+    Attach reinforcement bars to target assemblies.
+
+    Each pair sets the rebar's father to the target assembly's main part.
+    """
+    return _batch_attach("rebars", pairs, _attach_rebar, _is_valid_rebar_pair)
 
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})

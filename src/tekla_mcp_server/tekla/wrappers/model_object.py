@@ -36,6 +36,8 @@ from tekla_mcp_server.tekla.loader import (
 from tekla_mcp_server.tekla.snapshot_builder import SnapshotBuilder
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 
+ZERO_GUID = "00000000-0000-0000-0000-000000000000"
+
 POSITION_PLANE_MAP = {
     "LEFT": Position.PlaneEnum.LEFT,
     "MIDDLE": Position.PlaneEnum.MIDDLE,

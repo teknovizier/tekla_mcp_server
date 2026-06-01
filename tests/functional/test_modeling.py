@@ -32,10 +32,7 @@ def cleanup_modeling_test_objects():
         for test_obj in test_objects:
             test_obj.Delete()
 
-    phases_to_delete = [
-        p for p in model.get_phases()
-        if p.PhaseNumber >= _TEST_PHASE_MIN_NUMBER or (p.PhaseName or "").startswith("MCP_TEST_")
-    ]
+    phases_to_delete = [p for p in model.get_phases() if p.PhaseNumber >= _TEST_PHASE_MIN_NUMBER or (p.PhaseName or "").startswith("MCP_TEST_")]
     for phase in phases_to_delete:
         phase.Delete()
 

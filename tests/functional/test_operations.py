@@ -4,7 +4,10 @@ Functional tests for operations_provider.
 Tests operations like boolean cuts, cut part conversion, and macro execution.
 """
 
+from tekla_mcp_server.models import AttachmentPair
 from tekla_mcp_server.providers.operations_provider import (
+    attach_rebars,
+    attach_assemblies,
     check_for_invalid_objects,
     check_for_orphans,
     clash_check,
@@ -12,33 +15,125 @@ from tekla_mcp_server.providers.operations_provider import (
     convert_cut_parts_to_real_parts,
     run_macro,
 )
+from tekla_mcp_server.tekla.wrappers.model_object import ZERO_GUID
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+
+
+OTHER_GUID = "11111111-1111-1111-1111-111111111111"
 
 
 def test_check_for_orphans_no_selection():
     """Tests that check_for_orphans returns error when nothing selected."""
-    result = check_for_orphans(mode="embeds")
+    result = check_for_orphans(mode="subassemblies")
     assert result.structured_content["status"] == "error"
 
 
 def test_check_for_orphans_with_selection(model_objects):
-    """Tests check_for_orphans with selected elements."""
+    """Tests check_for_orphans in subassemblies mode with selected elements."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    result = check_for_orphans(mode="embeds")
+    result = check_for_orphans(mode="subassemblies")
     assert result.structured_content["status"] in ["success", "warning"]
+    assert result.structured_content["mode"] == "subassemblies"
     assert result.structured_content["selected_count"] == 1
-    assert "embeds_evaluated_count" in result.structured_content
-    assert "orphaned_embeds_count" in result.structured_content
+    assert "evaluated_count" in result.structured_content
+    assert "orphaned_count" in result.structured_content
+    assert isinstance(result.structured_content["orphaned"], list)
 
 
 def test_check_for_orphans_rebars_mode(model_objects):
-    """Tests check_for_orphans in rebars mode (separate code path from embeds)."""
+    """Tests check_for_orphans in rebars mode (separate code path from subassemblies)."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
     result = check_for_orphans(mode="rebars")
     assert result.structured_content["status"] in ["success", "warning"]
+    assert result.structured_content["mode"] == "rebars"
     assert result.structured_content["selected_count"] == 1
-    assert "rebar_objects_evaluated_count" in result.structured_content
-    assert "orphaned_rebar_objects_count" in result.structured_content
+    assert "evaluated_count" in result.structured_content
+    assert "orphaned_count" in result.structured_content
+    assert isinstance(result.structured_content["orphaned"], list)
+
+
+def test_check_for_orphans_pairs_shape(model_objects):
+    """Each detected orphan carries object_guid + target_guid so attach can consume it verbatim."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = check_for_orphans(mode="subassemblies")
+    for entry in result.structured_content["orphaned"]:
+        assert "object_guid" in entry
+        assert "target_guid" in entry
+
+
+def test_attach_assemblies_empty_pairs():
+    """Empty pairs is a structured no-op success - nothing to attach, no commit."""
+    result = attach_assemblies(pairs=[])
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["attached_count"] == 0
+    assert result.structured_content["attached"] == []
+    assert result.structured_content["skipped"] == []
+
+
+def test_attach_rebars_empty_pairs():
+    """Empty pairs is a structured no-op success for the rebars tool too."""
+    result = attach_rebars(pairs=[])
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["attached_count"] == 0
+    assert result.structured_content["attached"] == []
+    assert result.structured_content["skipped"] == []
+
+
+def test_attach_assemblies_duplicate_pair():
+    """An exact duplicate pair is skipped 'duplicate_pair' so it can't be double-counted."""
+    pair = AttachmentPair(object_guid=ZERO_GUID, target_guid=OTHER_GUID)
+    result = attach_assemblies(pairs=[pair, pair])
+    reasons = [s["reason"] for s in result.structured_content["skipped"]]
+    assert "duplicate_pair" in reasons
+    assert result.structured_content["attached_count"] == 0
+
+
+def test_attach_assemblies_unresolvable_guid():
+    """A pair whose object GUID doesn't resolve is skipped 'object_not_found'; an all-skipped batch is an error."""
+    result = attach_assemblies(pairs=[AttachmentPair(object_guid=ZERO_GUID, target_guid=OTHER_GUID)])
+    assert result.structured_content["status"] == "error"
+    assert result.structured_content["attached_count"] == 0
+    assert result.structured_content["skipped"][0]["reason"] == "object_not_found"
+
+
+def test_attach_rebars_unresolvable_guid():
+    """A pair whose object GUID doesn't resolve is skipped 'object_not_found'; an all-skipped batch is an error."""
+    result = attach_rebars(pairs=[AttachmentPair(object_guid=ZERO_GUID, target_guid=OTHER_GUID)])
+    assert result.structured_content["status"] == "error"
+    assert result.structured_content["attached_count"] == 0
+    assert result.structured_content["skipped"][0]["reason"] == "object_not_found"
+
+
+def test_attach_assemblies_target_not_found(model_objects):
+    """A pair whose target GUID doesn't resolve is skipped 'target_not_found'."""
+    obj_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
+    result = attach_assemblies(pairs=[AttachmentPair(object_guid=obj_guid, target_guid=OTHER_GUID)])
+    assert result.structured_content["status"] == "error"
+    assert result.structured_content["skipped"][0]["reason"] == "target_not_found"
+
+
+def test_attach_rebars_target_not_found(model_objects):
+    """A pair whose target GUID doesn't resolve is skipped 'target_not_found'."""
+    obj_guid = model_objects["test_wall1"].Identifier.GUID.ToString()
+    result = attach_rebars(pairs=[AttachmentPair(object_guid=obj_guid, target_guid=OTHER_GUID)])
+    assert result.structured_content["status"] == "error"
+    assert result.structured_content["skipped"][0]["reason"] == "target_not_found"
+
+
+def test_attach_assemblies_self_attach_rejected():
+    """object_guid == target_guid is rejected 'self_attach' before any resolution."""
+    result = attach_assemblies(pairs=[AttachmentPair(object_guid=ZERO_GUID, target_guid=ZERO_GUID)])
+    assert result.structured_content["status"] == "error"
+    assert result.structured_content["attached_count"] == 0
+    assert result.structured_content["skipped"][0]["reason"] == "self_attach"
+
+
+def test_attach_rebars_self_attach_rejected():
+    """object_guid == target_guid is rejected 'self_attach' before any resolution."""
+    result = attach_rebars(pairs=[AttachmentPair(object_guid=ZERO_GUID, target_guid=ZERO_GUID)])
+    assert result.structured_content["status"] == "error"
+    assert result.structured_content["attached_count"] == 0
+    assert result.structured_content["skipped"][0]["reason"] == "self_attach"
 
 
 def test_cut_elements_with_cutters_by_class(model_objects):
