@@ -12,6 +12,8 @@ from typing import Any, Literal
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.tools import ToolResult
 
+import pathvalidate
+
 from tekla_mcp_server.init import logger
 
 
@@ -139,7 +141,7 @@ def sanitize_filename(raw: str) -> str | None:
     Returns:
         Sanitized filename, or None if nothing usable remains after sanitization
     """
-    cleaned = re.sub(r'[\\/:*?"<>|]', "_", raw).strip(" .")
+    cleaned = pathvalidate.sanitize_filename(raw, replacement_text="_", platform="Windows").strip(" .")
     return cleaned or None
 
 
