@@ -45,6 +45,9 @@ def load_dlls() -> bool:
     libraries using the `clr` module. If any DLL is not found, an exception is raised,
     and the application exits.
 
+    Side effect: redirects .NET Console.Out to Console.Error for the lifetime of the
+    process, so Tekla API output does not corrupt the MCP stdio transport.
+
     Returns:
         True if DLLs were loaded successfully, False if already loaded.
 
@@ -91,6 +94,14 @@ def load_dlls() -> bool:
             sys.path.append(str(path))
 
         loaded_dlls: set[str] = set()
+
+        # Redirect .NET Console.Out to stderr before loading DLLs so that any
+        # .NET console output during assembly initialization does not corrupt
+        # the MCP stdio transport.
+        try:
+            System.Console.SetOut(System.Console.Error)
+        except Exception:
+            logger.warning("Failed to redirect .NET Console.Out to stderr")
 
         try:
             for path in tekla_paths:
