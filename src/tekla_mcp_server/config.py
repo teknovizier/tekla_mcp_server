@@ -199,7 +199,7 @@ def get_advanced_option_directories(option_name: str) -> list[str]:
     # model folder cannot be read, log it - silently dropping relative entries would
     # otherwise surface to the caller as a misleading "option not set" error.
     try:
-        model_path = TeklaModel().model.GetInfo().ModelPath or ""
+        model_path = TeklaModel().model_path
     except Exception as e:
         logger.warning("Could not read model folder while resolving '%s', relative paths will be skipped: %s", option_name, e)
         model_path = ""

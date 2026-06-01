@@ -519,7 +519,7 @@ def get_filters(file_extension: str) -> list[str]:
 
     try:
         model = TeklaModel()
-        model_path = model.model.GetInfo().ModelPath
+        model_path = model.model_path
         if model_path:
             attributes_dir = Path(model_path) / "attributes"
             if attributes_dir.is_dir():

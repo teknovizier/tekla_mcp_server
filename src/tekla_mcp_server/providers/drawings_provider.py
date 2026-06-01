@@ -293,7 +293,7 @@ def print_drawings(
     else:
         # A relative folder is resolved against the model folder, consistent with
         # create_report and how relative advanced-option paths are interpreted.
-        output_folder = resolve_model_relative_dir(output_folder, TeklaModel().model.GetInfo().ModelPath or "")
+        output_folder = resolve_model_relative_dir(output_folder, TeklaModel().model_path)
         if not Path(output_folder).is_dir():
             raise ValueError(f"Output directory '{output_folder}' does not exist")
 

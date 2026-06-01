@@ -944,7 +944,7 @@ def create_report(
     else:
         # A relative folder is resolved against the model folder, the same meaning
         # relative paths carry for advanced-option directories.
-        output_folder = resolve_model_relative_dir(output_folder, model.model.GetInfo().ModelPath or "")
+        output_folder = resolve_model_relative_dir(output_folder, model.model_path)
         if not Path(output_folder).is_dir():
             raise ValueError(f"Output directory '{output_folder}' does not exist")
 

@@ -47,6 +47,7 @@ class TeklaModel:
 
     _connect_lock: threading.RLock
     _model: Model | None
+    _model_path: str | None
     _initialized: bool
 
     def __new__(cls):
@@ -56,6 +57,7 @@ class TeklaModel:
                     instance = super().__new__(cls)
                     instance._connect_lock = threading.RLock()
                     instance._model = None
+                    instance._model_path = None
                     instance._initialized = False
                     cls._instance = instance
         return cls._instance
@@ -100,6 +102,7 @@ class TeklaModel:
         """Force a reconnection to the Tekla model."""
         instance = cls()
         with instance._connect_lock:
+            instance._model_path = None
             instance._connect()
         return instance
 
@@ -146,6 +149,25 @@ class TeklaModel:
         if not self.ensure_connected():
             raise ConnectionError("Cannot connect to Tekla model. Ensure Tekla is running and a model is open.")
         return self._model
+
+    @property
+    def model_path(self) -> str:
+        """
+        Return the current model's folder path.
+
+        Cached after the first successful call as the model folder does not change
+        during a session. Invalidated automatically on reconnect.
+
+        Returns:
+            The model folder path, or an empty string if unavailable.
+
+        Raises:
+            ConnectionError: If not connected to a Tekla model.
+        """
+        with self._connect_lock:
+            if self._model_path is None:
+                self._model_path = self.model.GetInfo().ModelPath or ""
+            return self._model_path
 
     @log_function_call
     def commit_changes(self) -> bool:
