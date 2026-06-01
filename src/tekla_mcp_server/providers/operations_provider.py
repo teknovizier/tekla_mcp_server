@@ -16,7 +16,7 @@ from tekla_mcp_server.models import CheckResult, AttachmentPair
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaModelObject, TeklaPart, TeklaReinforcement, ZERO_GUID
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaModelObject, TeklaPart, TeklaReinforcement, SolidGeometryMixin, ZERO_GUID
 from tekla_mcp_server.tekla.loader import Operation
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items, get_filters
 
@@ -41,7 +41,7 @@ def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
 
     try:
         reinfs = element.main_part.model_object.GetReinforcements()
-    except ValueError:
+    except Exception:
         reinfs = None
 
     if reinfs is not None:
@@ -49,13 +49,39 @@ def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
             if rebar:
                 guids.add(rebar.guid)
 
-    for sec in element.model_object.GetSecondaries():
-        sec_reinfs = sec.GetReinforcements()
-        for rebar in wrap_model_objects(sec_reinfs):
-            if rebar:
-                guids.add(rebar.guid)
+    try:
+        secondaries = element.model_object.GetSecondaries()
+    except Exception:
+        secondaries = None
+
+    if secondaries is not None:
+        for sec in secondaries:
+            try:
+                sec_reinfs = sec.GetReinforcements()
+            except Exception:
+                continue
+            for rebar in wrap_model_objects(sec_reinfs):
+                if rebar:
+                    guids.add(rebar.guid)
 
     return guids
+
+
+def _is_inside_any_assembly_part(candidate: SolidGeometryMixin, parts: list[TeklaPart]) -> bool:
+    """
+    Check whether candidate lies within the solid geometry of any part in the list.
+
+    Returns True when any part's solid contains the candidate.
+    Returns False when no part contained the candidate, or when the list is empty
+    (degenerate/no-geometry elements are skipped to avoid false-positive orphans).
+
+    Delegates to `is_inside` which handles the NORMAL → RAW fallback internally
+    for TeklaPart containers and never propagates exceptions (conservative True).
+    """
+    for part in parts:
+        if candidate.is_inside(part):
+            return True
+    return False
 
 
 def _check_element_bounding_box_embeds(
@@ -70,9 +96,9 @@ def _check_element_bounding_box_embeds(
 
     Returns (orphaned, evaluated_guids) with deduplicated GUIDs.
     """
-    try:
-        element_main = element.main_part
-    except ValueError:
+    # Pre-compute assembly parts once (not per-candidate) for containment checks
+    assembly_parts = element.get_top_level_parts()
+    if not assembly_parts:
         return [], set()
 
     candidates = get_candidates_in_bounding_box(element, tolerance)
@@ -113,7 +139,7 @@ def _check_element_bounding_box_embeds(
             continue
 
         # Skip embeds that are in the bounding box but outside the element's actual solid
-        if not candidate_main.is_inside(element_main):
+        if not _is_inside_any_assembly_part(candidate_main, assembly_parts):
             continue
 
         processed_guids.add(assembly_guid)
@@ -148,9 +174,9 @@ def _check_element_bounding_box_rebars(
 
     Returns (orphaned, evaluated_guids) with deduplicated GUIDs.
     """
-    try:
-        element_main = element.main_part
-    except ValueError:
+    # Pre-compute assembly parts once (not per-candidate) for containment checks
+    assembly_parts = element.get_top_level_parts()
+    if not assembly_parts:
         return [], set()
 
     candidates = get_candidates_in_bounding_box(element, tolerance)
@@ -170,7 +196,7 @@ def _check_element_bounding_box_rebars(
             continue
 
         # Skip rebars that are in the bounding box but outside the element's actual solid
-        if not candidate.is_inside(element_main):
+        if not _is_inside_any_assembly_part(candidate, assembly_parts):
             continue
 
         evaluated_guids.add(candidate.guid)
@@ -182,6 +208,8 @@ def _check_element_bounding_box_rebars(
         # Starter bars: rebar belongs to a neighboring element and
         # legitimately reaches into this one. Recognised by the bar still lying
         # inside the solid of its actual father part.
+        # We check only the father part, not the entire father assembly, because we
+        # are verifying specific ownership.
         father = candidate.father
         if father is not None and father.guid != ZERO_GUID and candidate.is_inside(father):
             continue
@@ -256,7 +284,7 @@ def cut_elements_with_cutters(
 
     result: dict = {
         "status": status,
-        "selected_count": selected_objects.GetSize(),
+        "elements_count": selected_objects.GetSize(),
         "processed_count": processed_count,
         "performed_cuts_count": performed_cuts,
     }
@@ -299,7 +327,7 @@ def convert_cut_parts_to_real_parts() -> ToolResult:
 
     result: dict = {
         "status": status,
-        "selected_count": selected_objects.GetSize(),
+        "elements_count": selected_objects.GetSize(),
         "processed_count": processed_count,
         "converted_booleans_count": converted_booleans_count,
     }
@@ -388,14 +416,14 @@ def check_for_orphans(
             orphaned.append(entry)
 
     if not evaluated_guids:
-        logger.warning("No %s candidates evaluated: selection may lack geometry or contain none (selected: %d)", mode, selected_objects.GetSize())
+        logger.warning("No %s candidates evaluated: selection may lack geometry or contain none (elements: %d)", mode, selected_objects.GetSize())
 
-    logger.info("check_for_orphans(%s): selected=%d, evaluated=%d, orphaned=%d", mode, selected_objects.GetSize(), len(evaluated_guids), len(orphaned))
+    logger.info("check_for_orphans(%s): elements=%d, evaluated=%d, orphaned=%d", mode, selected_objects.GetSize(), len(evaluated_guids), len(orphaned))
 
     result_content: dict = {
         "status": "warning" if orphaned else "success",
         "mode": mode,
-        "selected_count": selected_objects.GetSize(),
+        "elements_count": selected_objects.GetSize(),
         "evaluated_count": len(evaluated_guids),
         "orphaned_count": len(orphaned),
         "orphaned": orphaned,
@@ -757,7 +785,7 @@ def check_for_invalid_objects() -> ToolResult:
 
     result_content = {
         "status": "success" if not invalid_parts and not invalid_reinforcements and not invalid_assemblies else "warning",
-        "selected_count": selected_objects.GetSize(),
+        "elements_count": selected_objects.GetSize(),
         "total_evaluated_count": total_evaluated,
         "invalid_parts_count": len(invalid_parts),
         "invalid_reinforcements_count": len(invalid_reinforcements),
@@ -848,7 +876,7 @@ def clash_check(
     return ToolResult(
         structured_content={
             "status": "success" if not records else "warning",
-            "selected_count": len(selected_objects),
+            "elements_count": len(selected_objects),
             "checked_objects_count": checked_count,
             "clashes_count": len(records),
             "clashes": [c.to_dict() for c in records],

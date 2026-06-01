@@ -133,6 +133,41 @@ class BoundingBox:
         return dist <= adaptive_tol
 
 
+def _ray_cast_inside(solid_self: Solid, solid_other: Solid) -> bool:
+    """
+    Odd/even ray-cast test - returns True if the center of the overlapping AABB
+    of the two solids lies inside `solid_other`.
+
+    Casts a ray in a non-axis-aligned direction to avoid grazing hits, counts
+    only forward-half-space intersections. An odd count means inside.
+    Does not handle invalid solids. Callers must validate before calling.
+    """
+    cmin, cmax = solid_self.MinimumPoint, solid_self.MaximumPoint
+    emin, emax = solid_other.MinimumPoint, solid_other.MaximumPoint
+    # Optimization: skip ray cast when AABBs have no positive-width overlap.
+    # Zero-width (touching) AABBs return False immediately - the `>=` guard
+    # catches them before any ray is cast. This is correct for a tangential
+    # touch: touching objects do not contain each other.
+    if max(cmin.X, emin.X) >= min(cmax.X, emax.X) or max(cmin.Y, emin.Y) >= min(cmax.Y, emax.Y) or max(cmin.Z, emin.Z) >= min(cmax.Z, emax.Z):
+        return False
+    cx = (max(cmin.X, emin.X) + min(cmax.X, emax.X)) * 0.5
+    cy = (max(cmin.Y, emin.Y) + min(cmax.Y, emax.Y)) * 0.5
+    cz = (max(cmin.Z, emin.Z) + min(cmax.Z, emax.Z)) * 0.5
+
+    # Ray direction: irrational-ratio, non-axis-aligned values avoid accidental
+    # alignment with flat faces or edges (which would cause a grazing/tangent hit
+    # counted as 0 or 2 intersections instead of 1, corrupting the parity).
+    # Magnitudes are ~1 km in Tekla's mm units - large enough to exit any realistic
+    # structural element from any origin inside it, small enough to stay within
+    # floating-point precision for the Tekla geometry kernel.
+    dx, dy, dz = 1.2345e6, 0.9182e6, 0.4571e6
+    hits = solid_other.Intersect(LineSegment(Point(cx, cy, cz), Point(cx + dx, cy + dy, cz + dz)))
+    if hits is None:
+        return False
+    count = sum(1 for i in range(hits.Count) if (hits[i].X - cx) * dx + (hits[i].Y - cy) * dy + (hits[i].Z - cz) * dz > 0)
+    return count % 2 == 1
+
+
 class SolidGeometryMixin:
     """Mixin for wrapped model objects that support Tekla solid geometry queries."""
 
@@ -148,55 +183,79 @@ class SolidGeometryMixin:
 
     def is_inside(self, other: TeklaModelObject) -> bool:
         """
-        Return True if this object lies inside `other` using an odd/even ray-cast test.
+        Return True if `self` object lies inside `other` using an odd/even ray-cast test.
 
         A ray is cast from the center of the overlapping AABB region in a non-axis-aligned
         direction to avoid grazing hits. Only forward-half-space intersections are counted.
         An odd count means the origin is inside the solid, an even count means outside.
 
+        When `other` is a TeklaPart and the NORMAL solid test returns False, a RAW
+        (pre-boolean-cut) solid fallback is attempted automatically. The fallback is
+        gated on a centroid pre-check: the candidate's own centroid must lie within the
+        container's RAW-solid AABB. Using RAW (not NORMAL) ensures embeds inside a
+        boolean-cut corner are not rejected when the NORMAL AABB is tighter than the
+        original material envelope. Legitimate neighbours whose centroid is entirely
+        outside the original part are still rejected.
+
         Notes:
-        - Concave geometry (L/T/custom contour shapes) is handled correctly.
+        - Simple convex and moderately concave geometry (L/T shapes) is typically handled
+          correctly. Highly concave or re-entrant solids may produce false results if the
+          ray exits and re-enters through the concavity, yielding an even parity count.
         - Near-tangent or very thin geometry may still produce false positives or negatives.
         - Any geometry/kernel failure conservatively returns True to avoid false negatives.
         """
         try:
-            # Prefer NORMAL solids because they include cuts/fittings/booleans and therefore
-            # better represent the final physical geometry in the model.
-            # Some Tekla object types do not support explicit SolidCreationTypeEnum.NORMAL, so fall back to the default GetSolid()
+            # Get solids - prefer NORMAL (includes cuts/booleans) for both sides.
+            # Some Tekla types don't support SolidCreationTypeEnum, so fall back to GetSolid().
             if isinstance(other, TeklaPart):
                 solid_other = other.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
             elif isinstance(other, SolidGeometryMixin):
                 solid_other = other.get_solid()
             else:
-                return True  # Conservatively assume True
+                logger.warning("is_inside: unknown container type %s, defaulting to inside", type(other).__name__)
+                return True  # conservative
             if isinstance(self, TeklaPart):
                 solid_self = self.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
             elif isinstance(self, SolidGeometryMixin):
                 solid_self = self.get_solid()
-            else:
-                return True  # Conservatively assume True
-            if not solid_other or not solid_other.IsValid() or not solid_self or not solid_self.IsValid():
+            if not solid_other or not solid_other.IsValid():
+                logger.warning("is_inside: container solid invalid (%s), defaulting to inside", "None" if not solid_other else "!IsValid()")
+                return True  # conservative
+            if not solid_self or not solid_self.IsValid():
+                logger.warning("is_inside: self solid invalid (%s), defaulting to inside", "None" if not solid_self else "!IsValid()")
+                return True  # conservative
+
+            # Primary test against NORMAL solid
+            if _ray_cast_inside(solid_self, solid_other):
                 return True
 
-            cand_min = solid_self.MinimumPoint
-            cand_max = solid_self.MaximumPoint
-            elem_min = solid_other.MinimumPoint
-            elem_max = solid_other.MaximumPoint
-            cx = (max(cand_min.X, elem_min.X) + min(cand_max.X, elem_max.X)) * 0.5
-            cy = (max(cand_min.Y, elem_min.Y) + min(cand_max.Y, elem_max.Y)) * 0.5
-            cz = (max(cand_min.Z, elem_min.Z) + min(cand_max.Z, elem_max.Z)) * 0.5
-            dx, dy, dz = 1.2345e6, 0.9182e6, 0.4571e6
-            ray = LineSegment(Point(cx, cy, cz), Point(cx + dx, cy + dy, cz + dz))
-            hits = solid_other.Intersect(ray)
-            count = 0
-            if hits is not None:
-                for i in range(hits.Count):
-                    q = hits[i]
-                    if (q.X - cx) * dx + (q.Y - cy) * dy + (q.Z - cz) * dz > 0:
-                        count += 1
-            return count % 2 == 1
+            # NORMAL returned False - fall back to RAW solid for TeklaPart containers.
+            # Embeds in boolean-cut sleeve holes sit in the void of the NORMAL solid
+            # but are physically within the original wall material.
+            # Gate on a centroid pre-check to reject neighbouring structural elements
+            # whose bounding box grazes the container but whose centre is outside it.
+            if not isinstance(other, TeklaPart):
+                return False
+
+            solid_raw = other.get_solid(Solid.SolidCreationTypeEnum.RAW)
+            if not solid_raw or not solid_raw.IsValid():
+                return True  # conservative
+
+            # Gate on RAW AABB (not NORMAL) so that embeds inside a boolean-cut
+            # corner are not rejected: the RAW solid covers the full original
+            # material volume, whereas the NORMAL AABB may be tighter after a cut
+            # removes a corner. Legitimate neighbours whose centroid lies entirely
+            # outside the original part are still rejected.
+            cmin, cmax = solid_self.MinimumPoint, solid_self.MaximumPoint
+            rmin, rmax = solid_raw.MinimumPoint, solid_raw.MaximumPoint
+            scx, scy, scz = (cmin.X + cmax.X) * 0.5, (cmin.Y + cmax.Y) * 0.5, (cmin.Z + cmax.Z) * 0.5
+            if not (rmin.X <= scx <= rmax.X and rmin.Y <= scy <= rmax.Y and rmin.Z <= scz <= rmax.Z):
+                return False  # centroid outside RAW AABB - not embedded
+
+            return _ray_cast_inside(solid_self, solid_raw)
         except Exception:
-            return True  # Conservatively assume True
+            logger.warning("is_inside containment test failed, defaulting to inside")
+            return True  # conservative
 
 
 def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
@@ -629,6 +688,30 @@ class TeklaAssembly(TeklaModelObject):
         Gets the top assembly for the given assembly.
         """
         return _get_top_assembly(self._model_object)
+
+    def get_top_level_parts(self) -> list[TeklaPart]:
+        """
+        Returns the top-level parts of this assembly (main + secondaries).
+
+        Does not recurse into subassemblies - only the parts directly owned
+        by this assembly are returned.
+        """
+        parts: list[TeklaPart] = []
+        try:
+            mp = self.main_part
+            if isinstance(mp, TeklaPart):
+                parts.append(mp)
+        except ValueError:
+            logger.warning("Assembly has no main part - using secondaries only")
+        try:
+            secondaries = self.model_object.GetSecondaries()
+        except Exception:
+            logger.warning("Failed to get secondaries for assembly")
+            return parts
+        for sec in wrap_model_objects(secondaries):
+            if isinstance(sec, TeklaPart):
+                parts.append(sec)
+        return parts
 
     def get_all_children(self, include_all: bool = True) -> list[ModelObject]:
         """

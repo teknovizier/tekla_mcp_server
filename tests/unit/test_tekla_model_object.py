@@ -110,6 +110,16 @@ def test_get_top_level_assembly(wall1):
     assert assembly.model_object.Equals(wall1.model_object.GetAssembly())
 
 
+def test_get_top_level_parts(wall1):
+    """Checks that get_top_level_parts returns main part + secondaries as TeklaPart instances."""
+    assembly = wall1.get_top_level_assembly()
+    parts = assembly.get_top_level_parts()
+    assert isinstance(parts, list)
+    assert len(parts) >= 1
+    for part in parts:
+        assert isinstance(part, TeklaPart)
+
+
 def test_get_report_property_weight_property(wall1):
     """Checks that a report property can be retrieved correctly."""
     assert wall1.get_report_property("WEIGHT") == pytest.approx(2880.0, abs=0.1)
