@@ -11,7 +11,7 @@ from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.tekla.loader import Grid
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.utils import get_all_materials, get_all_rebar_items, get_macros, get_filters
+from tekla_mcp_server.tekla.utils import get_all_materials, get_all_rebar_items, get_macros, get_filters, get_report_templates
 from tekla_mcp_server.utils import json_resource, mcp_handler, parse_coordinate_string, parse_label_string
 
 
@@ -75,11 +75,22 @@ def get_rebars_resource() -> ResourceResult:
 @mcp_handler(scope="resource")
 def get_macro_list() -> ResourceResult:
     """
-    Returns a list of available Tekla macros from configured directories.
+    Returns a list of available Tekla macros from XS_MACRO_DIRECTORY.
     """
     macros = get_macros()
     logger.debug("Retrieved %d macros", len(macros))
     return json_resource(macros)
+
+
+@resources_provider.resource("tekla://reports")
+@mcp_handler(scope="resource")
+def get_report_template_list() -> ResourceResult:
+    """
+    Returns a list of available Tekla report template names.
+    """
+    templates = get_report_templates()
+    logger.debug("Retrieved %d report templates", len(templates))
+    return json_resource(templates)
 
 
 @resources_provider.resource("tekla://element_types")

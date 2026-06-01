@@ -5,7 +5,7 @@ Unit tests for configuration management.
 import pytest
 from unittest.mock import patch
 
-from tekla_mcp_server.config import Config, get_config, _load_json, _load_settings, _get_tekla_macro_directories
+from tekla_mcp_server.config import Config, get_config, get_report_preview_max_chars, get_report_preview_timeout, _load_json, _load_settings
 
 
 @pytest.fixture(autouse=True)
@@ -13,7 +13,6 @@ def clear_caches():
     """Clear all lru_cache decorators before each test."""
     _load_json.cache_clear()
     _load_settings.cache_clear()
-    _get_tekla_macro_directories.cache_clear()
     yield
 
 
@@ -77,22 +76,29 @@ class TestGetConfigSingleton:
         assert callable(get_config)
 
 
-class TestTeklaMacroDirectories:
-    """Test tekla_macro_directories property."""
+class TestReportPreviewConfig:
+    """Test get_report_preview_max_chars and get_report_preview_timeout."""
 
-    def test_returns_empty_when_no_option(self):
-        """Test returns empty list when GetAdvancedOption returns empty."""
-        with patch("tekla_mcp_server.config._get_tekla_macro_directories", return_value=[]):
-            config = Config()
-            assert config.tekla_macro_directories == []
+    def test_preview_max_chars_default(self):
+        """Returns default when reports section is absent."""
+        with patch("tekla_mcp_server.config._load_settings") as mock_settings:
+            mock_settings.return_value = {"tekla_path": "C:\\Tekla"}
+            assert get_report_preview_max_chars() == 2000
 
-    def test_returns_cached_paths(self, tmp_path):
-        """Test that paths from cached function are returned."""
-        dir1 = tmp_path / "macros1"
-        dir1.mkdir()
-        cached_paths = [str(dir1.resolve())]
+    def test_preview_max_chars_from_config(self):
+        """Reads value from reports.preview_max_chars."""
+        with patch("tekla_mcp_server.config._load_settings") as mock_settings:
+            mock_settings.return_value = {"tekla_path": "C:\\Tekla", "reports": {"preview_max_chars": 500}}
+            assert get_report_preview_max_chars() == 500
 
-        with patch("tekla_mcp_server.config._get_tekla_macro_directories", return_value=cached_paths):
-            config = Config()
-            result = config.tekla_macro_directories
-            assert result == cached_paths
+    def test_preview_timeout_default(self):
+        """Returns default when reports section is absent."""
+        with patch("tekla_mcp_server.config._load_settings") as mock_settings:
+            mock_settings.return_value = {"tekla_path": "C:\\Tekla"}
+            assert get_report_preview_timeout() == 30.0
+
+    def test_preview_timeout_from_config(self):
+        """Reads value from reports.preview_timeout."""
+        with patch("tekla_mcp_server.config._load_settings") as mock_settings:
+            mock_settings.return_value = {"tekla_path": "C:\\Tekla", "reports": {"preview_timeout": 120}}
+            assert get_report_preview_timeout() == 120.0

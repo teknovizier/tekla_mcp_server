@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 
-from tekla_mcp_server.config import get_config, get_tolerance
+from tekla_mcp_server.config import get_tolerance, get_advanced_option_directories
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import BaseComponent
 
@@ -451,19 +451,40 @@ def get_all_rebar_items() -> list[dict[str, str]]:
 def get_macros() -> list[str]:
     """
     Returns sorted list of available Tekla macros.
+
     Searches in XS_MACRO_DIRECTORY.
     """
 
-    directories = get_config().tekla_macro_directories
-    macro_names: list[str] = []
+    directories = get_advanced_option_directories("XS_MACRO_DIRECTORY")
+    logger.debug("Searching for macros in XS_MACRO_DIRECTORY: %s", directories)
 
+    macro_names: list[str] = []
     for directory in directories:
-        dir_path = Path(directory)
-        if dir_path.is_dir():
-            for file in dir_path.rglob("*.cs"):
-                macro_names.append(file.name)
+        for file in Path(directory).rglob("*.cs"):
+            macro_names.append(file.name)
 
     return sorted(macro_names)
+
+
+@lru_cache
+def get_report_templates() -> list[str]:
+    """
+    Returns sorted list of available Tekla report template names from .rpt files.
+
+    Searches in:
+    - XS_TEMPLATE_DIRECTORY
+    - XS_SYSTEM
+    """
+    # Build a fresh list - the helper returns lru_cache'd lists that must not be mutated.
+    search_dirs = [*get_advanced_option_directories("XS_TEMPLATE_DIRECTORY"), *get_advanced_option_directories("XS_SYSTEM")]
+    logger.debug("Searching for report templates in XS_TEMPLATE_DIRECTORY and XS_SYSTEM: %s", search_dirs)
+
+    template_names: set[str] = set()
+    for directory in search_dirs:
+        for file in Path(directory).rglob("*.rpt"):
+            template_names.add(file.stem)
+
+    return sorted(template_names)
 
 
 @lru_cache

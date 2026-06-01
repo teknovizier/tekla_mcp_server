@@ -81,6 +81,13 @@ Set `embeddings.embedding_model` to HuggingFace ID or local path:
 | `tolerances.center_tolerance_factor` | `0.05` | Relative factor for center-point tolerance (fraction of element size) |
 | `tolerances.comparison` | `0.01` | Numeric tolerance used in `compare_elements`. Values within this tolerance are treated as equal. |
 
+### Reports
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `reports.preview_max_chars` | `2000` | Max characters returned in `content_preview` of `create_report`. Set to `0` to disable the preview (the file is not read). |
+| `reports.preview_timeout` | `30` | Max seconds `create_report` blocks waiting for the report file to appear on disk before returning a warning. |
+
 ## Element Types (`element_types.json`)
 
 Map element type names to Tekla class numbers and numbering settings:

@@ -1,9 +1,13 @@
 """
 Functional tests for operations_provider.
 
-Tests operations like boolean cuts, cut part conversion, and macro execution.
+Tests operations like boolean cuts, cut part conversion, macro execution,
+and report creation.
 """
 
+from pathlib import Path
+
+from tekla_mcp_server.config import get_advanced_option_directories
 from tekla_mcp_server.models import AttachmentPair
 from tekla_mcp_server.providers.operations_provider import (
     attach_rebars,
@@ -11,6 +15,7 @@ from tekla_mcp_server.providers.operations_provider import (
     check_for_invalid_objects,
     check_for_orphans,
     clash_check,
+    create_report,
     cut_elements_with_cutters,
     convert_cut_parts_to_real_parts,
     run_macro,
@@ -264,3 +269,66 @@ def test_filter_name_restores_original_selection(model_objects):
     selected_guids = {obj.Identifier.GUID.ToString() for obj in TeklaModel().get_selected_objects()}
     expected_guids = {w.Identifier.GUID.ToString() for w in walls}
     assert selected_guids == expected_guids
+
+
+def test_create_report_custom_filename_and_folder(model_objects, tmp_path):
+    """Creates a report with explicit output_filename and output_folder."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+
+    result = create_report(
+        template_name="Cast_Unit_List",
+        output_filename="my_report",
+        output_folder=str(tmp_path),
+        title1="Custom Title",
+        title2="Subtitle",
+    )
+
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["template_name"] == "Cast_Unit_List"
+    assert result.structured_content["elements_count"] == 2
+    assert result.structured_content["file_name"] == "my_report.xsr"
+    assert result.structured_content["output_folder"] == str(tmp_path)
+    assert result.structured_content["size_bytes"] > 0
+    assert "3000*200" in result.structured_content["content_preview"]
+
+
+def test_create_report_no_filename_uses_template_name(model_objects, tmp_path):
+    """Omitted output_filename falls back to the template name."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+
+    result = create_report(
+        template_name="Cast_Unit_List",
+        output_folder=str(tmp_path),
+    )
+
+    assert result.structured_content["file_name"] == "Cast_Unit_List.xsr"
+    assert result.structured_content["output_folder"] == str(tmp_path)
+    assert "3000*200" in result.structured_content["content_preview"]
+
+
+def test_create_report_no_folder_uses_default(model_objects):
+    """Omitted output_folder uses XS_REPORT_OUTPUT_DIRECTORY; only file_name is returned on success."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+
+    # This test writes into the real XS_REPORT_OUTPUT_DIRECTORY, so clean up the file
+    # afterwards to avoid polluting the environment and leaving stale reports behind.
+    report_dirs = get_advanced_option_directories("XS_REPORT_OUTPUT_DIRECTORY")
+    created_file = Path(report_dirs[0]) / "default_folder_test.xsr" if report_dirs else None
+
+    try:
+        result = create_report(
+            template_name="Cast_Unit_List",
+            output_filename="default_folder_test",
+        )
+
+        status = result.structured_content["status"]
+        assert status in ("success", "warning"), f"Unexpected status: {status}"
+        assert result.structured_content["file_name"] == "default_folder_test.xsr"
+
+        if status == "success":
+            assert "output_folder" not in result.structured_content, "output_folder should not be exposed when user did not provide it"
+            assert result.structured_content["size_bytes"] > 0
+            assert "3000*200" in result.structured_content["content_preview"]
+    finally:
+        if created_file is not None and created_file.exists():
+            created_file.unlink()

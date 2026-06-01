@@ -78,28 +78,6 @@ def _load_settings() -> dict[str, Any]:
 
 
 @lru_cache
-def _get_tekla_macro_directories() -> list[str]:
-    """
-    Get macro directories from Tekla's XS_MACRO_DIRECTORY advanced option.
-
-    Returns:
-        List of valid, existing directory paths from the macro directory setting
-    """
-    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
-
-    _, option = TeklaStructuresSettings.GetAdvancedOption("XS_MACRO_DIRECTORY", str())
-    if not option:
-        return []
-
-    paths: list[str] = []
-    for path_str in option.split(";"):
-        path = Path(path_str.strip())
-        if path.is_dir():
-            paths.append(str(path.resolve()))
-    return paths
-
-
-@lru_cache
 def _get_contentattributes_file_paths() -> list[str]:
     """
     Get all contentattributes file paths from tpled.ini INCLUDE statements.
@@ -193,6 +171,61 @@ def _get_contentattributes_file_paths() -> list[str]:
     return included_files
 
 
+def get_advanced_option_directories(option_name: str) -> list[str]:
+    """
+    Get existing directory paths from a semicolon-separated Tekla advanced option.
+
+    Many Tekla advanced options (e.g. XS_MACRO_DIRECTORY, XS_TEMPLATE_DIRECTORY,
+    XS_REPORT_OUTPUT_DIRECTORY) hold one or more semicolon-separated search paths.
+    Relative paths (e.g. ".\\attributes") are resolved against the current model
+    folder.
+
+    Args:
+        option_name: Advanced option name, e.g. "XS_MACRO_DIRECTORY".
+
+    Returns:
+        List of valid, existing directory paths from the setting,
+        in declared order. Empty if the option is unset or no path exists.
+    """
+    from tekla_mcp_server.tekla.loader import TeklaStructuresSettings
+    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+    from tekla_mcp_server.init import logger
+
+    _, option = TeklaStructuresSettings.GetAdvancedOption(option_name, str())
+    if not option:
+        return []
+
+    # Relative paths in advanced options are relative to the model folder. If the
+    # model folder cannot be read, log it - silently dropping relative entries would
+    # otherwise surface to the caller as a misleading "option not set" error.
+    try:
+        model_path = TeklaModel().model.GetInfo().ModelPath or ""
+    except Exception as e:
+        logger.warning("Could not read model folder while resolving '%s', relative paths will be skipped: %s", option_name, e)
+        model_path = ""
+
+    paths: list[str] = []
+    skipped_relative = False
+    for path_str in option.split(";"):
+        raw = path_str.strip()
+        if not raw:
+            continue
+        path = Path(raw)
+        if not path.is_absolute():
+            if not model_path:
+                # Resolving a relative path against the process CWD is meaningless
+                # here, so skip it rather than match an unrelated directory.
+                skipped_relative = True
+                continue
+            path = Path(model_path) / path
+        if path.is_dir():
+            paths.append(str(path.resolve()))
+
+    if skipped_relative and not paths:
+        logger.warning("'%s' is set but only contains relative paths that could not be resolved (model folder unavailable)", option_name)
+    return paths
+
+
 class Config:
     """Centralized configuration manager - thin wrapper around cached functions."""
 
@@ -260,11 +293,6 @@ class Config:
         return _load_json("report_properties.json")
 
     @property
-    def tekla_macro_directories(self) -> list[str]:
-        """List of directories to scan for Tekla macros."""
-        return _get_tekla_macro_directories()
-
-    @property
     def read_only(self) -> bool:
         """When True, hide all tools marked as destructive from the LLM."""
         return bool(_load_settings().get("read_only", False))
@@ -323,6 +351,31 @@ class Config:
     def get_report_props(self, key: str) -> list[str]:
         """Returns report property list for the given object type key."""
         return self.report_properties.get(key, [])
+
+
+def _get_reports_config() -> dict[str, Any]:
+    """Get the reports configuration section."""
+    return _load_settings().get("reports", {})
+
+
+def get_report_preview_max_chars() -> int:
+    """
+    Get the maximum number of characters for report content preview.
+
+    Returns:
+        Max chars for preview (default 2000)
+    """
+    return int(_get_reports_config().get("preview_max_chars", 2000))
+
+
+def get_report_preview_timeout() -> float:
+    """
+    Get the maximum time in seconds to wait for a report file to appear on disk.
+
+    Returns:
+        Timeout in seconds (default 30)
+    """
+    return float(_get_reports_config().get("preview_timeout", 30))
 
 
 def get_tolerance(name: str = "default", default: float = 20.0) -> float:

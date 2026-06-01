@@ -2,14 +2,18 @@
 Unit tests for utils module.
 """
 
+from pathlib import Path
+
 import pytest
 
 from tekla_mcp_server.utils import (
+    build_report_filename,
     find_normalized_match,
     normalize_attribute_name,
     format_coordinate_string,
     parse_coordinate_string,
     parse_label_string,
+    resolve_model_relative_dir,
     sanitize_filename,
 )
 
@@ -132,3 +136,65 @@ class TestSanitizeFilename:
     )
     def test_sanitize_returns_none_when_nothing_remains(self, raw):
         assert sanitize_filename(raw) is None
+
+
+class TestBuildReportFilename:
+    def test_uses_template_name_when_filename_omitted(self):
+        assert build_report_filename("Cast_Unit_List", None) == "Cast_Unit_List.xsr"
+
+    def test_empty_filename_falls_back_to_template(self):
+        assert build_report_filename("Cast_Unit_List", "") == "Cast_Unit_List.xsr"
+
+    def test_uses_provided_filename(self):
+        assert build_report_filename("Cast_Unit_List", "my_report") == "my_report.xsr"
+
+    def test_keeps_explicit_extension(self):
+        assert build_report_filename("Cast_Unit_List", "report.csv") == "report.csv"
+
+    def test_sanitizes_invalid_characters(self):
+        assert build_report_filename("Cast_Unit_List", "my:report*x") == "my_report_x.xsr"
+
+    @pytest.mark.parametrize("name", ["ab", "ab.xsr", "x.csv"])
+    def test_short_stem_raises(self, name):
+        with pytest.raises(ValueError, match="at least 3 characters"):
+            build_report_filename("Cast_Unit_List", name)
+
+    def test_short_template_name_raises_when_filename_omitted(self):
+        with pytest.raises(ValueError, match="at least 3 characters"):
+            build_report_filename("ab", None)
+
+    @pytest.mark.parametrize("name", ["abc", "abc.xsr", "report"])
+    def test_long_enough_stem_accepted(self, name):
+        # Stem has >= 3 characters, so no exception is raised.
+        build_report_filename("Cast_Unit_List", name)
+
+    @pytest.mark.parametrize("name", ["...", "   ", " . . "])
+    def test_no_valid_characters_raises(self, name):
+        with pytest.raises(ValueError, match="no valid filename characters"):
+            build_report_filename("Cast_Unit_List", name)
+
+
+class TestResolveModelRelativeDir:
+    def test_absolute_path_is_normalized(self, tmp_path):
+        sub = tmp_path / "out"
+        sub.mkdir()
+        result = resolve_model_relative_dir(str(sub), str(tmp_path / "model"))
+        assert result == str(sub.resolve())
+
+    def test_relative_path_resolved_against_model(self, tmp_path):
+        model_dir = tmp_path / "model"
+        (model_dir / "reports").mkdir(parents=True)
+        result = resolve_model_relative_dir("reports", str(model_dir))
+        assert result == str((model_dir / "reports").resolve())
+
+    def test_dot_relative_path_resolved_against_model(self, tmp_path):
+        # pathlib normalizes a leading "./" on both Windows and POSIX.
+        model_dir = tmp_path / "model"
+        model_dir.mkdir()
+        result = resolve_model_relative_dir("./out", str(model_dir))
+        assert result == str((model_dir / "out").resolve())
+
+    def test_relative_path_without_model_uses_cwd(self):
+        # No model path: relative paths fall back to the process working directory.
+        result = resolve_model_relative_dir("reports", "")
+        assert result == str((Path.cwd() / "reports").resolve())

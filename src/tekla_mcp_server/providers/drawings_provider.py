@@ -11,12 +11,12 @@ from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from pydantic import Field
 
+from tekla_mcp_server.config import get_advanced_option_directories
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption
-from tekla_mcp_server.utils import mcp_handler, sanitize_filename
+from tekla_mcp_server.utils import mcp_handler, sanitize_filename, resolve_model_relative_dir
 from tekla_mcp_server.tekla.filter_builder import to_filter_option
 from tekla_mcp_server.tekla.drawing_utils import (
-    get_default_plot_output_folder,
     matches_string_filter,
     map_sheet_size_to_paper_size,
     get_mark_collision_data,
@@ -27,6 +27,7 @@ from tekla_mcp_server.tekla.drawing_utils import (
     SCALING_METHOD_MAP,
 )
 from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings, get_drawings_by_marks
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import (
     DrawingHandler,
     Mark,
@@ -285,10 +286,16 @@ def print_drawings(
 
     provided_output_folder = output_folder
     if not output_folder:
-        output_folder_path = get_default_plot_output_folder()
-        if not output_folder_path:
-            raise ValueError("No output directory is set")
-        output_folder = str(output_folder_path)
+        plot_dirs = get_advanced_option_directories("XS_DRAWING_PLOT_FILE_DIRECTORY")
+        if not plot_dirs:
+            raise ValueError("No output directory is set: XS_DRAWING_PLOT_FILE_DIRECTORY is not configured")
+        output_folder = str(Path(plot_dirs[0]).resolve())
+    else:
+        # A relative folder is resolved against the model folder, consistent with
+        # create_report and how relative advanced-option paths are interpreted.
+        output_folder = resolve_model_relative_dir(output_folder, TeklaModel().model.GetInfo().ModelPath or "")
+        if not Path(output_folder).is_dir():
+            raise ValueError(f"Output directory '{output_folder}' does not exist")
 
     default_attrs = {
         "printer_name": "PDF-XChange 3.0",

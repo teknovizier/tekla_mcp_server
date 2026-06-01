@@ -4,16 +4,18 @@ Operations tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Annotated, Literal
+import time
+from pathlib import Path
+from typing import Any, Annotated, Literal
 from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 
-from tekla_mcp_server.config import get_config, get_tolerance
+from tekla_mcp_server.config import get_config, get_tolerance, get_advanced_option_directories, get_report_preview_max_chars, get_report_preview_timeout
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import CheckResult, AttachmentPair
-from tekla_mcp_server.utils import mcp_handler
+from tekla_mcp_server.utils import mcp_handler, build_report_filename, resolve_model_relative_dir
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaModelObject, TeklaPart, TeklaReinforcement, SolidGeometryMixin, ZERO_GUID
@@ -882,3 +884,133 @@ def clash_check(
             "clashes": [c.to_dict() for c in records],
         }
     )
+
+
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def create_report(
+    template_name: Annotated[str, Field(description="Report template name, e.g. 'Cast_Unit_List'")],
+    output_filename: Annotated[str | None, Field(description="Output file name without extension. If omitted, the template name is used")] = None,
+    output_folder: Annotated[str | None, Field(description="Output folder. When omitted, the default Tekla report output directory is used.")] = None,
+    title1: Annotated[str, Field(description="First title for the created report")] = "",
+    title2: Annotated[str, Field(description="Second title for the created report")] = "",
+    title3: Annotated[str, Field(description="Third title for the created report")] = "",
+) -> ToolResult:
+    """
+    Create a Tekla report from the currently selected model objects.
+
+    The report is generated using a Tekla report template.
+
+    Use the `tekla://reports` resource to discover available report templates before calling this tool.
+    """
+    if not template_name.strip():
+        raise ValueError("'template_name' is required")
+
+    model = TeklaModel()
+    selected_objects = model.get_selected_objects()
+
+    # The template directory is a Tekla environment setting; a missing one is a
+    # configuration problem, not a bad request - surface it explicitly so the
+    # caller does not retry with different arguments.
+    if not get_advanced_option_directories("XS_TEMPLATE_DIRECTORY"):
+        raise ValueError("XS_TEMPLATE_DIRECTORY is not set or does not point to an existing directory - check the Tekla environment configuration")
+
+    user_provided_folder = bool(output_folder)
+
+    if not output_folder:
+        # No folder given: the report lands in XS_REPORT_OUTPUT_DIRECTORY, so that
+        # directory must be configured and exist.
+        report_dirs = get_advanced_option_directories("XS_REPORT_OUTPUT_DIRECTORY")
+        if not report_dirs:
+            raise ValueError("XS_REPORT_OUTPUT_DIRECTORY is not set or does not point to an existing directory - check the Tekla environment configuration")
+        output_folder = report_dirs[0]
+    else:
+        # A relative folder is resolved against the model folder, the same meaning
+        # relative paths carry for advanced-option directories.
+        output_folder = resolve_model_relative_dir(output_folder, model.model.GetInfo().ModelPath or "")
+        if not Path(output_folder).is_dir():
+            raise ValueError(f"Output directory '{output_folder}' does not exist")
+
+    file_name = build_report_filename(template_name, output_filename)
+    output_file = str(Path(output_folder) / file_name)
+    report_path = Path(output_file)
+
+    # Remove any leftover report with this name so a stale file from an earlier run
+    # cannot be mistaken for fresh output. If it cannot be deleted (e.g. locked),
+    # fall back to requiring a newer modification time than the leftover.
+    previous_mtime: float | None = None
+    if report_path.exists():
+        try:
+            report_path.unlink()
+        except OSError:
+            previous_mtime = report_path.stat().st_mtime
+
+    created = Operation.CreateReportFromSelected(template_name, output_file, title1, title2, title3)
+    if not created:
+        raise RuntimeError(f"Tekla failed to create report from template '{template_name}'. Verify the template exists in XS_TEMPLATE_DIRECTORY and the output path is writable.")
+
+    # Wait for the report to appear AND finish writing. Tekla writes incrementally,
+    # so require the size to be stable across two consecutive polls before reading -
+    # otherwise the preview could capture a half-written file. `is_file()` also keeps
+    # a directory with a colliding name from being treated as the report.
+    timeout = get_report_preview_timeout()
+    last_size = -1
+    settled = False
+    while timeout > 0:
+        try:
+            st = report_path.stat() if report_path.is_file() else None
+        except OSError:
+            st = None
+        if st is not None and (previous_mtime is None or st.st_mtime > previous_mtime):
+            if st.st_size == last_size:
+                settled = True
+                break
+            last_size = st.st_size
+        time.sleep(0.5)
+        timeout -= 0.5
+
+    logger.info("create_report: template=%s, elements=%d, output=%s", template_name, selected_objects.GetSize(), output_file)
+
+    result: dict[str, Any] = {
+        "template_name": template_name,
+        "elements_count": selected_objects.GetSize(),
+        "file_name": report_path.name,
+    }
+
+    if settled:
+        try:
+            size_bytes = report_path.stat().st_size
+            preview_max = get_report_preview_max_chars()
+            content_preview: str | None = None
+            content_truncated = False
+            if preview_max > 0:
+                # Read only preview_max + 1 chars: enough to fill the preview and to
+                # detect truncation, without loading a huge report fully into memory.
+                with report_path.open("r", encoding="utf-8", errors="replace") as f:
+                    chunk = f.read(preview_max + 1)
+                content_preview = chunk[:preview_max]
+                content_truncated = len(chunk) > preview_max
+        except OSError as e:
+            # The file is on disk but not readable yet (locked by Tekla / sharing
+            # violation on Windows, or not a regular file). Report a warning rather
+            # than a hard error, since the report itself was created.
+            logger.warning("create_report: report file not readable yet: %s", e)
+            result["status"] = "warning"
+            result["message"] = "Report was created but could not be read yet, it may still be in use. Try again shortly."
+        else:
+            result["status"] = "success"
+            result["size_bytes"] = size_bytes
+            if content_preview is not None:
+                result["content_preview"] = content_preview
+                result["content_truncated"] = content_truncated
+    else:
+        result["status"] = "warning"
+        result["message"] = "Report was submitted but the file did not appear on disk within the timeout period."
+
+    # Normally the default output directory is not exposed (only the file name is
+    # returned). On a warning the caller needs the folder to locate the file once
+    # it eventually lands, so include it regardless.
+    if user_provided_folder or result["status"] == "warning":
+        result["output_folder"] = output_folder
+
+    return ToolResult(structured_content=result)

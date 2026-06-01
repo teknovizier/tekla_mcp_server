@@ -2,8 +2,6 @@
 Drawing utility helpers for Tekla MCP server.
 """
 
-from pathlib import Path
-
 from tekla_mcp_server.models import StringFilterOption, StringMatchType
 from tekla_mcp_server.utils import line_rect_intersect, lines_intersect, rects_intersect
 from tekla_mcp_server.tekla.loader import (
@@ -14,9 +12,7 @@ from tekla_mcp_server.tekla.loader import (
     DotPrintScalingType,
     LeaderLine,
     Mark,
-    TeklaStructuresSettings,
 )
-from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
 OUTPUT_TYPE_MAP: dict[str, DotPrintOutputType] = {
@@ -40,29 +36,6 @@ SCALING_METHOD_MAP: dict[str, DotPrintScalingType] = {
     "Auto": DotPrintScalingType.Auto,
     "Scale": DotPrintScalingType.Scale,
 }
-
-
-def get_default_plot_output_folder() -> Path | None:
-    """
-    Return the default plot output folder from Tekla advanced settings.
-
-    Reads XS_DRAWING_PLOT_FILE_DIRECTORY. Relative paths are resolved
-    against the current model directory.
-
-    Returns:
-        Absolute Path to the configured output folder, or None if the
-        setting is empty.
-    """
-    model = TeklaModel()
-    model_path = model.model.GetInfo().ModelPath
-    _, plot_dir = TeklaStructuresSettings.GetAdvancedOption("XS_DRAWING_PLOT_FILE_DIRECTORY", str())
-
-    if not plot_dir:
-        return None
-
-    if Path(plot_dir).is_absolute():
-        return Path(plot_dir).resolve()
-    return (Path(model_path) / plot_dir).absolute()
 
 
 def matches_string_filter(value: str, filter_option: StringFilterOption | None) -> bool:

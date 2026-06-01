@@ -5,6 +5,7 @@ Module for utility functions.
 import json
 import re
 from functools import wraps
+from pathlib import Path
 from collections.abc import Callable
 from typing import Any, Literal
 
@@ -140,6 +141,59 @@ def sanitize_filename(raw: str) -> str | None:
     """
     cleaned = re.sub(r'[\\/:*?"<>|]', "_", raw).strip(" .")
     return cleaned or None
+
+
+def resolve_model_relative_dir(folder: str, model_path: str) -> str:
+    """
+    Resolve a directory that may be relative to the model folder.
+
+    Relative paths are resolved against `model_path` (the current model folder),
+    matching how Tekla interprets relative advanced-option paths elsewhere in the
+    codebase. Absolute paths are returned normalized.
+
+    Args:
+        folder: Directory path, absolute or model-relative.
+        model_path: Current model folder, used as the base for relative paths.
+
+    Returns:
+        The resolved absolute path as a string.
+    """
+    path = Path(folder)
+    if not path.is_absolute() and model_path:
+        path = Path(model_path) / path
+    return str(path.resolve())
+
+
+def build_report_filename(template_name: str, output_filename: str | None) -> str:
+    """
+    Build a report file name from an optional caller-supplied name.
+
+    Falls back to `template_name` when `output_filename` is empty, sanitizes the
+    result for the filesystem, appends a default ".xsr" extension when none is
+    present, and enforces Tekla's minimum stem length of three characters.
+
+    Args:
+        template_name: Report template name, used as the fallback file name.
+        output_filename: Caller-supplied file name (may be None or empty).
+
+    Returns:
+        A sanitized report file name including an extension.
+
+    Raises:
+        ValueError: If no valid characters remain, or the stem is shorter than 3.
+    """
+    raw_name = output_filename or template_name
+    safe_name = sanitize_filename(raw_name)
+    if safe_name is None:
+        raise ValueError(f"Output file name '{raw_name}' contains no valid filename characters")
+
+    if not Path(safe_name).suffix:
+        safe_name += ".xsr"
+
+    if len(Path(safe_name).stem) < 3:
+        raise ValueError(f"Report file name '{safe_name}' is too short: at least 3 characters are required (excluding the extension)")
+
+    return safe_name
 
 
 def parse_coordinate_string(coord_str: str) -> list[float]:

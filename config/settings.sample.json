@@ -14,5 +14,9 @@
         "wall_pairing": 50.0,
         "center_tolerance_factor": 0.05,
         "comparison": 0.01
+    },
+    "reports": {
+        "preview_max_chars": 2000,
+        "preview_timeout": 30
     }
 }
