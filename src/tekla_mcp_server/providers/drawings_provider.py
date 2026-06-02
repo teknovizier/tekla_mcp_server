@@ -348,12 +348,15 @@ def print_drawings(
             output_file = Path(output_folder) / output_filename_with_ext
             print_attrs.OpenFileWhenFinished = attrs["open_when_finished"]
 
+            logger.info("Printing drawing %s -> %s", drawing.mark, output_file)
             print_result = drawing_handler.PrintDrawing(drawing.drawing, print_attrs, str(output_file))
 
             if print_result:
                 success_count += 1
+                logger.info("Printed drawing %s successfully: %s", drawing.mark, output_file)
                 results.append({"mark": drawing.mark, "status": "success", "file_name": output_filename_with_ext})
             else:
+                logger.warning("PrintDrawing returned False for drawing %s (target: %s)", drawing.mark, output_file)
                 results.append({"mark": drawing.mark, "status": "failed", "message": "PrintDrawing returned False"})
 
         except Exception as e:
