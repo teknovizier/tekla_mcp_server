@@ -198,7 +198,10 @@ def detect_collisions_between_marks(
 
             while views_enum.MoveNext():
                 view = views_enum.Current
-                view_name = view.Name or ""
+                view_name = getattr(view, "Name", None)
+                if view_name is None:
+                    continue
+                view_name = view_name or ""
 
                 try:
                     mark_objects = view.GetAllObjects(Mark)
