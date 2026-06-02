@@ -351,13 +351,25 @@ def print_drawings(
             logger.info("Printing drawing %s -> %s", drawing.mark, output_file)
             print_result = drawing_handler.PrintDrawing(drawing.drawing, print_attrs, str(output_file))
 
-            if print_result:
+            if not print_result:
+                logger.warning("PrintDrawing returned False for drawing %s (target: %s)", drawing.mark, output_file)
+                results.append({"mark": drawing.mark, "status": "failed", "message": "PrintDrawing returned False"})
+            elif not Path(output_file).exists():
+                # Tekla reports success even when it only queued the job. If the PDF is not
+                # on disk, the print engine could not write the file - most often because the
+                # MCP client launched this server without the permissions/environment Tekla's
+                # PDF print engine needs).
+                message = (
+                    "Tekla reported the print succeeded but no file was created. "
+                    "The print engine could not write the output - check your MCP client settings: "
+                    "the server may be launched without sufficient permissions or environment."
+                )
+                logger.warning("Drawing %s: %s", drawing.mark, message)
+                results.append({"mark": drawing.mark, "status": "failed", "message": message})
+            else:
                 success_count += 1
                 logger.info("Printed drawing %s successfully: %s", drawing.mark, output_file)
                 results.append({"mark": drawing.mark, "status": "success", "file_name": output_filename_with_ext})
-            else:
-                logger.warning("PrintDrawing returned False for drawing %s (target: %s)", drawing.mark, output_file)
-                results.append({"mark": drawing.mark, "status": "failed", "message": "PrintDrawing returned False"})
 
         except Exception as e:
             logger.error("Failed to print drawing %s: %s", drawing.mark, str(e))
