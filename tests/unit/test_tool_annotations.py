@@ -32,7 +32,7 @@ def _bool_hints(annotations: ast.Dict) -> dict[str, bool]:
     """Extract {hint_name: bool} pairs from the annotations dict literal."""
     hints: dict[str, bool] = {}
     for key, value in zip(annotations.keys, annotations.values):
-        if isinstance(key, ast.Constant) and isinstance(value, ast.Constant) and isinstance(value.value, bool):
+        if isinstance(key, ast.Constant) and isinstance(key.value, str) and isinstance(value, ast.Constant) and isinstance(value.value, bool):
             hints[key.value] = value.value
     return hints
 
