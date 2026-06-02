@@ -119,7 +119,7 @@ def map_sheet_size_to_paper_size(sheet_width: float, sheet_height: float) -> Dot
     return paper_sizes.get((round(sheet_width), round(sheet_height)))
 
 
-def get_mark_collision_data(mark: Mark) -> dict:
+def get_mark_collision_data(mark: Mark) -> dict | None:
     """
     Extract bounding box and leader-line geometry from a drawing Mark.
 
@@ -135,6 +135,7 @@ def get_mark_collision_data(mark: Mark) -> dict:
             bbox: (x0, y0, x1, y1) tuple, or None if unavailable.
             line: ((x0, y0), (x1, y1)) tuple, or None if unavailable.
             mark: The original Mark object.
+        Returns None if the mark has no valid (non-zero) bounding box.
     """
     result: dict = {"bbox": None, "line": None, "mark": mark}
 
@@ -142,7 +143,12 @@ def get_mark_collision_data(mark: Mark) -> dict:
     if hasattr(bbox, "MinPoint"):
         min_pt = bbox.MinPoint
         max_pt = bbox.MaxPoint
-        result["bbox"] = (min_pt.X, min_pt.Y, max_pt.X, max_pt.Y)
+        x0, y0, x1, y1 = min_pt.X, min_pt.Y, max_pt.X, max_pt.Y
+        if x0 == x1 and y0 == y1:
+            return None
+        result["bbox"] = (x0, y0, x1, y1)
+    else:
+        return None
 
     ip = mark.InsertionPoint
     if not ip:

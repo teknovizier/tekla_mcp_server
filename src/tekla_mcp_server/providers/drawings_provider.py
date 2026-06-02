@@ -212,7 +212,7 @@ def detect_collisions_between_marks(
                 mark_data = []
                 while mark_objects.MoveNext():
                     collision_data = get_mark_collision_data(mark_objects.Current)
-                    if collision_data:
+                    if collision_data is not None:
                         mark_data.append(collision_data)
 
                 if not mark_data:
