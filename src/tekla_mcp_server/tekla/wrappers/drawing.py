@@ -233,23 +233,52 @@ def wrap_drawings(drawings: DrawingEnumerator) -> list[TeklaDrawing]:
     return result
 
 
-def get_drawings_by_marks(marks: list[str] | None = None) -> list[TeklaDrawing]:
+def get_drawing_handler() -> DrawingHandler:
     """
-    Get drawings by marks or from selection.
+    Return a connected DrawingHandler.
 
-    Args:
-        marks: Optional list of drawing marks to filter by.
-               If None, returns selected drawings.
-
-    Returns:
-        List of TeklaDrawing wrappers. Empty list if not connected or no drawings found.
+    Raises:
+        ConnectionError: If Tekla is not running or no model is open.
     """
     drawing_handler = DrawingHandler()
     if not drawing_handler.GetConnectionStatus():
-        return []
+        raise ConnectionError("Not connected to Tekla")
+    return drawing_handler
 
+
+def get_all_drawings(drawing_handler: DrawingHandler) -> list[TeklaDrawing]:
+    """
+    Return all drawings in the model.
+
+    Args:
+        drawing_handler: A connected DrawingHandler.
+
+    Returns:
+        List of TeklaDrawing wrappers for every drawing in the model.
+    """
+    return wrap_drawings(drawing_handler.GetDrawings())
+
+
+def get_drawings_by_marks(drawing_handler: DrawingHandler, marks: list[str] | None = None) -> list[TeklaDrawing]:
+    """
+    Get drawings by marks or from the current selection.
+
+    Args:
+        drawing_handler: A connected DrawingHandler.
+        marks: Drawing marks to look up. If None, returns currently selected drawings.
+
+    Returns:
+        List of matched TeklaDrawing wrappers.
+
+    Raises:
+        ConnectionError: Propagated from get_drawing_handler if not connected.
+        ValueError: If no drawings match the given marks or nothing is selected.
+    """
     if marks:
-        all_drawings = wrap_drawings(drawing_handler.GetDrawings())
-        return [d for d in all_drawings if d.mark in marks]
+        result = [d for d in get_all_drawings(drawing_handler) if d.mark in marks]
     else:
-        return wrap_drawings(drawing_handler.GetDrawingSelector().GetSelected())
+        result = wrap_drawings(drawing_handler.GetDrawingSelector().GetSelected())
+
+    if not result:
+        raise ValueError("No drawings found or selected")
+    return result

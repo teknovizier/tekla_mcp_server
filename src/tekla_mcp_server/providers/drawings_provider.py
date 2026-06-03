@@ -27,10 +27,9 @@ from tekla_mcp_server.tekla.drawing_utils import (
     ORIENTATION_MAP,
     SCALING_METHOD_MAP,
 )
-from tekla_mcp_server.tekla.wrappers.drawing import wrap_drawings, get_drawings_by_marks
+from tekla_mcp_server.tekla.wrappers.drawing import get_drawing_handler, get_all_drawings, get_drawings_by_marks
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import (
-    DrawingHandler,
     Mark,
     MarkSet,
     WeldMark,
@@ -86,13 +85,8 @@ def get_drawings(
     title2_filter = to_filter_option(title2_filter, StringFilterOption)
     title3_filter = to_filter_option(title3_filter, StringFilterOption)
 
-    drawing_handler = DrawingHandler()
-
-    if not drawing_handler.GetConnectionStatus():
-        raise ConnectionError("Not connected to Tekla")
-
-    all_drawings = wrap_drawings(drawing_handler.GetDrawings())
-    filtered_drawings = all_drawings
+    drawing_handler = get_drawing_handler()
+    filtered_drawings = get_all_drawings(drawing_handler)
 
     if drawing_type is not None:
         drawing_type = DrawingType(drawing_type)  # raises ValueError for invalid values
@@ -135,17 +129,8 @@ def get_drawing_properties(
     - DO NOT reformat, truncate, or modify anything, including spacing, columns, or headers.
     - ALWAYS show the full table. DO NOT remove any rows or columns.
     """
-    drawing_handler = DrawingHandler()
-
-    if not drawing_handler.GetConnectionStatus():
-        raise ConnectionError("Not connected to Tekla")
-
-    target_drawings = get_drawings_by_marks(marks)
-
-    if not target_drawings:
-        return ToolResult(
-            structured_content={"status": "warning", "message": "No drawings found"},
-        )
+    drawing_handler = get_drawing_handler()
+    target_drawings = get_drawings_by_marks(drawing_handler, marks)
 
     drawings_data = [{"No": i + 1, **d.to_dict()} for i, d in enumerate(target_drawings)]
     logger.info("Retrieved properties for %s drawings", len(drawings_data))
@@ -170,15 +155,8 @@ def detect_collisions_between_marks(
 
     If the marks are not provided, processes currently selected drawings in Tekla.
     """
-    drawing_handler = DrawingHandler()
-
-    if not drawing_handler.GetConnectionStatus():
-        raise ConnectionError("Not connected to Tekla")
-
-    target_drawings = get_drawings_by_marks(marks)
-
-    if not target_drawings:
-        raise ValueError("No drawings found or selected")
+    drawing_handler = get_drawing_handler()
+    target_drawings = get_drawings_by_marks(drawing_handler, marks)
 
     if drawing_handler.GetActiveDrawing():
         raise RuntimeError("A drawing is currently open. Close it first before running collision detection.")
@@ -290,15 +268,8 @@ def print_drawings(
 
     If marks are not provided, prints currently selected drawings in Tekla.
     """
-    drawing_handler = DrawingHandler()
-
-    if not drawing_handler.GetConnectionStatus():
-        raise ConnectionError("Not connected to Tekla")
-
-    target_drawings = get_drawings_by_marks(marks)
-
-    if not target_drawings:
-        raise ValueError("No drawings found or selected")
+    drawing_handler = get_drawing_handler()
+    target_drawings = get_drawings_by_marks(drawing_handler, marks)
 
     provided_output_folder = output_folder
     if not output_folder:
