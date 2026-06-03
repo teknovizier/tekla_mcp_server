@@ -5,6 +5,7 @@ Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
 import time
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Annotated, Literal
 from pydantic import Field
@@ -14,7 +15,7 @@ from fastmcp.tools import ToolResult
 
 from tekla_mcp_server.config import get_config, get_tolerance, get_advanced_option_directories, get_report_preview_max_chars, get_report_preview_timeout
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import CheckResult, AttachmentPair
+from tekla_mcp_server.models import AttachmentPair
 from tekla_mcp_server.utils import mcp_handler, build_report_filename, resolve_model_relative_dir
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -24,6 +25,17 @@ from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_i
 
 
 operations_provider = LocalProvider()
+
+
+@dataclass
+class CheckResult:
+    """Result of a model object validity or orphan check."""
+
+    guid: str
+    name: str | None
+    position: str | None
+    tekla_class: int | None
+    issues: list[str] = field(default_factory=list)
 
 
 def _get_tekla_classes(material_key: str) -> set[int]:
@@ -411,7 +423,7 @@ def check_for_orphans(
             if item.guid in orphaned_guids or item.guid == parent_assembly.guid:
                 continue
             orphaned_guids.add(item.guid)
-            entry = item.model_dump(mode="json")
+            entry = asdict(item)
             entry.pop("issues", None)
             entry["object_guid"] = entry.pop("guid")
             entry["target_guid"] = parent_assembly.guid
@@ -795,13 +807,13 @@ def check_for_invalid_objects() -> ToolResult:
     }
 
     if invalid_parts:
-        result_content["invalid_parts"] = invalid_parts
+        result_content["invalid_parts"] = [asdict(r) for r in invalid_parts]
 
     if invalid_reinforcements:
-        result_content["invalid_reinforcements"] = invalid_reinforcements
+        result_content["invalid_reinforcements"] = [asdict(r) for r in invalid_reinforcements]
 
     if invalid_assemblies:
-        result_content["invalid_assemblies"] = invalid_assemblies
+        result_content["invalid_assemblies"] = [asdict(r) for r in invalid_assemblies]
 
     return ToolResult(structured_content=result_content)
 

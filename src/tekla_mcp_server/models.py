@@ -709,29 +709,8 @@ class BatchPlacementResult(BaseModel):
     message: str
 
 
-class CheckResult(BaseModel):
-    """Result model for validity check operations."""
-
-    guid: str
-    name: str | None
-    position: str | None
-    tekla_class: int | None
-    issues: list[str] = Field(default_factory=list)
-
-
 class AttachmentPair(BaseModel):
     """An object -> target attachment pair."""
 
     object_guid: str = Field(description="GUID of the object to attach")
     target_guid: str = Field(description="GUID of the parent assembly to attach the object to")
-
-
-class ClashCheckObject(BaseModel):
-    """Serializable clash object information."""
-
-    guid: str | None = None
-    name: str = "N/A"
-    profile: str = "N/A"
-    material: str = "N/A"
-    tekla_class: int = 0
-    top_assembly_guid: str | None = None

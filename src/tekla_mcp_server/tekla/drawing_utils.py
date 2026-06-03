@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringFilterOption, StringMatchType
-from tekla_mcp_server.utils import line_rect_intersect, lines_intersect, rects_intersect
 from tekla_mcp_server.tekla.loader import (
     Cloud,
     DrawingColors,
@@ -55,6 +54,107 @@ SCALING_METHOD_MAP: dict[str, DotPrintScalingType] = {
     "Auto": DotPrintScalingType.Auto,
     "Scale": DotPrintScalingType.Scale,
 }
+
+
+def rects_intersect(
+    a: tuple[float, float, float, float],
+    b: tuple[float, float, float, float],
+    margin: float = 0.0,
+) -> bool:
+    """
+    Check if two rectangles intersect with margin.
+
+    Args:
+        a: Tuple of (x1, y1, x2, y2) defining first rectangle
+        b: Tuple of (x1, y1, x2, y2) defining second rectangle
+        margin: Optional margin to add to rectangles
+
+    Returns:
+        True if rectangles intersect, False otherwise
+    """
+    return not (a[2] < b[0] - margin or a[0] > b[2] + margin or a[3] < b[1] - margin or a[1] > b[3] + margin)
+
+
+def lines_intersect(
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    p3: tuple[float, float],
+    p4: tuple[float, float],
+    margin: float = 0.0,
+) -> bool:
+    """
+    Check if two line segments intersect with margin.
+
+    Args:
+        p1: First point of first line segment (x, y)
+        p2: Second point of first line segment (x, y)
+        p3: First point of second line segment (x, y)
+        p4: Second point of second line segment (x, y)
+        margin: Optional margin for intersection tolerance
+
+    Returns:
+        True if line segments intersect, False otherwise
+    """
+    x1, y1 = p1
+    x2, y2 = p2
+    x3, y3 = p3
+    x4, y4 = p4
+
+    epsilon = 0.0001
+    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+    if abs(denom) < epsilon:
+        return False
+
+    t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
+    u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom
+
+    if 0 - margin <= t <= 1 + margin and 0 - margin <= u <= 1 + margin:
+        return True
+    return False
+
+
+def line_rect_intersect(
+    line_p1: tuple[float, float],
+    line_p2: tuple[float, float],
+    rect: tuple[float, float, float, float],
+    margin: float = 0.0,
+) -> bool:
+    """
+    Check if a line segment intersects a rectangle.
+
+    Args:
+        line_p1: First point of line segment (x, y)
+        line_p2: Second point of line segment (x, y)
+        rect: Tuple of (x1, y1, x2, y2) defining rectangle
+        margin: Optional margin to add to rectangle
+
+    Returns:
+        True if line intersects rectangle, False otherwise
+    """
+    x1, y1 = line_p1
+    x2, y2 = line_p2
+    rx1, ry1, rx2, ry2 = rect
+
+    left = min(rx1, rx2) - margin
+    right = max(rx1, rx2) + margin
+    bottom = min(ry1, ry2) - margin
+    top = max(ry1, ry2) + margin
+
+    if left <= x1 <= right and bottom <= y1 <= top:
+        return True
+    if left <= x2 <= right and bottom <= y2 <= top:
+        return True
+
+    if lines_intersect((x1, y1), (x2, y2), (left, bottom), (right, bottom), margin):
+        return True
+    if lines_intersect((x1, y1), (x2, y2), (right, bottom), (right, top), margin):
+        return True
+    if lines_intersect((x1, y1), (x2, y2), (right, top), (left, top), margin):
+        return True
+    if lines_intersect((x1, y1), (x2, y2), (left, top), (left, bottom), margin):
+        return True
+
+    return False
 
 
 def matches_string_filter(value: str, filter_option: StringFilterOption | None) -> bool:

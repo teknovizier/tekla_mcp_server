@@ -11,6 +11,7 @@ from typing import ClassVar
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_function_call
+from tekla_mcp_server.tekla.filter_builder import add_filter
 
 from tekla_mcp_server.tekla.loader import (
     Identifier,
@@ -22,12 +23,7 @@ from tekla_mcp_server.tekla.loader import (
     ModelObjectSelectorUI,
     PhaseCollection,
     FilterExpression,
-    BinaryFilterOperatorType,
     BinaryFilterExpressionCollection,
-    BinaryFilterExpressionItem,
-    NumericOperatorType,
-    NumericConstantFilterExpression,
-    BinaryFilterExpression,
     PartFilterExpressions,
     ObjectFilterExpressions,
     TeklaStructuresDatabaseTypeEnum,
@@ -218,16 +214,8 @@ class TeklaModel:
             ModelObjectEnumerator containing objects of the specified class
         """
         filter_collection = BinaryFilterExpressionCollection()
-
-        # Filter on parts
-        filter_parts = BinaryFilterExpression(ObjectFilterExpressions.Type(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(TeklaStructuresDatabaseTypeEnum.PART))
-        filter_collection.Add(BinaryFilterExpressionItem(filter_parts, BinaryFilterOperatorType.BOOLEAN_AND))
-
-        # Filter on class
-        filter_collection_class = BinaryFilterExpressionCollection()
-        filter_class = BinaryFilterExpression(PartFilterExpressions.Class(), NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(tekla_class))
-        filter_collection_class.Add(BinaryFilterExpressionItem(filter_class, BinaryFilterOperatorType.BOOLEAN_OR))
-        filter_collection.Add(BinaryFilterExpressionItem(filter_collection_class))
+        add_filter(filter_collection, ObjectFilterExpressions.Type(), TeklaStructuresDatabaseTypeEnum.PART)
+        add_filter(filter_collection, PartFilterExpressions.Class(), tekla_class)
 
         return self.get_objects_by_filter(filter_collection)
 

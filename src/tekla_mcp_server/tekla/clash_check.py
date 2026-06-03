@@ -5,10 +5,10 @@ Wrappers around the Tekla clash check API.
 from __future__ import annotations
 
 import threading
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import ClashCheckObject
 from tekla_mcp_server.tekla.loader import (
     ClashCheckHandler,
     Events,
@@ -16,6 +16,19 @@ from tekla_mcp_server.tekla.loader import (
 
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
+
+
+@dataclass
+class ClashCheckObject:
+    """Resolved object data for one participant in a clash check result."""
+
+    guid: str | None = None
+    name: str = "N/A"
+    profile: str = "N/A"
+    material: str = "N/A"
+    tekla_class: int = 0
+    top_assembly_guid: str | None = None
+
 
 # Default timeout for the Tekla clash check engine to signal completion
 _DEFAULT_TIMEOUT = 600.0
@@ -67,8 +80,8 @@ class TeklaClashCheckData:
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
-            "object1": self.object1.model_dump(),
-            "object2": self.object2.model_dump(),
+            "object1": asdict(self.object1),
+            "object2": asdict(self.object2),
             "clash_type": self.clash_type,
         }
         if self.overlap is not None:
