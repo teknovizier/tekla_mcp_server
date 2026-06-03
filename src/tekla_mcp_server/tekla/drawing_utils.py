@@ -2,17 +2,36 @@
 Drawing utility helpers for Tekla MCP server.
 """
 
+from dataclasses import dataclass
+
+from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringFilterOption, StringMatchType
 from tekla_mcp_server.utils import line_rect_intersect, lines_intersect, rects_intersect
 from tekla_mcp_server.tekla.loader import (
+    Cloud,
+    DrawingColors,
+    DrawingView,
+    Mark,
+    MarkSet,
+    PointList,
+    Point,
     DotPrintColor,
     DotPrintOrientationType,
     DotPrintOutputType,
     DotPrintPaperSize,
     DotPrintScalingType,
     LeaderLine,
-    Mark,
+    WeldMark,
 )
+
+
+@dataclass
+class DrawingMarkData:
+    """Extracted bounding box, leader line endpoints and object reference for a drawing mark."""
+
+    bbox: tuple[float, float, float, float]  # (x0, y0, x1, y1) in drawing coordinates
+    line: tuple[tuple[float, float], tuple[float, float]] | None  # Leader line endpoints
+    mark: Mark | MarkSet | WeldMark
 
 
 OUTPUT_TYPE_MAP: dict[str, DotPrintOutputType] = {
@@ -119,41 +138,92 @@ def map_sheet_size_to_paper_size(sheet_width: float, sheet_height: float) -> Dot
     return paper_sizes.get((round(sheet_width), round(sheet_height)))
 
 
-def get_mark_collision_data(mark: Mark) -> dict | None:
+def draw_collision_cloud(view: DrawingView, data_a: DrawingMarkData, data_b: DrawingMarkData) -> bool:
     """
-    Extract bounding box and leader-line geometry from a drawing Mark.
+    Draw one magenta revision cloud that encompasses both marks of a collision pair.
 
-    Retrieves the axis-aligned bounding box and, when present, the leader
-    line endpoints from the mark's child objects. The result is used as
-    input for check_collisions.
+    The cloud is placed around the union of the two marks' bounding boxes with
+    a 20 mm margin on all sides (drawing units = mm).
 
     Args:
-        mark: Tekla drawing Mark object to inspect.
+        view:   Tekla drawing view in which the cloud is inserted.
+        data_a: Collision-data for the first mark.
+        data_b: Collision-data for the second mark.
 
     Returns:
-        Dict with keys:
-            bbox: (x0, y0, x1, y1) tuple, or None if unavailable.
-            line: ((x0, y0), (x1, y1)) tuple, or None if unavailable.
-            mark: The original Mark object.
-        Returns None if the mark has no valid (non-zero) bounding box.
+        True if the cloud was inserted successfully, False otherwise.
     """
-    result: dict = {"bbox": None, "line": None, "mark": mark}
+    bbox_a = data_a.bbox
+    bbox_b = data_b.bbox
+    combined = (
+        min(bbox_a[0], bbox_b[0]),
+        min(bbox_a[1], bbox_b[1]),
+        max(bbox_a[2], bbox_b[2]),
+        max(bbox_a[3], bbox_b[3]),
+    )
 
-    bbox = mark.GetAxisAlignedBoundingBox()
-    if hasattr(bbox, "MinPoint"):
-        min_pt = bbox.MinPoint
-        max_pt = bbox.MaxPoint
-        x0, y0, x1, y1 = min_pt.X, min_pt.Y, max_pt.X, max_pt.Y
-        if x0 == x1 and y0 == y1:
-            return None
-        result["bbox"] = (x0, y0, x1, y1)
-    else:
+    x0, y0, x1, y1 = combined
+    m = 20.0  # mm: keeps the cloud clear of the mark text
+
+    pts = PointList()
+    pts.Add(Point(x0 - m, y0 - m, 0))
+    pts.Add(Point(x1 + m, y0 - m, 0))
+    pts.Add(Point(x1 + m, y1 + m, 0))
+    pts.Add(Point(x0 - m, y1 + m, 0))
+
+    try:
+        cloud = Cloud(view, pts)
+        cloud.Attributes.Line.Color = DrawingColors.Magenta
+        cloud.ArcWidth = 5  # mm per arc bump
+        if not cloud.Insert():
+            logger.warning("Cloud.Insert() returned False for view '%s'", getattr(view, "Name", ""))
+            return False
+        return True
+    except Exception as e:
+        logger.warning("Failed to insert collision cloud in view '%s': %s", getattr(view, "Name", ""), e)
+        return False
+
+
+def get_mark_collision_data(mark: Mark | MarkSet | WeldMark) -> DrawingMarkData | None:
+    """
+    Extract bounding box and leader-line geometry from a drawing mark object.
+
+    Args:
+        mark: Tekla drawing mark to inspect (Mark, MarkSet, or WeldMark).
+
+    Returns:
+        DrawingMarkData with bbox in drawing coordinates, leader-line endpoints
+        (or None when absent), and the original mark. Returns None if the mark
+        has no valid (non-zero-area) bounding box.
+    """
+    aabb = mark.GetAxisAlignedBoundingBox()
+    if not hasattr(aabb, "MinPoint"):
+        return None
+
+    min_pt = aabb.MinPoint
+    max_pt = aabb.MaxPoint
+    x0, y0, x1, y1 = min_pt.X, min_pt.Y, max_pt.X, max_pt.Y
+    if x0 == x1 and y0 == y1:
         return None
 
     ip = mark.InsertionPoint
     if not ip:
-        return result
+        return DrawingMarkData(bbox=(x0, y0, x1, y1), line=None, mark=mark)
+
     ip_x, ip_y = ip.X, ip.Y
+
+    # WeldMark reports its AABB Y in model coordinates instead of drawing
+    # coordinates, making it unusable for collision detection. Reconstruct the
+    # Y extent from the insertion point: a weld symbol typically has text both
+    # above and below, so ±font_height covers both lines.
+    if isinstance(mark, WeldMark):
+        try:
+            font_h = mark.Attributes.Font.Height
+        except Exception:
+            font_h = 2.5
+        half_h = max(2.0 * font_h, 5.0)
+        y0 = ip_y - half_h
+        y1 = ip_y + half_h
 
     leader_start = None
     leader_end = None
@@ -165,55 +235,54 @@ def get_mark_collision_data(mark: Mark) -> dict | None:
             leader_end = child.EndPoint
             break
 
+    line: tuple[tuple[float, float], tuple[float, float]] | None = None
     if leader_start and leader_end:
-        result["line"] = ((leader_end.X, leader_end.Y), (leader_start.X, leader_start.Y))
+        line = ((leader_end.X, leader_end.Y), (leader_start.X, leader_start.Y))
     elif leader_start:
-        result["line"] = ((ip_x, ip_y), (leader_start.X, leader_start.Y))
+        line = ((ip_x, ip_y), (leader_start.X, leader_start.Y))
 
-    return result
+    return DrawingMarkData(bbox=(x0, y0, x1, y1), line=line, mark=mark)
 
 
-def check_collisions(data_list: list[dict]) -> set[int]:
+def get_collision_pairs(data_list: list[DrawingMarkData]) -> list[tuple[int, int]]:
     """
-    Find indices of marks that collide with at least one other mark.
+    Return every colliding (i, j) index pair from a list of mark data.
 
-    Three collision types are checked for each pair:
+    Three collision types are checked per pair:
         - Bounding-box overlap.
         - Leader-line crossing another leader line.
         - Leader-line crossing another mark's bounding box.
 
     Args:
-        data_list: List of dicts as returned by get_mark_collision_data.
+        data_list: List of DrawingMarkData as returned by get_mark_collision_data.
 
     Returns:
-        Set of indices (into data_list) of every mark involved in a collision.
+        List of (i, j) tuples (i < j) for every colliding pair.
+
+    Note:
+        Runtime is O(n²). Views with hundreds of marks will be noticeably slow.
     """
-    colliding: set[int] = set()
+    pairs: list[tuple[int, int]] = []
     n = len(data_list)
 
     for i in range(n):
         for j in range(i + 1, n):
-            data_i = data_list[i]
-            data_j = data_list[j]
-            is_colliding = False
+            di = data_list[i]
+            dj = data_list[j]
 
-            if data_i["bbox"] and data_j["bbox"] and rects_intersect(data_i["bbox"], data_j["bbox"]):
-                is_colliding = True
+            if rects_intersect(di.bbox, dj.bbox):
+                pairs.append((i, j))
+                continue
 
-            if not is_colliding and data_i["line"] and data_j["line"]:
-                if lines_intersect(data_i["line"][0], data_i["line"][1], data_j["line"][0], data_j["line"][1]):
-                    is_colliding = True
+            if di.line and dj.line and lines_intersect(di.line[0], di.line[1], dj.line[0], dj.line[1]):
+                pairs.append((i, j))
+                continue
 
-            if not is_colliding and data_i["line"] and data_j["bbox"]:
-                if line_rect_intersect(data_i["line"][0], data_i["line"][1], data_j["bbox"]):
-                    is_colliding = True
+            if di.line and line_rect_intersect(di.line[0], di.line[1], dj.bbox):
+                pairs.append((i, j))
+                continue
 
-            if not is_colliding and data_i["bbox"] and data_j["line"]:
-                if line_rect_intersect(data_j["line"][0], data_j["line"][1], data_i["bbox"]):
-                    is_colliding = True
+            if dj.line and line_rect_intersect(dj.line[0], dj.line[1], di.bbox):
+                pairs.append((i, j))
 
-            if is_colliding:
-                colliding.add(i)
-                colliding.add(j)
-
-    return colliding
+    return pairs

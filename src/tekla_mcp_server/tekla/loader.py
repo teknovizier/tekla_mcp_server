@@ -68,6 +68,9 @@ from Tekla.Structures.Drawing import (
     Drawing,
     DrawingEnumerator,
     Mark,
+    MarkSet,
+    WeldMark,
+    Cloud,
     DrawingObject,
     DrawingObjectEnumerator,
     Frame,
@@ -85,6 +88,7 @@ from Tekla.Structures.Drawing import (
     DotPrintPaperSize,
     DotPrintToMultipleSheet,
     DotPrintScalingType,
+    View as DrawingView,
 )
 
 
@@ -162,6 +166,10 @@ __all__ = [
     "Drawing",
     "DrawingEnumerator",
     "Mark",
+    "MarkSet",
+    "WeldMark",
+    "Cloud",
+    "DrawingView",
     "DrawingObject",
     "DrawingObjectEnumerator",
     "Frame",
