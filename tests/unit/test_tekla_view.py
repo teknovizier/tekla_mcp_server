@@ -141,7 +141,7 @@ class TestGetAllObjects:
         mock_view.GetAllObjects.return_value = enum
 
         # Make Current return different values on successive calls
-        type(enum).Current = property(lambda self, _objs=[obj_a, obj_b]: _objs.pop(0))
+        type(enum).Current = property(lambda self, _objs=[obj_a, obj_b]: _objs.pop(0))  # type: ignore[misc]
         result = wrapper.get_all_objects()
         assert result == [obj_a, obj_b]
 
@@ -149,7 +149,7 @@ class TestGetAllObjects:
         enum = MagicMock()
         enum.MoveNext.side_effect = [True, True, False]
         currents = [None, MagicMock()]
-        type(enum).Current = property(lambda self, c=currents: c.pop(0))
+        type(enum).Current = property(lambda self, c=currents: c.pop(0))  # type: ignore[misc]
         mock_view.GetAllObjects.return_value = enum
 
         result = wrapper.get_all_objects()
