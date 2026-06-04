@@ -5,7 +5,7 @@ Module for Tekla Drawing wrappers.
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.tekla.loader import Drawing, DrawingEnumerator, DrawingHandler, Beam, BindingFlags
+from tekla_mcp_server.tekla.loader import ContainerView, Drawing, DrawingEnumerator, Beam, BindingFlags
 
 
 class TeklaDrawing:
@@ -22,6 +22,15 @@ class TeklaDrawing:
         Returns the underlying Drawing instance.
         """
         return self._drawing
+
+    def get_sheet(self) -> ContainerView | None:
+        """
+        Returns the sheet of the drawing, or None on failure.
+        """
+        try:
+            return self.drawing.GetSheet()
+        except Exception:
+            return None
 
     @property
     def name(self) -> str:
@@ -230,55 +239,4 @@ def wrap_drawings(drawings: DrawingEnumerator) -> list[TeklaDrawing]:
     result: list[TeklaDrawing] = []
     while drawings.MoveNext():
         result.append(TeklaDrawing(drawings.Current))
-    return result
-
-
-def get_drawing_handler() -> DrawingHandler:
-    """
-    Return a connected DrawingHandler.
-
-    Raises:
-        ConnectionError: If Tekla is not running or no model is open.
-    """
-    drawing_handler = DrawingHandler()
-    if not drawing_handler.GetConnectionStatus():
-        raise ConnectionError("Not connected to Tekla")
-    return drawing_handler
-
-
-def get_all_drawings(drawing_handler: DrawingHandler) -> list[TeklaDrawing]:
-    """
-    Return all drawings in the model.
-
-    Args:
-        drawing_handler: A connected DrawingHandler.
-
-    Returns:
-        List of TeklaDrawing wrappers for every drawing in the model.
-    """
-    return wrap_drawings(drawing_handler.GetDrawings())
-
-
-def get_drawings_by_marks(drawing_handler: DrawingHandler, marks: list[str] | None = None) -> list[TeklaDrawing]:
-    """
-    Get drawings by marks or from the current selection.
-
-    Args:
-        drawing_handler: A connected DrawingHandler.
-        marks: Drawing marks to look up. If None, returns currently selected drawings.
-
-    Returns:
-        List of matched TeklaDrawing wrappers.
-
-    Raises:
-        ConnectionError: Propagated from get_drawing_handler if not connected.
-        ValueError: If no drawings match the given marks or nothing is selected.
-    """
-    if marks:
-        result = [d for d in get_all_drawings(drawing_handler) if d.mark in marks]
-    else:
-        result = wrap_drawings(drawing_handler.GetDrawingSelector().GetSelected())
-
-    if not result:
-        raise ValueError("No drawings found or selected")
     return result

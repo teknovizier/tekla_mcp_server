@@ -46,6 +46,12 @@ Type and default shown where relevant.
 | Drawings | `get_drawing_properties` | Get properties of drawings by mark list, or the currently selected drawings if omitted | `marks` (list[str], optional) |
 | Drawings | `detect_collisions_between_marks` | Detect mark collisions in drawings; colliding marks are coloured red | `marks` (list[str], optional - uses selected drawings if omitted) |
 | Drawings | `print_drawings` | Print drawings to PDF with automatic paper size detection (A4–A0) | `marks` (list[str]), `output_filename` (str), `output_folder` (str), `printer_attributes` (dict) - all optional |
+| Drawings | `open_drawing` | Open a drawing by its mark in Tekla's drawing editor. | **`mark`** (str) |
+| Drawings | `close_drawing` | Close the active drawing | `save` (bool, default: `true`) |
+| Drawings | `get_drawing_views` | List all views in the active drawing with type, scale, position and size. Returns the sheet size too | - |
+| Drawings | `move_view` | Move a view by an offset (mm) | **`view_key`** (str), **`dx`** (float, mm), **`dy`** (float, mm) |
+| Drawings | `set_view_scales` | Set the scale of one or more drawing views | **`view_scales`** (list): each item has **`view_key`** (str), **`scale`** (float) |
+| Drawings | `delete_views` | Delete one or more views from the active drawing | **`view_keys`** (list[str]) |
 | Modeling | `place_beams` | Place one or more beams | **`beams`** (list): each item has **`start_point`**, **`end_point`**, **`profile`**, **`material`**, **`tekla_class`** (int); optional: `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
 | Modeling | `place_columns` | Place one or more columns | **`columns`** (list): each item has **`base_point`**, **`height`** (float, mm), **`profile`**, **`material`**, **`tekla_class`** (int); optional: `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
 | Modeling | `place_panels` | Place one or more wall panels | **`panels`** (list): each item has **`start_point`**, **`end_point`**, **`profile`**, **`material`**, **`tekla_class`** (int); optional: `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |

@@ -89,6 +89,7 @@ from Tekla.Structures.Drawing import (
     DotPrintToMultipleSheet,
     DotPrintScalingType,
     View as DrawingView,
+    ContainerView,
 )
 
 
@@ -170,6 +171,7 @@ __all__ = [
     "WeldMark",
     "Cloud",
     "DrawingView",
+    "ContainerView",
     "DrawingObject",
     "DrawingObjectEnumerator",
     "Frame",

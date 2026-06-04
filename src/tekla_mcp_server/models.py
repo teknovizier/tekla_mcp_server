@@ -714,3 +714,10 @@ class AttachmentPair(BaseModel):
 
     object_guid: str = Field(description="GUID of the object to attach (e.g. from `check_for_orphans` or `get_elements_properties`)")
     target_guid: str = Field(description="GUID of the parent assembly to attach the object to (e.g. from `check_for_orphans` or `get_elements_properties`)")
+
+
+class ViewScale(BaseModel):
+    """A view and the scale to apply to it."""
+
+    view_key: str = Field(description="View key to rescale (from `get_drawing_views`)")
+    scale: float = Field(gt=0, description="New scale value (e.g. 20 for 1:20)")

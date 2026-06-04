@@ -13,7 +13,7 @@ from pydantic import Field
 
 from tekla_mcp_server.config import get_advanced_option_directories
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import DrawingType, StringFilterOption
+from tekla_mcp_server.models import DrawingType, StringFilterOption, ViewScale
 from tekla_mcp_server.utils import mcp_handler, sanitize_filename, resolve_model_relative_dir
 from tekla_mcp_server.tekla.filter_builder import to_filter_option
 from tekla_mcp_server.tekla.drawing_utils import (
@@ -27,7 +27,7 @@ from tekla_mcp_server.tekla.drawing_utils import (
     ORIENTATION_MAP,
     SCALING_METHOD_MAP,
 )
-from tekla_mcp_server.tekla.wrappers.drawing import get_drawing_handler, get_all_drawings, get_drawings_by_marks
+from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import (
     Mark,
@@ -54,7 +54,7 @@ def get_drawings(
     """
     Get drawings from Tekla model with optional filtering.
 
-    Name, mark and title filters are constructed using StringFilterOption.
+    Name, mark and title filters are constructed using `StringFilterOption`.
     Example: {"conditions": {"match_type": "Contains", "value": "floor"}}
 
     ## EXAMPLES
@@ -85,8 +85,8 @@ def get_drawings(
     title2_filter = to_filter_option(title2_filter, StringFilterOption)
     title3_filter = to_filter_option(title3_filter, StringFilterOption)
 
-    drawing_handler = get_drawing_handler()
-    filtered_drawings = get_all_drawings(drawing_handler)
+    handler = TeklaDrawingHandler()
+    filtered_drawings = handler.get_all_drawings()
 
     if drawing_type is not None:
         drawing_type = DrawingType(drawing_type)  # raises ValueError for invalid values
@@ -129,8 +129,8 @@ def get_drawing_properties(
     - DO NOT reformat, truncate, or modify anything, including spacing, columns, or headers.
     - ALWAYS show the full table. DO NOT remove any rows or columns.
     """
-    drawing_handler = get_drawing_handler()
-    target_drawings = get_drawings_by_marks(drawing_handler, marks)
+    handler = TeklaDrawingHandler()
+    target_drawings = handler.get_drawings_by_marks(marks)
 
     drawings_data = [{"No": i + 1, **d.to_dict()} for i, d in enumerate(target_drawings)]
     logger.info("Retrieved properties for %s drawings", len(drawings_data))
@@ -155,10 +155,10 @@ def detect_collisions_between_marks(
 
     If the marks are not provided, processes currently selected drawings in Tekla.
     """
-    drawing_handler = get_drawing_handler()
-    target_drawings = get_drawings_by_marks(drawing_handler, marks)
+    handler = TeklaDrawingHandler()
+    target_drawings = handler.get_drawings_by_marks(marks)
 
-    if drawing_handler.GetActiveDrawing():
+    if handler.get_active_drawing():
         raise RuntimeError("A drawing is currently open. Close it first before running collision detection.")
 
     all_drawings_results: list[dict] = []
@@ -170,12 +170,12 @@ def detect_collisions_between_marks(
     try:
         for drawing in target_drawings:
             logger.info("Processing drawing %s / %s", drawing.mark, drawing.name)
-            drawing_handler.SetActiveDrawing(drawing.drawing)
+            handler.set_active_drawing(drawing)
             view_results: list[dict] = []
             drawing_cloud_failures = 0
 
             try:
-                sheet = drawing.drawing.GetSheet()
+                sheet = drawing.get_sheet()
                 views_enum = sheet.GetAllViews()
             except Exception:
                 logger.warning("Failed to open sheet for drawing %s, skipping", drawing.mark)
@@ -234,11 +234,11 @@ def detect_collisions_between_marks(
                     }
                 )
                 logger.info("Saving drawing %s", drawing.mark)
-                if not drawing_handler.SaveActiveDrawing():
+                if not handler.save_active_drawing():
                     logger.warning("SaveActiveDrawing() returned False for drawing %s", drawing.mark)
                     errors.append({"drawing": drawing.mark, "error": "save_failed"})
     finally:
-        drawing_handler.CloseActiveDrawing()
+        handler.close_active_drawing()
 
     logger.info("Collision detection complete: %d total collision pair(s) across %d drawing(s)", total_collision_pairs, len(target_drawings))
     result: dict = {
@@ -268,8 +268,8 @@ def print_drawings(
 
     If marks are not provided, prints currently selected drawings in Tekla.
     """
-    drawing_handler = get_drawing_handler()
-    target_drawings = get_drawings_by_marks(drawing_handler, marks)
+    handler = TeklaDrawingHandler()
+    target_drawings = handler.get_drawings_by_marks(marks)
 
     provided_output_folder = output_folder
     if not output_folder:
@@ -336,7 +336,7 @@ def print_drawings(
             print_attrs.OpenFileWhenFinished = attrs["open_when_finished"]
 
             logger.info("Printing drawing %s -> %s", drawing.mark, output_file)
-            print_result = drawing_handler.PrintDrawing(drawing.drawing, print_attrs, str(output_file))
+            print_result = handler.print_drawing(drawing, print_attrs, str(output_file))
 
             if not print_result:
                 logger.warning("PrintDrawing returned False for drawing %s (target: %s)", drawing.mark, output_file)
@@ -374,3 +374,216 @@ def print_drawings(
     if provided_output_folder:
         result["output_folder"] = provided_output_folder
     return ToolResult(structured_content=result)
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def open_drawing(
+    mark: Annotated[str, Field(description="Drawing mark (from `get_drawings`)")],
+) -> ToolResult:
+    """
+    Open a drawing in Tekla's drawing editor.
+
+    Any currently open drawing must be closed first with `close_drawing`.
+    """
+    handler = TeklaDrawingHandler()
+
+    if handler.get_active_drawing() is not None:
+        raise RuntimeError("Another drawing is already open. Close it first with `close_drawing`.")
+    if not mark:
+        raise ValueError("Drawing mark is required")
+
+    try:
+        targets = handler.get_drawings_by_marks([mark])
+    except ValueError:
+        raise ValueError(f"No drawing found with mark '{mark}'. Use `get_drawings` to find valid marks.")
+
+    target = targets[0]
+    if not handler.set_active_drawing(target):
+        raise RuntimeError(f"Failed to open drawing '{mark}'.")
+
+    logger.info("Opened drawing %s", mark)
+    return ToolResult(
+        structured_content={
+            "status": "success",
+            "drawing_name": target.name,
+            "drawing_mark": target.mark,
+            "drawing_type": target.drawing_type,
+        }
+    )
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def close_drawing(
+    save: Annotated[bool, Field(description="Save before closing")] = True,
+) -> ToolResult:
+    """
+    Close the active drawing, saving by default.
+    """
+    handler = TeklaDrawingHandler()
+
+    active = handler.require_active_drawing()
+
+    mark = active.mark
+    if not handler.close_active_drawing(save):
+        raise RuntimeError(f"Failed to save and close drawing '{mark}'.")
+
+    logger.info("Closed active drawing (saved=%s)", save)
+    return ToolResult(structured_content={"status": "success", "drawing_is_saved": save})
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def get_drawing_views() -> ToolResult:
+    """
+    List all views in the active drawing with type, scale, position, and size.
+
+    Also returns the sheet size. View origins are measured in mm from the sheet
+    bottom-left corner (0, 0), so views fit within (0, 0)-(sheet_width, sheet_height).
+
+    Use `view_key` for all follow-up calls.
+    Use `open_drawing` first if no drawing is currently open.
+    """
+    handler = TeklaDrawingHandler()
+
+    active = handler.require_active_drawing()
+    sheet = active.get_sheet()
+    if sheet is None:
+        raise RuntimeError("Failed to get sheet for active drawing.")
+
+    tekla_views = handler.get_drawing_views(sheet)
+
+    view_list: list[dict[str, Any]] = [v.to_dict() for v in tekla_views]
+
+    return ToolResult(
+        structured_content={
+            "status": "success",
+            "sheet_width": round(sheet.Width, 1),
+            "sheet_height": round(sheet.Height, 1),
+            "view_count": len(view_list),
+            "views": view_list,
+        }
+    )
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def move_view(
+    view_key: Annotated[str, Field(description="View key (from `get_drawing_views`)")],
+    dx: Annotated[float, Field(description="Offset in X direction (mm)")],
+    dy: Annotated[float, Field(description="Offset in Y direction (mm)")],
+) -> ToolResult:
+    """
+    Move a view by an offset in mm.
+    """
+    handler = TeklaDrawingHandler()
+    tekla_view = handler.get_view_by_key(view_key)
+
+    if tekla_view.is_sheet:
+        raise RuntimeError("Cannot move the sheet view.")
+
+    ox, oy = tekla_view.origin
+    new_x = ox + dx
+    new_y = oy + dy
+    tekla_view.origin = (new_x, new_y)
+    if not tekla_view.modify():
+        raise RuntimeError(f"Failed to move view '{view_key}'.")
+
+    return ToolResult(structured_content={"status": "success", "view_key": view_key, "new_origin_x": round(new_x, 1), "new_origin_y": round(new_y, 1)})
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def set_view_scales(
+    view_scales: Annotated[list[ViewScale], Field(description="View key / scale pairs to apply")],
+) -> ToolResult:
+    """
+    Set the scale of one or more drawing views.
+
+    To apply the same scale to several views, repeat the scale value across pairs.
+    """
+    if not view_scales:
+        raise ValueError("view_scales is required")
+
+    handler = TeklaDrawingHandler()
+    index = handler.index_views_by_key()
+
+    results: list[dict[str, Any]] = []
+    succeeded = 0
+
+    for item in view_scales:
+        tekla_view = index.get(item.view_key)
+        if tekla_view is None:
+            results.append({"view_key": item.view_key, "status": "failed", "message": "View not found"})
+            continue
+        try:
+            if tekla_view.set_scale(item.scale):
+                succeeded += 1
+                results.append({"view_key": item.view_key, "status": "success", "new_scale": item.scale})
+            else:
+                results.append({"view_key": item.view_key, "status": "failed", "message": "set_scale() returned False"})
+        except Exception as e:
+            logger.error("Failed to set scale on view %s: %s", item.view_key, e)
+            results.append({"view_key": item.view_key, "status": "error", "message": str(e)})
+
+    total = len(view_scales)
+    status = "success" if succeeded == total else "partial" if succeeded else "error"
+    logger.info("set_view_scales: %d/%d updated", succeeded, total)
+    return ToolResult(
+        structured_content={
+            "status": status,
+            "total": total,
+            "succeeded": succeeded,
+            "failed": total - succeeded,
+            "results": results,
+        }
+    )
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def delete_views(
+    view_keys: Annotated[list[str], Field(description="View keys to delete (from `get_drawing_views`)")],
+) -> ToolResult:
+    """
+    Delete one or more views from the active drawing.
+    """
+    if not view_keys:
+        raise ValueError("view_keys is required")
+
+    handler = TeklaDrawingHandler()
+    # Resolve all views up front in a single scan, then delete from the resolved
+    # handles - avoids deleting while iterating the sheet's view enumerator.
+    index = handler.index_views_by_key()
+
+    results: list[dict[str, Any]] = []
+    succeeded = 0
+
+    for view_key in view_keys:
+        tekla_view = index.get(view_key)
+        if tekla_view is None:
+            results.append({"view_key": view_key, "status": "failed", "message": "View not found"})
+            continue
+        try:
+            if tekla_view.delete():
+                succeeded += 1
+                results.append({"view_key": view_key, "status": "success"})
+            else:
+                results.append({"view_key": view_key, "status": "failed", "message": "Delete() returned False"})
+        except Exception as e:
+            logger.error("Failed to delete view %s: %s", view_key, e)
+            results.append({"view_key": view_key, "status": "error", "message": str(e)})
+
+    total = len(view_keys)
+    status = "success" if succeeded == total else "partial" if succeeded else "error"
+    logger.info("delete_views: %d/%d deleted", succeeded, total)
+    return ToolResult(
+        structured_content={
+            "status": status,
+            "total": total,
+            "succeeded": succeeded,
+            "failed": total - succeeded,
+            "results": results,
+        }
+    )

@@ -14,6 +14,8 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     wrap_model_objects,
 )
 from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing, wrap_drawings
+from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
+from tekla_mcp_server.tekla.wrappers.view import TeklaDrawingView
 
 __all__ = [
     "TeklaModel",
@@ -27,4 +29,6 @@ __all__ = [
     "TeklaDrawing",
     "wrap_drawings",
     "BoundingBox",
+    "TeklaDrawingView",
+    "TeklaDrawingHandler",
 ]
