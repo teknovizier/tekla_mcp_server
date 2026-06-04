@@ -34,6 +34,12 @@ class TeklaModel:
     """
     A wrapper class around the Tekla Structures Model object.
     Uses thread-safe singleton pattern to reuse the connection.
+
+    NOTE: The Tekla Open API cannot re-establish a connection once it is lost
+    (see the Model.GetConnectionStatus documentation). A genuine loss - e.g. Tekla
+    Structures being closed and reopened - is unrecoverable in-process, and the MCP
+    server must be restarted. Retries are therefore scoped to the initial connection,
+    mid-session checks make a single cheap reconnect attempt and otherwise fail fast.
     """
 
     _instance: ClassVar["TeklaModel | None"] = None
@@ -43,7 +49,6 @@ class TeklaModel:
 
     _connect_lock: threading.RLock
     _model: Model | None
-    _model_path: str | None
     _initialized: bool
 
     def __new__(cls):
@@ -53,7 +58,6 @@ class TeklaModel:
                     instance = super().__new__(cls)
                     instance._connect_lock = threading.RLock()
                     instance._model = None
-                    instance._model_path = None
                     instance._initialized = False
                     cls._instance = instance
         return cls._instance
@@ -69,6 +73,11 @@ class TeklaModel:
         max_retries = retries if retries is not None else self._max_retries
         last_exception = None
 
+        # Preserve current state so a failed reconnect attempt does not orphan a handle
+        # that may still be valid (e.g. transient false-negative from ensure_connected).
+        # On initial connect both are None/False, so restore is a no-op in that case.
+        saved_model, saved_initialized = self._model, self._initialized
+
         for attempt in range(max_retries):
             try:
                 model = Model()
@@ -83,27 +92,25 @@ class TeklaModel:
 
             except Exception as e:
                 last_exception = e
-                logger.warning("Connection attempt %d/%d failed: %s", attempt + 1, max_retries, e)
+                # Only log individual attempt warnings when multi-retry is in play
+                # (e.g. initial connect). For single-attempt mid-session probes the
+                # caller logs the outcome, so suppress here to avoid double-logging.
+                if max_retries > 1:
+                    logger.warning("Connection attempt %d/%d failed: %s", attempt + 1, max_retries, e)
                 if attempt < max_retries - 1:
-                    time.sleep(self._retry_delay * (attempt + 1))  # Linear backoff (1s, 2s, 3s, ...)
+                    time.sleep(self._retry_delay * (attempt + 1))  # Linear backoff (1s, 2s, ...)
 
-        self._model = None
-        self._initialized = False
+        self._model, self._initialized = saved_model, saved_initialized
         if last_exception:
             raise last_exception
         raise ConnectionError("Failed to connect to Tekla model")
 
-    @classmethod
-    def reconnect(cls) -> "TeklaModel":
-        """Force a reconnection to the Tekla model."""
-        instance = cls()
-        with instance._connect_lock:
-            instance._model_path = None
-            instance._connect()
-        return instance
-
     def is_connected(self) -> bool:
-        """Check if the connection to Tekla model is still active."""
+        """Check if the connection to Tekla model is still active.
+
+        GetConnectionStatus() reads a local cached flag, it does not do a
+        network round-trip, so it fast-fails when Tekla is gone.
+        """
         if self._model is None:
             return False
         try:
@@ -113,22 +120,27 @@ class TeklaModel:
 
     def ensure_connected(self) -> bool:
         """
-        Ensure connection is active, reconnect if needed.
+        Ensure the connection is active, making a single quick reconnect attempt if needed.
+
+        A genuine connection loss cannot be recovered in-process (the Open API cannot
+        re-establish a lost connection), so this makes just one cheap attempt - enough
+        to ride out a transient false negative - rather than retrying a dead connection.
 
         Returns:
-            True if connected after check, False otherwise
+            True if connected after the check, False otherwise.
         """
         if self.is_connected():
             return True
         with self._connect_lock:
+            # Re-check under the lock: another thread may have reconnected while we waited.
             if self.is_connected():
                 return True
-            logger.info("Connection lost, attempting reconnection...")
+            logger.info("Connection lost, attempting a single reconnect...")
             try:
-                self._connect()
-                return self.is_connected()
-            except Exception as e:
-                logger.error("Reconnection failed: %s", e)
+                self._connect(retries=1)
+                return True
+            except ConnectionError as e:
+                logger.error("Reconnection failed: %s. Restart Tekla Structures and the MCP server to reconnect.", e)
                 return False
 
     @property
@@ -140,19 +152,23 @@ class TeklaModel:
             The Model instance for interacting with Tekla Structures
 
         Raises:
-            ConnectionError: If connection to Tekla model is lost and cannot be reconnected
+            ConnectionError: If the connection to Tekla is lost. The Open API cannot
+                re-establish a lost connection, so the MCP server must be restarted.
         """
-        if not self.ensure_connected():
-            raise ConnectionError("Cannot connect to Tekla model. Ensure Tekla is running and a model is open.")
-        return self._model
+        # A concurrent failed reconnect can null _model after ensure_connected()
+        # returned, so treat None as "not connected" too rather than returning it.
+        model = self._model if self.ensure_connected() else None
+        if model is None:
+            raise ConnectionError("Tekla connection lost. Ensure Tekla Structures is running with a model open, then restart the MCP server to reconnect.")
+        return model
 
     @property
     def model_path(self) -> str:
         """
         Return the current model's folder path.
 
-        Cached after the first successful call as the model folder does not change
-        during a session. Invalidated automatically on reconnect.
+        Read fresh on every call so it always reflects the model that is currently
+        open, even when the user switches models within the same Tekla session.
 
         Returns:
             The model folder path, or an empty string if unavailable.
@@ -160,10 +176,8 @@ class TeklaModel:
         Raises:
             ConnectionError: If not connected to a Tekla model.
         """
-        with self._connect_lock:
-            if self._model_path is None:
-                self._model_path = self.model.GetInfo().ModelPath or ""
-            return self._model_path
+        info = self.model.GetInfo()
+        return info.ModelPath or "" if info is not None else ""
 
     @log_function_call
     def commit_changes(self) -> bool:
