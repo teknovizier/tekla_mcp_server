@@ -244,7 +244,7 @@ def _check_element_bounding_box_rebars(
 @mcp_handler(scope="tool")
 def cut_elements_with_cutters(
     cutter_class: Annotated[int | None, Field(description="Tekla class of the parts to use as cutters")] = None,
-    cutter_guids: Annotated[list[str] | None, Field(description="GUIDs of the parts to use as cutters")] = None,
+    cutter_guids: Annotated[list[str] | None, Field(description="GUIDs of the parts to use as cutters (e.g. from `get_elements_properties`)")] = None,
     delete_cutting_parts: Annotated[bool, Field(description="Remove cutting parts after cuts are applied")] = False,
 ) -> ToolResult:
     """
@@ -352,12 +352,12 @@ def convert_cut_parts_to_real_parts() -> ToolResult:
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
-def run_macro(macro_name: Annotated[str, Field(description="Name of the macro file to run (e.g., 'MyMacro.cs'")]) -> ToolResult:
+def run_macro(macro_name: Annotated[str, Field(description="Name of the macro file to run (e.g. 'MyMacro.cs')")]) -> ToolResult:
     """
     Runs a Tekla macro with the specified name.
 
     ## AVAILABLE MACROS
-    Use the `macro://list` resource to get a list of available macros.
+    Use the `tekla://macros` resource to get a list of available macros.
     """
 
     if Operation.IsMacroRunning():

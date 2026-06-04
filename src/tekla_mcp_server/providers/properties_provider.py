@@ -33,9 +33,9 @@ def _validate_at_least_two_selected(count: int) -> None:
 @mcp_handler(scope="tool")
 def set_elements_properties(
     name: Annotated[str | None, Field(description="Part name")] = None,
-    profile: Annotated[str | None, Field(description="Profile string (e.g., '3000*200', 'HEA200')")] = None,
-    material: Annotated[str | None, Field(description="Material string (e.g., 'C25/30', 'S355J2')")] = None,
-    tekla_class: Annotated[int | None, Field(description="Tekla class (e.g., 1, 100 etc.)")] = None,
+    profile: Annotated[str | None, Field(description="Profile string (e.g. '3000*200', 'HEA200')")] = None,
+    material: Annotated[str | None, Field(description="Material string (e.g. 'C25/30', 'S355J2')")] = None,
+    tekla_class: Annotated[int | None, Field(description="Tekla class (e.g. 1, 100 etc.)")] = None,
     finish: Annotated[str | None, Field(description="Finish type")] = None,
     part_prefix: Annotated[str | None, Field(description="Part numbering prefix")] = None,
     part_start_number: Annotated[int | None, Field(description="Part start number")] = None,

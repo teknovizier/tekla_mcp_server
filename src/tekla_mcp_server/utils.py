@@ -28,7 +28,7 @@ def normalize_attribute_name(name: str) -> str:
         name: Attribute name to normalize
 
     Returns:
-        Normalized attribute name (e.g., "assembly-top-level" -> "ASSEMBLY_TOP_LEVEL")
+        Normalized attribute name (e.g. 'assembly-top-level' -> 'ASSEMBLY_TOP_LEVEL')
     """
     return re.sub(r"[_\W]+", "_", name.upper()).strip("_")
 
@@ -44,7 +44,7 @@ def normalize_for_embedding(name: str) -> str:
         name: Attribute name to normalize
 
     Returns:
-        Normalized attribute name (e.g., "ASSEMBLY_TOP_LEVEL" -> "assembly top level")
+        Normalized attribute name (e.g. 'ASSEMBLY_TOP_LEVEL' -> 'assembly top level')
     """
     name = re.sub(r"[_\-]+", " ", name)
     name = re.sub(r"[^a-zA-Z0-9 ]+", "", name)

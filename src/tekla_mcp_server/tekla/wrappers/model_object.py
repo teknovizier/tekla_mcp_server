@@ -529,7 +529,7 @@ class TeklaModelObject:
 
         Args:
             prop_name: Name of the property. Supports dotted paths up to two levels
-                deep (e.g. "Profile.ProfileString"). Deeper paths raise ValueError.
+                deep (e.g. 'Profile.ProfileString'). Deeper paths raise ValueError.
             value: Value to set
 
         Raises:
@@ -1426,7 +1426,7 @@ class TeklaContourPlate(TeklaPart):
 
         Args:
             points: List of contour points defining slab outline
-            profile: Profile/thickness (e.g., '200', '300')
+            profile: Profile/thickness (e.g. '200', '300')
             material: Material grade
             tekla_class: Tekla class number
             name: Element name (optional)

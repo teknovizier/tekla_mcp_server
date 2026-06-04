@@ -177,7 +177,7 @@ def _modify_single_component(model: TeklaModel, component: BaseComponent, select
 @components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def put_components(
-    component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
+    component_name: Annotated[str, Field(description="The Tekla name of the component (e.g. 'Lifting Anchor', 'MeshBars')")],
     properties_set: Annotated[str, Field(description="The name of the Tekla component properties set to use")] = "standard",
     custom_properties: Annotated[dict[str, Any] | None, Field(description="Custom properties to apply to the component")] = None,
 ) -> ToolResult:
@@ -187,7 +187,7 @@ def put_components(
     ## INSTRUCTIONS
     - First read `component://schema` to discover available components.
     - Then read `component://schema/{component_key}` to get custom properties for a specific component.
-    - Use Tekla config keys (e.g., `SpacBarsBottPri`, `BottGradePri`) as property names, NOT user-friendly descriptions.
+    - Use Tekla config keys (e.g. `SpacBarsBottPri`, `BottGradePri`) as property names, NOT user-friendly descriptions.
     - Example: For 'MeshBars', read the schema to get: `SpacBarsBottPri` for 'bottom primary bars spacing', `BottGradePri` for 'bottom primary bars reinforcement grade'.
     """
     component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=custom_properties)
@@ -198,7 +198,7 @@ def put_components(
 
 @components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
-def remove_components(component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")]) -> ToolResult:
+def remove_components(component_name: Annotated[str, Field(description="The Tekla name of the component (e.g. 'Lifting Anchor', 'MeshBars')")]) -> ToolResult:
     """
     Removes Tekla components from selected objects.
     """
@@ -338,7 +338,7 @@ def get_components() -> ToolResult:
 @components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def modify_components(
-    component_name: Annotated[str, Field(description="The Tekla name of the component (e.g., 'Lifting Anchor', 'MeshBars'")],
+    component_name: Annotated[str, Field(description="The Tekla name of the component (e.g. 'Lifting Anchor', 'MeshBars')")],
     custom_properties: Annotated[dict[str, Any], Field(description="Custom properties to update")],
 ) -> ToolResult:
     """
@@ -347,7 +347,7 @@ def modify_components(
     ## INSTRUCTIONS
     - First call `get_components` to see current component values
     - Then call this tool with only the properties the user wants to change
-    - Use Tekla config keys (e.g., `RecessLength`, `RecessHeight`), NOT user-friendly descriptions
+    - Use Tekla config keys (e.g. `RecessLength`, `RecessHeight`), NOT user-friendly descriptions
     - Only properties in `custom_properties` will be modified; all others remain unchanged
     """
     component = BaseComponent(name=component_name, custom_properties=custom_properties)

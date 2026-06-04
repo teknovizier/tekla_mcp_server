@@ -177,11 +177,11 @@ def get_advanced_option_directories(option_name: str) -> list[str]:
 
     Many Tekla advanced options (e.g. XS_MACRO_DIRECTORY, XS_TEMPLATE_DIRECTORY,
     XS_REPORT_OUTPUT_DIRECTORY) hold one or more semicolon-separated search paths.
-    Relative paths (e.g. ".\\attributes") are resolved against the current model
+    Relative paths (e.g. '.\\attributes') are resolved against the current model
     folder.
 
     Args:
-        option_name: Advanced option name, e.g. "XS_MACRO_DIRECTORY".
+        option_name: Advanced option name, e.g. 'XS_MACRO_DIRECTORY'.
 
     Returns:
         List of valid, existing directory paths from the setting,

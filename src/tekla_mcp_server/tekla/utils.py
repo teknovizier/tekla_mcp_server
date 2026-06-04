@@ -275,7 +275,7 @@ def get_tekla_major_version() -> int:
     Get the Tekla Structures major version from the current program version.
 
     Returns:
-        Major version number (e.g., 2022, 2024).
+        Major version number (e.g. 2022, 2024).
         Defaults to 2022 if parsing fails.
     """
     version = TeklaStructuresInfo.GetCurrentProgramVersion()
@@ -498,7 +498,7 @@ def get_filters(file_extension: str) -> list[str]:
     - ModelPath/attributes directory
 
     Args:
-        file_extension: File extension to search for (e.g., ".SObjGrp", ".VObjGrp")
+        file_extension: File extension to search for (e.g. '.SObjGrp', '.VObjGrp')
 
     Returns sorted list of filter names without the extension.
     """

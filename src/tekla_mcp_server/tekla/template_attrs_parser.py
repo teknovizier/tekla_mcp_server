@@ -260,7 +260,7 @@ class TemplateAttributeParser:
         Return attribute metadata by exact name.
 
         Args:
-            attribute_name: Exact Tekla attribute name (e.g., "AREA_NET")
+            attribute_name: Exact Tekla attribute name (e.g. 'AREA_NET')
 
         Returns:
             ReportProperty with type, unit, etc.

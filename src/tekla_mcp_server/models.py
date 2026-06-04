@@ -680,7 +680,7 @@ class SlabInput(TeklaBeamInput):
     """Input model for a single slab definition."""
 
     points: list[PointInput] = Field(description="List of contour points defining slab outline (minimum 3 points)")
-    profile: str = Field(description="Slab profile/thickness (e.g., '200', '300')")
+    profile: str = Field(description="Slab profile/thickness (e.g. '200', '300')")
 
     @field_validator("points")
     @classmethod
@@ -712,5 +712,5 @@ class BatchPlacementResult(BaseModel):
 class AttachmentPair(BaseModel):
     """An object -> target attachment pair."""
 
-    object_guid: str = Field(description="GUID of the object to attach")
-    target_guid: str = Field(description="GUID of the parent assembly to attach the object to")
+    object_guid: str = Field(description="GUID of the object to attach (e.g. from `check_for_orphans` or `get_elements_properties`)")
+    target_guid: str = Field(description="GUID of the parent assembly to attach the object to (e.g. from `check_for_orphans` or `get_elements_properties`)")

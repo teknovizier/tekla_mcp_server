@@ -61,7 +61,7 @@ selection_provider = LocalProvider()
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def select_elements_by_filter(
-    element_type: Annotated[str | None, Field(description="Named element type (e.g., 'Wall', 'Steel Beam')")] = None,
+    element_type: Annotated[str | None, Field(description="Named element type (e.g. 'Wall', 'Steel Beam')")] = None,
     tekla_classes: Annotated[int | list[int] | None, Field(description="Tekla class numbers")] = None,
     standard_string_filters: Annotated[dict[str, Any] | None, Field(description="Dict of standard string properties to filter options")] = None,
     standard_numeric_filters: Annotated[dict[str, Any] | None, Field(description="Dict of standard numeric properties to filter options")] = None,
@@ -290,6 +290,8 @@ def select_elements_by_filter_name(
 ) -> ToolResult:
     """
     Selects elements applying an existing Tekla filter.
+
+    Use the `tekla://filters/selection` resource to discover available filters.
     """
     model = TeklaModel()
     objects_to_select = model.get_objects_by_filter(filter_name)
@@ -306,7 +308,7 @@ def select_elements_by_filter_name(
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def select_elements_by_guid(
-    guids: Annotated[list[str], Field(description="List of GUIDs to select")],
+    guids: Annotated[list[str], Field(description="List of GUIDs to select (e.g. from `get_elements_properties`)")],
 ) -> ToolResult:
     """
     Selects elements by their GUID.
