@@ -277,10 +277,19 @@ Add the new resource to `docs/reference.md` with resource name and description.
 # Part 4: Code Patterns
 
 ## Code Patterns
+
+### Model Operations
 - Use `TeklaModel` class from `tekla/wrappers/model.py` (singleton pattern)
 - Always `model.commit_changes()` after modifications
 - Use `wrap_model_objects()` from `tekla/wrappers/model_object.py` for conversion, silently skips unsupported object types
 - `model.get_selected_objects()` raises `ValueError` if nothing is selected
+
+### Drawing Operations
+- Use `TeklaDrawingHandler` from `tekla/wrappers/drawing_handler.py` - **NOT a singleton**, create a fresh instance per operation: `handler = TeklaDrawingHandler()`
+- Use `handler.require_active_drawing()` to get the active `TeklaDrawing` - raises `RuntimeError` if no drawing is open
+- Always call `drawing.commit_changes()` after any drawing mutation (analogous to `model.commit_changes()`)
+- Use `TeklaDrawingView` from `tekla/wrappers/view.py` for per-view operations (scale, origin, object enumeration)
+- `view.view_key` is **not stable across Tekla sessions** - IDs are reassigned on model reopen, do not persist them
 
 ## Component Handler System
 The component handler system provides a plugin-like architecture for specialized Tekla components.
@@ -399,9 +408,11 @@ tekla_mcp_server/
 │       ├── template_attrs_parser.py     # Report property type resolution
 │       ├── utils.py                     # Tekla-API-side helpers
 │       └── wrappers/
-│           ├── drawing.py               # Drawing wrapper
+│           ├── drawing.py               # TeklaDrawing
+│           ├── drawing_handler.py       # TeklaDrawingHandler
 │           ├── model.py                 # TeklaModel singleton
-│           └── model_object.py          # TeklaModelObject, TeklaPart, TeklaAssembly, ...
+│           ├── model_object.py          # TeklaModelObject, TeklaPart, TeklaAssembly, ...
+│           └── view.py                  # TeklaDrawingView
 ├── config/
 │   ├── base_components.json             # Component definitions + handler config
 │   ├── element_types.json               # Element type -> Tekla class mapping
@@ -423,7 +434,8 @@ tekla_mcp_server/
 |-----------|----------|
 | MCP tool definition | `providers/*.py` |
 | Pydantic model | `models.py` |
-| Tekla wrapper | `tekla/wrappers/*.py` |
+| Model wrapper | `tekla/wrappers/model.py`, `tekla/wrappers/model_object.py` |
+| Drawing wrappers | `tekla/wrappers/drawing.py`, `tekla/wrappers/drawing_handler.py`, `tekla/wrappers/view.py` |
 | Tekla-specific utility | `tekla/utils.py` |
 | Configuration | `config/*.json` |
 | General utility | `utils.py` |
