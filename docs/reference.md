@@ -44,7 +44,7 @@ Type and default shown where relevant.
 | Operations | `run_macro` | Run a Tekla macro by filename | **`macro_name`** (str) |
 | Drawings | `get_drawings` | Get drawings with optional filtering | `drawing_type` (str: `G`/`A`/`W`/`C`/`M`), `name_filter` (dict), `mark_filter` (dict), `title1_filter` (dict), `title2_filter` (dict), `title3_filter` (dict) - all optional |
 | Drawings | `get_drawing_properties` | Get properties of drawings by mark list, or the currently selected drawings if omitted | `marks` (list[str], optional) |
-| Drawings | `detect_collisions_between_marks` | Detect mark collisions in drawings; colliding marks are coloured red | `marks` (list[str], optional - uses selected drawings if omitted) |
+| Drawings | `detect_collisions_between_marks` | Detect collisions between part marks in the active drawing's views and insert magenta revision clouds around each colliding pair | `view_keys` (list[str], optional - processes all views when omitted) |
 | Drawings | `print_drawings` | Print drawings to PDF with automatic paper size detection (A4–A0) | `marks` (list[str]), `output_filename` (str), `output_folder` (str), `printer_attributes` (dict) - all optional |
 | Drawings | `open_drawing` | Open a drawing by its mark in Tekla's drawing editor. | **`mark`** (str) |
 | Drawings | `close_drawing` | Close the active drawing | `save` (bool, default: `true`) |

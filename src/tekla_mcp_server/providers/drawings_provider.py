@@ -148,104 +148,94 @@ def get_drawing_properties(
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def detect_collisions_between_marks(
-    marks: Annotated[list[str] | None, Field(description="List of drawing marks to process")] = None,
+    view_keys: Annotated[list[str] | None, Field(description="View keys to check (from `get_drawing_views`). Processes all views when omitted")] = None,
 ) -> ToolResult:
     """
-    Detect collisions between part marks in drawings.
+    Detect collisions between part marks in the active drawing's views and highlight them with revision clouds.
 
-    If the marks are not provided, processes currently selected drawings in Tekla.
+    Use `open_drawing` first to open a drawing and `close_drawing` after to save the result.
+    When view_keys is omitted all views in the active drawing are checked.
     """
+    if view_keys is not None and not view_keys:
+        raise ValueError("view_keys must not be an empty list. Omit it to process all views.")
+
     handler = TeklaDrawingHandler()
-    target_drawings = handler.get_drawings_by_marks(marks)
+    active = handler.require_active_drawing()
 
-    if handler.get_active_drawing():
-        raise RuntimeError("A drawing is currently open. Close it first before running collision detection.")
+    if view_keys:
+        index = handler.index_views_by_key()
+        missing = [k for k in view_keys if k not in index]
+        if missing:
+            raise ValueError(f"View(s) not found: {missing}. Use `get_drawing_views` to list valid keys.")
+        views = [index[k] for k in view_keys]
+    else:
+        views = handler.get_drawing_views()
 
-    all_drawings_results: list[dict] = []
+    view_results: list[dict] = []
     total_collision_pairs = 0
+    cloud_failures = 0
     errors: list[dict[str, Any]] = []
 
-    logger.info("Starting collision detection for %d drawing(s)", len(target_drawings))
+    logger.info("Starting collision detection for %d view(s) in drawing '%s'", len(views), active.mark)
 
-    try:
-        for drawing in target_drawings:
-            logger.info("Processing drawing %s / %s", drawing.mark, drawing.name)
-            handler.set_active_drawing(drawing)
-            view_results: list[dict] = []
-            drawing_cloud_failures = 0
+    for tekla_view in views:
+        if tekla_view.is_sheet:
+            continue
 
+        view_name = tekla_view.name or tekla_view.view_key
+        raw_view = tekla_view.view
+
+        mark_data = []
+        for mark_type in (Mark, MarkSet, WeldMark):
             try:
-                sheet = drawing.get_sheet()
-                views_enum = sheet.GetAllViews()
-            except Exception:
-                logger.warning("Failed to open sheet for drawing %s, skipping", drawing.mark)
-                errors.append({"drawing": drawing.mark, "error": "sheet_open_failed"})
+                type_objs = raw_view.GetAllObjects(mark_type)
+            except Exception as e:
+                logger.warning("Failed to get %s objects from view '%s': %s", mark_type.__name__, view_name, e)
                 continue
+            while type_objs.MoveNext():
+                collision_data = get_mark_collision_data(type_objs.Current)
+                if collision_data is not None:
+                    mark_data.append(collision_data)
 
-            while views_enum.MoveNext():
-                view = views_enum.Current
-                view_name = getattr(view, "Name", "") or ""
+        logger.debug("View '%s': %d marks collected", view_name, len(mark_data))
 
-                mark_data = []
-                for mark_type in (Mark, MarkSet, WeldMark):
-                    try:
-                        type_objs = view.GetAllObjects(mark_type)
-                    except Exception as e:
-                        logger.warning("Failed to get %s objects from view '%s': %s", mark_type.__name__, view_name, e)
-                        continue
-                    while type_objs.MoveNext():
-                        collision_data = get_mark_collision_data(type_objs.Current)
-                        if collision_data is not None:
-                            mark_data.append(collision_data)
+        if not mark_data:
+            continue
 
-                logger.debug("View '%s': %d marks collected", view_name, len(mark_data))
+        pairs = get_collision_pairs(mark_data)
+        if not pairs:
+            logger.debug("View '%s': no collisions", view_name)
+            continue
 
-                if not mark_data:
-                    continue
+        logger.info("View '%s': %d collision pair(s) found", view_name, len(pairs))
+        total_collision_pairs += len(pairs)
 
-                pairs = get_collision_pairs(mark_data)
-                if not pairs:
-                    logger.debug("View '%s': no collisions", view_name)
-                    continue
+        view_cloud_failures = 0
+        for i, j in pairs:
+            logger.debug("Drawing cloud for %s <-> %s", type(mark_data[i].mark).__name__, type(mark_data[j].mark).__name__)
+            if not draw_collision_cloud(raw_view, mark_data[i], mark_data[j]):
+                view_cloud_failures += 1
+                cloud_failures += 1
 
-                logger.info("View '%s': %d collision pair(s) found", view_name, len(pairs))
-                total_collision_pairs += len(pairs)
+        view_results.append({
+            "view_key": tekla_view.view_key,
+            "view": view_name,
+            "total_marks": len(mark_data),
+            "collision_pairs": len(pairs),
+            "cloud_failures": view_cloud_failures,
+        })
 
-                for i, j in pairs:
-                    logger.debug(
-                        "Drawing cloud for %s <-> %s",
-                        type(mark_data[i].mark).__name__,
-                        type(mark_data[j].mark).__name__,
-                    )
-                    if not draw_collision_cloud(view, mark_data[i], mark_data[j]):
-                        drawing_cloud_failures += 1
+    if cloud_failures:
+        errors.append({"error": "cloud_insertion_failed", "count": cloud_failures})
 
-                view_results.append({"view": view_name, "total_marks": len(mark_data), "collision_pairs": len(pairs)})
-
-            if drawing_cloud_failures:
-                errors.append({"drawing": drawing.mark, "error": "cloud_insertion_failed", "count": drawing_cloud_failures})
-
-            if view_results:
-                all_drawings_results.append(
-                    {
-                        "mark": drawing.mark,
-                        "name": drawing.name,
-                        "views": view_results,
-                    }
-                )
-                logger.info("Saving drawing %s", drawing.mark)
-                if not handler.save_active_drawing():
-                    logger.warning("SaveActiveDrawing() returned False for drawing %s", drawing.mark)
-                    errors.append({"drawing": drawing.mark, "error": "save_failed"})
-    finally:
-        handler.close_active_drawing()
-
-    logger.info("Collision detection complete: %d total collision pair(s) across %d drawing(s)", total_collision_pairs, len(target_drawings))
-    result: dict = {
+    logger.info("Collision detection complete: %d total collision pair(s) in drawing '%s'", total_collision_pairs, active.mark)
+    result: dict[str, Any] = {
         "status": "partial" if errors else "success",
-        "total_drawings": len(target_drawings),
-        "drawings_with_collisions": all_drawings_results,
+        "drawing_mark": active.mark,
+        "views_checked": len(views),
+        "views_with_collisions": len(view_results),
         "total_collision_pairs": total_collision_pairs,
+        "views": view_results,
     }
     if errors:
         result["errors"] = errors
