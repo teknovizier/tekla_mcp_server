@@ -17,7 +17,7 @@ from tekla_mcp_server.providers.properties_provider import (
     get_elements_bounding_boxes,
     copy_properties_from_ifc,
 )
-from tekla_mcp_server.providers.selection_provider import select_elements_assemblies_or_main_parts
+from tekla_mcp_server.providers.selection_provider import select_elements_assemblies_or_main_parts, select_elements_by_guid
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
@@ -639,7 +639,7 @@ def test_get_elements_properties_snapshot_mode(model_objects):
     """Snapshot mode returns parts/assemblies lists with full PartSnapshot / AssemblySnapshot dumps."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
     select_elements_assemblies_or_main_parts(mode="Main Part")
-    result = get_elements_properties(snapshot_mode=True)
+    result = get_elements_properties(mode="snapshot")
 
     assert result.structured_content["status"] == "success"
     assert "parts" in result.structured_content
@@ -651,6 +651,35 @@ def test_get_elements_properties_snapshot_mode(model_objects):
     assert "cutparts" in parts[0]
     assert "welds" in parts[0]
     assert "reinforcements" in parts[0]
+
+
+def test_get_elements_properties_guids_only_mode(model_objects):
+    """guids_only mode returns just the selection's GUIDs, with no property payload."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    result = get_elements_properties(mode="guids_only")
+
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_count"] == 2
+    assert result.structured_content["processed_count"] == 2
+    guids = result.structured_content["guids"]
+    assert len(guids) == 2
+    assert all(isinstance(g, str) and g for g in guids)
+    # Lightweight mode: no flat/snapshot property payload
+    assert "parts" not in result.structured_content
+    assert "assemblies" not in result.structured_content
+
+
+def test_get_elements_properties_guids_only_round_trips_through_select_by_guid(model_objects):
+    """GUIDs from guids_only mode re-select the exact same objects (zero missing)."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    guids = get_elements_properties(mode="guids_only").structured_content["guids"]
+
+    TeklaModel.clear_selection()
+    result = select_elements_by_guid(guids=guids)
+
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_count"] == len(guids)
+    assert result.structured_content["missing_guids"] == []
 
 
 def test_copy_properties_from_ifc_only_tekla_selected_returns_error(model_objects):

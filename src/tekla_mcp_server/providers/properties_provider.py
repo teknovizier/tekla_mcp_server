@@ -4,7 +4,7 @@ Properties tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Any, Annotated
+from typing import Any, Annotated, Literal
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
@@ -148,28 +148,46 @@ def set_elements_properties(
 @mcp_handler(scope="tool")
 def get_elements_properties(
     report_props_definitions: Annotated[list[str] | None, Field(description="Additional report property names")] = None,
-    snapshot_mode: Annotated[bool, Field(description="Return full element snapshots")] = False,
+    mode: Annotated[Literal["flat", "snapshot", "guids_only"], Field(description="Output detail: 'flat' = key properties table, 'snapshot' = full element state, 'guids_only' = GUIDs only (skips property extraction)")] = "flat",
 ) -> ToolResult:
     """
     Retrieve properties for selected Tekla elements (assemblies, parts, or IFC reference objects).
 
-    ## MODES
+    ## MODES (select via `mode`)
 
-    ### Default mode (`snapshot_mode=False`)
+    ### `mode="flat"` (default)
     Returns a flat table of key element properties. Optionally request extra columns via `report_props_definitions`.
     - Extract properties not in default columns; split multi-property phrases into separate items.
     - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
     - Return the result table in Markdown format EXACTLY as provided. DO NOT reformat, truncate, or modify anything. ALWAYS show the full table.
 
-    ### Snapshot mode (`snapshot_mode=True`)
+    ### `mode="snapshot"`
     Returns full element snapshots for convention and QA checks, including basic element properties, UDAs, cutparts, welds and reinforcement.
+
+    ### `mode="guids_only"`
+    Returns only each selected element's GUID, with no property extraction. Use it as a lightweight probe
+    for large selections. The returned GUIDs feed straight into `select_elements_by_guid` and other
+    GUID-consuming tools. `report_props_definitions` is ignored in this mode.
     """
     selected_objects = TeklaModel().get_selected_objects()
 
     processed_count = 0
 
+    # GUIDs-only mode: lightweight probe, skips per-element property extraction
+    if mode == "guids_only":
+        guids = [obj.guid for obj in wrap_model_objects(selected_objects)]
+        logger.info("Retrieved %d GUIDs for %d selected elements", len(guids), selected_objects.GetSize())
+        return ToolResult(
+            structured_content={
+                "status": "success" if guids else "warning",
+                "selected_count": selected_objects.GetSize(),
+                "processed_count": len(guids),
+                "guids": guids,
+            }
+        )
+
     # Snapshot mode
-    if snapshot_mode:
+    if mode == "snapshot":
         parts: list[dict[str, Any]] = []
         assemblies: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
