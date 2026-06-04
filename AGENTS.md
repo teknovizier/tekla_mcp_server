@@ -108,6 +108,13 @@ def function():
 - Indentation: 4 spaces
 - Don't reformat existing code unless asked
 
+## Strings & Punctuation
+- Python string literals use **double quotes** `"..."`
+- Inside docstring prose, use **single quotes** to quote values or names: `For 'MeshBars', use key 'SpacBarsBottPri'`
+- Use **backticks** in docstrings/comments to mark tool names, parameters, and technical terms: `my_tool`, `view_key`, `TeklaModel`
+- Use **hyphen** `-` only, never em dash `—`
+- Avoid overusing `;` and `-` in docstrings - prefer plain prose sentences
+
 ## Docstrings
 All tool functions must use **Google-style** docstrings with:
 - Summary line (imperative mood, max 79 chars)
