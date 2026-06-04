@@ -132,6 +132,48 @@ class TestViewKeyStability:
             assert w1.view_key != w2.view_key
 
 
+class TestGetAllObjects:
+    def test_returns_list_of_objects(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        obj_a, obj_b = MagicMock(), MagicMock()
+        enum = MagicMock()
+        enum.MoveNext.side_effect = [True, True, False]
+        enum.Current = obj_a
+        mock_view.GetAllObjects.return_value = enum
+
+        # Make Current return different values on successive calls
+        type(enum).Current = property(lambda self, _objs=[obj_a, obj_b]: _objs.pop(0))
+        result = wrapper.get_all_objects()
+        assert result == [obj_a, obj_b]
+
+    def test_filters_none_objects(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        enum = MagicMock()
+        enum.MoveNext.side_effect = [True, True, False]
+        currents = [None, MagicMock()]
+        type(enum).Current = property(lambda self, c=currents: c.pop(0))
+        mock_view.GetAllObjects.return_value = enum
+
+        result = wrapper.get_all_objects()
+        assert len(result) == 1
+
+    def test_returns_empty_list_for_empty_view(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        enum = MagicMock()
+        enum.MoveNext.return_value = False
+        mock_view.GetAllObjects.return_value = enum
+
+        assert wrapper.get_all_objects() == []
+
+    def test_returns_none_when_get_all_objects_raises(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        mock_view.GetAllObjects.side_effect = Exception("disconnected")
+        assert wrapper.get_all_objects() is None
+
+    def test_returns_none_when_move_next_raises(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        enum = MagicMock()
+        enum.MoveNext.side_effect = Exception("mid-enumeration failure")
+        mock_view.GetAllObjects.return_value = enum
+
+        assert wrapper.get_all_objects() is None
+
+
 class TestToDict:
     def test_returns_dict_with_all_keys(self, wrapper: TeklaDrawingView):
         d = wrapper.to_dict()

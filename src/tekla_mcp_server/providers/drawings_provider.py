@@ -154,14 +154,13 @@ def detect_collisions_between_marks(
     """
     Detect collisions between part marks in the active drawing's views and highlight them with revision clouds.
 
-    Use `open_drawing` first to open a drawing and `close_drawing` after to save the result.
     When view_keys is omitted all views in the active drawing are checked.
     """
     if view_keys is not None and not view_keys:
         raise ValueError("view_keys must not be an empty list. Omit it to process all views.")
 
     handler = TeklaDrawingHandler()
-    active = handler.require_active_drawing()
+    drawing = handler.require_active_drawing()
 
     if view_keys:
         index = handler.index_views_by_key()
@@ -177,7 +176,7 @@ def detect_collisions_between_marks(
     cloud_failures = 0
     errors: list[dict[str, Any]] = []
 
-    logger.info("Starting collision detection for %d view(s) in drawing '%s'", len(views), active.mark)
+    logger.info("Starting collision detection for %d view(s) in drawing '%s'", len(views), drawing.mark)
 
     for tekla_view in views:
         if tekla_view.is_sheet:
@@ -218,21 +217,26 @@ def detect_collisions_between_marks(
                 view_cloud_failures += 1
                 cloud_failures += 1
 
-        view_results.append({
-            "view_key": tekla_view.view_key,
-            "view": view_name,
-            "total_marks": len(mark_data),
-            "collision_pairs": len(pairs),
-            "cloud_failures": view_cloud_failures,
-        })
+        view_results.append(
+            {
+                "view_key": tekla_view.view_key,
+                "view": view_name,
+                "total_marks": len(mark_data),
+                "collision_pairs": len(pairs),
+                "cloud_failures": view_cloud_failures,
+            }
+        )
 
     if cloud_failures:
         errors.append({"error": "cloud_insertion_failed", "count": cloud_failures})
 
-    logger.info("Collision detection complete: %d total collision pair(s) in drawing '%s'", total_collision_pairs, active.mark)
+    if total_collision_pairs > 0 and not drawing.commit_changes():
+        raise RuntimeError(f"CommitChanges() failed after drawing {total_collision_pairs} collision cloud(s). ")
+
+    logger.info("Collision detection complete: %d total collision pair(s) in drawing '%s'", total_collision_pairs, drawing.mark)
     result: dict[str, Any] = {
         "status": "partial" if errors else "success",
-        "drawing_mark": active.mark,
+        "drawing_mark": drawing.mark,
         "views_checked": len(views),
         "views_with_collisions": len(view_results),
         "total_collision_pairs": total_collision_pairs,
@@ -469,6 +473,7 @@ def move_view(
     Move a view by an offset in mm.
     """
     handler = TeklaDrawingHandler()
+    drawing = handler.require_active_drawing()
     tekla_view = handler.get_view_by_key(view_key)
 
     if tekla_view.is_sheet:
@@ -480,6 +485,9 @@ def move_view(
     tekla_view.origin = (new_x, new_y)
     if not tekla_view.modify():
         raise RuntimeError(f"Failed to move view '{view_key}'.")
+
+    if not drawing.commit_changes():
+        raise RuntimeError(f"CommitChanges() failed after moving view '{view_key}'.")
 
     return ToolResult(structured_content={"status": "success", "view_key": view_key, "new_origin_x": round(new_x, 1), "new_origin_y": round(new_y, 1)})
 
@@ -498,6 +506,7 @@ def set_view_scales(
         raise ValueError("view_scales is required")
 
     handler = TeklaDrawingHandler()
+    drawing = handler.require_active_drawing()
     index = handler.index_views_by_key()
 
     results: list[dict[str, Any]] = []
@@ -521,6 +530,10 @@ def set_view_scales(
     total = len(view_scales)
     status = "success" if succeeded == total else "partial" if succeeded else "error"
     logger.info("set_view_scales: %d/%d updated", succeeded, total)
+
+    if succeeded > 0 and not drawing.commit_changes():
+        raise RuntimeError("CommitChanges() failed after setting view scales.")
+
     return ToolResult(
         structured_content={
             "status": status,
@@ -591,28 +604,28 @@ def delete_view_clouds(
 
         total_deleted += deleted
         total_failed += failed
-        view_results.append({
-            "view_key": tekla_view.view_key,
-            "deleted_count": deleted,
-            "failed_count": failed,
-        })
-
-    if total_deleted > 0 and not drawing.commit_changes():
-        raise RuntimeError(
-            f"CommitChanges() failed after deleting {total_deleted} cloud(s). "
-            "The drawing editor may not reflect the changes."
+        view_results.append(
+            {
+                "view_key": tekla_view.view_key,
+                "deleted_count": deleted,
+                "failed_count": failed,
+            }
         )
 
+    if total_deleted > 0 and not drawing.commit_changes():
+        raise RuntimeError(f"CommitChanges() failed after deleting {total_deleted} cloud(s). The drawing editor may not reflect the changes.")
+
     status = "success" if total_failed == 0 else "partial" if total_deleted else "error"
-    logger.info("delete_view_clouds: found=%d deleted=%d failed=%d",
-                total_found, total_deleted, total_failed)
-    return ToolResult(structured_content={
-        "status": status,
-        "total_found": total_found,
-        "total_deleted": total_deleted,
-        "total_failed": total_failed,
-        "views": view_results,
-    })
+    logger.info("delete_view_clouds: found=%d deleted=%d failed=%d", total_found, total_deleted, total_failed)
+    return ToolResult(
+        structured_content={
+            "status": status,
+            "total_found": total_found,
+            "total_deleted": total_deleted,
+            "total_failed": total_failed,
+            "views": view_results,
+        }
+    )
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -627,6 +640,8 @@ def delete_views(
         raise ValueError("view_keys is required")
 
     handler = TeklaDrawingHandler()
+    drawing = handler.require_active_drawing()
+
     # Resolve all views up front in a single scan, then delete from the resolved
     # handles - avoids deleting while iterating the sheet's view enumerator.
     index = handler.index_views_by_key()
@@ -652,6 +667,10 @@ def delete_views(
     total = len(view_keys)
     status = "success" if succeeded == total else "partial" if succeeded else "error"
     logger.info("delete_views: %d/%d deleted", succeeded, total)
+
+    if succeeded > 0 and not drawing.commit_changes():
+        raise RuntimeError("CommitChanges() failed after deleting views.")
+
     return ToolResult(
         structured_content={
             "status": status,
