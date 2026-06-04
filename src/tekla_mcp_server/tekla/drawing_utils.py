@@ -12,6 +12,7 @@ from tekla_mcp_server.tekla.loader import (
     DrawingView,
     Mark,
     MarkSet,
+    WeldMark,
     PointList,
     Point,
     DotPrintColor,
@@ -20,7 +21,6 @@ from tekla_mcp_server.tekla.loader import (
     DotPrintPaperSize,
     DotPrintScalingType,
     LeaderLine,
-    WeldMark,
 )
 
 

@@ -52,6 +52,7 @@ Type and default shown where relevant.
 | Drawings | `move_view` | Move a view by an offset (mm) | **`view_key`** (str), **`dx`** (float, mm), **`dy`** (float, mm) |
 | Drawings | `set_view_scales` | Set the scale of one or more drawing views | **`view_scales`** (list): each item has **`view_key`** (str), **`scale`** (float) |
 | Drawings | `delete_views` | Delete one or more views from the active drawing | **`view_keys`** (list[str]) |
+| Drawings | `delete_view_clouds` | Delete all clouds from model views. Sheet-level clouds are not affected | `view_keys` (list[str], optional - processes all views when omitted) |
 | Modeling | `place_beams` | Place one or more beams | **`beams`** (list): each item has **`start_point`**, **`end_point`**, **`profile`**, **`material`**, **`tekla_class`** (int); optional: `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
 | Modeling | `place_columns` | Place one or more columns | **`columns`** (list): each item has **`base_point`**, **`height`** (float, mm), **`profile`**, **`material`**, **`tekla_class`** (int); optional: `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
 | Modeling | `place_panels` | Place one or more wall panels | **`panels`** (list): each item has **`start_point`**, **`end_point`**, **`profile`**, **`material`**, **`tekla_class`** (int); optional: `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |

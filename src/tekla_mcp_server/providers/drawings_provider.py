@@ -30,6 +30,7 @@ from tekla_mcp_server.tekla.drawing_utils import (
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import (
+    Cloud,
     Mark,
     MarkSet,
     WeldMark,
@@ -529,6 +530,89 @@ def set_view_scales(
             "results": results,
         }
     )
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def delete_view_clouds(
+    view_keys: Annotated[list[str] | None, Field(description="View keys to clear (from `get_drawing_views`). Processes all views when omitted")] = None,
+) -> ToolResult:
+    """
+    Delete all clouds from model views in the active drawing.
+
+    When view_keys is omitted, all views are processed.
+    Clouds placed outside any model view are not affected.
+    """
+    if view_keys is not None and not view_keys:
+        raise ValueError("view_keys must not be an empty list. Omit it to process all views.")
+
+    handler = TeklaDrawingHandler()
+    drawing = handler.require_active_drawing()
+
+    if view_keys is not None:
+        index = handler.index_views_by_key()
+        missing = [k for k in view_keys if k not in index]
+        if missing:
+            raise ValueError(f"View(s) not found: {missing}. Use `get_drawing_views` to list valid keys.")
+        views = [index[k] for k in view_keys]
+    else:
+        views = handler.get_drawing_views()
+
+    view_results: list[dict[str, Any]] = []
+    total_found = 0
+    total_deleted = 0
+    total_failed = 0
+
+    for tekla_view in views:
+        if tekla_view.is_sheet:
+            continue
+
+        all_objects = tekla_view.get_all_objects()
+        if all_objects is None:
+            logger.warning("get_all_objects() failed for view '%s'", tekla_view.view_key)
+            continue
+
+        to_delete = [obj for obj in all_objects if isinstance(obj, Cloud)]
+        total_found += len(to_delete)
+        if not to_delete:
+            continue
+
+        deleted = 0
+        failed = 0
+        for obj in to_delete:
+            try:
+                if obj.Delete():
+                    deleted += 1
+                else:
+                    failed += 1
+            except Exception as e:
+                logger.warning("Cloud.Delete() raised in view '%s': %s", tekla_view.view_key, e)
+                failed += 1
+
+        total_deleted += deleted
+        total_failed += failed
+        view_results.append({
+            "view_key": tekla_view.view_key,
+            "deleted_count": deleted,
+            "failed_count": failed,
+        })
+
+    if total_deleted > 0 and not drawing.commit_changes():
+        raise RuntimeError(
+            f"CommitChanges() failed after deleting {total_deleted} cloud(s). "
+            "The drawing editor may not reflect the changes."
+        )
+
+    status = "success" if total_failed == 0 else "partial" if total_deleted else "error"
+    logger.info("delete_view_clouds: found=%d deleted=%d failed=%d",
+                total_found, total_deleted, total_failed)
+    return ToolResult(structured_content={
+        "status": status,
+        "total_found": total_found,
+        "total_deleted": total_deleted,
+        "total_failed": total_failed,
+        "views": view_results,
+    })
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})

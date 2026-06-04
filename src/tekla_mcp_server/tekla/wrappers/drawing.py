@@ -23,15 +23,6 @@ class TeklaDrawing:
         """
         return self._drawing
 
-    def get_sheet(self) -> ContainerView | None:
-        """
-        Returns the sheet of the drawing, or None on failure.
-        """
-        try:
-            return self.drawing.GetSheet()
-        except Exception:
-            return None
-
     @property
     def name(self) -> str:
         """
@@ -188,6 +179,21 @@ class TeklaDrawing:
         Returns the commit message.
         """
         return self.drawing.CommitMessage
+
+    def commit_changes(self) -> bool:
+        """
+        Commits drawing changes. Returns True on success.
+        """
+        return self.drawing.CommitChanges()
+
+    def get_sheet(self) -> ContainerView | None:
+        """
+        Returns the sheet of the drawing, or None on failure.
+        """
+        try:
+            return self.drawing.GetSheet()
+        except Exception:
+            return None
 
     def _format_date(self, dt: Any) -> str | None:
         """
