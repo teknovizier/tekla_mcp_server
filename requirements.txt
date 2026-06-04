@@ -1,4 +1,4 @@
-fastmcp==3.3.1
+fastmcp==3.4.0
 pathvalidate==3.3.1
 pydantic==2.13.4
 pythonnet==3.0.5
