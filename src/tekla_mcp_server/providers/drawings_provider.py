@@ -183,19 +183,20 @@ def detect_collisions_between_marks(
             continue
 
         view_name = tekla_view.name or tekla_view.view_key
-        raw_view = tekla_view.view
+
+        all_mark_objs = tekla_view.get_all_objects([Mark, MarkSet, WeldMark])
+        if all_mark_objs is None:
+            logger.warning("Failed to enumerate mark objects in view '%s'", view_name)
+            continue
 
         mark_data = []
-        for mark_type in (Mark, MarkSet, WeldMark):
+        for obj in all_mark_objs:
             try:
-                type_objs = raw_view.GetAllObjects(mark_type)
+                cd = get_mark_collision_data(obj)
+                if cd is not None:
+                    mark_data.append(cd)
             except Exception as e:
-                logger.warning("Failed to get %s objects from view '%s': %s", mark_type.__name__, view_name, e)
-                continue
-            while type_objs.MoveNext():
-                collision_data = get_mark_collision_data(type_objs.Current)
-                if collision_data is not None:
-                    mark_data.append(collision_data)
+                logger.warning("get_mark_collision_data failed for object in view '%s': %s", view_name, e)
 
         logger.debug("View '%s': %d marks collected", view_name, len(mark_data))
 
@@ -210,6 +211,7 @@ def detect_collisions_between_marks(
         logger.info("View '%s': %d collision pair(s) found", view_name, len(pairs))
         total_collision_pairs += len(pairs)
 
+        raw_view = tekla_view.view
         view_cloud_failures = 0
         for i, j in pairs:
             logger.debug("Drawing cloud for %s <-> %s", type(mark_data[i].mark).__name__, type(mark_data[j].mark).__name__)
@@ -580,12 +582,10 @@ def delete_view_clouds(
         if tekla_view.is_sheet:
             continue
 
-        all_objects = tekla_view.get_all_objects()
-        if all_objects is None:
-            logger.warning("get_all_objects() failed for view '%s'", tekla_view.view_key)
+        to_delete = tekla_view.get_all_objects([Cloud])
+        if to_delete is None:
             continue
 
-        to_delete = [obj for obj in all_objects if isinstance(obj, Cloud)]
         total_found += len(to_delete)
         if not to_delete:
             continue

@@ -173,6 +173,28 @@ class TestGetAllObjects:
 
         assert wrapper.get_all_objects() is None
 
+    def test_passes_type_filter_to_tekla(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        enum = MagicMock()
+        enum.MoveNext.return_value = False
+        mock_view.GetAllObjects.return_value = enum
+
+        class FakeCloud:
+            pass
+
+        with patch("tekla_mcp_server.tekla.wrappers.view.SystemArray") as mock_array:
+            wrapper.get_all_objects([FakeCloud])
+            mock_array.__getitem__.return_value.assert_called_once_with([FakeCloud])
+            mock_view.GetAllObjects.assert_called_once()
+
+    def test_no_type_filter_calls_tekla_without_args(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        enum = MagicMock()
+        enum.MoveNext.return_value = False
+        mock_view.GetAllObjects.return_value = enum
+
+        wrapper.get_all_objects()
+
+        mock_view.GetAllObjects.assert_called_once_with()
+
 
 class TestToDict:
     def test_returns_dict_with_all_keys(self, wrapper: TeklaDrawingView):

@@ -9,6 +9,7 @@ DLL loading and exposes commonly used classes for use throughout the application
 from tekla_mcp_server.init import load_dlls
 
 load_dlls()
+from System import Type as SystemType, Array as SystemArray
 from System.Reflection import BindingFlags
 from System.Collections import ArrayList, Hashtable
 from System.Collections.Generic import List
@@ -95,6 +96,8 @@ from Tekla.Structures.Drawing import (
 
 # Export everything
 __all__ = [
+    "SystemType",
+    "SystemArray",
     "BindingFlags",
     "ArrayList",
     "Hashtable",

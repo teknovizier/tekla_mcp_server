@@ -2,9 +2,10 @@
 Module for Tekla Drawing View wrappers.
 """
 
-from typing import Any
+from typing import Any, overload
 
-from tekla_mcp_server.tekla.loader import DrawingView, DrawingObject, BindingFlags, Point
+from tekla_mcp_server.tekla.loader import SystemType, SystemArray, DrawingView, DrawingObject, BindingFlags, Point
+from tekla_mcp_server.init import logger
 
 
 class TeklaDrawingView:
@@ -132,20 +133,33 @@ class TeklaDrawingView:
         self._view.Attributes = attrs
         return self._view.Modify()
 
-    def get_all_objects(self) -> list[DrawingObject] | None:
+    @overload
+    def get_all_objects(self) -> list[DrawingObject] | None: ...
+
+    @overload
+    def get_all_objects(self, type_filter: list[type]) -> list[DrawingObject] | None: ...
+
+    def get_all_objects(self, type_filter: list[type] | None = None) -> list[DrawingObject] | None:
         """
         Return all DrawingObject instances in this view as a plain list,
         or None if enumeration fails (e.g. disconnection or corrupted view state).
+        Pass a list of types to let Tekla pre-filter via `GetAllObjects(Type[])`.
         """
+        if type_filter is not None and not type_filter:
+            raise ValueError("type_filter must not be empty")
         try:
-            enum = self._view.GetAllObjects()
+            if type_filter is None:
+                enum = self._view.GetAllObjects()
+            else:
+                enum = self._view.GetAllObjects(SystemArray[SystemType](type_filter))
             result: list[Any] = []
             while enum.MoveNext():
                 obj = enum.Current
                 if obj is not None:
                     result.append(obj)
             return result
-        except Exception:
+        except Exception as e:
+            logger.warning("get_all_objects() failed for view '%s': %s", self.view_key, e)
             return None
 
     def to_dict(self) -> dict[str, Any]:
