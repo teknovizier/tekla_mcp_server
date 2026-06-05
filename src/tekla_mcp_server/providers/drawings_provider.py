@@ -371,7 +371,7 @@ def print_drawings(
     return ToolResult(structured_content=result)
 
 
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def open_drawing(
     mark: Annotated[str, Field(description="Drawing mark (from `get_drawings`)")],
@@ -408,7 +408,7 @@ def open_drawing(
     )
 
 
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def close_drawing(
     save: Annotated[bool, Field(description="Save before closing")] = True,
