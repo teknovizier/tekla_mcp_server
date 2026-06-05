@@ -9,6 +9,8 @@ Tested modules:
 """
 
 import json
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from pydantic_core import ValidationError
@@ -20,6 +22,7 @@ from tekla_mcp_server.models import (
     ReportProperty,
     PartSnapshot,
     AssemblySnapshot,
+    ReinforcementSnapshot,
 )
 
 
@@ -297,6 +300,76 @@ class TestAssemblySnapshotNormalize:
         assembly = AssemblySnapshot(id=10, guid="ga1", pos="A1", main_part=None)
         result = assembly.normalize(100)
         assert result.main_part is None
+
+
+def _make_rebar_snapshot(**kwargs) -> ReinforcementSnapshot:
+    """Helper: construct a ReinforcementSnapshot with sensible required-field defaults."""
+    defaults = {
+        "id": 1,
+        "guid": "g1",
+        "pos": "R1",
+        "rebar_type": "BaseRebarGroup",
+        "father_guid": None,
+    }
+    defaults.update(kwargs)
+    return ReinforcementSnapshot(**defaults)
+
+
+class TestReinforcementSnapshotNormalize:
+    def test_floats_normalized(self):
+        snapshot = _make_rebar_snapshot(
+            report_properties={"weight": 123.456, "count": 5.0},
+        )
+        result = snapshot.normalize(100)
+        assert result.report_properties["weight"] == 100.0
+        assert result.report_properties["count"] == 0.0
+
+    def test_non_floats_unchanged(self):
+        snapshot = _make_rebar_snapshot(
+            rebar_type="RebarMesh",
+            report_properties={"grade": "B500B"},
+            user_properties={"notes": "test"},
+        )
+        result = snapshot.normalize(100)
+        assert result.report_properties["grade"] == "B500B"
+        assert result.user_properties["notes"] == "test"
+
+    def test_normalize_preserves_identity_fields(self):
+        snapshot = _make_rebar_snapshot(
+            rebar_type="SingleRebar",
+            father_guid="father-guid-123",
+        )
+        result = snapshot.normalize(100)
+        assert result.father_guid == "father-guid-123"
+        assert result.rebar_type == "SingleRebar"
+
+    def test_to_diff_view_contains_expected_keys(self):
+        snapshot = _make_rebar_snapshot(
+            father_guid="fg1",
+            report_properties={"weight": 50.0},
+            user_properties={"STATUS": "OK"},
+        )
+        dv = snapshot.to_diff_view()
+        assert "pos" in dv
+        assert "rebar_type" in dv
+        assert "report_properties" in dv
+        assert "user_properties" in dv
+        # father_guid is a relationship pointer, not a rebar property — must NOT be in
+        # the diff view or compare_elements will report false positives for rebars
+        # from different parent parts that are otherwise identical.
+        assert "father_guid" not in dv
+
+    def test_empty_report_properties(self):
+        snapshot = _make_rebar_snapshot(rebar_type="RebarStrand", father_guid=None)
+        result = snapshot.normalize(100)
+        assert result.report_properties == {}
+        assert result.user_properties == {}
+        assert result.father_guid is None
+
+    def test_all_fields_required(self):
+        """Verify no implicit defaults - consistent with PartSnapshot / AssemblySnapshot."""
+        with pytest.raises(ValidationError):
+            ReinforcementSnapshot(id=1, guid="g", pos="R1")  # missing rebar_type etc.
 
 
 class TestNormalizeEdgeCases:
@@ -711,3 +784,74 @@ class TestNameAutoDetectionLogic:
         resolved_name = user_name if user_name else default_name
 
         assert resolved_name is None
+
+
+class FakeSelection:
+    """Minimal stand-in for Tekla's ModelObjectEnumerator."""
+
+    def __init__(self, items: list):
+        self._items = items
+
+    def GetSize(self) -> int:
+        return len(self._items)
+
+    def __iter__(self):
+        return iter(self._items)
+
+
+def _as(cls):
+    """MagicMock whose __class__ makes isinstance(mock, cls) True."""
+    m = MagicMock()
+    m.__class__ = cls
+    return m
+
+
+def _run_compare(pairs, ignore_numbering=True):
+    from tekla_mcp_server.providers.properties_provider import compare_elements
+    from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, TeklaReinforcement
+
+    raws = [r for r, _ in pairs]
+    wrap_map = {id(r): w for r, w in pairs}
+
+    with (
+        patch("tekla_mcp_server.providers.properties_provider.TeklaModel") as mock_model_cls,
+        patch("tekla_mcp_server.providers.properties_provider.wrap_model_object", side_effect=lambda o: wrap_map.get(id(o))),
+    ):
+        mock_model_cls.return_value.get_selected_objects.return_value = FakeSelection(raws)
+        return compare_elements(ignore_numbering=ignore_numbering)
+
+
+class TestCompareElementsTypeHomogeneity:
+    def test_part_and_reinforcement_rejected(self):
+        from tekla_mcp_server.tekla.wrappers.model_object import TeklaPart, TeklaReinforcement
+
+        result = _run_compare([(MagicMock(), _as(TeklaPart)), (MagicMock(), _as(TeklaReinforcement))])
+        assert result.structured_content["status"] == "error"
+        assert "mixed" in result.structured_content["message"].lower()
+
+    def test_part_and_assembly_rejected(self):
+        from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart
+
+        result = _run_compare([(MagicMock(), _as(TeklaPart)), (MagicMock(), _as(TeklaAssembly))])
+        assert result.structured_content["status"] == "error"
+        assert "mixed" in result.structured_content["message"].lower()
+
+    def test_error_message_names_both_categories(self):
+        from tekla_mcp_server.tekla.wrappers.model_object import TeklaPart, TeklaReinforcement
+
+        result = _run_compare([(MagicMock(), _as(TeklaPart)), (MagicMock(), _as(TeklaReinforcement))])
+        msg = result.structured_content["message"].lower()
+        assert "part" in msg
+        assert "reinforcement" in msg
+
+    def test_two_parts_not_rejected(self):
+        from tekla_mcp_server.tekla.wrappers.model_object import TeklaPart
+
+        result = _run_compare([(MagicMock(), _as(TeklaPart)), (MagicMock(), _as(TeklaPart))])
+        assert "mixed" not in result.structured_content.get("message", "").lower()
+
+    def test_two_reinforcements_not_rejected(self):
+        from tekla_mcp_server.tekla.wrappers.model_object import TeklaReinforcement
+
+        result = _run_compare([(MagicMock(), _as(TeklaReinforcement)), (MagicMock(), _as(TeklaReinforcement))])
+        assert "mixed" not in result.structured_content.get("message", "").lower()

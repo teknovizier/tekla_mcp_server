@@ -10,7 +10,7 @@ from typing import Any, overload
 
 from tekla_mcp_server.config import get_tolerance
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, BeamType, OffsetInput, PointInput, PositionInput
+from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, ReinforcementSnapshot, BeamType, OffsetInput, PointInput, PositionInput
 
 from tekla_mcp_server.tekla.loader import (
     Assembly,
@@ -1520,6 +1520,14 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
         self.model_object.Father = value.model_object if value is not None else None
         self.modify()
 
+    @property
+    def rebar_number(self) -> NumberingSeries:
+        """
+        Returns the numbering series of the reinforcement.
+        """
+        ns = self.model_object.NumberingSeries
+        return NumberingSeries(prefix=ns.Prefix, start_number=ns.StartNumber)
+
     def get_top_level_assembly(self) -> TeklaAssembly | None:
         """
         Returns the top-level assembly of the reinforcement's father part.
@@ -1529,3 +1537,26 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
             logger.warning("No Father found for reinforcement %s.", self.guid)
             return None
         return host.get_top_level_assembly()
+
+    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+        """
+        Gets element properties for Reinforcement.
+        """
+        props = super().get_properties(report_props_definitions)
+        props["position"] = self.position
+        props["name"] = self.name
+        props["tekla_class"] = self.tekla_class
+        props["rebar_type"] = type(self.model_object).__name__
+        rebar_number = self.rebar_number
+        props["rebar_prefix"] = rebar_number.prefix
+        props["rebar_start_number"] = rebar_number.start_number
+        father = self.father
+        props["father_guid"] = father.guid if father is not None else None
+        return props
+
+    def to_snapshot(self) -> ReinforcementSnapshot:
+        """
+        Creates a typed snapshot of this reinforcement object.
+        Returns a ReinforcementSnapshot with report properties, UDAs, father GUID, and rebar type.
+        """
+        return SnapshotBuilder.build_reinforcement_snapshot(self)

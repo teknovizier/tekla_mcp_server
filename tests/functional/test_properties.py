@@ -653,6 +653,24 @@ def test_get_elements_properties_snapshot_mode(model_objects):
     assert "reinforcements" in parts[0]
 
 
+def test_get_elements_properties_snapshot_mode_includes_reinforcements_key(model_objects):
+    """Snapshot mode returns a top-level `reinforcements` list (empty when no rebars selected)."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = get_elements_properties(mode="snapshot")
+
+    assert "reinforcements" in result.structured_content
+    assert isinstance(result.structured_content["reinforcements"], list)
+
+
+def test_get_elements_properties_flat_mode_includes_reinforcements_key(model_objects):
+    """Flat mode includes `reinforcements` in structured_content (empty list when none selected)."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    result = get_elements_properties(mode="flat")
+
+    assert "reinforcements" in result.structured_content
+    assert isinstance(result.structured_content["reinforcements"], list)
+
+
 def test_get_elements_properties_guids_only_mode(model_objects):
     """guids_only mode returns just the selection's GUIDs, with no property payload."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])

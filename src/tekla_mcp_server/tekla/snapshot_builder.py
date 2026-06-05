@@ -6,7 +6,7 @@ from typing import Any
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import AssemblySnapshot, PartSnapshot
+from tekla_mcp_server.models import AssemblySnapshot, PartSnapshot, ReinforcementSnapshot
 
 from tekla_mcp_server.tekla.loader import (
     BaseRebarGroup,
@@ -78,6 +78,39 @@ class SnapshotBuilder:
         )
 
     @staticmethod
+    def _get_rebar_prop_names(raw_rebar: Any) -> list[str]:
+        if isinstance(raw_rebar, (BaseRebarGroup, SingleRebar)):
+            return get_config().get_report_props("rebar_group")
+        elif isinstance(raw_rebar, RebarMesh):
+            return get_config().get_report_props("rebar_mesh")
+        elif isinstance(raw_rebar, RebarStrand):
+            return get_config().get_report_props("rebar_strand")
+        return []
+
+    @staticmethod
+    def build_reinforcement_snapshot(rebar: Any) -> ReinforcementSnapshot:
+        raw = rebar.model_object
+        rebar_type = type(raw).__name__
+
+        prop_names = SnapshotBuilder._get_rebar_prop_names(raw)
+
+        report_properties = SnapshotBuilder._build_report_properties(rebar, prop_names)
+        user_properties = SnapshotBuilder._build_sorted_user_properties(rebar)
+
+        father = rebar.father
+        father_guid = father.guid if father is not None else None
+
+        return ReinforcementSnapshot(
+            id=rebar.id,
+            guid=rebar.guid,
+            pos=rebar.position,
+            report_properties=report_properties,
+            user_properties=user_properties,
+            father_guid=father_guid,
+            rebar_type=rebar_type,
+        )
+
+    @staticmethod
     def _build_report_properties(obj: Any, prop_names: list[str]) -> dict[str, Any]:
         props = obj.get_multiple_report_properties(prop_names)
         return dict(sorted(props.items()))
@@ -111,26 +144,21 @@ class SnapshotBuilder:
 
     @staticmethod
     def _build_reinforcements(part: Any) -> list[dict[str, Any]]:
-        from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, wrap_model_object
+        from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
         reinforcements = []
         reinf_enum = part.model_object.GetReinforcements()
         while reinf_enum.MoveNext():
             rebar = reinf_enum.Current
-            wrapped_rebar = TeklaModelObject(rebar)
 
-            if isinstance(rebar, (BaseRebarGroup, SingleRebar)):
-                prop_names = get_config().get_report_props("rebar_group")
-            elif isinstance(rebar, RebarMesh):
-                prop_names = get_config().get_report_props("rebar_mesh")
-            elif isinstance(rebar, RebarStrand):
-                prop_names = get_config().get_report_props("rebar_strand")
-            else:
-                prop_names = []
+            prop_names = SnapshotBuilder._get_rebar_prop_names(rebar)
 
             rebar_wrapped = wrap_model_object(rebar)
-            rebar_props = rebar_wrapped.get_multiple_report_properties(prop_names) if rebar_wrapped else {}
-            rebar_udas = wrapped_rebar.get_all_user_properties()
+            if rebar_wrapped is None:
+                logger.warning("_build_reinforcements: could not wrap rebar %s, skipping", rebar.Identifier.ID)
+                continue
+            rebar_props = rebar_wrapped.get_multiple_report_properties(prop_names)
+            rebar_udas = rebar_wrapped.get_all_user_properties()
 
             reinforcements.append(
                 {

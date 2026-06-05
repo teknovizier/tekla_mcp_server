@@ -14,7 +14,17 @@ from tekla_mcp_server.config import get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBeam, TeklaContourPlate, TeklaModelObject, TeklaPart, TeklaReferenceModelObject, wrap_model_object, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import (
+    TeklaAssembly,
+    TeklaBeam,
+    TeklaContourPlate,
+    TeklaModelObject,
+    TeklaPart,
+    TeklaReferenceModelObject,
+    TeklaReinforcement,
+    wrap_model_object,
+    wrap_model_objects,
+)
 from tekla_mcp_server.tekla.loader import BooleanPart, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts
@@ -148,21 +158,26 @@ def set_elements_properties(
 @mcp_handler(scope="tool")
 def get_elements_properties(
     report_props_definitions: Annotated[list[str] | None, Field(description="Additional report property names")] = None,
-    mode: Annotated[Literal["flat", "snapshot", "guids_only"], Field(description="Output detail: 'flat' = key properties table, 'snapshot' = full element state, 'guids_only' = GUIDs only (skips property extraction)")] = "flat",
+    mode: Annotated[
+        Literal["flat", "snapshot", "guids_only"],
+        Field(description="Output detail: 'flat' = key properties table, 'snapshot' = full element state, 'guids_only' = GUIDs only (skips property extraction)"),
+    ] = "flat",
 ) -> ToolResult:
     """
-    Retrieve properties for selected Tekla elements (assemblies, parts, or IFC reference objects).
+    Retrieve properties for selected Tekla model objects - parts, assemblies, reinforcement or IFC reference objects.
 
     ## MODES (select via `mode`)
 
     ### `mode="flat"` (default)
-    Returns a flat table of key element properties. Optionally request extra columns via `report_props_definitions`.
+    Returns a flat table of key element properties, grouped by type.
+    Optionally request extra columns via `report_props_definitions`.
     - Extract properties not in default columns; split multi-property phrases into separate items.
     - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
-    - Return the result table in Markdown format EXACTLY as provided. DO NOT reformat, truncate, or modify anything. ALWAYS show the full table.
+    - Return each result table in Markdown format EXACTLY as provided. DO NOT reformat, truncate, or modify anything. ALWAYS show the full table.
 
     ### `mode="snapshot"`
     Returns full element snapshots for convention and QA checks, including basic element properties, UDAs, cutparts, welds and reinforcement.
+    Directly selected reinforcement objects are returned in a dedicated `reinforcements` list.
 
     ### `mode="guids_only"`
     Returns only each selected element's GUID, with no property extraction. Use it as a lightweight probe
@@ -190,21 +205,26 @@ def get_elements_properties(
     if mode == "snapshot":
         parts: list[dict[str, Any]] = []
         assemblies: list[dict[str, Any]] = []
+        reinforcements: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
 
         for obj in wrap_model_objects(selected_objects):
             try:
                 if isinstance(obj, TeklaPart):
                     parts.append(obj.to_snapshot().model_dump())
+                    processed_count += 1
                 elif isinstance(obj, TeklaAssembly):
                     assemblies.append(obj.to_snapshot().model_dump())
-                processed_count += 1
+                    processed_count += 1
+                elif isinstance(obj, TeklaReinforcement):
+                    reinforcements.append(obj.to_snapshot().model_dump())
+                    processed_count += 1
             except Exception as e:
                 logger.exception("Failed to build snapshot for %s: %s", obj.guid, str(e))
                 errors.append({"guid": obj.guid, "error": str(e)})
 
-        total = len(parts) + len(assemblies)
-        logger.info("Snapshot mode: built snapshots for %d parts and %d assemblies", len(parts), len(assemblies))
+        total = len(parts) + len(assemblies) + len(reinforcements)
+        logger.info("Snapshot mode: built snapshots for %d parts, %d assemblies, %d reinforcements", len(parts), len(assemblies), len(reinforcements))
         return ToolResult(
             structured_content={
                 "status": "success" if total > 0 else "warning",
@@ -212,6 +232,7 @@ def get_elements_properties(
                 "processed_count": processed_count,
                 "parts": parts,
                 "assemblies": assemblies,
+                "reinforcements": reinforcements,
                 "errors": errors,
             }
         )
@@ -233,6 +254,7 @@ def get_elements_properties(
 
     flat_assemblies: list[dict[str, Any]] = []
     flat_parts: list[dict[str, Any]] = []
+    flat_reinforcements: list[dict[str, Any]] = []
     reference_objects: list[dict[str, Any]] = []
 
     for selected_object in wrap_model_objects(selected_objects):
@@ -244,14 +266,19 @@ def get_elements_properties(
 
         if isinstance(selected_object, TeklaReferenceModelObject):
             reference_objects.append(props)
+            processed_count += 1
         elif isinstance(selected_object, TeklaAssembly):
             flat_assemblies.append(props)
+            processed_count += 1
         elif isinstance(selected_object, TeklaPart):
             flat_parts.append(props)
-        processed_count += 1
+            processed_count += 1
+        elif isinstance(selected_object, TeklaReinforcement):
+            flat_reinforcements.append(props)
+            processed_count += 1
 
     logger.info("Retrieved properties for %s elements", processed_count)
-    status = "success" if flat_assemblies or flat_parts or reference_objects else "error"
+    status = "success" if flat_assemblies or flat_parts or flat_reinforcements or reference_objects else "error"
     if resolution_errors or extraction_errors:
         status = "partial"
         if extraction_errors:
@@ -267,12 +294,22 @@ def get_elements_properties(
         result["Phase"] = props.get("phase", "")
         return result
 
-    def _flatten(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _flatten_rebar_props(props: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        result["GUID"] = props.get("guid", "")
+        for field in ["position", "name", "rebar_type", "rebar_prefix", "rebar_start_number", "tekla_class"]:
+            if field in props:
+                result[field.replace("_", " ").title()] = props[field]
+        result["Phase"] = props.get("phase", "")
+        result["Father GUID"] = props.get("father_guid") or ""
+        return result
+
+    def _flatten(items: list[dict[str, Any]], row_fn=_flatten_props) -> list[dict[str, Any]]:
         if not items:
             return []
         flat_items = []
         for i, item in enumerate(items):
-            row = _flatten_props(item)
+            row = row_fn(item)
             if user_props := item.get("user_properties"):
                 row.update(user_props)
             if report_props := item.get("report_properties"):
@@ -288,7 +325,16 @@ def get_elements_properties(
             flat_items.append({"No": i + 1, **row})
         return flat_items
 
-    content_json = {k: v for k, v in (("assemblies", _flatten(flat_assemblies)), ("parts", _flatten(flat_parts)), ("reference_objects", _flatten(reference_objects))) if v}
+    content_json = {
+        k: v
+        for k, v in (
+            ("assemblies", _flatten(flat_assemblies)),
+            ("parts", _flatten(flat_parts)),
+            ("reinforcements", _flatten(flat_reinforcements, _flatten_rebar_props)),
+            ("reference_objects", _flatten(reference_objects)),
+        )
+        if v
+    }
 
     return ToolResult(
         content=content_json,
@@ -298,6 +344,7 @@ def get_elements_properties(
             "processed_count": processed_count,
             "assemblies": flat_assemblies,
             "parts": flat_parts,
+            "reinforcements": flat_reinforcements,
             "reference_objects": reference_objects,
             "resolution_errors": resolution_errors,
             "extraction_errors": extraction_errors,
@@ -367,13 +414,16 @@ def compare_elements(
     ignore_numbering: Annotated[bool, Field(description="Skip numbering check")] = False,
 ) -> ToolResult:
     """
-    Compares all selected Tekla parts or assemblies with each other.
-    Requires at least two elements to be selected.
+    Compares all selected Tekla elements with each other.
+    Supports parts, assemblies, and reinforcement. Requires at least two elements to be selected.
+    All selected elements must be of the same type.
 
     ## RULES
     - Only use information explicitly present in the diff. Do not infer or assume changes.
     - Ignore `id` and `guid` fields - they are ALWAYS different (not actual differences).
     - Ignore order of items in lists (cutparts, reinforcements, welds).
+    - For reinforcement: `father_guid` is excluded from the diff - it is a relationship pointer,
+      not a property of the rebar itself.
     """
     selected_objects = TeklaModel().get_selected_objects()
 
@@ -381,13 +431,46 @@ def compare_elements(
 
     _validate_at_least_two_selected(selected_objects.GetSize())
 
-    parts = list(selected_objects)
-    logger.debug("Comparing %d elements", len(parts))
-    if not ignore_numbering:
-        if not all(Operation.IsNumberingUpToDate(part) for part in parts):
-            raise ValueError("Numbering is not up-to-date for selected elements.")
+    raw_objects = list(selected_objects)
+    logger.debug("Comparing %d elements", len(raw_objects))
 
-    valid_types = (TeklaPart, TeklaAssembly)
+    valid_types = (TeklaPart, TeklaAssembly, TeklaReinforcement)
+
+    # Wrap early so we can validate types before doing any Tekla API calls.
+    # Positive isinstance branch lets type checkers narrow obj to the union type.
+    wrapped_objects: list[TeklaPart | TeklaAssembly | TeklaReinforcement] = []
+    for raw in raw_objects:
+        obj = wrap_model_object(raw)
+        if isinstance(obj, valid_types):
+            wrapped_objects.append(obj)
+        else:
+            raise TypeError(
+                f"Element must be a part, assembly or reinforcement, got "
+                f"{type(obj).__name__ if obj is not None else 'None'}"
+            )
+
+    # Enforce type homogeneity - mixing Part snapshots with Reinforcement snapshots
+    # produces meaningless diffs (completely different diff-view schemas).
+    def _comparison_category(obj: TeklaModelObject) -> str:
+        if isinstance(obj, TeklaReinforcement):
+            return "reinforcement"
+        if isinstance(obj, TeklaAssembly):
+            return "assembly"
+        return "part"
+
+    categories = {_comparison_category(o) for o in wrapped_objects}
+    if len(categories) > 1:
+        raise TypeError(
+            f"Cannot compare mixed object types: {', '.join(sorted(categories))}. "
+            "Select only parts, only assemblies, or only reinforcement."
+        )
+
+    # Numbering check only applies to parts and assemblies — IsNumberingUpToDate
+    # is not meaningful for Reinforcement objects.
+    if not ignore_numbering:
+        parts_for_numbering = [o.model_object for o in wrapped_objects if isinstance(o, (TeklaPart, TeklaAssembly))]
+        if parts_for_numbering and not all(Operation.IsNumberingUpToDate(p) for p in parts_for_numbering):
+            raise ValueError("Numbering is not up-to-date for selected elements.")
 
     IGNORED_KEYS = {"id", "guid"}
 
@@ -450,10 +533,7 @@ def compare_elements(
     snap_views: list[dict] = []
     raws: list[dict] = []
 
-    for part in parts:
-        obj = wrap_model_object(part)
-        if not isinstance(obj, valid_types):
-            raise TypeError(f"Element must be a part or assembly, got {type(obj).__name__}")
+    for obj in wrapped_objects:
         snapshot = obj.to_snapshot().normalize(tolerance)
         guids.append(obj.guid)
         snap_views.append(_strip_ignored(snapshot.to_diff_view()))

@@ -573,6 +573,40 @@ class PartSnapshot(ModelObjectSnapshot):
         }
 
 
+class ReinforcementSnapshot(ModelObjectSnapshot):
+    """
+    Represents a snapshot of a directly-selected Tekla reinforcement object.
+    """
+
+    father_guid: str | None = Field(description="GUID of the parent part this reinforcement belongs to")
+    rebar_type: str = Field(description="Tekla class name of the reinforcement (e.g. BaseRebarGroup, RebarMesh, RebarStrand, SingleRebar)")
+
+    def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
+        return self.__class__(
+            id=self.id,
+            guid=self.guid,
+            pos=self.pos,
+            report_properties=normalized_props,
+            user_properties=normalized_user_props,
+            father_guid=self.father_guid,
+            rebar_type=self.rebar_type,
+        )
+
+    def to_diff_view(self) -> dict[str, Any]:
+        """Convert snapshot to diff-friendly view for comparison.
+
+        NOTE: `father_guid` is intentionally excluded - it is a relationship pointer,
+        not a property of the reinforcement itself, and would cause false positives when
+        comparing identical rebars that happen to belong to different parent parts.
+        """
+        return {
+            "pos": self.pos,
+            "rebar_type": self.rebar_type,
+            "report_properties": self.report_properties,
+            "user_properties": self.user_properties,
+        }
+
+
 class AssemblySnapshot(ModelObjectSnapshot):
     """
     Represents a snapshot of a Tekla assembly for comparison purposes.
