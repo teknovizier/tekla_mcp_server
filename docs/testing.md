@@ -10,11 +10,15 @@ The project includes unit tests and functional tests.
 - `test_models.py`: Data model validation
 - `test_utils.py`: Decorators and utilities
 - `test_tekla_utils.py`: Tekla API wrapper tests
+- `test_tekla_model.py`: TeklaModel connection wrapper (singleton, thread safety)
 - `test_tekla_model_object.py`: Tekla ModelObject wrappers
+- `test_tekla_view.py`: Tekla view wrapper
 - `test_tekla_template_attrs_parser.py`: Template attribute parsing
 - `test_component_handlers.py`: Component handler plugins
 - `test_embeddings.py`: Semantic attribute resolution
 - `test_modeling.py`: Modeling utilities
+- `test_tool_annotations.py`: Guards that every tool declares `readOnlyHint`/`destructiveHint`
+- `test_docs_reference_parity.py`: Guards that `docs/reference.md` matches the provider code
 
 ### Functional Tests (`tests/functional/`)
 - `conftest.py`: Shared fixtures and utilities
@@ -50,3 +54,4 @@ All test object names (parts, assemblies, UDAs) must start with `MCP_TEST_` pref
 
 - Functional tests modify actual Tekla model - run only in test/development environment
 - Unit tests do not require Tekla to be running
+- `test_docs_reference_parity.py` and `test_tool_annotations.py` parse the provider source via AST, so they run in CI without Tekla. Update `docs/reference.md` whenever you add or remove a tool or resource, or these tests fail

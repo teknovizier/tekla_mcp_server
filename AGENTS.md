@@ -207,6 +207,9 @@ Resources provide discovery/metadata, not actions:
 | `tekla://filters/selection` | List available selection filters |
 | `tekla://filters/view` | List available view filters |
 | `tekla://connection_status` | Connection status |
+| `tekla://catalog/materials` | All available material names from the Tekla material catalog |
+| `tekla://catalog/rebars` | All available rebar grades and sizes from the Tekla rebar catalog |
+| `tekla://reports` | Available Tekla report template names (`.rpt` files) |
 | `project://context` | Project context: design rules, naming conventions, etc. |
 | `project://context/{file}` | Full content of a specific project context file |
 

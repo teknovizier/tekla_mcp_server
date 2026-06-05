@@ -31,11 +31,9 @@ When set to `true`, exposes **only** tools annotated with `readOnlyHint=true` (a
 | `components` | Place and manage Tekla components | |
 | `drawings` | Drawing creation and management | |
 | `modeling` | Create and modify model objects | |
-| `ifc` | IFC operations | |
-
-**Example:** hide modeling and IFC tools:
+**Example:** hide modeling tools:
 ```json
-{ "excluded_tags": ["modeling", "ifc"] }
+{ "excluded_tags": ["modeling"] }
 ```
 
 Both settings compose: `excluded_tags` and `read_only` can be active simultaneously.

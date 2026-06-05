@@ -20,7 +20,7 @@ uv pip install -r requirements-dev.txt
 |----------|---------|-------------|
 | `tekla_path` | `C:\Program Files\Tekla Structures\2022.0\bin` | Tekla Structures binary directory |
 | `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
-| `read_only` | `false` | When `true`, hides all destructive tools. Selection, view, and query tools remain available |
+| `read_only` | `false` | When `true`, exposes only read-only tools, everything that writes the model is hidden. Selection, view, and query tools remain available |
 | `excluded_tags` | `[]` | List of tool tags to hide from the LLM. See [configuration guide](configuration.md#tool-visibility) |
 | `embeddings.enabled` | `true` | Enable semantic attribute search |
 | `embeddings.embedding_model` | `teknovizier/minilm-tekla-attr-embed-v1` | HuggingFace model or local path |
