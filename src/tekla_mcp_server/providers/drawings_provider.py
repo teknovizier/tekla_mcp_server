@@ -146,7 +146,7 @@ def get_drawing_properties(
     )
 
 
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def detect_collisions_between_marks(
     view_keys: Annotated[list[str] | None, Field(description="View keys to check (from `get_drawing_views`). Processes all views when omitted")] = None,
