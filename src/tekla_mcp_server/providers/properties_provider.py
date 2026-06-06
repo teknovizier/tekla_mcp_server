@@ -444,10 +444,7 @@ def compare_elements(
         if isinstance(obj, valid_types):
             wrapped_objects.append(obj)
         else:
-            raise TypeError(
-                f"Element must be a part, assembly or reinforcement, got "
-                f"{type(obj).__name__ if obj is not None else 'None'}"
-            )
+            raise TypeError(f"Element must be a part, assembly or reinforcement, got {type(obj).__name__ if obj is not None else 'None'}")
 
     # Enforce type homogeneity - mixing Part snapshots with Reinforcement snapshots
     # produces meaningless diffs (completely different diff-view schemas).
@@ -460,10 +457,7 @@ def compare_elements(
 
     categories = {_comparison_category(o) for o in wrapped_objects}
     if len(categories) > 1:
-        raise TypeError(
-            f"Cannot compare mixed object types: {', '.join(sorted(categories))}. "
-            "Select only parts, only assemblies, or only reinforcement."
-        )
+        raise TypeError(f"Cannot compare mixed object types: {', '.join(sorted(categories))}. Select only parts, only assemblies, or only reinforcement.")
 
     # Numbering check only applies to parts and assemblies — IsNumberingUpToDate
     # is not meaningful for Reinforcement objects.

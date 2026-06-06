@@ -3,9 +3,6 @@ Unit tests for Tekla model object wrappers.
 
 These tests require a live Tekla Structures environment and will be skipped in CI environments
 where Tekla is not available.
-
-Tested modules:
-- tekla_model_object.py
 """
 
 import os

@@ -1,14 +1,9 @@
 """
 Unit tests for core models.
-
-This module verifies the correctness of data models and validation logic
-used in Tekla component operations.
-
-Tested modules:
-- models.py
 """
 
 import json
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -808,7 +803,6 @@ def _as(cls):
 
 def _run_compare(pairs, ignore_numbering=True):
     from tekla_mcp_server.providers.properties_provider import compare_elements
-    from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, TeklaReinforcement
 
     raws = [r for r, _ in pairs]
     wrap_map = {id(r): w for r, w in pairs}
@@ -821,6 +815,7 @@ def _run_compare(pairs, ignore_numbering=True):
         return compare_elements(ignore_numbering=ignore_numbering)
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Skipping (Tekla not available in CI)")
 class TestCompareElementsTypeHomogeneity:
     def test_part_and_reinforcement_rejected(self):
         from tekla_mcp_server.tekla.wrappers.model_object import TeklaPart, TeklaReinforcement

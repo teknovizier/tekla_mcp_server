@@ -1,11 +1,18 @@
 """
 Unit tests for TeklaModel wrapper.
+
+These tests require a live Tekla Structures environment and will be skipped in CI environments
+where Tekla is not available.
 """
 
+import os
 import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+if os.getenv("CI") == "true":
+    pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 

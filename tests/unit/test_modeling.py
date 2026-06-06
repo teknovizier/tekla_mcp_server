@@ -4,6 +4,8 @@ Unit tests for modeling tools.
 Tests input models and placement logic.
 """
 
+import os
+
 import pytest
 from pydantic_core import ValidationError
 
@@ -231,6 +233,7 @@ class TestBatchPlacementResult:
         assert batch.failed == 1
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Skipping (Tekla not available in CI)")
 class TestCommitOrFail:
     """Tests for the _commit_or_fail helper."""
 

@@ -1,13 +1,7 @@
 """
 Unit tests for DLL loading logic.
 
-This module verifies the robustness of the DLL loading mechanism
-used to initialize Tekla Structures integrations.
-
-Tests involving actual DLL loading are skipped in CI environments where Tekla is not available.
-
-Tested modules:
-- init.py
+Tests that require DLL loading are skipped in CI environments where Tekla is not available.
 """
 
 import os
