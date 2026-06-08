@@ -217,11 +217,14 @@ def select_elements_by_filter(
             resolution = TemplateAttributeParser.resolve_attributes(string_queries)
             errors = resolution.get("errors", [])
             string_resolution_errors = errors
-            for query, resolved in zip(string_queries, resolution["resolved"]):
-                if any(e["query"] == query for e in errors):
-                    resolved_string_attrs[query] = None
-                else:
-                    resolved_string_attrs[query] = resolved
+            # `resolved` holds only the names that resolved, in the order their queries
+            # succeeded. Align them to the non-failed queries - a positional zip against
+            # all queries would shift names onto the wrong attributes once one query fails
+            failed_queries = {e["query"] for e in errors}
+            successful_queries = [q for q in string_queries if q not in failed_queries]
+            resolved_map = dict(zip(successful_queries, resolution["resolved"]))
+            for query in string_queries:
+                resolved_string_attrs[query] = resolved_map.get(query)
 
         for field_name, filter_option in custom_string_filters.items():
             resolved_name = resolved_string_attrs.get(field_name)
@@ -239,11 +242,13 @@ def select_elements_by_filter(
             resolution = TemplateAttributeParser.resolve_attributes(numeric_queries)
             errors = resolution.get("errors", [])
             numeric_resolution_errors = errors
-            for query, resolved in zip(numeric_queries, resolution["resolved"]):
-                if any(e["query"] == query for e in errors):
-                    resolved_numeric_attrs[query] = None
-                else:
-                    resolved_numeric_attrs[query] = resolved
+            # See the string-filter block above: align resolved names to the non-failed
+            # queries so a single failed query does not shift names onto wrong attributes
+            failed_queries = {e["query"] for e in errors}
+            successful_queries = [q for q in numeric_queries if q not in failed_queries]
+            resolved_map = dict(zip(successful_queries, resolution["resolved"]))
+            for query in numeric_queries:
+                resolved_numeric_attrs[query] = resolved_map.get(query)
 
         for field_name, filter_option in custom_numeric_filters.items():
             resolved_name = resolved_numeric_attrs.get(field_name)

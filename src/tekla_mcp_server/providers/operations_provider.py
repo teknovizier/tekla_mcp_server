@@ -320,7 +320,7 @@ def convert_cut_parts_to_real_parts() -> ToolResult:
     converted_booleans_count = 0
     for selected_object in wrap_model_objects(selected_objects):
         if not isinstance(selected_object, TeklaPart):
-            logger.debug("convert_cut_parts_to_real_parts: skipping non-part object: %s", selected_object.GetType())
+            logger.debug("convert_cut_parts_to_real_parts: skipping non-part object: %s", selected_object.element_type)
             continue
         for boolean_part in iterate_boolean_parts(selected_object.model_object):
             if boolean_part.OperativePart.Insert():
@@ -606,7 +606,7 @@ def _batch_attach(mode: str, pairs: list[AttachmentPair], attach_fn, valid_fn) -
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def attach_assemblies(
-    pairs: Annotated[list[AttachmentPair], Field(description="Object and target assembly pairs to attach")],
+    pairs: Annotated[list[AttachmentPair], Field(description="Object and target assembly pairs to attach", min_length=1)],
 ) -> ToolResult:
     """
     Attach assemblies to target assemblies.
@@ -619,7 +619,7 @@ def attach_assemblies(
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def attach_rebars(
-    pairs: Annotated[list[AttachmentPair], Field(description="Rebar and target assembly pairs to attach")],
+    pairs: Annotated[list[AttachmentPair], Field(description="Rebar and target assembly pairs to attach", min_length=1)],
 ) -> ToolResult:
     """
     Attach reinforcement bars to target assemblies.
@@ -640,7 +640,10 @@ def check_for_invalid_objects() -> ToolResult:
 
     tolerance = get_tolerance()
 
-    # All valid material names and reinforcement grades from Tekla catalogs
+    # All valid material names and reinforcement grades from Tekla catalogs.
+    # An empty set means the catalog could not be read (disconnected) rather than
+    # "no valid materials" - guard the validity checks below so a transient catalog
+    # failure does not flag every element's material/grade as invalid.
     valid_materials = {item["name"] for item in get_all_materials()}
     valid_grades = {item["grade"] for item in get_all_rebar_items()}
 
@@ -700,7 +703,7 @@ def check_for_invalid_objects() -> ToolResult:
                 material = obj.material
                 if not material:
                     issues.append("missing_material")
-                elif material not in valid_materials:
+                elif valid_materials and material not in valid_materials:
                     issues.append(f"invalid_material: '{material}'")
 
                 # Invalid solid
@@ -771,7 +774,7 @@ def check_for_invalid_objects() -> ToolResult:
                 grade = obj.model_object.Grade
                 if not grade:
                     reinf_issues.append("missing_grade")
-                elif grade not in valid_grades:
+                elif valid_grades and grade not in valid_grades:
                     reinf_issues.append(f"invalid_grade: '{grade}'")
 
                 # Missing father (not attached to part/assembly)

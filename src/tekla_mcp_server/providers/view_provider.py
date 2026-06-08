@@ -77,7 +77,7 @@ def draw_elements_labels(
         resolution = TemplateAttributeParser.resolve_attributes([custom_label])
         errors = resolution.get("errors", [])
         if errors:
-            candidates = resolution.get("candidates", {}).get(custom_label, [])
+            candidates: list[str] = next((e.get("candidates", []) for e in errors if e.get("query") == custom_label), [])
             raise ValueError(f"Failed to resolve custom label '{custom_label}'. Candidates: {candidates}")
         else:
             resolved_label = resolution["resolved"][0]

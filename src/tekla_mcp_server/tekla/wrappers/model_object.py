@@ -1397,9 +1397,9 @@ class TeklaContourPlate(TeklaPart):
         self.model_object.Contour.ContourPoints.Clear()
         for pt in points:
             contour_point = ContourPoint()
-            contour_point.X = pt.x
-            contour_point.Y = pt.y
-            contour_point.Z = pt.z
+            contour_point.X = pt.X
+            contour_point.Y = pt.Y
+            contour_point.Z = pt.Z
             self.model_object.AddContourPoint(contour_point)
         self.modify()
 

@@ -32,7 +32,11 @@ def _get_config_dir() -> Path:
 
 # Config JSON files are read once and cached for the lifetime of the process.
 # Changes to settings.json do not take effect until the MCP server is restarted.
-@lru_cache(maxsize=8)
+
+# maxsize=None is safe here: config filenames are a small, fixed set, so
+# the cache cannot grow without bound. It also removes any risk of a config file being
+# silently evicted and re-read mid-session.
+@lru_cache(maxsize=None)
 def _load_json(filename: str) -> dict[str, Any]:
     """
     Load a JSON config file with caching.

@@ -258,8 +258,10 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
             bottom_wall = wall_dict[matched_key]
             top_wall = wall
 
-            # Ensure correct pairing before adding
-            if bottom_wall != top_wall:
+            # Only pair walls on different floors. Two walls with matching footprints
+            # at the same Z level are co-planar, not a vertical bottom/top stack, and a
+            # seam between them would be meaningless geometry
+            if bottom_wall != top_wall and not is_within_tolerance(bottom_wall.StartPoint.Z, top_wall.StartPoint.Z):
                 # List of tuples as output
                 wall_pairs.append((bottom_wall, top_wall))
                 del wall_dict[matched_key]  # Remove matched pair from storage
@@ -376,14 +378,27 @@ def iterate_boolean_parts(model_object: ModelObject) -> list[ModelObject]:
     return boolean_parts
 
 
-@lru_cache
 def get_all_profiles() -> list[dict[str, str]]:
     """
-    Get all profiles from Tekla catalog. Lazy loaded on first access.
+    Get all profiles from the Tekla catalog. Lazy loaded on first access.
+
+    The connection check stays outside the cache so a disconnected catalog returns []
+    without caching it - a cached empty list would otherwise stick for the whole
+    session, even after Tekla reconnects.
+
+    Returns:
+        List of profile dicts with 'name', 'type' and 'sub_type' keys, or an empty
+        list when the catalog is unavailable.
     """
-    catalog = CatalogHandler()
-    if not catalog.GetConnectionStatus():
+    if not CatalogHandler().GetConnectionStatus():
         return []
+    return _read_all_profiles()
+
+
+@lru_cache
+def _read_all_profiles() -> list[dict[str, str]]:
+    """Read every profile from the catalog. Cached, assumes the catalog is connected."""
+    catalog = CatalogHandler()
     profiles = catalog.GetLibraryProfileItems()
     result = []
     while profiles.MoveNext():
@@ -401,14 +416,26 @@ def get_all_profiles() -> list[dict[str, str]]:
     return result
 
 
-@lru_cache
 def get_all_materials() -> list[dict[str, str]]:
     """
-    Get all materials from Tekla catalog. Lazy loaded on first access.
+    Get all materials from the Tekla catalog. Lazy loaded on first access.
+
+    The connection check stays outside the cache (see `get_all_profiles`) so a
+    disconnected catalog is not cached as an empty list.
+
+    Returns:
+        List of material dicts with 'name' and 'type' keys, or an empty list when the
+        catalog is unavailable.
     """
-    catalog = CatalogHandler()
-    if not catalog.GetConnectionStatus():
+    if not CatalogHandler().GetConnectionStatus():
         return []
+    return _read_all_materials()
+
+
+@lru_cache
+def _read_all_materials() -> list[dict[str, str]]:
+    """Read every material from the catalog. Cached, assumes the catalog is connected."""
+    catalog = CatalogHandler()
     materials = catalog.GetMaterialItems()
     result = []
     while materials.MoveNext():
@@ -424,14 +451,26 @@ def get_all_materials() -> list[dict[str, str]]:
     return result
 
 
-@lru_cache
 def get_all_rebar_items() -> list[dict[str, str]]:
     """
-    Get all available rebar items from Tekla catalog. Lazy loaded on first access.
+    Get all available rebar items from the Tekla catalog. Lazy loaded on first access.
+
+    The connection check stays outside the cache (see `get_all_profiles`) so a
+    disconnected catalog is not cached as an empty list.
+
+    Returns:
+        List of rebar dicts with 'grade' and 'size' keys, or an empty list when the
+        catalog is unavailable.
     """
-    catalog = CatalogHandler()
-    if not catalog.GetConnectionStatus():
+    if not CatalogHandler().GetConnectionStatus():
         return []
+    return _read_all_rebar_items()
+
+
+@lru_cache
+def _read_all_rebar_items() -> list[dict[str, str]]:
+    """Read every rebar item from the catalog. Cached, assumes the catalog is connected."""
+    catalog = CatalogHandler()
     rebars = catalog.GetRebarItems()
     result = []
     while rebars.MoveNext():
@@ -450,9 +489,10 @@ def get_all_rebar_items() -> list[dict[str, str]]:
 @lru_cache
 def get_macros() -> list[str]:
     """
-    Returns sorted list of available Tekla macros.
+    Get the available Tekla macro file names from XS_MACRO_DIRECTORY.
 
-    Searches in XS_MACRO_DIRECTORY.
+    Returns:
+        Sorted list of macro file names, e.g. 'MyMacro.cs'.
     """
 
     directories = get_advanced_option_directories("XS_MACRO_DIRECTORY")
@@ -469,11 +509,14 @@ def get_macros() -> list[str]:
 @lru_cache
 def get_report_templates() -> list[str]:
     """
-    Returns sorted list of available Tekla report template names from .rpt files.
+    Get the available Tekla report template names from .rpt files.
 
     Searches in:
     - XS_TEMPLATE_DIRECTORY
     - XS_SYSTEM
+
+    Returns:
+        Sorted list of report template names (file stems, without the '.rpt' extension).
     """
     # Build a fresh list - the helper returns lru_cache'd lists that must not be mutated.
     search_dirs = [*get_advanced_option_directories("XS_TEMPLATE_DIRECTORY"), *get_advanced_option_directories("XS_SYSTEM")]
@@ -490,7 +533,7 @@ def get_report_templates() -> list[str]:
 @lru_cache
 def get_filters(file_extension: str) -> list[str]:
     """
-    Returns list of available Tekla filter names from files with the specified extension.
+    Get the available Tekla filter names for files with the given extension.
 
     Searches in:
     - XS_FIRM
@@ -500,7 +543,8 @@ def get_filters(file_extension: str) -> list[str]:
     Args:
         file_extension: File extension to search for (e.g. '.SObjGrp', '.VObjGrp')
 
-    Returns sorted list of filter names without the extension.
+    Returns:
+        Sorted list of filter names without the extension, always including 'standard'.
     """
 
     if not file_extension.startswith("."):

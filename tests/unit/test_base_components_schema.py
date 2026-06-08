@@ -42,9 +42,9 @@ def _registered_handler_names() -> set[str]:
     return names
 
 
-def test_base_components_sample_exists():
-    """The tracked sample must exist - it is the canonical schema reference."""
-    assert (CONFIG_DIR / "base_components.sample.json").is_file(), "config/base_components.sample.json is missing"
+def test_base_components_config_exists():
+    """The tracked config must exist - it is the canonical schema reference."""
+    assert (CONFIG_DIR / "base_components.json").is_file(), "config/base_components.json is missing"
 
 
 def test_register_handler_classes_found():

@@ -217,10 +217,11 @@ def remove_components(component_name: Annotated[str, Field(description="The Tekl
         # Only Part and CustomPart support GetComponents()
         if not isinstance(obj, (Part, CustomPart)):
             continue
-        for comp in obj.GetComponents():
-            if comp.Number == component.number and comp.Name == component.name:
-                if comp.Delete():
-                    counter += 1
+        # Collect matches before deleting
+        to_delete = [comp for comp in obj.GetComponents() if comp.Number == component.number and comp.Name == component.name]
+        for comp in to_delete:
+            if comp.Delete():
+                counter += 1
     commit_success: bool | None = None
     if counter > 0:
         commit_success = model.commit_changes()
