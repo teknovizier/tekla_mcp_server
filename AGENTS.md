@@ -13,6 +13,18 @@ This file defines basic rules for AI agents and human contributors working on th
 - Never remove existing comments, keep them as they are unless explicitly instructed otherwise
 - Backwards compatibility is not required, changes can introduce breaking behavior for older versions
 
+## Critical Traps
+
+Failures CI cannot catch (silent, delayed or Tekla-behavioral):
+
+- **Import-time DLL load**: importing any module that transitively imports `tekla/loader.py` loads the Tekla DLLs at import, so such modules cannot be imported where Tekla is absent (CI, pure unit tests). This is why Tekla-touching test modules carry a CI skip guard (see Unit Test Guidelines).
+- **pythonnet interop**: Python containers do not marshal to .NET. Use .NET collections at the Tekla boundary - `ArrayList()`, `List[ModelObject]()`, `SystemArray[SystemType](...)` - not a plain Python `list`. `out`-params come back as extra tuple elements (the first is the success bool), so always unpack: `is_ok, value = obj.GetReportProperty(name, str())`. The trailing placeholder's type selects the .NET overload.
+- **Work plane**: to work in an object's local coordinates, save the current plane, set the local one, then restore it in a `finally` (`GetWorkPlaneHandler().GetCurrentTransformationPlane()` / `SetCurrentTransformationPlane(...)`). Leaving it changed corrupts later geometry.
+- **CI-enforced invariants** (pure-AST unit tests that fail the PR): `test_tool_annotations.py` requires every `@<provider>.tool` to pass `annotations` with a boolean `readOnlyHint` (and a boolean `destructiveHint` when not read-only), `test_docs_reference_parity.py` requires `docs/reference.md` to list exactly the tools and resources in code. Both scan only `providers/*_provider.py` (resources: only `resources_provider.py`), so a tool or resource defined elsewhere evades both checks.
+- **`readOnlyHint` is security-critical**: read-only mode (`ReadOnlyToolFilter`) only filters tool visibility - there is no runtime write-block, and CI checks the hint is present, not correct. A mutating tool mislabeled `readOnlyHint: True` will run in read-only mode. Only human review catches a wrong hint.
+- **Python floor vs CI**: `requires-python>=3.11`, but CI tests only 3.13, so CI will not catch 3.11-incompatible syntax or stdlib (e.g. PEP 695 `type` aliases). Code to the 3.11 floor.
+- **Logging uses lazy `%`-args**: in `logger.*` calls use `logger.info("x=%s", x)`, never f-strings (defers formatting, this is the one place f-strings are not used).
+
 ---
 
 # Part 1: Commands & Tools
@@ -103,7 +115,7 @@ def function():
 
 ## Type Hints & Formatting
 - **Always** use type hints for parameters and returns
-- **Always** use f-strings: `f"Found {count} elements"`
+- **Always** use f-strings: `f"Found {count} elements"` (except `logger.*` calls - see Critical Traps)
 - Line length: 200 chars (configured in `pyproject.toml`)
 - Indentation: 4 spaces
 - Don't reformat existing code unless asked
@@ -247,8 +259,8 @@ def my_new_feature(
 
 ### 2. Write Tests
 
-- Unit tests in `tests/unit/test_<module>.py` for pure logic (no Tekla API - mock it)
-- Functional tests in `tests/functional/` if Tekla model state must be touched
+- Unit tests in `tests/unit/test_<module>.py`: pure logic (no Tekla import) runs in CI, tests that import Tekla wrappers and mock the `Model` carry the CI skip guard and run locally (see Unit Test Guidelines)
+- Functional tests in `tests/functional/` if Tekla model state must be touched (use the `MCP_TEST_` prefix; run against a scratch model, never production)
 
 ### 3. Add to Documentation
 
@@ -369,11 +381,14 @@ def _helper_function(param: str) -> dict[str, Any]:
 - Prefer filtered queries over full scans
 
 ## Unit Test Guidelines
-- Never mock Tekla API - use pure functions when possible
-- Use `unittest.mock.MagicMock` for external dependencies
-- Test files mirror module structure: `test_<module_name>.py`
-- Use `@pytest.mark.parametrize` for multiple test cases
-- Avoid Tekla imports in unit tests - use mocks
+
+The CI gate is the module-level skip guard, not the directory. Any test module that imports a Tekla-touching module (transitively `tekla/loader.py`) loads DLLs at import, so it MUST start with `if os.getenv("CI") == "true": pytest.skip(..., allow_module_level=True)`. Pure-logic modules omit the guard and run in CI.
+
+- Pure unit tests: no Tekla import, run in CI - test pure functions directly.
+- Mock-based Tekla unit tests (e.g. `test_tekla_model.py`): import Tekla wrappers and mock the .NET `Model` with `unittest.mock.MagicMock`/`patch`. Mocking the Tekla API here is acceptable, the module carries the skip guard and runs locally. Reset singletons between tests (`TeklaModel._instance = None`).
+- Use `unittest.mock.MagicMock` for external dependencies.
+- Test files mirror module structure: `test_<module_name>.py`.
+- Use `@pytest.mark.parametrize` for multiple test cases.
 
 ## Development
 - Run server: `uv run python src/tekla_mcp_server/mcp_server.py`
