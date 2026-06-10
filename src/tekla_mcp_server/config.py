@@ -33,6 +33,7 @@ def _get_config_dir() -> Path:
 # Config JSON files are read once and cached for the lifetime of the process.
 # Changes to settings.json do not take effect until the MCP server is restarted.
 
+
 # maxsize=None is safe here: config filenames are a small, fixed set, so
 # the cache cannot grow without bound. It also removes any risk of a config file being
 # silently evicted and re-read mid-session.
@@ -382,20 +383,26 @@ def get_report_preview_timeout() -> float:
     return float(_get_reports_config().get("preview_timeout", 30))
 
 
-def get_tolerance(name: str = "default", default: float = 20.0) -> float:
+def get_tolerance(name: str, default: float, group: str = "model") -> float:
     """
     Get a tolerance value from configuration.
 
+    Tolerances are grouped by domain (`model` for model operations,
+    `drawings` for drawing layout).
+
     Args:
-        name: Tolerance key
-        default: Fallback value if the key is missing (callers should pass a sensible
-            value, e.g. a small factor for multipliers, mm for distances).
+        name: Tolerance key within the group.
+        default: Fallback value if the key is missing. Required so every call
+            site states a unit-appropriate fallback (mm for distances, a small
+            fraction for factors) instead of silently inheriting a spatial
+            default that is meaningless outside the `model` group.
+        group: Tolerance group, "model" (default) or "drawings".
 
     Returns:
         Tolerance value in mm (or unitless for factor)
     """
-    tolerances = _load_settings().get("tolerances", {})
-    return tolerances.get(name, default)
+    group_tolerances = _load_settings().get("tolerances", {}).get(group, {})
+    return group_tolerances.get(name, default)
 
 
 @lru_cache

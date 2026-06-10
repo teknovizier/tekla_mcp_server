@@ -9,6 +9,7 @@ import pytest
 
 from tekla_mcp_server.models import ViewScale
 from tekla_mcp_server.providers.drawings_provider import (
+    align_section_views,
     close_drawing,
     delete_view_clouds,
     delete_views,
@@ -468,4 +469,32 @@ class TestDeleteViewClouds:
         assert sc["total_found"] == clouds_inserted
         assert sc["total_deleted"] == clouds_inserted
         assert sc["total_failed"] == 0
+        close_drawing(save=False)
+
+
+class TestAlignSectionViews:
+    """Tests for align_section_views function."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Close any open drawing before each test."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing()
+        yield
+
+    def test_no_open_drawing(self):
+        """Call without an open drawing raises an error."""
+        result = align_section_views()
+        assert result.structured_content["status"] == "error"
+
+    def test_cu_drawing_aligned_zero(self, cu_mark):
+        """CU drawing with no section views returns warning with 0 aligned."""
+        open_drawing(mark=cu_mark)
+        result = align_section_views()
+        sc = result.structured_content
+        assert sc["status"] == "warning"
+        assert sc["aligned_count"] == 0
+        assert sc["moves"] == []
+        assert isinstance(sc["skipped"], list)
         close_drawing(save=False)

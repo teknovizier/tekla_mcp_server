@@ -55,6 +55,7 @@ Type and default shown where relevant.
 | Drawings | 🔒 `close_drawing` | Close the active drawing | `save` (bool, default: `true`) |
 | Drawings | 🔒 `get_drawing_views` | List all views in the active drawing with type, scale, position and size. Returns the sheet size too | - |
 | Drawings | ⚠️ `move_view` | Move a view by an offset (mm) | **`view_key`** (str), **`dx`** (float, mm), **`dy`** (float, mm) |
+| Drawings | ⚠️ `align_section_views` | Align every section view in projection with the view it was cut from: a horizontal cut aligns the section's X position, a vertical cut aligns Y (only one coordinate changes). Parent found by matching the section view's name to a section mark of the same name. A section that overlaps the parent on the non-aligned axis by more than `overlap_tolerance` is treated as intentionally placed outside its projection lane (e.g. parked in a row below the parent) and left as-is | `overlap_tolerance` (float, default: `5.0`, mm) |
 | Drawings | ⚠️ `set_view_scales` | Set the scale of one or more drawing views | **`view_scales`** (list): each item has **`view_key`** (str), **`scale`** (float) |
 | Drawings | ⚠️ `delete_views` | Delete one or more views from the active drawing | **`view_keys`** (list[str]) |
 | Drawings | ⚠️ `delete_view_clouds` | Delete all clouds from model views. Sheet-level clouds are not affected | `view_keys` (list[str], optional - processes all views when omitted) |

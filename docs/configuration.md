@@ -72,12 +72,15 @@ Set `embeddings.embedding_model` to HuggingFace ID or local path:
 
 ### Tolerances
 
+Tolerances are grouped by domain: `model` for model operations and `drawings` for drawing layout.
+
 | Property | Default | Description |
 |----------|---------|-------------|
-| `tolerances.default` | `20.0` | Default spatial tolerance in mm, used for bounding-box searches |
-| `tolerances.wall_pairing` | `50.0` | Tolerance used for wall pairing operations in mm |
-| `tolerances.center_tolerance_factor` | `0.05` | Relative factor for center-point tolerance (fraction of element size) |
-| `tolerances.comparison` | `0.01` | Numeric tolerance used in `compare_elements`. Values within this tolerance are treated as equal. |
+| `tolerances.model.default` | `20.0` | Default spatial tolerance in mm, used for bounding-box searches |
+| `tolerances.model.wall_pairing` | `50.0` | Tolerance used for wall pairing operations in mm |
+| `tolerances.model.center_tolerance_factor` | `0.05` | Relative factor for center-point tolerance (fraction of element size) |
+| `tolerances.model.comparison` | `0.01` | Numeric tolerance used in `compare_elements`. Values within this tolerance are treated as equal. |
+| `tolerances.drawings.snap_tolerance` | `0.1` | Snap tolerance in mm for `align_section_views`. Section views already within this distance of their projection are treated as aligned and left untouched. |
 
 ### Reports
 

@@ -11,7 +11,7 @@ from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from pydantic import Field
 
-from tekla_mcp_server.config import get_advanced_option_directories
+from tekla_mcp_server.config import get_advanced_option_directories, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, ViewScale
 from tekla_mcp_server.utils import mcp_handler, sanitize_filename, resolve_model_relative_dir
@@ -22,6 +22,8 @@ from tekla_mcp_server.tekla.drawing_utils import (
     get_mark_collision_data,
     get_collision_pairs,
     draw_collision_cloud,
+    detect_section_parents,
+    compute_section_alignment,
     OUTPUT_TYPE_MAP,
     COLOR_MODE_MAP,
     ORIENTATION_MAP,
@@ -492,6 +494,107 @@ def move_view(
         raise RuntimeError(f"CommitChanges() failed after moving view '{view_key}'.")
 
     return ToolResult(structured_content={"status": "success", "view_key": view_key, "new_origin_x": round(new_x, 1), "new_origin_y": round(new_y, 1)})
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def align_section_views(
+    overlap_tolerance: Annotated[
+        float,
+        Field(description="Overlap in mm, on the non-aligned axis, above which a section is treated as intentionally placed outside its projection lane and left as-is"),
+    ] = 5.0,
+) -> ToolResult:
+    """
+    Align every section view in projection with the view it was cut from.
+
+    A horizontal cut aligns X, a vertical cut aligns Y.  The parent is the
+    view holding a section mark whose name matches the section view's name.
+
+    A section is only aligned if it sits in its projection lane: beside the
+    parent for a vertical cut, above/below it for a horizontal cut. `overlap_tolerance`
+    sets how much non-aligned-axis overlap is tolerated before a section counts as
+    out-of-lane.
+    """
+    handler = TeklaDrawingHandler()
+    drawing = handler.require_active_drawing()
+
+    tekla_views = [v for v in handler.get_drawing_views() if not v.is_sheet]
+    by_key = {v.view_key: v for v in tekla_views}
+    parents = detect_section_parents(tekla_views)
+
+    # Views already within this many mm of their projection are left untouched
+    snap_tolerance = get_tolerance("snap_tolerance", group="drawings", default=0.1)
+
+    moves: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for v in tekla_views:
+        if v.view_type != "SectionView":
+            continue
+        entry = parents.get(v.view_key)
+        if entry is None:
+            skipped.append({"view_key": v.view_key, "view_name": v.name, "reason": "no matching section mark found"})
+            continue
+        parent_key, mark = entry
+        parent_view = by_key[parent_key]
+        alignment = compute_section_alignment(v, parent_view, mark)
+        if alignment is None:
+            skipped.append({"view_key": v.view_key, "view_name": v.name, "reason": "section mark has no endpoint geometry (LeftPoint/RightPoint)"})
+            continue
+        axis, delta = alignment
+        if abs(delta) < snap_tolerance:
+            continue  # already aligned
+
+        # Placement classifier, not a collision check. If the section overlaps the
+        # parent on the axis that does not change during alignment, it was likely
+        # placed outside its normal lane on purpose. Aligning it would move it across
+        # the parent, so we leave it where it is
+        v_fx, v_fy = v.frame_origin
+        p_fx, p_fy = parent_view.frame_origin
+        if axis == "y":
+            v_x_end = v_fx + v.width
+            p_x_end = p_fx + parent_view.width
+            overlap = min(v_x_end, p_x_end) - max(v_fx, p_fx)
+            if overlap > overlap_tolerance:
+                skipped.append(
+                    {"view_key": v.view_key, "view_name": v.name, "reason": f"left as-is: placed outside the projection lane (X-overlap with parent {overlap:.1f} mm > {overlap_tolerance} mm)"}
+                )
+                continue
+        else:
+            v_y_end = v_fy + v.height
+            p_y_end = p_fy + parent_view.height
+            overlap = min(v_y_end, p_y_end) - max(v_fy, p_fy)
+            if overlap > overlap_tolerance:
+                skipped.append(
+                    {"view_key": v.view_key, "view_name": v.name, "reason": f"left as-is: placed outside the projection lane (Y-overlap with parent {overlap:.1f} mm > {overlap_tolerance} mm)"}
+                )
+                continue
+
+        ox, oy = v.origin
+        v.origin = (ox + delta, oy) if axis == "x" else (ox, oy + delta)
+        if not v.modify():
+            raise RuntimeError(f"Failed to align view '{v.view_key}'.")
+        moves.append(
+            {
+                "view_key": v.view_key,
+                "view_name": v.name,
+                "parent_view_key": parent_key,
+                "axis": axis,
+                "delta": round(delta, 1),
+            }
+        )
+
+    if moves and not drawing.commit_changes():
+        raise RuntimeError("CommitChanges() failed after aligning section views.")
+
+    logger.info("align_section_views: aligned %d section view(s), skipped %d", len(moves), len(skipped))
+    return ToolResult(
+        structured_content={
+            "status": "success" if moves else "warning",
+            "aligned_count": len(moves),
+            "moves": moves,
+            "skipped": skipped,
+        }
+    )
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})

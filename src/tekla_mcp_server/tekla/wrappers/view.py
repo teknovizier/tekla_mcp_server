@@ -4,7 +4,7 @@ Module for Tekla Drawing View wrappers.
 
 from typing import Any, overload
 
-from tekla_mcp_server.tekla.loader import SystemType, SystemArray, DrawingView, DrawingObject, BindingFlags, Point
+from tekla_mcp_server.tekla.loader import SystemType, SystemArray, DrawingView, DrawingObject, SectionMark, BindingFlags, Point
 from tekla_mcp_server.init import logger
 
 
@@ -110,6 +110,20 @@ class TeklaDrawingView:
             raise ValueError(f"Expected (x, y) tuple, got {xy!r}")
         self._view.Origin = Point(xy[0], xy[1], 0)
 
+    @property
+    def frame_origin(self) -> tuple[float, float]:
+        """
+        Bottom-left corner (x, y) of the visible view frame on the sheet (mm).
+
+        Unlike `origin` (the view's coordinate-system origin, which for
+        section and detail views sits at the cut line or detail callout
+        inside the source view), this is the corner of the visible view box:
+        the view occupies the rectangle `frame_origin` + (`width`, `height`)
+        on the sheet.
+        """
+        aabb = self._view.GetAxisAlignedBoundingBox()
+        return (round(aabb.MinPoint.X, 1), round(aabb.MinPoint.Y, 1))
+
     def modify(self) -> bool:
         """Commits attribute changes to Tekla. Returns True on success."""
         return self._view.Modify()
@@ -162,8 +176,33 @@ class TeklaDrawingView:
             logger.warning("get_all_objects() failed for view '%s': %s", self.view_key, e)
             return None
 
+    def get_section_marks(self) -> list[tuple[str, SectionMark]]:
+        """
+        Return all SectionMark objects in this view as (mark_name, mark) tuples.
+
+        A SectionMark labels a cut taken in this view; its MarkName matches
+        the name of the section view it produced.
+
+        Returns:
+            List of (mark_name, mark) tuples. Empty if none found or
+            enumeration fails. Marks with a blank MarkName are skipped.
+        """
+        objs = self.get_all_objects([SectionMark])
+        if objs is None:
+            return []
+        result: list[tuple[str, SectionMark]] = []
+        for obj in objs:
+            attrs = obj.Attributes
+            if attrs is None:
+                continue
+            name = attrs.MarkName or ""
+            if name:
+                result.append((name, obj))
+        return result
+
     def to_dict(self) -> dict[str, Any]:
         """Returns a serialisable dict of all view metadata."""
+        fx, fy = self.frame_origin
         return {
             "name": self.name,
             "view_key": self.view_key,
@@ -172,6 +211,8 @@ class TeklaDrawingView:
             "is_sheet": self.is_sheet,
             "origin_x": self.origin_x,
             "origin_y": self.origin_y,
+            "frame_origin_x": fx,
+            "frame_origin_y": fy,
             "width": self.width,
             "height": self.height,
         }

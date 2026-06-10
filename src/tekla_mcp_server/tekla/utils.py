@@ -200,7 +200,7 @@ def get_wall_pairs(selected_objects: ModelObjectEnumerator) -> list[tuple[ModelO
             True if absolute difference <= tolerance, False otherwise
         """
         if tolerance is None:
-            tolerance = get_tolerance("wall_pairing")
+            tolerance = get_tolerance("wall_pairing", 50.0)
         return abs(value1 - value2) <= tolerance
 
     selected_walls = []

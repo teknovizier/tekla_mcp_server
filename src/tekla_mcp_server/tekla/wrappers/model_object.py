@@ -103,7 +103,7 @@ class BoundingBox:
         Check if bounding boxes overlap within tolerance.
         """
         if tol is None:
-            tol = get_tolerance()
+            tol = get_tolerance("default", 20.0)
         return (
             self.min_x <= other.max_x + tol
             and self.max_x >= other.min_x - tol
@@ -118,7 +118,7 @@ class BoundingBox:
         Match using spatial overlap + centroid distance.
         """
         if tol is None:
-            tol = get_tolerance()
+            tol = get_tolerance("default", 20.0)
         if center_tol_factor is None:
             center_tol_factor = get_tolerance("center_tolerance_factor", default=0.1)
         if not self.overlaps(other, tol):

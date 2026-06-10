@@ -391,7 +391,7 @@ def check_for_orphans(
     """
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
-    tolerance = get_tolerance()
+    tolerance = get_tolerance("default", 20.0)
 
     orphaned: list[dict] = []
     orphaned_guids: set[str] = set()
@@ -638,7 +638,7 @@ def check_for_invalid_objects() -> ToolResult:
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
 
-    tolerance = get_tolerance()
+    tolerance = get_tolerance("default", 20.0)
 
     # All valid material names and reinforcement grades from Tekla catalogs.
     # An empty set means the catalog could not be read (disconnected) rather than

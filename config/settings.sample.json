@@ -10,10 +10,15 @@
         "embedding_minimum_threshold": 0.8
     },
     "tolerances": {
-        "default": 20.0,
-        "wall_pairing": 50.0,
-        "center_tolerance_factor": 0.05,
-        "comparison": 0.01
+        "model": {
+            "default": 20.0,
+            "wall_pairing": 50.0,
+            "center_tolerance_factor": 0.05,
+            "comparison": 0.01
+        },
+        "drawings": {
+            "snap_tolerance": 0.1
+        }
     },
     "reports": {
         "preview_max_chars": 2000,

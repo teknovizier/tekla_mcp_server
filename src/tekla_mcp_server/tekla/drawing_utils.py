@@ -12,6 +12,7 @@ from tekla_mcp_server.tekla.loader import (
     DrawingView,
     Mark,
     MarkSet,
+    SectionMark,
     WeldMark,
     PointList,
     Point,
@@ -22,6 +23,7 @@ from tekla_mcp_server.tekla.loader import (
     DotPrintScalingType,
     LeaderLine,
 )
+from tekla_mcp_server.tekla.wrappers import TeklaDrawingView
 
 
 @dataclass
@@ -386,3 +388,84 @@ def get_collision_pairs(data_list: list[DrawingMarkData]) -> list[tuple[int, int
                 pairs.append((i, j))
 
     return pairs
+
+
+def detect_section_parents(views: list[TeklaDrawingView]) -> dict[str, tuple[str, SectionMark]]:
+    """
+    Map each section view to the view it was cut from and the mark itself.
+
+    A section view's parent is the view holding a SectionMark whose MarkName
+    equals the section view's own name. Only section views with a matching
+    mark are included, everything else (front, detail, 3D views, or sections
+    whose mark is missing) is omitted.
+
+    Args:
+        views: List of TeklaDrawingView wrappers.
+
+    Returns:
+        Dict of section_view_key -> (parent_view_key, section_mark). The mark
+        is carried through so callers (e.g. `compute_section_alignment`) need
+        not re-enumerate the parent's drawing objects to recover it.
+    """
+    # mark_name -> (view_key, mark) pairs for views holding a mark of that name
+    mark_owners: dict[str, list[tuple[str, SectionMark]]] = {}
+    for v in views:
+        for name, mark in v.get_section_marks():
+            mark_owners.setdefault(name, []).append((v.view_key, mark))
+
+    parents: dict[str, tuple[str, SectionMark]] = {}
+    for v in views:
+        if v.view_type != "SectionView" or not v.name:
+            continue
+        candidates = [(owner_key, mark) for owner_key, mark in mark_owners.get(v.name, []) if owner_key != v.view_key]
+        if not candidates:
+            continue
+        if len(candidates) > 1:
+            logger.warning(
+                "Section view '%s' (name '%s') matches section marks in %d views %s; using the first (%s)",
+                v.view_key,
+                v.name,
+                len(candidates),
+                [owner_key for owner_key, _ in candidates],
+                candidates[0][0],
+            )
+        parents[v.view_key] = candidates[0]
+    return parents
+
+
+def compute_section_alignment(child_view: TeklaDrawingView, parent_view: TeklaDrawingView, mark: SectionMark) -> tuple[str, float] | None:
+    """
+    Compute the projection-alignment offset for a section view.
+
+    A horizontal cut aligns X, a vertical cut aligns Y. Alignment shifts
+    the section view's origin on the cut axis so the cut midpoint projects
+    to the same sheet position in both views.
+
+    Args:
+        child_view: TeklaDrawingView for the section view.
+        parent_view: TeklaDrawingView for the view it was taken from.
+        mark: The SectionMark in `parent_view` that produced `child_view`, as
+            returned alongside the parent key by `detect_section_parents`.
+
+    Returns:
+        (axis, delta): the cut axis ("x" or "y") and the offset to add to
+        the child view's origin on that axis. None if the mark has no
+        endpoint geometry.
+    """
+    lp = getattr(mark, "LeftPoint", None)
+    rp = getattr(mark, "RightPoint", None)
+    if lp is None or rp is None:
+        return None
+
+    if abs(lp.X - rp.X) > abs(lp.Y - rp.Y):
+        # Horizontal cut: the views project along X
+        mid = (lp.X + rp.X) / 2.0
+        target = parent_view.origin_x + mid / parent_view.scale
+        current = child_view.origin_x + mid / child_view.scale
+        return ("x", target - current)
+    else:
+        # Vertical cut: the views project along Y
+        mid = (lp.Y + rp.Y) / 2.0
+        target = parent_view.origin_y + mid / parent_view.scale
+        current = child_view.origin_y + mid / child_view.scale
+        return ("y", target - current)
