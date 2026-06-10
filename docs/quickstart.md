@@ -24,11 +24,8 @@ uv pip install -r requirements-dev.txt
 | `excluded_tags` | `[]` | List of tool tags to hide from the LLM. See [configuration guide](configuration.md#tool-visibility) |
 | `embeddings.enabled` | `true` | Enable semantic attribute search |
 | `embeddings.embedding_model` | `teknovizier/minilm-tekla-attr-embed-v1` | HuggingFace model or local path |
-| `embeddings.embedding_spread_threshold` | `0.1` | Min stddev for auto-resolution (0-1) |
-| `embeddings.embedding_minimum_threshold` | `0.8` | Min confidence score (0-1) |
-| `tolerances.default` | `20.0` | Default spatial tolerance in mm, used for bounding-box searches |
-| `tolerances.wall_pairing` | `50.0` | Tolerance used for wall pairing operations in mm |
-| `tolerances.center_tolerance_factor` | `0.05` | Relative factor for center-point tolerance |
+
+See the [configuration guide](configuration.md#settings-settingsjson) for the full list of settings (embeddings thresholds, tolerances, reports).
 
 2. **element_types.json**: Copy `config/element_types.sample.json` to `config/element_types.json` and set Tekla classes and numbering prefixes.
 3. **semantic_overrides.json**: Copy `config/semantic_overrides.sample.json` to `config/semantic_overrides.json` for attribute name overrides.
