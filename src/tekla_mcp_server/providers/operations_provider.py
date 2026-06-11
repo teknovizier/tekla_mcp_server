@@ -13,13 +13,23 @@ from pydantic import Field
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 
-from tekla_mcp_server.config import get_config, get_tolerance, get_advanced_option_directories, get_report_preview_max_chars, get_report_preview_timeout
+from tekla_mcp_server.config import get_tolerance, get_advanced_option_directories, get_report_preview_max_chars, get_report_preview_timeout
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AttachmentPair
 from tekla_mcp_server.utils import mcp_handler, build_report_filename, resolve_model_relative_dir
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects, wrap_model_object, TeklaAssembly, TeklaModelObject, TeklaPart, TeklaReinforcement, SolidGeometryMixin, ZERO_GUID
+from tekla_mcp_server.tekla.wrappers.model_object import (
+    wrap_model_objects,
+    wrap_model_object,
+    TeklaAssembly,
+    TeklaModelObject,
+    TeklaPart,
+    TeklaReinforcement,
+    SolidGeometryMixin,
+    ZERO_GUID,
+    REINFORCEMENT_CLASSES,
+)
 from tekla_mcp_server.tekla.loader import Operation
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items, get_filters
 
@@ -36,17 +46,6 @@ class CheckResult:
     position: str | None
     tekla_class: int | None
     issues: list[str] = field(default_factory=list)
-
-
-def _get_tekla_classes(material_key: str) -> set[int]:
-    """Get all tekla_classes for a material group from the config."""
-    material = get_config().element_types.get(material_key, {})
-    return {tekla_class for type_config in material.values() for tekla_class in type_config.get("tekla_classes", [])}
-
-
-# Class IDs for filtering candidates in orphan-detection tools
-EMBEDDED_DETAILS_CLASSES: set[int] = _get_tekla_classes("MATERIAL_EMBEDDED")
-REINFORCEMENT_CLASSES: set[int] = _get_tekla_classes("MATERIAL_REINFORCEMENT")
 
 
 def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
@@ -148,8 +147,7 @@ def _check_element_bounding_box_embeds(
             continue
 
         # Only embedded-detail classes are relevant, other nearby objects are ignored
-        part_class = candidate_main.tekla_class
-        if part_class not in EMBEDDED_DETAILS_CLASSES:
+        if not wrapped_assembly.is_embedded_detail():
             continue
 
         # Skip embeds that are in the bounding box but outside the element's actual solid
@@ -169,7 +167,7 @@ def _check_element_bounding_box_embeds(
                     guid=assembly_guid,
                     name=candidate_main.name,
                     position=candidate_main.position,
-                    tekla_class=part_class,
+                    tekla_class=candidate_main.tekla_class,
                 )
             )
     logger.debug("Found %d orphaned embeds for element %s", len(orphaned), element.guid)
@@ -384,7 +382,7 @@ def check_for_orphans(
     mode: Annotated[Literal["subassemblies", "rebars"], Field(description="Check mode: 'subassemblies' (embedded detail assemblies) or 'rebars' (reinforcement)")],
 ) -> ToolResult:
     """
-    Find sub-assemblies or rebars inside selected elements that are not attached.
+    Find subassemblies or rebars inside selected elements that are not attached.
 
     Read-only. Returns pairs of `{object_guid, target_guid}`. Pipe into `attach_assemblies`
     or `attach_rebars` to fix.

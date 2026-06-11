@@ -4,6 +4,7 @@ Drawing tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Annotated, Literal
 
@@ -24,6 +25,10 @@ from tekla_mcp_server.tekla.drawing_utils import (
     draw_collision_cloud,
     detect_section_parents,
     compute_section_alignment,
+    categorize_drawing_object,
+    extract_annotation_content,
+    CATEGORY_TYPES,
+    DEFAULT_ANNOTATION_CATEGORIES,
     OUTPUT_TYPE_MAP,
     COLOR_MODE_MAP,
     ORIENTATION_MAP,
@@ -31,17 +36,74 @@ from tekla_mcp_server.tekla.drawing_utils import (
 )
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly
 from tekla_mcp_server.tekla.loader import (
     Cloud,
+    Connection,
+    DrawingObject,
     Mark,
     MarkSet,
     WeldMark,
+    DrawingModelObject,
     DPMPrinterAttributes,
     DotPrintToMultipleSheet,
+    ModelObject,
 )
 
 
 drawings_provider = LocalProvider()
+
+
+def _describe_model_object(guid: str, model_obj: ModelObject) -> dict[str, Any]:
+    """
+    Build a lightweight record for a model object shown in a view (no geometry).
+
+    Resolves name/profile/material/class via the model-object wrappers where the
+    type is supported (parts, assemblies, reinforcement). Unsupported types
+    (e.g. bolts) fall back to the raw object's name so nothing is dropped.
+    """
+    # Use .NET type name (Beam, Column, etc.) as element_type identifier
+    entry: dict[str, Any] = {"guid": guid, "element_type": type(model_obj).__name__}
+    wrapped = wrap_model_object(model_obj)
+    if wrapped is None:
+        entry["name"] = getattr(model_obj, "Name", None) or None
+        return entry
+    for attr in ("name", "position", "profile", "material", "tekla_class"):
+        try:
+            value = getattr(wrapped, attr)
+        except AttributeError:
+            continue
+        if value is not None:
+            entry[attr] = value
+    return entry
+
+
+@dataclass
+class EmbeddedDetailPart:
+    """
+    A single member part of an embedded detail: its GUID and element type.
+    """
+
+    guid: str
+    element_type: str
+
+
+@dataclass
+class EmbeddedDetail:
+    """
+    An embedded detail subassembly shown in a view.
+    """
+
+    guid: str
+    name: str | None
+    position: str | None
+    element_type: str = "EmbeddedDetail"
+    parts: list[EmbeddedDetailPart] = field(default_factory=list)
+
+
+def _describe_embedded_detail(guid: str, assembly: TeklaAssembly) -> EmbeddedDetail:
+    """Build an `EmbeddedDetail` record from an embedded detail subassembly."""
+    return EmbeddedDetail(guid=guid, name=assembly.name or None, position=assembly.position or None)
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -181,6 +243,7 @@ def detect_collisions_between_marks(
     logger.info("Starting collision detection for %d view(s) in drawing '%s'", len(views), drawing.mark)
 
     for tekla_view in views:
+        # Sheet view aggregates marks from all child views - skip to avoid duplicate detection
         if tekla_view.is_sheet:
             continue
 
@@ -438,8 +501,9 @@ def get_drawing_views() -> ToolResult:
     """
     List all views in the active drawing with type, scale, position, and size.
 
-    Also returns the sheet size. View origins are measured in mm from the sheet
-    bottom-left corner (0, 0), so views fit within (0, 0)-(sheet_width, sheet_height).
+    Also returns the sheet view (is_sheet=true) which holds title-block
+    annotations but no model objects. View origins are measured in mm from
+    the sheet bottom-left corner (0, 0).
 
     Use `view_key` for all follow-up calls.
     Use `open_drawing` first if no drawing is currently open.
@@ -462,6 +526,190 @@ def get_drawing_views() -> ToolResult:
             "sheet_height": round(sheet.Height, 1),
             "view_count": len(view_list),
             "views": view_list,
+        }
+    )
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def get_view_objects(
+    view_key: Annotated[str, Field(description="View key (from `get_drawing_views`)")],
+    limit: Annotated[int, Field(description="Max objects in the list", ge=1)] = 200,
+) -> ToolResult:
+    """
+    List the model objects (parts, rebars, etc.) shown in a drawing view.
+
+    Returns model objects only, NOT annotations (use `get_view_annotations` instead).
+    Embedded detail subassemblies are reported once rather than as separate parts.
+    """
+    handler = TeklaDrawingHandler()
+    handler.require_active_drawing()
+    view = handler.get_view_by_key(view_key)
+    model = TeklaModel()
+
+    # Sheet view aggregates model objects from all child views - it has none of its own
+    if view.is_sheet:
+        drawing_objects: list[DrawingObject] = []
+    else:
+        drawing_objects = view.get_all_objects([DrawingModelObject])
+        if drawing_objects is None:
+            raise RuntimeError(f"Failed to enumerate model objects in view '{view_key}'. The view state may be corrupted or the connection lost.")
+
+    # Exclude Connection objects from total_count
+    total_count = sum(1 for o in drawing_objects if not isinstance(o, Connection))
+    objects: list[dict[str, Any] | EmbeddedDetail] = []
+    embedded_details: dict[str, EmbeddedDetail] = {}
+    unresolved_count = 0
+    returned_count = 0
+    has_more = False
+    seen_guids: set[str] = set()
+    # The same model object can be referenced by multiple drawing objects (e.g. a
+    # part and its weld marks), so cache lookups to avoid repeat SelectModelObject calls
+    model_objects_by_id: dict[int, ModelObject | None] = {}
+
+    for drawing_obj in drawing_objects:
+        if returned_count >= limit:
+            has_more = True
+            break
+        # Tekla components shown in a drawing view are internal
+        # connection geometry, not structural parts. Skip them
+        if isinstance(drawing_obj, Connection):
+            continue
+        identifier = getattr(drawing_obj, "ModelIdentifier", None)
+        if identifier is None:
+            unresolved_count += 1
+            continue
+        # The drawing-side ModelIdentifier carries a zero GUID, only its
+        # integer ID maps to the model object
+        object_id = int(identifier.ID)
+        if object_id not in model_objects_by_id:
+            model_objects_by_id[object_id] = model.get_object_by_id(object_id)
+        model_obj = model_objects_by_id[object_id]
+        if model_obj is None:
+            unresolved_count += 1
+            continue
+
+        # Promote a part belonging to an embedded-detail subassembly to the
+        # subassembly itself, deduplicating its other parts but counting them
+        try:
+            parent_assembly = model_obj.GetAssembly()
+        except Exception as e:
+            logger.debug("GetAssembly() failed for model object id %s: %s", identifier.ID, e)
+            parent_assembly = None
+        if parent_assembly is not None:
+            wrapped_assembly = wrap_model_object(parent_assembly)
+            if isinstance(wrapped_assembly, TeklaAssembly):
+                try:
+                    if wrapped_assembly.is_embedded_detail():
+                        guid = parent_assembly.Identifier.GUID.ToString()
+                        detail = embedded_details.get(guid)
+                        if detail is None:
+                            detail = _describe_embedded_detail(guid, wrapped_assembly)
+                            embedded_details[guid] = detail
+                            objects.append(detail)
+                        part_guid = model_obj.Identifier.GUID.ToString()
+                        # Track individual parts so the client gets a part_count breakdown
+                        if part_guid not in {p.guid for p in detail.parts}:
+                            detail.parts.append(EmbeddedDetailPart(guid=part_guid, element_type=type(model_obj).__name__))
+                            returned_count += 1
+                        continue
+                except ValueError:
+                    pass
+
+        guid = model_obj.Identifier.GUID.ToString()
+        if guid in seen_guids:
+            continue
+        seen_guids.add(guid)
+        try:
+            objects.append(_describe_model_object(guid, model_obj))
+            returned_count += 1
+        except Exception as e:
+            logger.debug("Failed to describe model object %s in view '%s': %s", guid, view_key, e)
+            unresolved_count += 1
+
+    logger.info("get_view_objects: view '%s' has %d model object(s), %d returned, %d unresolved", view_key, total_count, returned_count, unresolved_count)
+    return ToolResult(
+        structured_content={
+            "status": "success",
+            "view_key": view_key,
+            "total_count": total_count,
+            "returned_count": returned_count,
+            "unresolved_count": unresolved_count,
+            "objects": [{**asdict(o), "part_count": len(o.parts)} if isinstance(o, EmbeddedDetail) else o for o in objects],
+            "limit": limit,
+            "has_more": has_more,
+        }
+    )
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def get_view_annotations(
+    view_key: Annotated[str, Field(description="View key (from `get_drawing_views`)")],
+    type_filter: Annotated[
+        Literal["all", "dimensions", "marks", "text", "graphics"],
+        Field(description="Restrict to one annotation category. Counts then cover only that category instead of every annotation."),
+    ] = "all",
+    limit: Annotated[int, Field(description="Max annotations in the list", ge=1)] = 200,
+) -> ToolResult:
+    """
+    Read the annotations (marks, dimensions, text) shown in a drawing view.
+
+    Each annotation reports its content but no geometry/coordinates.
+    """
+    handler = TeklaDrawingHandler()
+    handler.require_active_drawing()
+    view = handler.get_view_by_key(view_key)
+
+    type_filter_types = list(CATEGORY_TYPES[type_filter]) if type_filter != "all" else None
+    all_objects = view.get_all_objects(type_filter_types)
+    if all_objects is None:
+        raise RuntimeError(f"Failed to enumerate objects in view '{view_key}'. The view state may be corrupted or the connection lost.")
+
+    counts_by_category: dict[str, int] = {}
+    annotations: list[dict[str, Any]] = []
+    # Lazy: TeklaModel() is only needed for marks (target_guid resolution),
+    # not for text/dimensions/graphics
+    model: TeklaModel | None = None
+
+    for obj in all_objects:
+        category = categorize_drawing_object(obj)
+        # Sheet view aggregates marks/dimensions from all child views - only show
+        # text/graphics that belong to the sheet itself, regardless of type_filter
+        if view.is_sheet and category not in ("text", "graphics"):
+            continue
+        if type_filter == "all" and category not in DEFAULT_ANNOTATION_CATEGORIES:
+            continue
+        if category == "marks" and model is None:
+            model = TeklaModel()
+        annotation = extract_annotation_content(obj, category, model)
+        # Marks with no readable content (e.g. empty Mark.Content) are
+        # excluded from the count - they carry no useful information
+        if category == "marks" and annotation.get("content") is None:
+            continue
+        counts_by_category[category] = counts_by_category.get(category, 0) + 1
+        if type_filter != "all" and category != type_filter:
+            continue
+        annotations.append(annotation)
+        if len(annotations) >= limit:
+            break
+
+    total_count = sum(counts_by_category.values())
+    available = total_count if type_filter == "all" else counts_by_category.get(type_filter, 0)
+    has_more = len(annotations) < available
+
+    logger.info("get_view_annotations: view '%s' has %d annotation(s), %d returned", view_key, total_count, len(annotations))
+    return ToolResult(
+        structured_content={
+            "status": "success",
+            "view_key": view_key,
+            "type_filter": type_filter,
+            "total_count": total_count,
+            "counts_by_category": counts_by_category,
+            "returned_count": len(annotations),
+            "annotations": annotations,
+            "limit": limit,
+            "has_more": has_more,
         }
     )
 
@@ -622,6 +870,9 @@ def set_view_scales(
         if tekla_view is None:
             results.append({"view_key": item.view_key, "status": "failed", "message": "View not found"})
             continue
+        if tekla_view.is_sheet:
+            results.append({"view_key": item.view_key, "status": "failed", "message": "Cannot set scale on the sheet view"})
+            continue
         try:
             if tekla_view.set_scale(item.scale):
                 succeeded += 1
@@ -658,8 +909,8 @@ def delete_view_clouds(
     """
     Delete all clouds from model views in the active drawing.
 
-    When view_keys is omitted, all views are processed.
-    Clouds placed outside any model view are not affected.
+    The sheet view aggregates clouds from all child views, so it is
+    skipped to avoid double-deletion. Only model-view clouds are affected.
     """
     if view_keys is not None and not view_keys:
         raise ValueError("view_keys must not be an empty list. Omit it to process all views.")
@@ -684,7 +935,6 @@ def delete_view_clouds(
     for tekla_view in views:
         if tekla_view.is_sheet:
             continue
-
         to_delete = tekla_view.get_all_objects([Cloud])
         if to_delete is None:
             continue

@@ -202,13 +202,26 @@ class TeklaDrawingView:
 
     def to_dict(self) -> dict[str, Any]:
         """Returns a serialisable dict of all view metadata."""
+        if self.is_sheet:
+            # Sheet view has no scale or frame_origin - those are
+            # per-model-view concepts. Omit them to avoid confusion
+            return {
+                "name": self.name,
+                "view_key": self.view_key,
+                "view_type": self.view_type,
+                "is_sheet": True,
+                "origin_x": self.origin_x,
+                "origin_y": self.origin_y,
+                "width": self.width,
+                "height": self.height,
+            }
         fx, fy = self.frame_origin
         return {
             "name": self.name,
             "view_key": self.view_key,
             "view_type": self.view_type,
             "scale": self.scale,
-            "is_sheet": self.is_sheet,
+            "is_sheet": False,
             "origin_x": self.origin_x,
             "origin_y": self.origin_y,
             "frame_origin_x": fx,

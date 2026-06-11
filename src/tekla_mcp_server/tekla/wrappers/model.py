@@ -260,6 +260,16 @@ class TeklaModel:
         return self.model.SelectModelObject(Identifier(guid))
 
     @log_function_call
+    def get_object_by_id(self, object_id: int) -> ModelObject | None:
+        """
+        Return a single model object by its integer identifier, or None if not found.
+
+        Needed because drawing-side ModelIdentifiers carry a zero GUID and only
+        expose an integer ID. get_object_by_guid() cannot resolve those.
+        """
+        return self.model.SelectModelObject(Identifier(object_id))
+
+    @log_function_call
     def get_objects_by_filter(self, model_filter: FilterExpression | str) -> ModelObjectEnumerator:
         """
         Returns objects in the model selected by the given selection filter definition.

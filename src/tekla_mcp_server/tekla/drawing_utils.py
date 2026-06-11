@@ -3,6 +3,10 @@ Drawing utility helpers for Tekla MCP server.
 """
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringFilterOption, StringMatchType
@@ -11,9 +15,32 @@ from tekla_mcp_server.tekla.loader import (
     DrawingColors,
     DrawingView,
     Mark,
+    MarkBase,
     MarkSet,
     SectionMark,
+    SectionMarkBase,
+    CurvedSectionMark,
     WeldMark,
+    DetailMark,
+    LevelMark,
+    DimensionBase,
+    DimensionSetBase,
+    StraightDimension,
+    StraightDimensionSet,
+    AngleDimension,
+    RadiusDimension,
+    CurvedDimensionOrthogonal,
+    CurvedDimensionRadial,
+    CurvedDimensionSetOrthogonal,
+    CurvedDimensionSetRadial,
+    DrawingText,
+    GraphicObject,
+    Arc,
+    Line,
+    Polyline,
+    Circle,
+    Polygon,
+    Rectangle,
     PointList,
     Point,
     DotPrintColor,
@@ -56,6 +83,213 @@ SCALING_METHOD_MAP: dict[str, DotPrintScalingType] = {
     "Auto": DotPrintScalingType.Auto,
     "Scale": DotPrintScalingType.Scale,
 }
+
+
+# Categories returned by default in get_view_annotations (type_filter="all").
+DEFAULT_ANNOTATION_CATEGORIES = frozenset({"dimensions", "marks", "text"})
+
+# Concrete Tekla.Structures.Drawing types per category, used as the type filter
+# for `view.get_all_objects([...])`. MUST be concrete types only - abstract bases
+# (MarkBase, DimensionBase, GraphicObject) throw "Cannot create an instance of
+# abstract class" when passed to Tekla's TypeMapper.
+# `categorize_drawing_object` still classifies by the abstract bases via isinstance.
+CATEGORY_TYPES: dict[str, tuple[type, ...]] = {
+    "marks": (Mark, MarkSet, WeldMark, DetailMark, LevelMark, SectionMark, CurvedSectionMark),
+    "dimensions": (
+        StraightDimension,
+        StraightDimensionSet,
+        AngleDimension,
+        RadiusDimension,
+        CurvedDimensionOrthogonal,
+        CurvedDimensionRadial,
+        CurvedDimensionSetOrthogonal,
+        CurvedDimensionSetRadial,
+    ),
+    "text": (DrawingText,),
+    "graphics": (Arc, Line, Polyline, Circle, Polygon, Rectangle, Cloud),
+}
+
+
+def categorize_drawing_object(obj: Any) -> str:
+    """
+    Classify a drawing object into dimensions/marks/text/graphics/other.
+
+    Matched by isinstance against Tekla.Structures.Drawing base classes.
+    Use type_filter="graphics" in get_view_annotations to enumerate graphical
+    objects (clouds, lines, shapes) which are excluded from the default.
+
+    LeaderLine falls into 'other', which is excluded from every type_filter value.
+
+    Returns:
+        One of: 'dimensions', 'marks', 'text', 'graphics', 'other'.
+    """
+    if isinstance(obj, (MarkBase, WeldMark, DetailMark, LevelMark, SectionMarkBase)):
+        return "marks"
+    if isinstance(obj, (DimensionBase, DimensionSetBase)):
+        return "dimensions"
+    if isinstance(obj, DrawingText):
+        return "text"
+    if isinstance(obj, GraphicObject):
+        return "graphics"
+    return "other"
+
+
+def extract_annotation_content(obj: Any, category: str, model: "TeklaModel | None" = None) -> dict[str, Any]:
+    """
+    Best-effort textual content of a single annotation (no geometry).
+
+    Lightweight: reads only the rendered string/value, never coordinates. The
+    property names below are NOT yet verified against the installed
+    Tekla.Structures.Drawing assembly - confirm each in a live model and adjust.
+    Anything that cannot be read comes back as None rather than raising, so one
+    odd object never fails the whole view read.
+
+    Args:
+        obj: The annotation object.
+        category: Its category from `categorize_drawing_object`.
+        model: Model used to resolve a mark's target to a GUID. Required to
+            populate `target_guid` for marks; when None it comes back as None.
+
+    Returns:
+        dict with at least 'type' and 'category'; plus 'content' (marks/text)
+        or 'value' (dimensions) when readable. Marks also carry 'target_guid'.
+    """
+    info: dict[str, Any] = {"type": type(obj).__name__, "category": category}
+    try:
+        if category == "marks":
+            # Section/detail marks expose `.Attributes.MarkName`; a plain Mark's
+            # string is assembled from `.Attributes.Content` (both handled in the
+            # helper). WeldMark/LevelMark have neither and return "N/A" for now.
+            info["content"] = _extract_mark_text(obj)
+            # GUID of the part the mark points at - the join key a coverage audit
+            # diffs against the view's parts (from `get_view_objects`).
+            info["target_guid"] = _extract_mark_target(obj, model) if model is not None else None
+        elif category == "text":
+            # Confirmed live: Text.TextString holds the note string.
+            info["content"] = getattr(obj, "TextString", None) or None
+        elif category == "dimensions":
+            # Confirmed live: StraightDimension(Set) and AngleDimension all expose
+            # `.Distance` (float). `.Value` is a ContainerElement, not a number.
+            # Report the magnitude - a linear dimension is shown unsigned. For an
+            # AngleDimension this is the dimension-line distance, not the angle.
+            dist = getattr(obj, "Distance", None)
+            info["value"] = round(abs(float(dist)), 1) if dist is not None else None
+    except Exception as e:
+        logger.debug("extract_annotation_content failed for %s: %s", type(obj).__name__, e)
+    return info
+
+
+def _extract_mark_text(mark: Any) -> str | None:
+    """
+    Extract a mark's rendered string across mark subtypes.
+
+    - Section/detail marks name their target via `Attributes.MarkName`.
+    - A plain Mark/MarkSet has no flat text property, its `Attributes.Content`
+    is an ordered element collection:
+        * PropertyElement / UserDefinedElement / TextElement carry a `.Value`
+        string (e.g. 'EPS-383', '4500*140', '-T')
+        * SpaceElement renders a space, NewLineElement a line break
+        * SymbolElement and other graphic-only elements carry no text (skipped)
+
+    WeldMark and LevelMark expose neither. WeldMarkAttributes has no text/value
+    field at all, LevelMark has no flat text property either. Both return the
+    literal "N/A" for now.
+
+    Args:
+        mark: A mark object.
+
+    Returns:
+        The mark string, "N/A" for WeldMark/LevelMark, or None if it renders no
+        text or cannot be read.
+    """
+    if isinstance(mark, (WeldMark, LevelMark)):
+        return "N/A"
+
+    try:
+        attrs = mark.Attributes
+    except Exception as e:
+        logger.debug("Mark.Attributes unavailable for %s: %s", type(mark).__name__, e)
+        return None
+    if attrs is None:
+        return None
+
+    # Section/detail marks: the name of the view/detail they reference.
+    mark_name = getattr(attrs, "MarkName", None)
+    if mark_name:
+        return mark_name
+
+    content = getattr(attrs, "Content", None)
+    if content is None:
+        return None
+
+    parts: list[str] = []
+    try:
+        for element in content:
+            element_type = type(element).__name__
+            if element_type == "SpaceElement":
+                parts.append(" ")
+            elif element_type == "NewLineElement":
+                parts.append("\n")
+            else:
+                value = getattr(element, "Value", None)
+                if value is not None:
+                    parts.append(str(value))
+    except Exception as e:
+        logger.debug("Failed to iterate Mark content for %s: %s", type(mark).__name__, e)
+        return None
+
+    text = "".join(parts).strip()
+    return text or None
+
+
+def _extract_mark_target(mark: Any, model: "TeklaModel") -> str | None:
+    """
+    GUID of the model object a mark points at.
+
+    A drawing mark associates to its model object via `GetRelatedObjects()`,
+    which yields drawing-side objects: the mark's own LeaderLine (no model
+    identifier, skipped) plus the related model object.
+
+    The drawing-side GUID is always zero, so the integer
+    ModelIdentifier.ID is resolved to a model object via
+    TeklaModel.get_object_by_id() (which can take an integer), and that
+    object's own (non-zero) GUID is returned.
+
+    Args:
+        mark: A Tekla.Structures.Drawing mark object.
+        model: Model used to resolve the integer ID to a GUID.
+
+    Returns:
+        The target object's GUID string, or None when the mark points at no
+        resolvable model object (e.g. WeldMark) or the call fails.
+    """
+    try:
+        related = mark.GetRelatedObjects()
+    except Exception as e:
+        logger.debug("GetRelatedObjects() failed for %s: %s", type(mark).__name__, e)
+        return None
+    if related is None:
+        return None
+
+    try:
+        while related.MoveNext():
+            obj = related.Current
+            identifier = getattr(obj, "ModelIdentifier", None)
+            if identifier is None:
+                continue
+            raw_id = getattr(identifier, "ID", None)
+            if raw_id is None:
+                continue
+            obj_id = int(raw_id)
+            if obj_id == 0:
+                continue
+            model_obj = model.get_object_by_id(obj_id)
+            if model_obj is None:
+                continue
+            return model_obj.Identifier.GUID.ToString()
+    except Exception as e:
+        logger.debug("Failed to resolve mark target for %s: %s", type(mark).__name__, e)
+    return None
 
 
 def rects_intersect(

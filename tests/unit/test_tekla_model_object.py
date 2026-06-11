@@ -88,6 +88,12 @@ def test_main_part_property(wall1):
     assert isinstance(main_part.model_object, Beam)
 
 
+def test_is_embedded_detail(wall1):
+    """Checks that a regular beam's assembly is not classified as an embedded detail."""
+    assembly = wall1.get_top_level_assembly()
+    assert assembly.is_embedded_detail() is False
+
+
 def test_cog_property(wall1):
     """Checks that the center of gravity (COG) is correctly calculated."""
     cog = wall1.cog

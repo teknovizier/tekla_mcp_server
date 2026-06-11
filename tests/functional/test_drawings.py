@@ -17,6 +17,8 @@ from tekla_mcp_server.providers.drawings_provider import (
     get_drawing_properties,
     get_drawings,
     get_drawing_views,
+    get_view_annotations,
+    get_view_objects,
     move_view,
     open_drawing,
     print_drawings,
@@ -223,12 +225,16 @@ class TestGetDrawingViews:
         close_drawing(save=False)
 
     def test_get_views_all_have_required_fields(self, cu_mark):
-        """Every view dict has all expected fields."""
+        """Sheet and non-sheet views expose different field sets."""
         open_drawing(mark=cu_mark)
         result = get_drawing_views()
-        required = {"name", "view_key", "view_type", "scale", "is_sheet", "origin_x", "origin_y", "width", "height"}
+        common = {"name", "view_key", "view_type", "is_sheet", "origin_x", "origin_y", "width", "height"}
+        # The sheet view has no scale and no frame origin; model views add both.
+        sheet_keys = common
+        non_sheet_keys = common | {"scale", "frame_origin_x", "frame_origin_y"}
         for view in result.structured_content["views"]:
-            assert required.issubset(view.keys())
+            expected = sheet_keys if view["is_sheet"] else non_sheet_keys
+            assert set(view.keys()) == expected
         close_drawing(save=False)
 
 
@@ -305,33 +311,44 @@ class TestSetViewScales:
         result = set_view_scales(view_scales=[])
         assert result.structured_content["status"] == "error"
 
-    def _first_view_key(self):
-        """Return view_key of the first view."""
-        views = get_drawing_views().structured_content["views"]
-        return views[0]["view_key"] if views else None
-
     def test_set_scale_on_non_sheet_view(self, cu_mark):
         """Set scale on a non-sheet view."""
         open_drawing(mark=cu_mark)
-        key = self._first_view_key()
+        key = _first_non_sheet_view_key()
         if key is None:
-            pytest.skip("No views available")
+            pytest.skip("No non-sheet view available")
         result = set_view_scales(view_scales=[ViewScale(view_key=key, scale=20.0)])
         assert result.structured_content["status"] == "success"
         assert result.structured_content["succeeded"] == 1
         assert result.structured_content["results"][0]["new_scale"] == 20.0
         close_drawing(save=False)
 
-    def test_set_scale_multiple_views(self, cu_mark):
-        """Set scale on all views at once."""
+    def test_set_scale_on_sheet_view_rejected(self, cu_mark):
+        """The sheet view has no scale, so it is rejected, not scaled."""
         open_drawing(mark=cu_mark)
         views = get_drawing_views().structured_content["views"]
-        if len(views) < 2:
-            pytest.skip("Need at least 2 views for multi-scale test")
-        scales = [ViewScale(view_key=v["view_key"], scale=30.0) for v in views]
+        sheet_key = next((v["view_key"] for v in views if v["is_sheet"]), None)
+        if sheet_key is None:
+            pytest.skip("No sheet view found")
+        result = set_view_scales(view_scales=[ViewScale(view_key=sheet_key, scale=20.0)])
+        sc = result.structured_content
+        assert sc["status"] == "error"
+        assert sc["succeeded"] == 0
+        assert sc["results"][0]["status"] == "failed"
+        assert "sheet" in sc["results"][0]["message"].lower()
+        close_drawing(save=False)
+
+    def test_set_scale_multiple_non_sheet_views(self, cu_mark):
+        """Set scale on all non-sheet views at once; the sheet is not included."""
+        open_drawing(mark=cu_mark)
+        views = get_drawing_views().structured_content["views"]
+        non_sheet = [v for v in views if not v["is_sheet"]]
+        if len(non_sheet) < 2:
+            pytest.skip("Need at least 2 non-sheet views for multi-scale test")
+        scales = [ViewScale(view_key=v["view_key"], scale=30.0) for v in non_sheet]
         result = set_view_scales(view_scales=scales)
         assert result.structured_content["status"] == "success"
-        assert result.structured_content["succeeded"] == len(views)
+        assert result.structured_content["succeeded"] == len(non_sheet)
         close_drawing(save=False)
 
 
@@ -497,4 +514,193 @@ class TestAlignSectionViews:
         assert sc["aligned_count"] == 0
         assert sc["moves"] == []
         assert isinstance(sc["skipped"], list)
+        close_drawing(save=False)
+
+
+def _first_non_sheet_view_key():
+    """Return view_key of the first non-sheet view in the open drawing, or None."""
+    views = get_drawing_views().structured_content["views"]
+    for v in views:
+        if not v["is_sheet"]:
+            return v["view_key"]
+    return None
+
+
+def _view_object_guids(view_key):
+    """Every model-object GUID a view exposes: top-level guids plus embedded detail member guids."""
+    objects = get_view_objects(view_key=view_key, limit=1000).structured_content["objects"]
+    guids = set()
+    for obj in objects:
+        if obj.get("element_type") == "EmbeddedDetail":
+            guids.update(p["guid"] for p in obj["parts"])
+        else:
+            guids.add(obj["guid"])
+    return guids
+
+
+class TestGetViewObjects:
+    """Tests for get_view_objects function (cast unit drawing)."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Close any open drawing before each test."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing()
+        yield
+
+    def test_no_open_drawing(self):
+        """Listing objects when no drawing is open raises an error."""
+        result = get_view_objects(view_key="dummy")
+        assert result.structured_content["status"] == "error"
+
+    def test_invalid_view_key(self, cu_mark):
+        """A non-existent view_key is rejected."""
+        open_drawing(mark=cu_mark)
+        result = get_view_objects(view_key="MCP_NONEXISTENT_VIEW")
+        assert result.structured_content["status"] == "error"
+        close_drawing(save=False)
+
+    def test_success_returns_objects(self, cu_mark):
+        """A cast unit view lists at least one model object."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view in cast unit drawing")
+        sc = get_view_objects(view_key=key).structured_content
+        assert sc["status"] == "success"
+        assert sc["total_count"] >= 1
+        assert sc["returned_count"] == len(sc["objects"])
+        close_drawing(save=False)
+
+    def test_every_object_has_guid_and_type(self, cu_mark):
+        """Every returned object carries a guid and an element_type."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view in cast unit drawing")
+        objects = get_view_objects(view_key=key).structured_content["objects"]
+        for obj in objects:
+            assert obj["guid"]
+            assert obj["element_type"]
+        close_drawing(save=False)
+
+    def test_object_guids_are_unique(self, cu_mark):
+        """Top-level object GUIDs are de-duplicated."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view in cast unit drawing")
+        objects = get_view_objects(view_key=key).structured_content["objects"]
+        guids = [o["guid"] for o in objects]
+        assert len(guids) == len(set(guids))
+        close_drawing(save=False)
+
+    def test_limit_truncates(self, cu_mark):
+        """limit caps returned_count and flags has_more when more exist."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view in cast unit drawing")
+        full = get_view_objects(view_key=key).structured_content
+        if full["total_count"] < 2:
+            pytest.skip("View has fewer than 2 objects, cannot test truncation")
+        sc = get_view_objects(view_key=key, limit=1).structured_content
+        assert sc["returned_count"] <= 1
+        assert sc["has_more"] is True
+        close_drawing(save=False)
+
+    def test_embedded_detail_shape(self, cu_mark):
+        """When an embedded detail is present, parts carry guid+element_type and part_count matches."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view in cast unit drawing")
+        objects = get_view_objects(view_key=key, limit=1000).structured_content["objects"]
+        details = [o for o in objects if o.get("element_type") == "EmbeddedDetail"]
+        if not details:
+            pytest.skip("No embedded detail in this view")
+        for d in details:
+            assert d["part_count"] == len(d["parts"])
+            for part in d["parts"]:
+                assert part["guid"]
+                assert part["element_type"]
+            # No main-part properties leak onto the detail row
+            assert "profile" not in d
+            assert "material" not in d
+        close_drawing(save=False)
+
+
+class TestGetViewAnnotations:
+    """Tests for get_view_annotations function (cast unit drawing)."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Close any open drawing before each test."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing()
+        yield
+
+    def test_no_open_drawing(self):
+        """Reading annotations when no drawing is open raises an error."""
+        result = get_view_annotations(view_key="dummy")
+        assert result.structured_content["status"] == "error"
+
+    def test_invalid_view_key(self, cu_mark):
+        """A non-existent view_key is rejected."""
+        open_drawing(mark=cu_mark)
+        result = get_view_annotations(view_key="MCP_NONEXISTENT_VIEW")
+        assert result.structured_content["status"] == "error"
+        close_drawing(save=False)
+
+    def test_success_shape(self, cu_mark):
+        """A cast unit view returns the expected envelope."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view in cast unit drawing")
+        sc = get_view_annotations(view_key=key).structured_content
+        assert sc["status"] == "success"
+        assert sc["returned_count"] == len(sc["annotations"])
+        assert isinstance(sc["counts_by_category"], dict)
+        close_drawing(save=False)
+
+    def test_type_filter_marks_only(self, cu_mark):
+        """type_filter='marks' returns only mark-category annotations."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view in cast unit drawing")
+        annotations = get_view_annotations(view_key=key, type_filter="marks").structured_content["annotations"]
+        for ann in annotations:
+            assert ann["category"] == "marks"
+        close_drawing(save=False)
+
+    def test_marks_carry_target_guid(self, cu_mark):
+        """Every mark annotation carries a target_guid (str or None)."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view in cast unit drawing")
+        marks = get_view_annotations(view_key=key, type_filter="marks").structured_content["annotations"]
+        if not marks:
+            pytest.skip("No marks in this view")
+        for mark in marks:
+            assert "target_guid" in mark
+            assert mark["target_guid"] is None or isinstance(mark["target_guid"], str)
+        close_drawing(save=False)
+
+    def test_mark_targets_join_to_view_objects(self, cu_mark):
+        """At least one mark's target_guid resolves to a part shown in the view (coverage join)."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view in cast unit drawing")
+        marks = get_view_annotations(view_key=key, type_filter="marks").structured_content["annotations"]
+        target_guids = {m["target_guid"] for m in marks if m["target_guid"]}
+        if not target_guids:
+            pytest.skip("No marks resolve to a model object in this view")
+        view_guids = _view_object_guids(key)
+        assert target_guids & view_guids, "no mark target_guid matched a view object guid"
         close_drawing(save=False)

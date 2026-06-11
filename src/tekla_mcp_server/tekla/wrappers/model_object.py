@@ -8,7 +8,7 @@ import math
 from collections.abc import Generator, Iterable
 from typing import Any, overload
 
-from tekla_mcp_server.config import get_tolerance
+from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, ReinforcementSnapshot, BeamType, OffsetInput, PointInput, PositionInput
 
@@ -37,6 +37,19 @@ from tekla_mcp_server.tekla.snapshot_builder import SnapshotBuilder
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 
 ZERO_GUID = "00000000-0000-0000-0000-000000000000"
+
+
+def get_tekla_classes(material_key: str) -> set[int]:
+    """Get all tekla_classes for a material group from the config."""
+    material = get_config().element_types.get(material_key, {})
+    return {tekla_class for type_config in material.values() for tekla_class in type_config.get("tekla_classes", [])}
+
+
+# Class IDs identifying embedded-detail subassemblies
+EMBEDDED_DETAILS_CLASSES: set[int] = get_tekla_classes("MATERIAL_EMBEDDED")
+# Class IDs identifying reinforcement objects
+REINFORCEMENT_CLASSES: set[int] = get_tekla_classes("MATERIAL_REINFORCEMENT")
+
 
 POSITION_PLANE_MAP = {
     "LEFT": Position.PlaneEnum.LEFT,
@@ -640,6 +653,17 @@ class TeklaAssembly(TeklaModelObject):
         if main_part is None:
             raise ValueError("Main part is not available")
         return main_part
+
+    def is_embedded_detail(self) -> bool:
+        """
+        Return True if this assembly is an embedded detail,
+        identified by its main part's `tekla_class`.
+
+        Raises:
+            ValueError: If the main part is not available.
+        """
+        main_part = self.main_part
+        return isinstance(main_part, TeklaPart) and main_part.tekla_class in EMBEDDED_DETAILS_CLASSES
 
     @property
     def weight(self) -> tuple[float, float]:

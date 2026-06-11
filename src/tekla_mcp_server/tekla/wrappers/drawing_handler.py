@@ -94,7 +94,9 @@ class TeklaDrawingHandler:
             if sheet is None:
                 raise RuntimeError("Failed to get sheet for active drawing.")
 
-        result: list[TeklaDrawingView] = []
+
+        # Sheet view first so callers always get a consistent index[0] for it
+        result: list[TeklaDrawingView] = [TeklaDrawingView(sheet)]
         views_enum = sheet.GetViews()
         while views_enum.MoveNext():
             view = views_enum.Current

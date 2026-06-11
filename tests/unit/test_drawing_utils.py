@@ -15,9 +15,86 @@ if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
 from tekla_mcp_server.tekla.drawing_utils import (
+    _extract_mark_target,
     compute_section_alignment,
     detect_section_parents,
 )
+
+
+class StubEnumerator:
+    """Mimics a .NET DrawingObjectEnumerator (MoveNext/Current)."""
+
+    def __init__(self, items):
+        self._items = list(items)
+        self._index = -1
+
+    def MoveNext(self):
+        self._index += 1
+        if self._index < len(self._items):
+            self.Current = self._items[self._index]
+            return True
+        return False
+
+
+def _related(obj_id):
+    """A related drawing object carrying a ModelIdentifier.ID (or none)."""
+    if obj_id is None:
+        return SimpleNamespace()  # e.g. a LeaderLine: no ModelIdentifier
+    return SimpleNamespace(ModelIdentifier=SimpleNamespace(ID=obj_id))
+
+
+class StubRelatedMark:
+    def __init__(self, related):
+        self._related = related
+
+    def GetRelatedObjects(self):
+        return StubEnumerator(self._related)
+
+
+class StubModel:
+    """Resolves an integer ID to a model object whose GUID is f"guid-{id}"."""
+
+    def __init__(self, missing=()):
+        self._missing = set(missing)
+
+    def get_object_by_id(self, object_id):
+        if object_id in self._missing:
+            return None
+        guid = SimpleNamespace(ToString=lambda: f"guid-{object_id}")
+        return SimpleNamespace(Identifier=SimpleNamespace(GUID=guid))
+
+
+class TestExtractMarkTarget:
+    def test_part_target_resolves_to_guid(self):
+        # LeaderLine (no identifier) is skipped, the Part's ID resolves to a GUID.
+        mark = StubRelatedMark([_related(None), _related(84981920)])
+        assert _extract_mark_target(mark, StubModel()) == "guid-84981920"
+
+    def test_first_resolvable_target_wins(self):
+        mark = StubRelatedMark([_related(10), _related(20)])
+        assert _extract_mark_target(mark, StubModel()) == "guid-10"
+
+    def test_weldmark_with_only_leaderline_returns_none(self):
+        mark = StubRelatedMark([_related(None)])
+        assert _extract_mark_target(mark, StubModel()) is None
+
+    def test_zero_id_is_skipped(self):
+        mark = StubRelatedMark([_related(0), _related(7)])
+        assert _extract_mark_target(mark, StubModel()) == "guid-7"
+
+    def test_unresolvable_id_is_skipped(self):
+        # An ID the model cannot resolve is passed over for the next candidate.
+        mark = StubRelatedMark([_related(5), _related(8)])
+        assert _extract_mark_target(mark, StubModel(missing={5})) == "guid-8"
+
+    def test_none_enumerator_returns_none(self):
+        assert _extract_mark_target(SimpleNamespace(GetRelatedObjects=lambda: None), StubModel()) is None
+
+    def test_call_failure_returns_none(self):
+        def boom():
+            raise RuntimeError("no related objects")
+
+        assert _extract_mark_target(SimpleNamespace(GetRelatedObjects=boom), StubModel()) is None
 
 
 class StubMark:
