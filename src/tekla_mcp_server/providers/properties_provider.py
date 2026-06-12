@@ -459,11 +459,8 @@ def compare_elements(
     if len(categories) > 1:
         raise TypeError(f"Cannot compare mixed object types: {', '.join(sorted(categories))}. Select only parts, only assemblies, or only reinforcement.")
 
-    # Numbering check only applies to parts and assemblies — IsNumberingUpToDate
-    # is not meaningful for Reinforcement objects.
     if not ignore_numbering:
-        parts_for_numbering = [o.model_object for o in wrapped_objects if isinstance(o, (TeklaPart, TeklaAssembly))]
-        if parts_for_numbering and not all(Operation.IsNumberingUpToDate(p) for p in parts_for_numbering):
+        if not all(Operation.IsNumberingUpToDate(o.model_object) for o in wrapped_objects):
             raise ValueError("Numbering is not up-to-date for selected elements.")
 
     IGNORED_KEYS = {"id", "guid"}
