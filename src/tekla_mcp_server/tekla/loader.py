@@ -12,7 +12,7 @@ load_dlls()
 from System import Type as SystemType, Array as SystemArray
 from System.Reflection import BindingFlags
 from System.Collections import ArrayList, Hashtable
-from System.Collections.Generic import List
+from System.Collections.Generic import Dictionary, List
 from Tekla.Structures import Identifier, TeklaStructuresDatabaseTypeEnum, PositionTypeEnum, DetailTypeEnum, AutoDirectionTypeEnum, TeklaStructuresInfo, TeklaStructuresSettings
 from Tekla.Structures.Geometry3d import AABB, Point, Vector, LineSegment
 from Tekla.Structures.Model import (
@@ -125,6 +125,7 @@ __all__ = [
     "SystemArray",
     "BindingFlags",
     "ArrayList",
+    "Dictionary",
     "Hashtable",
     "List",
     "Identifier",

@@ -268,3 +268,14 @@ def parse_label_string(label_str: str) -> list[str]:
     if not label_str:
         return []
     return [label.strip() for label in label_str.strip().split() if label.strip()]
+
+
+def validate_property_type(property_type: type) -> None:
+    """
+    Validates that the given type is one of the supported types: str, int, or float.
+
+    Raises:
+        TypeError: If the type is not supported.
+    """
+    if property_type not in (str, int, float):
+        raise TypeError("Property type must be one of: str, int, float.")

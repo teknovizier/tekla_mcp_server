@@ -14,15 +14,18 @@ from tekla_mcp_server.providers.drawings_provider import (
     delete_view_clouds,
     delete_views,
     detect_collisions_between_marks,
-    get_drawing_properties,
     get_drawings,
+    get_drawings_properties,
     get_drawing_views,
     get_view_annotations,
     get_view_objects,
     move_view,
     open_drawing,
     print_drawings,
+    set_drawings_issue_state,
+    set_drawings_properties,
     set_view_scales,
+    update_drawings,
 )
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 
@@ -88,16 +91,16 @@ class TestGetDrawings:
         assert result.structured_content["status"] == "success"
 
 
-class TestGetDrawingProperties:
-    """Tests for get_drawing_properties function."""
+class TestGetDrawingsProperties:
+    """Tests for get_drawings_properties function."""
 
-    def test_get_drawing_properties_no_args(self):
-        """Call get_drawing_properties without arguments (no selection)."""
-        result = get_drawing_properties()
+    def test_get_drawings_properties_no_args(self):
+        """Call get_drawings_properties without arguments (no selection)."""
+        result = get_drawings_properties()
 
         assert result.structured_content["status"] == "error"
 
-    def test_get_drawing_properties_with_mark(self):
+    def test_get_drawings_properties_with_mark(self):
         """Get a GA drawing and check its properties."""
         drawings_result = get_drawings(drawing_type="G")
         marks = drawings_result.structured_content.get("marks", [])
@@ -105,7 +108,7 @@ class TestGetDrawingProperties:
         if not marks:
             pytest.skip("No GA drawings available in model")
 
-        result = get_drawing_properties(marks=[marks[0]])
+        result = get_drawings_properties(marks=[marks[0]])
 
         assert result.structured_content["selected_count"] == 1
         assert len(result.structured_content["drawings"]) == 1
@@ -114,6 +117,8 @@ class TestGetDrawingProperties:
         # Revision_mark must always be present
         assert "revision_mark" in drawing
         assert drawing["revision_mark"] is None or isinstance(drawing["revision_mark"], str)
+        # User-defined attributes must always be present as a dict
+        assert isinstance(drawing["user_properties"], dict)
 
 
 class TestDetectCollisionsBetweenMarks:
@@ -704,3 +709,189 @@ class TestGetViewAnnotations:
         view_guids = _view_object_guids(key)
         assert target_guids & view_guids, "no mark target_guid matched a view object guid"
         close_drawing(save=False)
+
+
+class TestSetDrawingsProperties:
+    """Tests for set_drawings_properties function."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Close any open drawing before each test."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing()
+        yield
+
+    def test_no_drawings_selected(self):
+        """No marks and nothing selected raises an error."""
+        result = set_drawings_properties(title1="MCP_TEST_TITLE1")
+        assert result.structured_content["status"] == "error"
+
+    def test_invalid_mark(self):
+        """A non-existent mark raises an error."""
+        result = set_drawings_properties(marks=["MCP_NONEXISTENT_DRAWING"], title1="MCP_TEST_TITLE1")
+        assert result.structured_content["status"] == "error"
+
+    def test_no_properties_provided(self, ga_mark):
+        """Calling with only marks and no properties results in no modifications."""
+        result = set_drawings_properties(marks=[ga_mark])
+        sc = result.structured_content
+        assert sc["status"] == "warning"
+        assert sc["modified_count"] == 0
+        assert sc["selected_count"] == 1
+
+    def test_set_titles_and_uda(self, ga_mark):
+        """Setting titles and a UDA succeeds and is reflected by get_drawings_properties afterwards."""
+        before = get_drawings_properties(marks=[ga_mark]).structured_content["drawings"][0]
+        handler = TeklaDrawingHandler()
+        target_drawing = handler.get_drawings_by_marks([ga_mark])[0]
+        try:
+            checker_before = target_drawing.get_user_property("CHECKER", str)
+        except AttributeError:
+            checker_before = ""
+
+        result = set_drawings_properties(
+            marks=[ga_mark],
+            title1="MCP_TEST_TITLE1",
+            title2="MCP_TEST_TITLE2",
+            title3="MCP_TEST_TITLE3",
+            user_properties={"CHECKER": "MCP_TEST"},
+        )
+        sc = result.structured_content
+        assert sc["status"] == "success"
+        assert sc["modified_count"] == 1
+        assert sc["changes_applied"]["title1"] == 1
+        assert sc["changes_applied"]["title2"] == 1
+        assert sc["changes_applied"]["title3"] == 1
+        assert sc["changes_applied"]["udas"] == 1
+        assert sc["property_errors"] == []
+
+        after = get_drawings_properties(marks=[ga_mark]).structured_content["drawings"][0]
+        assert after["title1"] == "MCP_TEST_TITLE1"
+        assert after["title2"] == "MCP_TEST_TITLE2"
+        assert after["title3"] == "MCP_TEST_TITLE3"
+        assert after["user_properties"]["CHECKER"] == "MCP_TEST"
+
+        # Restore original titles and UDA
+        set_drawings_properties(
+            marks=[ga_mark],
+            title1=before["title1"],
+            title2=before["title2"],
+            title3=before["title3"],
+            user_properties={"CHECKER": checker_before},
+        )
+
+    def test_set_name(self, ga_mark):
+        """Setting the drawing name succeeds and is reflected by get_drawings_properties afterwards."""
+        before = get_drawings_properties(marks=[ga_mark]).structured_content["drawings"][0]
+
+        result = set_drawings_properties(marks=[ga_mark], name="MCP_TEST_NAME")
+        sc = result.structured_content
+        assert sc["status"] == "success"
+        assert sc["modified_count"] == 1
+        assert sc["changes_applied"]["name"] == 1
+        assert sc["property_errors"] == []
+
+        after = get_drawings_properties(marks=[ga_mark]).structured_content["drawings"][0]
+        assert after["name"] == "MCP_TEST_NAME"
+
+        # Restore original name
+        set_drawings_properties(marks=[ga_mark], name=before["name"])
+
+    def test_invalid_user_property_type(self, ga_mark):
+        """An unsupported UDA value type is reported as a per-property error."""
+        result = set_drawings_properties(marks=[ga_mark], user_properties={"CHECKER": [1, 2, 3]})
+        sc = result.structured_content
+        assert sc["property_errors"]
+        errors = sc["property_errors"][0]["errors"]
+        assert any(e["property"] == "uda:CHECKER" for e in errors)
+
+
+class TestSetDrawingsIssueState:
+    """Tests for set_drawings_issue_state function."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Close any open drawing before each test."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing()
+        yield
+
+    def test_no_drawings_selected(self):
+        """No marks and nothing selected raises an error."""
+        result = set_drawings_issue_state(action="issue")
+        assert result.structured_content["status"] == "error"
+
+    def test_invalid_mark(self):
+        """A non-existent mark raises an error."""
+        result = set_drawings_issue_state(marks=["MCP_NONEXISTENT_DRAWING"], action="issue")
+        assert result.structured_content["status"] == "error"
+
+    def test_invalid_action(self, ga_mark):
+        """An unsupported action value is rejected."""
+        result = set_drawings_issue_state(marks=[ga_mark], action="invalid")
+        assert result.structured_content["status"] == "error"
+
+    def test_issue_then_unissue(self, ga_mark):
+        """Issuing a drawing sets is_issued, unissuing reverts it."""
+        # Make sure we start from a known (unissued) state
+        set_drawings_issue_state(marks=[ga_mark], action="unissue")
+
+        result = set_drawings_issue_state(marks=[ga_mark], action="issue")
+        sc = result.structured_content
+        assert sc["status"] == "success"
+        assert sc["modified_count"] == 1
+        assert sc["errors"] == []
+
+        after_issue = get_drawings_properties(marks=[ga_mark]).structured_content["drawings"][0]
+        assert after_issue["is_issued"] is True
+        assert after_issue["issuing_date"] is not None
+
+        result = set_drawings_issue_state(marks=[ga_mark], action="unissue")
+        sc = result.structured_content
+        assert sc["status"] == "success"
+        assert sc["modified_count"] == 1
+        assert sc["errors"] == []
+
+        after_unissue = get_drawings_properties(marks=[ga_mark]).structured_content["drawings"][0]
+        assert after_unissue["is_issued"] is False
+
+
+class TestUpdateDrawings:
+    """Tests for update_drawings function."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Close any open drawing before each test."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing()
+        yield
+
+    def test_no_drawings_selected(self):
+        """No marks and nothing selected raises an error."""
+        result = update_drawings()
+        assert result.structured_content["status"] == "error"
+
+    def test_invalid_mark(self):
+        """A non-existent mark raises an error."""
+        result = update_drawings(marks=["MCP_NONEXISTENT_DRAWING"])
+        assert result.structured_content["status"] == "error"
+
+    def test_update_up_to_date_drawing(self, ga_mark):
+        """Updating an already up-to-date, closed drawing is skipped, not an error."""
+        before = get_drawings_properties(marks=[ga_mark]).structured_content["drawings"][0]
+        if before["up_to_date_status"] != "DrawingIsUpToDate":
+            pytest.skip("Drawing is not up to date, cannot test the skip path")
+
+        result = update_drawings(marks=[ga_mark])
+        sc = result.structured_content
+        assert sc["status"] == "success"
+        assert sc["selected_count"] == 1
+        assert sc["modified_count"] == 0
+        assert sc["skipped_count"] == 1
+        assert sc["errors"] == []
+
+        after = get_drawings_properties(marks=[ga_mark]).structured_content["drawings"][0]
+        assert after["up_to_date_status"] == "DrawingIsUpToDate"

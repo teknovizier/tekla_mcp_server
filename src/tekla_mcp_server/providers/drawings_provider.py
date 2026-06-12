@@ -181,7 +181,7 @@ def get_drawings(
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def get_drawing_properties(
+def get_drawings_properties(
     marks: Annotated[list[str] | None, Field(description="List of drawing marks to get properties for")] = None,
 ) -> ToolResult:
     """
@@ -197,7 +197,7 @@ def get_drawing_properties(
     handler = TeklaDrawingHandler()
     target_drawings = handler.get_drawings_by_marks(marks)
 
-    drawings_data = [{"No": i + 1, **d.to_dict()} for i, d in enumerate(target_drawings)]
+    drawings_data = [d.to_dict() for d in target_drawings]
     logger.info("Retrieved properties for %s drawings", len(drawings_data))
 
     return ToolResult(
@@ -208,6 +208,200 @@ def get_drawing_properties(
             "drawings": drawings_data,
         },
     )
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def set_drawings_properties(
+    marks: Annotated[list[str] | None, Field(description="List of drawing marks to update")] = None,
+    name: Annotated[str | None, Field(description="Drawing name")] = None,
+    title1: Annotated[str | None, Field(description="First drawing title")] = None,
+    title2: Annotated[str | None, Field(description="Second drawing title")] = None,
+    title3: Annotated[str | None, Field(description="Third drawing title")] = None,
+    user_properties: Annotated[dict[str, Any] | None, Field(description="Dictionary of user-defined attribute names and values")] = None,
+) -> ToolResult:
+    """
+    Sets properties and user-defined attributes (UDAs) on drawings by their marks.
+
+    If marks are not provided, updates the currently selected drawings in Tekla.
+    Does not require any drawing to be open.
+    """
+    handler = TeklaDrawingHandler()
+    target_drawings = handler.get_drawings_by_marks(marks)
+
+    total_changes: dict[str, int] = {
+        "name": 0,
+        "title1": 0,
+        "title2": 0,
+        "title3": 0,
+        "udas": 0,
+    }
+    modified_count = 0
+    property_errors: list[dict] = []
+
+    for drawing in target_drawings:
+        try:
+            changes = drawing.set_properties(
+                name=name,
+                title1=title1,
+                title2=title2,
+                title3=title3,
+                user_properties=user_properties,
+            )
+            elem_errors: list[dict] = changes.pop("errors", [])
+            for key, value in changes.items():
+                if key in total_changes:
+                    total_changes[key] += value
+            if any(v > 0 for v in changes.values()):
+                modified_count += 1
+                if not drawing.modify():
+                    elem_errors.append({"property": "modify", "reason": "Modify() returned False"})
+                elif not drawing.commit_changes():
+                    elem_errors.append({"property": "commit", "reason": "CommitChanges() returned False"})
+            if elem_errors:
+                logger.warning("Property errors on drawing %s: %s", drawing.mark, elem_errors)
+                property_errors.append({"mark": drawing.mark, "errors": elem_errors})
+        except Exception:
+            logger.exception("Failed to set properties on drawing %s", drawing.mark)
+
+    if modified_count > 0 and property_errors:
+        status = "partial"
+        message = f"Modified {modified_count} drawing(s) with some errors"
+    elif modified_count > 0:
+        status = "success"
+        message = f"Successfully modified {modified_count} drawing(s)"
+    else:
+        status = "warning"
+        message = "No drawings were modified"
+
+    logger.info("Set drawing properties result: %s — %s", status, message)
+    result: dict[str, Any] = {
+        "status": status,
+        "message": message,
+        "selected_count": len(target_drawings),
+        "modified_count": modified_count,
+        "changes_applied": total_changes,
+        "property_errors": property_errors,
+    }
+    return ToolResult(structured_content=result)
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def set_drawings_issue_state(
+    marks: Annotated[list[str] | None, Field(description="List of drawing marks to issue or unissue")] = None,
+    action: Annotated[Literal["issue", "unissue"], Field(description="Whether to issue or unissue the drawings")] = "issue",
+) -> ToolResult:
+    """
+    Issue or unissue drawings by their marks.
+
+    If marks are not provided, acts on the currently selected drawings in Tekla.
+    This is a drawing list level action, it does not require any drawing to be open.
+    """
+    handler = TeklaDrawingHandler()
+    target_drawings = handler.get_drawings_by_marks(marks)
+
+    if action == "issue":
+        action_fn = handler.issue_drawing
+    elif action == "unissue":
+        action_fn = handler.unissue_drawing
+    else:
+        raise ValueError(f"Invalid action '{action}'. Must be 'issue' or 'unissue'.")
+
+    # IssueDrawing/UnissueDrawing act directly on the drawing list, unlike SetUserProperty -
+    # no Modify()/CommitChanges() is needed or applicable here.
+    modified_count = 0
+    errors: list[dict[str, Any]] = []
+
+    for drawing in target_drawings:
+        try:
+            if action_fn(drawing):
+                modified_count += 1
+            else:
+                errors.append({"mark": drawing.mark, "error": f"{action.capitalize()}Drawing returned False"})
+        except Exception as e:
+            logger.exception("Failed to %s drawing %s", action, drawing.mark)
+            errors.append({"mark": drawing.mark, "error": str(e)})
+
+    if modified_count > 0 and errors:
+        status = "partial"
+        message = f"{action.capitalize()}d {modified_count} drawing(s) with some errors"
+    elif modified_count > 0:
+        status = "success"
+        message = f"Successfully {action}d {modified_count} drawing(s)"
+    else:
+        status = "warning"
+        message = f"No drawings were {action}d"
+
+    logger.info("Issue drawings result: %s — %s", status, message)
+    result: dict[str, Any] = {
+        "status": status,
+        "message": message,
+        "selected_count": len(target_drawings),
+        "modified_count": modified_count,
+        "errors": errors,
+    }
+    return ToolResult(structured_content=result)
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def update_drawings(
+    marks: Annotated[list[str] | None, Field(description="List of drawing marks to update")] = None,
+) -> ToolResult:
+    """
+    Update drawings by their marks, refreshing them from the model.
+
+    If marks are not provided, acts on the currently selected drawings in Tekla.
+
+    Numbering must be up to date before calling this tool.
+    """
+    handler = TeklaDrawingHandler()
+    target_drawings = handler.get_drawings_by_marks(marks)
+
+    # UpdateDrawing acts directly on the drawing list, unlike SetUserProperty -
+    # no Modify()/CommitChanges() is needed or applicable here.
+    modified_count = 0
+    skipped_count = 0
+    errors: list[dict[str, Any]] = []
+
+    for drawing in target_drawings:
+        try:
+            if drawing.up_to_date_status == "DrawingIsUpToDate":
+                skipped_count += 1
+            elif handler.update_drawing(drawing):
+                modified_count += 1
+            else:
+                errors.append({"mark": drawing.mark, "error": "UpdateDrawing returned False - the drawing may be active, locked, or numbering may be out of date"})
+        except Exception as e:
+            logger.exception("Failed to update drawing %s", drawing.mark)
+            errors.append({"mark": drawing.mark, "error": str(e)})
+
+    if modified_count > 0 and errors:
+        status = "partial"
+        message = f"Updated {modified_count} drawing(s) with some errors"
+    elif modified_count > 0:
+        status = "success"
+        message = f"Successfully updated {modified_count} drawing(s)"
+        if skipped_count > 0:
+            message += f", {skipped_count} already up to date"
+    elif errors:
+        status = "warning"
+        message = "No drawings were updated"
+    else:
+        status = "success"
+        message = f"All {skipped_count} drawing(s) were already up to date"
+
+    logger.info("Update drawings result: %s — %s", status, message)
+    result: dict[str, Any] = {
+        "status": status,
+        "message": message,
+        "selected_count": len(target_drawings),
+        "modified_count": modified_count,
+        "skipped_count": skipped_count,
+        "errors": errors,
+    }
+    return ToolResult(structured_content=result)
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})

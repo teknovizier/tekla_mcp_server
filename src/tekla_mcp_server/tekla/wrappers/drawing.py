@@ -5,7 +5,8 @@ Module for Tekla Drawing wrappers.
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.tekla.loader import ContainerView, Drawing, DrawingEnumerator, Beam, BindingFlags
+from tekla_mcp_server.tekla.loader import ContainerView, Drawing, DrawingEnumerator, Beam, BindingFlags, Dictionary
+from tekla_mcp_server.utils import validate_property_type
 
 
 class TeklaDrawing:
@@ -180,11 +181,121 @@ class TeklaDrawing:
         """
         return self.drawing.CommitMessage
 
+    def modify(self) -> bool:
+        """
+        Modifies the drawing in the database. Returns True on success.
+        """
+        return self.drawing.Modify()
+
     def commit_changes(self) -> bool:
         """
         Commits drawing changes. Returns True on success.
         """
         return self.drawing.CommitChanges()
+
+    def get_user_property(self, property_name: str, property_type: type) -> str | int | float:
+        """
+        Retrieves a user property of the drawing.
+
+        Raises:
+            TypeError: If the provided property type is not str, int, or float.
+            AttributeError: If the property retrieval fails.
+        """
+        validate_property_type(property_type)
+        is_ok, value = self.drawing.GetUserProperty(property_name, property_type())
+        if not is_ok:
+            raise AttributeError(f"Failed to retrieve property `{property_name}`.")
+        return value
+
+    def set_user_property(self, property_name: str, property_value: str | int | float) -> bool:
+        """
+        Sets a user property of the drawing.
+
+        Raises:
+            TypeError: If the provided property type is not str, int, or float.
+        """
+        validate_property_type(type(property_value))
+        return self.drawing.SetUserProperty(property_name, property_value)
+
+    def get_all_user_properties(self) -> dict[str, str | int | float]:
+        """
+        Gets all user properties of the drawing.
+
+        Unlike `Tekla.Structures.Model.ModelObject`, `Drawing` has no single
+        `GetAllUserProperties` - string, double, and integer UDAs are retrieved separately.
+        """
+        properties: dict[str, str | int | float] = {}
+        try:
+            _, string_props = self.drawing.GetStringUserProperties(Dictionary[str, str]())
+            _, double_props = self.drawing.GetDoubleUserProperties(Dictionary[str, float]())
+            _, int_props = self.drawing.GetIntegerUserProperties(Dictionary[str, int]())
+        except AttributeError:
+            return properties
+        for props in (string_props, double_props, int_props):
+            for key in props.Keys:
+                properties[key] = props[key]
+        return properties
+
+    def set_properties(
+        self,
+        name: str | None = None,
+        title1: str | None = None,
+        title2: str | None = None,
+        title3: str | None = None,
+        user_properties: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Sets properties and user-defined attributes (UDAs) on the drawing.
+        Returns a summary of changes made, including a list of per-property errors.
+        """
+        changes: dict[str, int] = {
+            "name": 0,
+            "title1": 0,
+            "title2": 0,
+            "title3": 0,
+            "udas": 0,
+        }
+        errors: list[dict[str, str]] = []
+
+        if name is not None:
+            try:
+                self.drawing.Name = name
+                changes["name"] = 1
+            except Exception as e:
+                errors.append({"property": "name", "reason": str(e)})
+
+        if title1 is not None:
+            try:
+                self.drawing.Title1 = title1
+                changes["title1"] = 1
+            except Exception as e:
+                errors.append({"property": "title1", "reason": str(e)})
+
+        if title2 is not None:
+            try:
+                self.drawing.Title2 = title2
+                changes["title2"] = 1
+            except Exception as e:
+                errors.append({"property": "title2", "reason": str(e)})
+
+        if title3 is not None:
+            try:
+                self.drawing.Title3 = title3
+                changes["title3"] = 1
+            except Exception as e:
+                errors.append({"property": "title3", "reason": str(e)})
+
+        if user_properties:
+            for key, value in user_properties.items():
+                try:
+                    if self.set_user_property(key, value):
+                        changes["udas"] += 1
+                    else:
+                        errors.append({"property": f"uda:{key}", "reason": "SetUserProperty returned False"})
+                except Exception as e:
+                    errors.append({"property": f"uda:{key}", "reason": str(e)})
+
+        return {**changes, "errors": errors}
 
     def get_sheet(self) -> ContainerView | None:
         """
@@ -229,6 +340,7 @@ class TeklaDrawing:
             "output_date": self._format_date(self.output_date),
             "up_to_date_status": self.up_to_date_status,
             "commit_message": self.commit_message,
+            "user_properties": self.get_all_user_properties(),
         }
 
 

@@ -56,6 +56,18 @@ class TeklaDrawingHandler:
         """Save the active drawing. Returns True on success."""
         return self._handler.SaveActiveDrawing()
 
+    def issue_drawing(self, drawing: TeklaDrawing) -> bool:
+        """Issue the drawing. Returns True on success."""
+        return self._handler.IssueDrawing(drawing.drawing)
+
+    def unissue_drawing(self, drawing: TeklaDrawing) -> bool:
+        """Unissue the drawing. Returns True on success."""
+        return self._handler.UnissueDrawing(drawing.drawing)
+
+    def update_drawing(self, drawing: TeklaDrawing) -> bool:
+        """Update the drawing. Returns True on success."""
+        return self._handler.UpdateDrawing(drawing.drawing)
+
     def get_all_drawings(self) -> list[TeklaDrawing]:
         """Return all drawings in the model."""
         return wrap_drawings(self._handler.GetDrawings())
@@ -93,7 +105,6 @@ class TeklaDrawingHandler:
             sheet = drawing.GetSheet()
             if sheet is None:
                 raise RuntimeError("Failed to get sheet for active drawing.")
-
 
         # Sheet view first so callers always get a consistent index[0] for it
         result: list[TeklaDrawingView] = [TeklaDrawingView(sheet)]

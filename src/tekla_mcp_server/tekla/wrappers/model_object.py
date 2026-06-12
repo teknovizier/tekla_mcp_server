@@ -11,6 +11,7 @@ from typing import Any, overload
 from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, ReinforcementSnapshot, BeamType, OffsetInput, PointInput, PositionInput
+from tekla_mcp_server.utils import validate_property_type
 
 from tekla_mcp_server.tekla.loader import (
     Assembly,
@@ -443,7 +444,7 @@ class TeklaModelObject:
             TypeError: If the provided property type is not str, int, or float.
             AttributeError: If the property retrieval fails for the given element.
         """
-        self._validate_property_type(property_type)
+        validate_property_type(property_type)
         is_ok, value = self.model_object.GetUserProperty(property_name, property_type())
         if not is_ok:
             raise AttributeError(f"Failed to retrieve property `{property_name}`.")
@@ -457,7 +458,7 @@ class TeklaModelObject:
         Raises:
             TypeError: If the provided property type is not str, int, or float.
         """
-        self._validate_property_type(type(property_value))
+        validate_property_type(type(property_value))
         return self.model_object.SetUserProperty(property_name, property_value)
 
     def get_all_user_properties(self) -> dict[str, str | int | float]:
@@ -524,17 +525,6 @@ class TeklaModelObject:
                     }
                 )
         return result
-
-    @staticmethod
-    def _validate_property_type(property_type: type) -> None:
-        """
-        Validates that the given type is one of the supported types: str, int, or float.
-
-        Raises:
-            TypeError: If the type is not supported.
-        """
-        if property_type not in (str, int, float):
-            raise TypeError("Property type must be one of: str, int, float.")
 
     def _set_property(self, prop_name: str, value: str) -> None:
         """
