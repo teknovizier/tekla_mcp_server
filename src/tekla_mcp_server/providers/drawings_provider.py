@@ -941,13 +941,14 @@ def move_view(
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def align_section_views(
+    view_keys: Annotated[list[str] | None, Field(description="Section view keys to align (from `get_drawing_views`). Aligns all section views when omitted")] = None,
     overlap_tolerance: Annotated[
         float,
         Field(description="Overlap in mm, on the non-aligned axis, above which a section is treated as intentionally placed outside its projection lane and left as-is"),
     ] = 5.0,
 ) -> ToolResult:
     """
-    Align every section view in projection with the view it was cut from.
+    Align section views in projection with the view they were cut from.
 
     A horizontal cut aligns X, a vertical cut aligns Y.  The parent is the
     view holding a section mark whose name matches the section view's name.
@@ -957,20 +958,37 @@ def align_section_views(
     sets how much non-aligned-axis overlap is tolerated before a section counts as
     out-of-lane.
     """
+    if view_keys is not None and not view_keys:
+        raise ValueError("view_keys must not be an empty list. Omit it to align all section views.")
+
     handler = TeklaDrawingHandler()
     drawing = handler.require_active_drawing()
 
     tekla_views = [v for v in handler.get_drawing_views() if not v.is_sheet]
     by_key = {v.view_key: v for v in tekla_views}
+
+    # Parent lookup must see every view: a section's parent may be outside view_keys.
     parents = detect_section_parents(tekla_views)
 
     # Views already within this many mm of their projection are left untouched
     snap_tolerance = get_tolerance("snap_tolerance", group="drawings", default=0.1)
 
+    target_set: set[str] | None = None
     moves: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
+    if view_keys is not None:
+        missing = [k for k in view_keys if k not in by_key]
+        if missing:
+            raise ValueError(f"View(s) not found: {missing}. Use `get_drawing_views` to list valid keys.")
+        target_set = set(view_keys)
+        for key in view_keys:
+            if by_key[key].view_type != "SectionView":
+                skipped.append({"view_key": key, "view_name": by_key[key].name, "reason": "not a section view, cannot align"})
+
     for v in tekla_views:
         if v.view_type != "SectionView":
+            continue
+        if target_set is not None and v.view_key not in target_set:
             continue
         entry = parents.get(v.view_key)
         if entry is None:

@@ -521,6 +521,31 @@ class TestAlignSectionViews:
         assert isinstance(sc["skipped"], list)
         close_drawing(save=False)
 
+    def test_empty_view_keys_errors(self, cu_mark):
+        """An empty view_keys list is rejected (omit it to align all)."""
+        open_drawing(mark=cu_mark)
+        result = align_section_views(view_keys=[])
+        assert result.structured_content["status"] == "error"
+        close_drawing(save=False)
+
+    def test_unknown_view_key_errors(self, cu_mark):
+        """A view_keys entry that does not exist is rejected."""
+        open_drawing(mark=cu_mark)
+        result = align_section_views(view_keys=["NoSuchView_999999"])
+        assert result.structured_content["status"] == "error"
+        close_drawing(save=False)
+
+    def test_non_section_view_key_is_skipped(self, cu_mark):
+        """A non-section view passed in view_keys is reported as skipped, not aligned."""
+        open_drawing(mark=cu_mark)
+        view_key = _first_non_sheet_view_key()
+        assert view_key is not None
+        result = align_section_views(view_keys=[view_key])
+        sc = result.structured_content
+        assert sc["aligned_count"] == 0
+        assert any(s["view_key"] == view_key and "not a section view" in s["reason"] for s in sc["skipped"])
+        close_drawing(save=False)
+
 
 def _first_non_sheet_view_key():
     """Return view_key of the first non-sheet view in the open drawing, or None."""
