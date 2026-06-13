@@ -312,16 +312,15 @@ class TeklaModel:
         Returns:
             True if selection was successful
         """
+        # Lazy import to avoid a circular dependency
+        from tekla_mcp_server.tekla.utils import to_array_list
+
         selector = ModelObjectSelectorUI()
 
         if isinstance(model_objects, ArrayList):
             return selector.Select(model_objects)
 
-        array_list = ArrayList()
-        for model_object in model_objects:
-            array_list.Add(model_object)
-
-        return selector.Select(array_list)
+        return selector.Select(to_array_list(model_objects))
 
     @staticmethod
     def clear_selection() -> bool:

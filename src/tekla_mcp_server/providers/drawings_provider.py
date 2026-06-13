@@ -452,11 +452,16 @@ def arrange_colliding_drawing_marks(
     """
     Detect colliding part marks in the active drawing's views and automatically rearrange them.
 
-    For each view, colliding Mark and MarkSet objects are rearranged. WeldMark objects
-    are not rearranged. Any pairs that still collide, together with all weld marks,
-    are highlighted using magenta revision clouds.
+    For each view, colliding Mark and MarkSet objects are rearranged, retrying up to
+    a few times until no collisions remain or no further progress is made. WeldMark
+    objects are not rearranged. Any pairs that still collide, including any new
+    collisions caused by the rearrangement, are highlighted using magenta revision clouds.
 
     When view_keys is omitted all views in the active drawing are checked.
+
+    If the arrangement macro was just installed or updated, Tekla has not yet
+    registered it and arrangement is skipped for this call. The result then includes
+    a `macro_not_registered` error - restart Tekla Structures and run this tool again.
     """
     if view_keys is not None and not view_keys:
         raise ValueError("view_keys must not be an empty list. Omit it to process all views.")
@@ -477,9 +482,16 @@ def arrange_colliding_drawing_marks(
     total_collision_pairs = 0
     total_adjusted = 0
     total_unresolved = 0
+    total_new_collisions = 0
     cloud_failures = 0
     macro_pending = False
     errors: list[dict[str, Any]] = []
+
+    # Installed once up front: the macro content is the same for every view, and
+    # a macro that was just installed or updated stays "pending" (not yet
+    # registered by Tekla) for the rest of this call regardless of which view
+    # triggers the registration check first.
+    macro_just_installed = ensure_macro_installed("TeklaMCPArrangeMarks.cs", category="drawings")
 
     logger.info("Starting collision arrangement for %d view(s) in drawing '%s'", len(views), drawing.mark)
 
@@ -502,54 +514,64 @@ def arrange_colliding_drawing_marks(
         # Only Mark/MarkSet objects can be rearranged by the macro. One run is not always
         # enough to separate every pair, so retry up to MAX_ARRANGE_ATTEMPTS times,
         # re-checking collisions after each run
+        current_mark_data = mark_data
         new_pairs_set = set(pairs)
         for attempt in range(1, MAX_ARRANGE_ATTEMPTS + 1):
             colliding_indices = {i for pair in new_pairs_set for i in pair}
-            alignable = [mark_data[i].mark for i in colliding_indices if isinstance(mark_data[i].mark, (Mark, MarkSet))]
+            alignable = [current_mark_data[i].mark for i in colliding_indices if isinstance(current_mark_data[i].mark, (Mark, MarkSet))]
             if not alignable:
+                logger.info("All colliding marks in view '%s' are WeldMarks, skipping macro arrangement", view_name)
                 break
 
-            macro_just_installed = ensure_macro_installed("TeklaMCPArrangeMarks.cs", category="drawings")
             if not handler.select_drawing_objects(alignable):
                 logger.warning("Failed to select %d mark(s) for arrangement in view '%s'", len(alignable), view_name)
+                errors.append({"error": "select_failed", "view_key": tekla_view.view_key, "message": f"Failed to select marks for arrangement in view '{view_name}'"})
                 break
 
             # NOTE: must be a normal (non-raw) string with an escaped backslash as run_macro
             # resolves this path relative to the modeling macro directory
-            macro_result = run_macro(macro_name="..\\drawings\\TeklaMCPArrangeMarks.cs")
-            handler.unselect_drawing_objects(alignable)
+            try:
+                macro_result = run_macro(macro_name="..\\drawings\\TeklaMCPArrangeMarks.cs")
+            finally:
+                handler.unselect_drawing_objects(alignable)
             if macro_result.structured_content.get("status") != "success":
                 if macro_just_installed:
-                    # Tekla only registers macros at startup
+                    # Tekla only registers macro content at startup
                     macro_pending = True
-                    logger.warning("TeklaMCPArrangeMarks macro was just installed and is not yet registered. Restart Tekla Structures to enable mark arrangement")
+                    logger.warning("TeklaMCPArrangeMarks macro was just installed or updated and is not yet registered. Restart Tekla Structures to enable mark arrangement")
                 else:
                     logger.warning("TeklaMCPArrangeMarks macro failed for view '%s' (attempt %d)", view_name, attempt)
                 break
 
             # Re-check collisions after arrangement, matching pairs by index
             # since the view enumeration order is stable within a session
-            _, new_pairs = _detect_view_collisions(tekla_view, view_name)
+            current_mark_data, new_pairs = _detect_view_collisions(tekla_view, view_name)
             new_pairs_set = set(new_pairs)
             if not new_pairs_set:
                 break
 
         raw_view = tekla_view.view
         view_cloud_failures = 0
-        view_adjusted = 0
-        view_unresolved = 0
-        for i, j in pairs:
-            if (i, j) in new_pairs_set:
-                view_unresolved += 1
-                logger.debug("Drawing cloud for unresolved %s <-> %s", type(mark_data[i].mark).__name__, type(mark_data[j].mark).__name__)
-                if not draw_collision_cloud(raw_view, mark_data[i], mark_data[j]):
-                    view_cloud_failures += 1
-                    cloud_failures += 1
-            else:
-                view_adjusted += 1
+        original_pairs_set = set(pairs)
+        # Index comparison is valid only if both enumerations returned the same
+        # number of mark_data entries in the same order. A transient failure of
+        # `get_mark_collision_data` or a change to the view can cause
+        # the second enumeration to produce a different-length list, making the
+        # same integer index refer to a different mark. In that case these counts
+        # are unreliable. The clouds below are still correct since they use
+        # indices and data from the same post-macro call
+        view_adjusted = len(original_pairs_set - new_pairs_set)
+        view_unresolved = len(original_pairs_set & new_pairs_set)
+        view_new_collisions = len(new_pairs_set - original_pairs_set)
+        for i, j in new_pairs_set:
+            logger.debug("Drawing cloud for unresolved %s <-> %s", type(current_mark_data[i].mark).__name__, type(current_mark_data[j].mark).__name__)
+            if not draw_collision_cloud(raw_view, current_mark_data[i], current_mark_data[j]):
+                view_cloud_failures += 1
+                cloud_failures += 1
 
         total_adjusted += view_adjusted
         total_unresolved += view_unresolved
+        total_new_collisions += view_new_collisions
 
         view_results.append(
             {
@@ -559,6 +581,7 @@ def arrange_colliding_drawing_marks(
                 "collision_pairs": len(pairs),
                 "adjusted_count": view_adjusted,
                 "unresolved_count": view_unresolved,
+                "new_collisions_count": view_new_collisions,
                 "cloud_failures": view_cloud_failures,
             }
         )
@@ -568,11 +591,15 @@ def arrange_colliding_drawing_marks(
 
     if macro_pending:
         errors.append(
-            {"error": "macro_not_registered", "message": "TeklaMCPArrangeMarks macro was just installed and is not yet registered by Tekla. Restart Tekla Structures and run this tool again."}
+            {
+                "error": "macro_not_registered",
+                "message": "TeklaMCPArrangeMarks macro was just installed or updated and is not yet registered by Tekla. Restart Tekla Structures and run this tool again.",
+            }
         )
 
-    if total_unresolved > 0 and not drawing.commit_changes():
-        raise RuntimeError(f"CommitChanges() failed after drawing {total_unresolved} collision cloud(s). ")
+    total_clouds_drawn = total_unresolved + total_new_collisions
+    if total_clouds_drawn > 0 and not drawing.commit_changes():
+        raise RuntimeError(f"CommitChanges() failed after drawing {total_clouds_drawn} collision cloud(s). ")
 
     logger.info(
         "Collision arrangement complete: %d total collision pair(s), %d adjusted, %d unresolved in drawing '%s'",
@@ -589,6 +616,7 @@ def arrange_colliding_drawing_marks(
         "total_collision_pairs": total_collision_pairs,
         "adjusted_count": total_adjusted,
         "unresolved_count": total_unresolved,
+        "new_collisions_count": total_new_collisions,
         "views": view_results,
     }
     if errors:
@@ -1171,6 +1199,8 @@ def set_views_attributes(
 
     results: list[dict[str, Any]] = []
     succeeded = 0
+    partial = 0
+    applied = 0
 
     for item in views_attributes:
         tekla_view = index.get(item.view_key)
@@ -1182,20 +1212,29 @@ def set_views_attributes(
             continue
         updated = item.model_dump(exclude={"view_key"}, exclude_none=True)
         try:
-            if tekla_view.set_attributes(**updated):
+            if not tekla_view.set_attributes(**updated):
+                results.append({"view_key": item.view_key, "status": "failed", "message": "set_attributes() returned False"})
+                continue
+
+            applied += 1
+            actual = tekla_view.display_settings
+            mismatches = {k: {"requested": v, "actual": actual[k]} for k, v in updated.items() if k in actual and actual[k] != v}
+            if mismatches:
+                partial += 1
+                logger.warning("View '%s': set_attributes applied but Tekla ignored: %s", item.view_key, mismatches)
+                results.append({"view_key": item.view_key, "status": "partial", "updated": updated, "warning": f"Tekla did not apply attributes: {mismatches}"})
+            else:
                 succeeded += 1
                 results.append({"view_key": item.view_key, "status": "success", "updated": updated})
-            else:
-                results.append({"view_key": item.view_key, "status": "failed", "message": "set_attributes() returned False"})
         except Exception as e:
             logger.error("Failed to set attributes on view %s: %s", item.view_key, e)
             results.append({"view_key": item.view_key, "status": "error", "message": str(e)})
 
     total = len(views_attributes)
-    status = "success" if succeeded == total else "partial" if succeeded else "error"
-    logger.info("set_views_attributes: %d/%d updated", succeeded, total)
+    status = "success" if succeeded == total else "partial" if succeeded or partial else "error"
+    logger.info("set_views_attributes: %d/%d updated, %d partial", succeeded, total, partial)
 
-    if succeeded > 0 and not drawing.commit_changes():
+    if applied > 0 and not drawing.commit_changes():
         raise RuntimeError("CommitChanges() failed after setting view attributes.")
 
     return ToolResult(

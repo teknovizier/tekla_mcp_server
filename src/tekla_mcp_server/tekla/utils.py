@@ -4,11 +4,12 @@ Module for utility functions used for geometry manipulations.
 
 from __future__ import annotations
 
+import filecmp
 import re
 import shutil
 from functools import wraps, lru_cache
 from typing import Any, Literal
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 
@@ -17,6 +18,7 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import BaseComponent
 
 from tekla_mcp_server.tekla.loader import (
+    ArrayList,
     Point,
     Vector,
     ModelObject,
@@ -312,6 +314,14 @@ def get_active_views() -> list[View]:
     return views
 
 
+def to_array_list(objects: Iterable[Any]) -> ArrayList:
+    """Convert a Python iterable to a .NET ArrayList."""
+    array_list = ArrayList()
+    for obj in objects:
+        array_list.Add(obj)
+    return array_list
+
+
 def collect_children(selected_objects: ModelObjectEnumerator) -> List[ModelObject]:
     """
     Collect child objects from selected parts/assemblies into a Tekla List.
@@ -532,9 +542,10 @@ def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawi
         category: Macro subfolder, either 'modeling' or 'drawings'.
 
     Returns:
-        True if the macro was newly installed (no previous copy existed at the
-        destination). A macro that was just installed cannot be run until Tekla
-        is restarted.
+        True if the macro was newly installed or its content changed (no previous
+        copy existed at the destination, or the existing copy is outdated). Tekla
+        only registers macro content at startup, so such a macro cannot be run
+        until Tekla is restarted.
 
     Raises:
         FileNotFoundError: If the macro source or XS_MACRO_DIRECTORY is unavailable.
@@ -549,7 +560,7 @@ def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawi
         raise FileNotFoundError("XS_MACRO_DIRECTORY is not configured or has no valid directories.")
 
     destination = Path(directories[0]) / category / macro_name
-    macro_just_installed = not destination.exists()
+    macro_just_installed = not destination.exists() or not filecmp.cmp(source, destination, shallow=False)
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)

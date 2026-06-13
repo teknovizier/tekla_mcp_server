@@ -22,7 +22,13 @@ def mock_view() -> MagicMock:
     view = MagicMock()
     view.Origin.X = 100.0
     view.Origin.Y = 200.0
-    view.Attributes = MagicMock(Scale=0.5)
+    view.Attributes = MagicMock(
+        Scale=0.5,
+        ShowPartOpeningsOrRecessSymbol=True,
+        ReflectedView=False,
+        UndeformedView=False,
+        UnfoldedView=False,
+    )
     view.IsSheet = False
     view.Width = 500.0
     view.Height = 300.0
@@ -222,3 +228,18 @@ class TestToDict:
         assert d["origin_y"] == round(mock_view.Origin.Y, 1)
         assert d["width"] == round(mock_view.Width, 1)
         assert d["height"] == round(mock_view.Height, 1)
+        assert d["display_settings"] == {
+            "scale": mock_view.Attributes.Scale,
+            "show_part_openings_or_recess_symbol": mock_view.Attributes.ShowPartOpeningsOrRecessSymbol,
+            "reflected_view": mock_view.Attributes.ReflectedView,
+            "undeformed_view": mock_view.Attributes.UndeformedView,
+            "unfolded_view": mock_view.Attributes.UnfoldedView,
+        }
+
+    def test_sheet_view_omits_display_settings(self, mock_view: MagicMock):
+        mock_view.IsSheet = True
+        wrapper = TeklaDrawingView(mock_view)
+        d = wrapper.to_dict()
+        assert "display_settings" not in d
+        assert "scale" not in d
+        assert d["is_sheet"] is True
