@@ -117,6 +117,7 @@ from Tekla.Structures.Drawing import (
     View as DrawingView,
     ContainerView,
 )
+from Tekla.Structures.Drawing.UI import DrawingObjectSelector
 
 
 # Export everything
@@ -248,4 +249,5 @@ __all__ = [
     "ClashCheckHandler",
     "ClashCheckData",
     "Events",
+    "DrawingObjectSelector",
 ]

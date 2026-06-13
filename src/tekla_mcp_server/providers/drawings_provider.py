@@ -17,6 +17,8 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, ViewScale
 from tekla_mcp_server.utils import mcp_handler, sanitize_filename, resolve_model_relative_dir
 from tekla_mcp_server.tekla.filter_builder import to_filter_option
+from tekla_mcp_server.tekla.utils import ensure_macro_installed
+from tekla_mcp_server.providers.operations_provider import run_macro
 from tekla_mcp_server.tekla.drawing_utils import (
     matches_string_filter,
     map_sheet_size_to_paper_size,
@@ -52,6 +54,10 @@ from tekla_mcp_server.tekla.loader import (
 
 
 drawings_provider = LocalProvider()
+
+# Max number of times to run the mark-arrangement macro per view before
+# accepting any remaining collisions as unresolved
+MAX_ARRANGE_ATTEMPTS = 3
 
 
 def _describe_model_object(guid: str, model_obj: ModelObject) -> dict[str, Any]:
@@ -404,14 +410,52 @@ def update_drawings(
     return ToolResult(structured_content=result)
 
 
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+def _detect_view_collisions(tekla_view: Any, view_name: str) -> tuple[list, list[tuple[int, int]]]:
+    """
+    Collect mark collision data and colliding pairs for a single view.
+
+    Args:
+        tekla_view: The view to inspect.
+        view_name: Display name used for log messages.
+
+    Returns:
+        Tuple of (mark_data, pairs), both empty when the view has no marks
+        or no collisions.
+    """
+    all_mark_objs = tekla_view.get_all_objects([Mark, MarkSet, WeldMark])
+    if all_mark_objs is None:
+        logger.warning("Failed to enumerate mark objects in view '%s'", view_name)
+        return [], []
+
+    mark_data = []
+    for obj in all_mark_objs:
+        try:
+            cd = get_mark_collision_data(obj)
+            if cd is not None:
+                mark_data.append(cd)
+        except Exception as e:
+            logger.warning("get_mark_collision_data failed for object in view '%s': %s", view_name, e)
+
+    logger.debug("View '%s': %d marks collected", view_name, len(mark_data))
+
+    if not mark_data:
+        return mark_data, []
+
+    return mark_data, get_collision_pairs(mark_data)
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
-def detect_collisions_between_marks(
+def arrange_colliding_drawing_marks(
     view_keys: Annotated[list[str] | None, Field(description="View keys to check (from `get_drawing_views`). Processes all views when omitted")] = None,
 ) -> ToolResult:
     """
-    Detect collisions between part marks in the active drawing's views and highlight them with revision clouds.
+    Detect colliding part marks in the active drawing's views and automatically rearrange them.
 
+    For each view, colliding Mark and MarkSet objects are rearranged. WeldMark objects
+    are not rearranged. Any pairs that still collide, together with all weld marks,
+    are highlighted using magenta revision clouds.
+    
     When view_keys is omitted all views in the active drawing are checked.
     """
     if view_keys is not None and not view_keys:
@@ -431,10 +475,12 @@ def detect_collisions_between_marks(
 
     view_results: list[dict] = []
     total_collision_pairs = 0
+    total_adjusted = 0
+    total_unresolved = 0
     cloud_failures = 0
     errors: list[dict[str, Any]] = []
 
-    logger.info("Starting collision detection for %d view(s) in drawing '%s'", len(views), drawing.mark)
+    logger.info("Starting collision arrangement for %d view(s) in drawing '%s'", len(views), drawing.mark)
 
     for tekla_view in views:
         # Sheet view aggregates marks from all child views - skip to avoid duplicate detection
@@ -443,26 +489,7 @@ def detect_collisions_between_marks(
 
         view_name = tekla_view.name or tekla_view.view_key
 
-        all_mark_objs = tekla_view.get_all_objects([Mark, MarkSet, WeldMark])
-        if all_mark_objs is None:
-            logger.warning("Failed to enumerate mark objects in view '%s'", view_name)
-            continue
-
-        mark_data = []
-        for obj in all_mark_objs:
-            try:
-                cd = get_mark_collision_data(obj)
-                if cd is not None:
-                    mark_data.append(cd)
-            except Exception as e:
-                logger.warning("get_mark_collision_data failed for object in view '%s': %s", view_name, e)
-
-        logger.debug("View '%s': %d marks collected", view_name, len(mark_data))
-
-        if not mark_data:
-            continue
-
-        pairs = get_collision_pairs(mark_data)
+        mark_data, pairs = _detect_view_collisions(tekla_view, view_name)
         if not pairs:
             logger.debug("View '%s': no collisions", view_name)
             continue
@@ -470,13 +497,50 @@ def detect_collisions_between_marks(
         logger.info("View '%s': %d collision pair(s) found", view_name, len(pairs))
         total_collision_pairs += len(pairs)
 
+        # Tekla API has no direct access to mark arrangement - use a custom macro instead.
+        # Only Mark/MarkSet objects can be rearranged by the macro. One run is not always
+        # enough to separate every pair, so retry up to MAX_ARRANGE_ATTEMPTS times,
+        # re-checking collisions after each run
+        new_pairs_set = set(pairs)
+        for attempt in range(1, MAX_ARRANGE_ATTEMPTS + 1):
+            colliding_indices = {i for pair in new_pairs_set for i in pair}
+            alignable = [mark_data[i].mark for i in colliding_indices if isinstance(mark_data[i].mark, (Mark, MarkSet))]
+            if not alignable:
+                break
+
+            ensure_macro_installed("TeklaMCPArrangeMarks.cs", category="drawings")
+            if not handler.select_drawing_objects(alignable):
+                logger.warning("Failed to select %d mark(s) for arrangement in view '%s'", len(alignable), view_name)
+                break
+
+            macro_result = run_macro(macro_name="..\drawings\TeklaMCPArrangeMarks.cs")
+            if macro_result.structured_content.get("status") != "success":
+                logger.warning("TeklaMCPArrangeMarks macro failed for view '%s' (attempt %d)", view_name, attempt)
+            handler.unselect_drawing_objects(alignable)
+
+            # Re-check collisions after arrangement, matching pairs by index
+            # since the view enumeration order is stable within a session
+            _, new_pairs = _detect_view_collisions(tekla_view, view_name)
+            new_pairs_set = set(new_pairs)
+            if not new_pairs_set:
+                break
+
         raw_view = tekla_view.view
         view_cloud_failures = 0
+        view_adjusted = 0
+        view_unresolved = 0
         for i, j in pairs:
-            logger.debug("Drawing cloud for %s <-> %s", type(mark_data[i].mark).__name__, type(mark_data[j].mark).__name__)
-            if not draw_collision_cloud(raw_view, mark_data[i], mark_data[j]):
-                view_cloud_failures += 1
-                cloud_failures += 1
+            if (i, j) in new_pairs_set:
+                view_unresolved += 1
+                logger.debug("Drawing cloud for unresolved %s <-> %s", type(mark_data[i].mark).__name__, type(mark_data[j].mark).__name__)
+                if not draw_collision_cloud(raw_view, mark_data[i], mark_data[j]):
+                    view_cloud_failures += 1
+                    cloud_failures += 1
+            else:
+                view_adjusted += 1
+
+        total_adjusted += view_adjusted
+        total_unresolved += view_unresolved
 
         view_results.append(
             {
@@ -484,6 +548,8 @@ def detect_collisions_between_marks(
                 "view": view_name,
                 "total_marks": len(mark_data),
                 "collision_pairs": len(pairs),
+                "adjusted_count": view_adjusted,
+                "unresolved_count": view_unresolved,
                 "cloud_failures": view_cloud_failures,
             }
         )
@@ -491,16 +557,24 @@ def detect_collisions_between_marks(
     if cloud_failures:
         errors.append({"error": "cloud_insertion_failed", "count": cloud_failures})
 
-    if total_collision_pairs > 0 and not drawing.commit_changes():
-        raise RuntimeError(f"CommitChanges() failed after drawing {total_collision_pairs} collision cloud(s). ")
+    if total_unresolved > 0 and not drawing.commit_changes():
+        raise RuntimeError(f"CommitChanges() failed after drawing {total_unresolved} collision cloud(s). ")
 
-    logger.info("Collision detection complete: %d total collision pair(s) in drawing '%s'", total_collision_pairs, drawing.mark)
+    logger.info(
+        "Collision arrangement complete: %d total collision pair(s), %d adjusted, %d unresolved in drawing '%s'",
+        total_collision_pairs,
+        total_adjusted,
+        total_unresolved,
+        drawing.mark,
+    )
     result: dict[str, Any] = {
         "status": "partial" if errors else "success",
         "drawing_mark": drawing.mark,
         "views_checked": len(views),
         "views_with_collisions": len(view_results),
         "total_collision_pairs": total_collision_pairs,
+        "adjusted_count": total_adjusted,
+        "unresolved_count": total_unresolved,
         "views": view_results,
     }
     if errors:

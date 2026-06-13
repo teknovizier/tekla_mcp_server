@@ -4,7 +4,7 @@ Module for Tekla DrawingHandler wrapper.
 
 from typing import Any
 
-from tekla_mcp_server.tekla.loader import ContainerView, DrawingHandler, DrawingView
+from tekla_mcp_server.tekla.loader import ArrayList, ContainerView, DrawingHandler, DrawingObject, DrawingView
 
 from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing, wrap_drawings
 from tekla_mcp_server.tekla.wrappers.view import TeklaDrawingView
@@ -129,3 +129,17 @@ class TeklaDrawingHandler:
     def print_drawing(self, drawing: TeklaDrawing, print_attributes: Any, output_file: str) -> bool:
         """Print a drawing. Returns True on success."""
         return self._handler.PrintDrawing(drawing.drawing, print_attributes, output_file)
+
+    def select_drawing_objects(self, objects: list[DrawingObject]) -> bool:
+        """Select the given drawing objects in the active drawing. Returns True on success."""
+        array_list = ArrayList()
+        for obj in objects:
+            array_list.Add(obj)
+        return self._handler.GetDrawingObjectSelector().SelectObjects(array_list, False)
+
+    def unselect_drawing_objects(self, objects: list[DrawingObject]) -> bool:
+        """Unselect the given drawing objects in the active drawing. Returns True on success."""
+        array_list = ArrayList()
+        for obj in objects:
+            array_list.Add(obj)
+        return self._handler.GetDrawingObjectSelector().UnselectObjects(array_list)

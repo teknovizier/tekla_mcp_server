@@ -17,7 +17,7 @@ load_dotenv()
 
 
 @lru_cache
-def _get_config_dir() -> Path:
+def get_config_dir() -> Path:
     """
     Get the configuration directory path.
 
@@ -52,7 +52,7 @@ def _load_json(filename: str) -> dict[str, Any]:
         FileNotFoundError: If the configuration file does not exist
         json.JSONDecodeError: If the file contains invalid JSON
     """
-    config_dir = _get_config_dir()
+    config_dir = get_config_dir()
     file_path = config_dir / filename
     if not file_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {file_path}")
@@ -249,7 +249,7 @@ class Config:
         """Full path to template attributes JSON file."""
         name = _load_settings().get("template_attributes_json_name")
         if name:
-            return str(_get_config_dir() / name)
+            return str(get_config_dir() / name)
         return None
 
     @property
@@ -316,9 +316,9 @@ class Config:
         folder = _load_settings().get("context_folder", "context")
         path = Path(folder)
         if not path.is_absolute():
-            path = _get_config_dir() / folder
+            path = get_config_dir() / folder
         if not path.is_dir():
-            return _get_config_dir() / "context"
+            return get_config_dir() / "context"
         return path
 
     @lru_cache

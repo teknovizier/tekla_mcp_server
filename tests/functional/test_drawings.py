@@ -10,10 +10,10 @@ import pytest
 from tekla_mcp_server.models import ViewScale
 from tekla_mcp_server.providers.drawings_provider import (
     align_section_views,
+    arrange_colliding_drawing_marks,
     close_drawing,
     delete_view_clouds,
     delete_views,
-    detect_collisions_between_marks,
     get_drawings,
     get_drawings_properties,
     get_drawing_views,
@@ -121,12 +121,12 @@ class TestGetDrawingsProperties:
         assert isinstance(drawing["user_properties"], dict)
 
 
-class TestDetectCollisionsBetweenMarks:
-    """Tests for detect_collisions_between_marks function."""
+class TestArrangeCollidingDrawingMarks:
+    """Tests for arrange_colliding_drawing_marks function."""
 
-    def test_detect_collisions_no_open_drawing(self):
+    def test_arrange_collisions_no_open_drawing(self):
         """Fails when no drawing is open."""
-        result = detect_collisions_between_marks()
+        result = arrange_colliding_drawing_marks()
 
         assert result.structured_content["status"] == "error"
         assert "drawing" in result.structured_content["message"].lower()
@@ -478,10 +478,10 @@ class TestDeleteViewClouds:
         close_drawing(save=False)
 
     def test_delete_clouds_after_collision_detection(self, cu_mark):
-        """Clouds inserted by detect_collisions_between_marks are removed."""
+        """Clouds inserted by arrange_colliding_drawing_marks are removed."""
         open_drawing(mark=cu_mark)
-        detect_result = detect_collisions_between_marks()
-        clouds_inserted = detect_result.structured_content.get("total_collision_pairs", 0)
+        arrange_result = arrange_colliding_drawing_marks()
+        clouds_inserted = arrange_result.structured_content.get("unresolved_count", 0)
         if clouds_inserted == 0:
             pytest.skip("No collision clouds were inserted - cannot verify deletion")
 

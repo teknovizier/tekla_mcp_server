@@ -5,13 +5,14 @@ Module for utility functions used for geometry manipulations.
 from __future__ import annotations
 
 import re
+import shutil
 from functools import wraps, lru_cache
-from typing import Any
+from typing import Any, Literal
 from collections.abc import Callable
 from pathlib import Path
 
 
-from tekla_mcp_server.config import get_tolerance, get_advanced_option_directories
+from tekla_mcp_server.config import get_tolerance, get_advanced_option_directories, get_config_dir
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import BaseComponent
 
@@ -516,6 +517,39 @@ def get_macros() -> list[str]:
                         seen.add(key)
 
     return sorted(macro_names)
+
+
+def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawings"]) -> None:
+    """
+    Ensure a macro is present in XS_MACRO_DIRECTORY, installing it if needed.
+
+    The macro source is read from `config/macros/{category}/{macro_name}` and copied to
+    the first directory in XS_MACRO_DIRECTORY, overwriting any existing copy so that
+    server updates to the macro reach users automatically.
+
+    Args:
+        macro_name: Macro file name, e.g. 'TeklaMCPArrangeMarks.cs'.
+        category: Macro subfolder, either 'modeling' or 'drawings'.
+
+    Raises:
+        FileNotFoundError: If the macro source or XS_MACRO_DIRECTORY is unavailable.
+        OSError: If the macro file cannot be copied.
+    """
+    source = get_config_dir() / "macros" / category / macro_name
+    if not source.exists():
+        raise FileNotFoundError(f"Bundled macro not found: {source}")
+
+    directories = get_advanced_option_directories("XS_MACRO_DIRECTORY")
+    if not directories:
+        raise FileNotFoundError("XS_MACRO_DIRECTORY is not configured or has no valid directories.")
+
+    destination = Path(directories[0]) / category / macro_name
+    try:
+        shutil.copy2(source, destination)
+        logger.info("Installed macro '%s' to '%s'", macro_name, destination)
+    except Exception as e:
+        logger.error("Failed to copy macro '%s' to '%s': %s", macro_name, destination, e)
+        raise
 
 
 @lru_cache
