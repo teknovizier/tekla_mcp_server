@@ -5,7 +5,7 @@ Module for Tekla Drawing wrappers.
 from typing import Any
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.tekla.loader import ContainerView, Drawing, DrawingEnumerator, Beam, BindingFlags, Dictionary
+from tekla_mcp_server.tekla.loader import Drawing, DrawingEnumerator, Beam, BindingFlags, Dictionary
 from tekla_mcp_server.utils import validate_property_type
 
 
@@ -296,15 +296,6 @@ class TeklaDrawing:
                     errors.append({"property": f"uda:{key}", "reason": str(e)})
 
         return {**changes, "errors": errors}
-
-    def get_sheet(self) -> ContainerView | None:
-        """
-        Returns the sheet of the drawing, or None on failure.
-        """
-        try:
-            return self.drawing.GetSheet()
-        except Exception:
-            return None
 
     def _format_date(self, dt: Any) -> str | None:
         """

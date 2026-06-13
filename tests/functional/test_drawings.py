@@ -216,8 +216,7 @@ class TestGetDrawingViews:
         result = get_drawing_views()
         assert result.structured_content["status"] == "success"
         assert result.structured_content["view_count"] >= 1
-        assert "sheet_width" in result.structured_content
-        assert "sheet_height" in result.structured_content
+        assert "sheet_count" in result.structured_content
         assert len(result.structured_content["views"]) >= 1
         close_drawing(save=False)
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
+from tekla_mcp_server.config import get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringFilterOption, StringMatchType
 from tekla_mcp_server.tekla.loader import (
@@ -445,33 +446,182 @@ def matches_string_filter(value: str, filter_option: StringFilterOption | None) 
     return any(results) if logic == "OR" else all(results)
 
 
-def map_sheet_size_to_paper_size(sheet_width: float, sheet_height: float) -> DotPrintPaperSize | None:
+# ISO paper sizes (width, height) in millimetres, both orientations.
+_PAPER_SIZES: dict[tuple[int, int], DotPrintPaperSize] = {
+    (210, 297): DotPrintPaperSize.A4,
+    (297, 210): DotPrintPaperSize.A4,
+    (297, 420): DotPrintPaperSize.A3,
+    (420, 297): DotPrintPaperSize.A3,
+    (420, 594): DotPrintPaperSize.A2,
+    (594, 420): DotPrintPaperSize.A2,
+    (594, 841): DotPrintPaperSize.A1,
+    (841, 594): DotPrintPaperSize.A1,
+    (841, 1189): DotPrintPaperSize.A0,
+    (1189, 841): DotPrintPaperSize.A0,
+}
+
+# Landscape (width, height) dimensions per paper size, used for tiling
+# detection. Multi-sheet tiling is only checked against the landscape
+# orientation of each size - this resolves the otherwise unavoidable
+# ambiguity from ISO sizes nesting by powers of two (e.g. a 420x1188mm sheet
+# tiles cleanly as A2 portrait 1x2, A3 landscape 1x4, or A4 portrait 2x4,
+# assuming landscape tiles picks A3 1x4).
+_CANONICAL_PAPER_SIZES_LANDSCAPE: dict[tuple[int, int], DotPrintPaperSize] = {
+    (1189, 841): DotPrintPaperSize.A0,
+    (841, 594): DotPrintPaperSize.A1,
+    (594, 420): DotPrintPaperSize.A2,
+    (420, 297): DotPrintPaperSize.A3,
+    (297, 210): DotPrintPaperSize.A4,
+}
+
+
+def map_sheet_size_to_paper_size(sheet_width: float, sheet_height: float, tolerance: float | None = None) -> DotPrintPaperSize | None:
     """
     Map Tekla sheet dimensions to a DotPrintPaperSize enum value.
 
     Supports ISO A0-A4 in both landscape and portrait orientations.
-    Dimensions are rounded to the nearest millimetre before lookup.
 
     Args:
         sheet_width: Sheet width in millimetres.
         sheet_height: Sheet height in millimetres.
+        tolerance: Maximum deviation in millimetres for a match. Defaults to
+            the `tolerances.drawings.sheet_size` config value.
 
     Returns:
         Matching DotPrintPaperSize, or None if no standard size matches.
     """
-    paper_sizes = {
-        (210, 297): DotPrintPaperSize.A4,
-        (297, 210): DotPrintPaperSize.A4,
-        (297, 420): DotPrintPaperSize.A3,
-        (420, 297): DotPrintPaperSize.A3,
-        (420, 594): DotPrintPaperSize.A2,
-        (594, 420): DotPrintPaperSize.A2,
-        (594, 841): DotPrintPaperSize.A1,
-        (841, 594): DotPrintPaperSize.A1,
-        (841, 1189): DotPrintPaperSize.A0,
-        (1189, 841): DotPrintPaperSize.A0,
-    }
-    return paper_sizes.get((round(sheet_width), round(sheet_height)))
+    if tolerance is None:
+        tolerance = get_tolerance("sheet_size", 1.0, group="drawings")
+    for (paper_w, paper_h), paper_size in _PAPER_SIZES.items():
+        if abs(sheet_width - paper_w) <= tolerance and abs(sheet_height - paper_h) <= tolerance:
+            return paper_size
+    return None
+
+
+def detect_sheet_grid(sheet_width: float, sheet_height: float, tolerance: float | None = None) -> tuple[DotPrintPaperSize, int, int] | None:
+    """
+    Detect whether sheet dimensions are a clean tiling of multiple standard sheets.
+
+    Some drawings combine multiple physical sheets into a single Tekla
+    sheet (ContainerView). This checks whether `sheet_width` x `sheet_height`
+    is an integer-multiple tiling of a standard ISO paper size in landscape
+    orientation, within tolerance. Landscape is assumed as the tile
+    orientation (see `_CANONICAL_PAPER_SIZES_LANDSCAPE`).
+
+    Only landscape-oriented tiling is checked. Sheets tiled in portrait
+    orientation (e.g. 2x2 A4 portrait = 210x594mm) are not detected and
+    are reported as single-page. This avoids the inherent ambiguity when
+    landscape and portrait tilings overlap for the same sheet dimensions.
+
+    Args:
+        sheet_width: Sheet width in millimetres.
+        sheet_height: Sheet height in millimetres.
+        tolerance: Maximum deviation in millimetres for a tiling match.
+            Defaults to the `tolerances.drawings.sheet_size` config value.
+
+    Returns:
+        `(paper_size, cols, rows)` for the largest standard paper size that
+        tiles cleanly with `cols * rows >= 2`, or None if the dimensions match a
+        single standard sheet or no clean tiling is found.
+    """
+    if tolerance is None:
+        tolerance = get_tolerance("sheet_size", 1.0, group="drawings")
+    if map_sheet_size_to_paper_size(sheet_width, sheet_height, tolerance) is not None:
+        return None
+
+    for (paper_w, paper_h), paper_size in _CANONICAL_PAPER_SIZES_LANDSCAPE.items():
+        cols = round(sheet_width / paper_w)
+        rows = round(sheet_height / paper_h)
+        if cols < 1 or rows < 1 or cols * rows < 2:
+            continue
+        if abs(sheet_width - cols * paper_w) <= tolerance and abs(sheet_height - rows * paper_h) <= tolerance:
+            return paper_size, cols, rows
+    return None
+
+
+def assign_sheet_number(
+    frame_origin_x: float,
+    frame_origin_y: float,
+    frame_width: float,
+    frame_height: float,
+    tile_width: float,
+    tile_height: float,
+    cols: int,
+    rows: int,
+    tolerance: float | None = None,
+) -> tuple[int | None, bool | None, bool | None]:
+    """
+    Map a view's visible frame to a 1-based sheet number in a tiled sheet grid.
+
+    Sheets are numbered row-major starting from the top-left tile (highest Y,
+    lowest X) as sheet 1, proceeding right then down.
+
+    The assignment is based on overlap area: the view's frame rectangle
+    (`frame_origin` + `frame_width`/`frame_height`) is intersected with every
+    tile in the grid, and the view is assigned to the tile with the largest
+    overlap area. This handles views that straddle a sheet boundary - e.g. a
+    view whose origin sits on sheet 4 but whose bulk lies on sheet 3 is
+    assigned to sheet 3.
+
+    Args:
+        frame_origin_x: X coordinate of the view's frame origin (mm).
+        frame_origin_y: Y coordinate of the view's frame origin (mm).
+        frame_width: Width of the view's visible frame (mm).
+        frame_height: Height of the view's visible frame (mm).
+        tile_width: Width of a single sheet tile (mm).
+        tile_height: Height of a single sheet tile (mm).
+        cols: Number of tile columns.
+        rows: Number of tile rows.
+        tolerance: Margin in millimetres allowed outside the grid bounds.
+            Defaults to the `tolerances.drawings.sheet_size` config value.
+
+    Returns:
+        Tuple of (sheet_number, spans_multiple_sheets, extends_beyond_sheet):
+        - sheet_number: 1-based sheet number of the tile with the largest
+          overlap, or None if the view's frame does not overlap the tiled
+          grid within `tolerance`.
+        - spans_multiple_sheets: True if the frame overlaps more than one
+          tile, False if it overlaps exactly one, or None if sheet_number
+          is None.
+        - extends_beyond_sheet: True if the frame extends past the overall
+          grid bounds (it would be clipped when printed), False if it is
+          fully within the grid, or None if sheet_number is None.
+    """
+    if tolerance is None:
+        tolerance = get_tolerance("sheet_size", 1.0, group="drawings")
+    grid_width = cols * tile_width
+    grid_height = rows * tile_height
+    frame_x_max = frame_origin_x + frame_width
+    frame_y_max = frame_origin_y + frame_height
+    if frame_x_max < -tolerance or frame_origin_x > grid_width + tolerance or frame_y_max < -tolerance or frame_origin_y > grid_height + tolerance:
+        return None, None, None
+
+    best_sheet_number: int | None = None
+    best_overlap = 0.0
+    overlapping_tiles = 0
+    for row_from_bottom in range(rows):
+        tile_y_min = row_from_bottom * tile_height
+        tile_y_max = tile_y_min + tile_height
+        overlap_y = min(frame_y_max, tile_y_max) - max(frame_origin_y, tile_y_min)
+        if overlap_y <= 0:
+            continue
+        for col in range(cols):
+            tile_x_min = col * tile_width
+            tile_x_max = tile_x_min + tile_width
+            overlap_x = min(frame_x_max, tile_x_max) - max(frame_origin_x, tile_x_min)
+            if overlap_x <= 0:
+                continue
+            overlapping_tiles += 1
+            overlap = overlap_x * overlap_y
+            if overlap > best_overlap:
+                best_overlap = overlap
+                row_from_top = (rows - 1) - row_from_bottom
+                best_sheet_number = row_from_top * cols + col + 1
+    if best_sheet_number is None:
+        return None, None, None
+
+    extends_beyond_sheet = frame_origin_x < -tolerance or frame_x_max > grid_width + tolerance or frame_origin_y < -tolerance or frame_y_max > grid_height + tolerance
+    return best_sheet_number, overlapping_tiles > 1, extends_beyond_sheet
 
 
 def draw_collision_cloud(view: DrawingView, data_a: DrawingMarkData, data_b: DrawingMarkData) -> bool:

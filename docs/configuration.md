@@ -81,6 +81,7 @@ Tolerances are grouped by domain: `model` for model operations and `drawings` fo
 | `tolerances.model.center_tolerance_factor` | `0.05` | Relative factor for center-point tolerance (fraction of element size) |
 | `tolerances.model.comparison` | `0.01` | Numeric tolerance used in `compare_elements`. Values within this tolerance are treated as equal. |
 | `tolerances.drawings.snap_tolerance` | `0.1` | Snap tolerance in mm for `align_section_views`. Section views already within this distance of their projection are treated as aligned and left untouched. |
+| `tolerances.drawings.sheet_size` | `1.0` | Tolerance in mm for matching sheet dimensions to standard paper sizes and multi-sheet tilings in `get_drawing_views`. |
 
 ### Reports
 

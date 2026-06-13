@@ -17,7 +17,8 @@
             "comparison": 0.01
         },
         "drawings": {
-            "snap_tolerance": 0.1
+            "snap_tolerance": 0.1,
+            "sheet_size": 1.0
         }
     },
     "reports": {

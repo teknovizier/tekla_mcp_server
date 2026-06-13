@@ -234,8 +234,25 @@ class TeklaDrawingView:
                 result.append((name, obj))
         return result
 
-    def to_dict(self) -> dict[str, Any]:
-        """Returns a serialisable dict of all view metadata."""
+    def to_dict(self, sheet_number: int | None = None, spans_multiple_sheets: bool | None = None, extends_beyond_sheet: bool | None = None) -> dict[str, Any]:
+        """
+        Returns a serialisable dict of all view metadata.
+
+        Args:
+            sheet_number: 1-based sheet number this view belongs to, for
+                drawings combining multiple sheets into one sheet view.
+                Assigned to the page with which the view's visible frame
+                (`frame_origin` + `width`/`height`) has the largest overlap.
+                Ignored for the sheet view itself.
+            spans_multiple_sheets: True if the view's visible frame overlaps
+                more than one page, False if it overlaps exactly one, or
+                None if `sheet_number` is None. Ignored for the sheet view
+                itself.
+            extends_beyond_sheet: True if the view's visible frame extends
+                past the overall sheet bounds (it would be clipped when
+                printed), False if it is fully within the sheet, or None if
+                `sheet_number` is None. Ignored for the sheet view itself.
+        """
         if self.is_sheet:
             # Sheet view has no scale or frame_origin - those are
             # per-model-view concepts. Omit them to avoid confusion
@@ -262,5 +279,8 @@ class TeklaDrawingView:
             "frame_origin_y": fy,
             "width": self.width,
             "height": self.height,
+            "sheet_number": sheet_number,
+            "spans_multiple_sheets": spans_multiple_sheets,
+            "extends_beyond_sheet": extends_beyond_sheet,
             "display_settings": self.display_settings,
         }

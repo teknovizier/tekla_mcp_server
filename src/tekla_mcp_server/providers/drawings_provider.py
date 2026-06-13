@@ -22,6 +22,8 @@ from tekla_mcp_server.providers.operations_provider import run_macro
 from tekla_mcp_server.tekla.drawing_utils import (
     matches_string_filter,
     map_sheet_size_to_paper_size,
+    detect_sheet_grid,
+    assign_sheet_number,
     get_mark_collision_data,
     get_collision_pairs,
     draw_collision_cloud,
@@ -811,9 +813,8 @@ def get_drawing_views() -> ToolResult:
     """
     List all views in the active drawing with type, scale, position, and size.
 
-    Also returns the sheet view (is_sheet=true) which holds title-block
-    annotations but no model objects. View origins are measured in mm from
-    the sheet bottom-left corner (0, 0).
+    Returns view type, scale, position, size, and a unique `view_key`.
+    Includes the sheet view (`is_sheet=true`).
 
     Use `view_key` for all follow-up calls.
     Use `open_drawing` first if no drawing is currently open.
@@ -821,19 +822,38 @@ def get_drawing_views() -> ToolResult:
     handler = TeklaDrawingHandler()
 
     active = handler.require_active_drawing()
-    sheet = active.get_sheet()
-    if sheet is None:
-        raise RuntimeError("Failed to get sheet for active drawing.")
 
-    tekla_views = handler.get_drawing_views(sheet)
+    # Authoritative source for sheet_count/tiling math below - not guaranteed
+    # identical to the sheet view's own width/height in `views`
+    sheet_width = active.drawing.Layout.SheetSize.Width
+    sheet_height = active.drawing.Layout.SheetSize.Height
 
-    view_list: list[dict[str, Any]] = [v.to_dict() for v in tekla_views]
+    tekla_views = handler.get_drawing_views()
+
+    grid = detect_sheet_grid(sheet_width, sheet_height)
+    if grid is not None:
+        _, cols, rows = grid
+        sheet_count = cols * rows
+        tile_width = sheet_width / cols
+        tile_height = sheet_height / rows
+    else:
+        sheet_count = 1
+        cols, rows = 1, 1
+        tile_width, tile_height = sheet_width, sheet_height
+
+    view_list: list[dict[str, Any]] = []
+    for v in tekla_views:
+        if v.is_sheet:
+            view_list.append(v.to_dict())
+        else:
+            fx, fy = v.frame_origin
+            sheet_number, spans_multiple_sheets, extends_beyond_sheet = assign_sheet_number(fx, fy, v.width, v.height, tile_width, tile_height, cols, rows)
+            view_list.append(v.to_dict(sheet_number=sheet_number, spans_multiple_sheets=spans_multiple_sheets, extends_beyond_sheet=extends_beyond_sheet))
 
     return ToolResult(
         structured_content={
             "status": "success",
-            "sheet_width": round(sheet.Width, 1),
-            "sheet_height": round(sheet.Height, 1),
+            "sheet_count": sheet_count,
             "view_count": len(view_list),
             "views": view_list,
         }

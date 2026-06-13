@@ -217,7 +217,23 @@ class TestGetAllObjects:
 class TestToDict:
     def test_returns_dict_with_all_keys(self, wrapper: TeklaDrawingView):
         d = wrapper.to_dict()
-        expected_keys = {"name", "view_key", "view_type", "scale", "is_sheet", "origin_x", "origin_y", "frame_origin_x", "frame_origin_y", "width", "height", "display_settings"}
+        expected_keys = {
+            "name",
+            "view_key",
+            "view_type",
+            "scale",
+            "is_sheet",
+            "origin_x",
+            "origin_y",
+            "frame_origin_x",
+            "frame_origin_y",
+            "width",
+            "height",
+            "sheet_number",
+            "spans_multiple_sheets",
+            "extends_beyond_sheet",
+            "display_settings",
+        }
         assert set(d.keys()) == expected_keys
 
     def test_values_match_properties(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
