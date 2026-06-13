@@ -519,7 +519,7 @@ def get_macros() -> list[str]:
     return sorted(macro_names)
 
 
-def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawings"]) -> None:
+def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawings"]) -> bool:
     """
     Ensure a macro is present in XS_MACRO_DIRECTORY, installing it if needed.
 
@@ -530,6 +530,11 @@ def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawi
     Args:
         macro_name: Macro file name, e.g. 'TeklaMCPArrangeMarks.cs'.
         category: Macro subfolder, either 'modeling' or 'drawings'.
+
+    Returns:
+        True if the macro was newly installed (no previous copy existed at the
+        destination). A macro that was just installed cannot be run until Tekla
+        is restarted.
 
     Raises:
         FileNotFoundError: If the macro source or XS_MACRO_DIRECTORY is unavailable.
@@ -544,12 +549,16 @@ def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawi
         raise FileNotFoundError("XS_MACRO_DIRECTORY is not configured or has no valid directories.")
 
     destination = Path(directories[0]) / category / macro_name
+    macro_just_installed = not destination.exists()
     try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
         logger.info("Installed macro '%s' to '%s'", macro_name, destination)
     except Exception as e:
         logger.error("Failed to copy macro '%s' to '%s': %s", macro_name, destination, e)
         raise
+
+    return macro_just_installed
 
 
 @lru_cache

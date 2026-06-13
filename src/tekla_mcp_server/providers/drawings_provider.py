@@ -455,7 +455,7 @@ def arrange_colliding_drawing_marks(
     For each view, colliding Mark and MarkSet objects are rearranged. WeldMark objects
     are not rearranged. Any pairs that still collide, together with all weld marks,
     are highlighted using magenta revision clouds.
-    
+
     When view_keys is omitted all views in the active drawing are checked.
     """
     if view_keys is not None and not view_keys:
@@ -478,6 +478,7 @@ def arrange_colliding_drawing_marks(
     total_adjusted = 0
     total_unresolved = 0
     cloud_failures = 0
+    macro_pending = False
     errors: list[dict[str, Any]] = []
 
     logger.info("Starting collision arrangement for %d view(s) in drawing '%s'", len(views), drawing.mark)
@@ -508,15 +509,23 @@ def arrange_colliding_drawing_marks(
             if not alignable:
                 break
 
-            ensure_macro_installed("TeklaMCPArrangeMarks.cs", category="drawings")
+            macro_just_installed = ensure_macro_installed("TeklaMCPArrangeMarks.cs", category="drawings")
             if not handler.select_drawing_objects(alignable):
                 logger.warning("Failed to select %d mark(s) for arrangement in view '%s'", len(alignable), view_name)
                 break
 
-            macro_result = run_macro(macro_name="..\drawings\TeklaMCPArrangeMarks.cs")
-            if macro_result.structured_content.get("status") != "success":
-                logger.warning("TeklaMCPArrangeMarks macro failed for view '%s' (attempt %d)", view_name, attempt)
+            # NOTE: must be a normal (non-raw) string with an escaped backslash as run_macro
+            # resolves this path relative to the modeling macro directory
+            macro_result = run_macro(macro_name="..\\drawings\\TeklaMCPArrangeMarks.cs")
             handler.unselect_drawing_objects(alignable)
+            if macro_result.structured_content.get("status") != "success":
+                if macro_just_installed:
+                    # Tekla only registers macros at startup
+                    macro_pending = True
+                    logger.warning("TeklaMCPArrangeMarks macro was just installed and is not yet registered. Restart Tekla Structures to enable mark arrangement")
+                else:
+                    logger.warning("TeklaMCPArrangeMarks macro failed for view '%s' (attempt %d)", view_name, attempt)
+                break
 
             # Re-check collisions after arrangement, matching pairs by index
             # since the view enumeration order is stable within a session
@@ -556,6 +565,11 @@ def arrange_colliding_drawing_marks(
 
     if cloud_failures:
         errors.append({"error": "cloud_insertion_failed", "count": cloud_failures})
+
+    if macro_pending:
+        errors.append(
+            {"error": "macro_not_registered", "message": "TeklaMCPArrangeMarks macro was just installed and is not yet registered by Tekla. Restart Tekla Structures and run this tool again."}
+        )
 
     if total_unresolved > 0 and not drawing.commit_changes():
         raise RuntimeError(f"CommitChanges() failed after drawing {total_unresolved} collision cloud(s). ")
