@@ -229,8 +229,7 @@ class TestToDict:
             "width",
             "height",
             "sheet_number",
-            "spans_multiple_sheets",
-            "extends_beyond_sheet",
+            "sheet_placement",
             "display_settings",
         }
         assert set(d.keys()) == expected_keys

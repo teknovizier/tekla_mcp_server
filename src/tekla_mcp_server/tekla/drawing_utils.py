@@ -52,6 +52,7 @@ from tekla_mcp_server.tekla.loader import (
     LeaderLine,
 )
 from tekla_mcp_server.tekla.wrappers import TeklaDrawingView
+from tekla_mcp_server.tekla.wrappers.view import SheetPlacement
 
 
 @dataclass
@@ -549,7 +550,7 @@ def assign_sheet_number(
     cols: int,
     rows: int,
     tolerance: float | None = None,
-) -> tuple[int | None, bool | None, bool | None]:
+) -> tuple[int | None, SheetPlacement]:
     """
     Map a view's visible frame to a 1-based sheet number in a tiled sheet grid.
 
@@ -576,16 +577,15 @@ def assign_sheet_number(
             Defaults to the `tolerances.drawings.sheet_size` config value.
 
     Returns:
-        Tuple of (sheet_number, spans_multiple_sheets, extends_beyond_sheet):
+        Tuple of (sheet_number, sheet_placement):
         - sheet_number: 1-based sheet number of the tile with the largest
-          overlap, or None if the view's frame does not overlap the tiled
-          grid within `tolerance`.
-        - spans_multiple_sheets: True if the frame overlaps more than one
-          tile, False if it overlaps exactly one, or None if sheet_number
-          is None.
-        - extends_beyond_sheet: True if the frame extends past the overall
-          grid bounds (it would be clipped when printed), False if it is
-          fully within the grid, or None if sheet_number is None.
+          overlap, or None if `sheet_placement` is `out_of_grid`.
+        - sheet_placement: `fits` if the frame overlaps exactly one tile and
+          stays within the grid bounds, `spans_multiple_sheets` if it
+          overlaps more than one tile, `overflows_sheet` if it extends past
+          the overall grid bounds (would be clipped when printed),
+          `spans_and_overflows` if both apply, or `out_of_grid` if the frame
+          does not overlap the tiled grid at all within `tolerance`.
     """
     if tolerance is None:
         tolerance = get_tolerance("sheet_size", 1.0, group="drawings")
@@ -594,7 +594,7 @@ def assign_sheet_number(
     frame_x_max = frame_origin_x + frame_width
     frame_y_max = frame_origin_y + frame_height
     if frame_x_max < -tolerance or frame_origin_x > grid_width + tolerance or frame_y_max < -tolerance or frame_origin_y > grid_height + tolerance:
-        return None, None, None
+        return None, "out_of_grid"
 
     best_sheet_number: int | None = None
     best_overlap = 0.0
@@ -618,10 +618,19 @@ def assign_sheet_number(
                 row_from_top = (rows - 1) - row_from_bottom
                 best_sheet_number = row_from_top * cols + col + 1
     if best_sheet_number is None:
-        return None, None, None
+        return None, "out_of_grid"
 
-    extends_beyond_sheet = frame_origin_x < -tolerance or frame_x_max > grid_width + tolerance or frame_origin_y < -tolerance or frame_y_max > grid_height + tolerance
-    return best_sheet_number, overlapping_tiles > 1, extends_beyond_sheet
+    spans = overlapping_tiles > 1
+    overflows = frame_origin_x < -tolerance or frame_x_max > grid_width + tolerance or frame_origin_y < -tolerance or frame_y_max > grid_height + tolerance
+    if spans and overflows:
+        placement: SheetPlacement = "spans_and_overflows"
+    elif spans:
+        placement = "spans_multiple_sheets"
+    elif overflows:
+        placement = "overflows_sheet"
+    else:
+        placement = "fits"
+    return best_sheet_number, placement
 
 
 def draw_collision_cloud(view: DrawingView, data_a: DrawingMarkData, data_b: DrawingMarkData) -> bool:

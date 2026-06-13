@@ -847,8 +847,8 @@ def get_drawing_views() -> ToolResult:
             view_list.append(v.to_dict())
         else:
             fx, fy = v.frame_origin
-            sheet_number, spans_multiple_sheets, extends_beyond_sheet = assign_sheet_number(fx, fy, v.width, v.height, tile_width, tile_height, cols, rows)
-            view_list.append(v.to_dict(sheet_number=sheet_number, spans_multiple_sheets=spans_multiple_sheets, extends_beyond_sheet=extends_beyond_sheet))
+            sheet_number, sheet_placement = assign_sheet_number(fx, fy, v.width, v.height, tile_width, tile_height, cols, rows)
+            view_list.append(v.to_dict(sheet_number=sheet_number, sheet_placement=sheet_placement))
 
     return ToolResult(
         structured_content={
