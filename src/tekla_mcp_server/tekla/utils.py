@@ -491,17 +491,29 @@ def get_macros() -> list[str]:
     """
     Get the available Tekla macro file names from XS_MACRO_DIRECTORY.
 
+    Modeling macros are returned as plain filenames (e.g. ``'MyMacro.cs'``).
+    Drawing macros found in the `drawings` subdirectory are
+    prefixed with ``drawings\\`` (e.g. ``..\\drawings\\MyDrawingMacro.cs``).
+
     Returns:
-        Sorted list of macro file names, e.g. 'MyMacro.cs'.
+        Sorted list of macro file names with path prefixes where needed.
     """
 
     directories = get_advanced_option_directories("XS_MACRO_DIRECTORY")
     logger.debug("Searching for macros in XS_MACRO_DIRECTORY: %s", directories)
 
     macro_names: list[str] = []
+    seen: set[str] = set()
     for directory in directories:
-        for file in Path(directory).rglob("*.cs"):
-            macro_names.append(file.name)
+        mac_dir = Path(directory)
+        for subdir, prefix in (("modeling", ""), ("drawings", "..\\drawings\\")):
+            scan_dir = mac_dir / subdir
+            if scan_dir.is_dir():
+                for file in scan_dir.glob("*.cs"):
+                    key = f"{prefix}{file.name}"
+                    if key not in seen:
+                        macro_names.append(key)
+                        seen.add(key)
 
     return sorted(macro_names)
 
