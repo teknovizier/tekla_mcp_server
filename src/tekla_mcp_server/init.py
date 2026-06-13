@@ -49,7 +49,7 @@ def load_dlls() -> bool:
     process, so Tekla API output does not corrupt the MCP stdio transport.
 
     Returns:
-        True if DLLs were loaded successfully, False if already loaded.
+        True if DLLs were loaded successfully, True if already loaded.
 
     Raises:
         FileNotFoundError: If Tekla DLLs are not found at the configured path.

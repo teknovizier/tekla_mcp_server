@@ -265,8 +265,18 @@ class ElementTypes:
     def get_class_mapping() -> dict[int, tuple[str, str]]:
         """
         Returns class to element mapping: tekla_class -> (material, type_name).
+
+        When a class number appears under more than one material group (e.g. class
+        13 is both a concrete column and a reinforcement mesh), the first occurrence
+        wins. element_types.json lists structural groups (concrete, steel) before
+        reinforcement/embedded, so a shared class resolves to its structural type.
         """
-        return {tekla_class: (material, type_name) for material, types in get_config().element_types.items() for type_name, config in types.items() for tekla_class in config.get("tekla_classes", [])}
+        mapping: dict[int, tuple[str, str]] = {}
+        for material, types in get_config().element_types.items():
+            for type_name, config in types.items():
+                for tekla_class in config.get("tekla_classes", []):
+                    mapping.setdefault(tekla_class, (material, type_name))
+        return mapping
 
     @staticmethod
     def get_element_type_by_class(tekla_class: str | int) -> tuple[str, str]:

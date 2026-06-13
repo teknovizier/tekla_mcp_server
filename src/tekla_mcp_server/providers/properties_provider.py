@@ -744,12 +744,20 @@ def copy_properties_from_ifc(
     # Separate IFC references from Tekla parts
     ifc_sources: list[tuple[str, TeklaReferenceModelObject]] = []
     tekla_targets: list[tuple[str, TeklaModelObject]] = []
+    skipped_objects: list[dict[str, Any]] = []
 
     for selected_object in wrap_model_objects(selected_objects):
         if selected_object is None:
             continue
-        # Use GUID from report properties: native Tekla objects may not have valid GUID
-        guid = str(selected_object.get_report_property("GUID"))
+        # Use GUID from report properties: native Tekla objects may not have valid GUID.
+        # Isolate per-object failures so one object with an unreadable GUID does not
+        # abort the whole tool.
+        try:
+            guid = str(selected_object.get_report_property("GUID"))
+        except Exception as e:
+            logger.warning("copy_properties_from_ifc: skipping object %s with unreadable GUID: %s", selected_object.id, e)
+            skipped_objects.append({"id": selected_object.id, "error": str(e)})
+            continue
         if isinstance(selected_object, TeklaReferenceModelObject):
             ifc_sources.append((guid, selected_object))
         else:
@@ -859,5 +867,6 @@ def copy_properties_from_ifc(
             "properties_copied": properties_copied,
             "errors": errors,
             "unmatched": unmatched,
+            "skipped_objects": skipped_objects,
         }
     )

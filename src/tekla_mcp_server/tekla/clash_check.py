@@ -106,6 +106,17 @@ class TeklaClashCheckHandler:
         self._done = threading.Event()
         self._last_count: int = 0
         self._subscribed = False
+        self._timed_out = False
+
+    @property
+    def timed_out(self) -> bool:
+        """True if the most recent run() returned before the engine signalled completion."""
+        return self._timed_out
+
+    @property
+    def timeout_seconds(self) -> float:
+        """The completion-wait timeout, in seconds."""
+        return self._timeout_seconds
 
     def _on_clash_detected(self, clash_data: Any) -> None:
         self._raw_records.append(clash_data)  # Store raw records only
@@ -122,6 +133,7 @@ class TeklaClashCheckHandler:
         self._raw_records = []
         self._done.clear()
         self._last_count = 0
+        self._timed_out = False
         self._subscribed = True
         self._events.ClashDetected += self._on_clash_detected
         self._events.ClashCheckDone += self._on_clash_check_done
@@ -177,6 +189,7 @@ class TeklaClashCheckHandler:
                 raise RuntimeError("ClashCheckHandler.RunClashCheckWithOptions returned false")
 
             if not self._done.wait(timeout=self._timeout_seconds):
+                self._timed_out = True
                 logger.warning("ClashCheckHandler.run timed out after %.0fs waiting for ClashCheckDone", self._timeout_seconds)
         finally:
             self._unsubscribe()

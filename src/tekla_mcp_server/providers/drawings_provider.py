@@ -43,7 +43,7 @@ from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly
 from tekla_mcp_server.tekla.loader import (
     Cloud,
-    Connection,
+    DrawingConnection,
     DrawingObject,
     Mark,
     MarkSet,
@@ -886,7 +886,7 @@ def get_view_objects(
             raise RuntimeError(f"Failed to enumerate model objects in view '{view_key}'. The view state may be corrupted or the connection lost.")
 
     # Exclude Connection objects from total_count
-    total_count = sum(1 for o in drawing_objects if not isinstance(o, Connection))
+    total_count = sum(1 for o in drawing_objects if not isinstance(o, DrawingConnection))
     objects: list[dict[str, Any] | EmbeddedDetail] = []
     embedded_details: dict[str, EmbeddedDetail] = {}
     unresolved_count = 0
@@ -903,7 +903,7 @@ def get_view_objects(
             break
         # Tekla components shown in a drawing view are internal
         # connection geometry, not structural parts. Skip them
-        if isinstance(drawing_obj, Connection):
+        if isinstance(drawing_obj, DrawingConnection):
             continue
         identifier = getattr(drawing_obj, "ModelIdentifier", None)
         if identifier is None:
@@ -1010,19 +1010,20 @@ def get_view_annotations(
             continue
         if type_filter == "all" and category not in DEFAULT_ANNOTATION_CATEGORIES:
             continue
-        if category == "marks" and model is None:
+        # Iterate every object so the counts (and therefore has_more) reflect the
+        # true total, but only collect up to `limit`. Resolving a mark's target
+        # GUID is a model lookup, so only do it for marks we actually return.
+        collecting = len(annotations) < limit and (type_filter == "all" or category == type_filter)
+        if category == "marks" and collecting and model is None:
             model = TeklaModel()
-        annotation = extract_annotation_content(obj, category, model)
+        annotation = extract_annotation_content(obj, category, model if collecting else None)
         # Marks with no readable content (e.g. empty Mark.Content) are
         # excluded from the count - they carry no useful information
         if category == "marks" and annotation.get("content") is None:
             continue
         counts_by_category[category] = counts_by_category.get(category, 0) + 1
-        if type_filter != "all" and category != type_filter:
-            continue
-        annotations.append(annotation)
-        if len(annotations) >= limit:
-            break
+        if collecting:
+            annotations.append(annotation)
 
     total_count = sum(counts_by_category.values())
     available = total_count if type_filter == "all" else counts_by_category.get(type_filter, 0)

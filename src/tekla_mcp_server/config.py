@@ -328,12 +328,19 @@ class Config:
 
     @lru_cache
     def get_element_types_flat(self) -> dict[int, dict[str, Any]]:
-        """Returns tekla_class -> full config mapping."""
+        """
+        Returns tekla_class -> full config mapping.
+
+        First occurrence wins when a class appears under multiple material groups,
+        so a class shared between a structural type and a reinforcement/embedded
+        type (e.g. 13 = concrete column and mesh) resolves to the structural entry,
+        which element_types.json lists first.
+        """
         result: dict[int, dict[str, Any]] = {}
         for types in self.element_types.values():
             for config in types.values():
                 for tekla_class in config.get("tekla_classes", []):
-                    result[tekla_class] = config
+                    result.setdefault(tekla_class, config)
         return result
 
     @lru_cache

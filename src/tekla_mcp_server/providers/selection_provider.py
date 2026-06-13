@@ -259,18 +259,25 @@ def select_elements_by_filter(
                 if result is not None:
                     filter_groups.append(result)
 
+    # Drop empty groups - e.g. an element_type that matched no classes, or custom
+    # attributes that all failed to resolve. If nothing meaningful remains, refuse
+    # rather than silently selecting every part via the bare PART-type filter.
+    non_empty_groups = [fg for fg in filter_groups if fg is not None and fg.Count > 0]
+    if not non_empty_groups:
+        failed = [e.get("query") for e in (string_resolution_errors + numeric_resolution_errors)]
+        detail = f" Unresolved custom attributes: {failed}." if failed else ""
+        raise ValueError(f"No usable filter conditions were produced - nothing was selected to avoid selecting the entire model.{detail}")
+
     # Combine all filter groups into final filter
-    if len(filter_groups) == 1:
-        filter_collection.Add(BinaryFilterExpressionItem(filter_groups[0], BinaryFilterOperatorType.BOOLEAN_AND))
-    elif len(filter_groups) > 1:
+    if len(non_empty_groups) == 1:
+        filter_collection.Add(BinaryFilterExpressionItem(non_empty_groups[0], BinaryFilterOperatorType.BOOLEAN_AND))
+    else:
         combined = BinaryFilterExpressionCollection()
         group_operator = BinaryFilterOperatorType.BOOLEAN_OR if combine_with == "OR" else BinaryFilterOperatorType.BOOLEAN_AND
-        logger.debug("Combining %d filter groups with %s", len(filter_groups), combine_with)
-        for fg in filter_groups:
-            if fg is not None:
-                combined.Add(BinaryFilterExpressionItem(fg, group_operator))
-        if combined.Count > 0:
-            filter_collection.Add(BinaryFilterExpressionItem(combined, BinaryFilterOperatorType.BOOLEAN_AND))
+        logger.debug("Combining %d filter groups with %s", len(non_empty_groups), combine_with)
+        for fg in non_empty_groups:
+            combined.Add(BinaryFilterExpressionItem(fg, group_operator))
+        filter_collection.Add(BinaryFilterExpressionItem(combined, BinaryFilterOperatorType.BOOLEAN_AND))
 
     objects_to_select = model.get_objects_by_filter(filter_collection)
     TeklaModel.select_objects(objects_to_select)

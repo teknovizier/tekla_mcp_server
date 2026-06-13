@@ -426,7 +426,7 @@ class TeklaModelObject:
         Uses TemplateAttributeParser to determine the data type.
 
         Raises:
-            ValueError: If the property is not found in Tekla's attribute definitions.
+            KeyError: If the property is not found in Tekla's attribute definitions.
             AttributeError: If the property retrieval fails for the given element.
         """
         report_property = TemplateAttributeParser.get_attribute(property_name)

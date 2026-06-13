@@ -51,11 +51,20 @@ def _process_detail_or_component(
 ) -> ToolResult:
     processed_count = 0
     processed_components_count = 0
+    errors: list[dict[str, Any]] = []
     for selected_object in selected_objects:
         if isinstance(selected_object, Beam):
-            success = callback(model, component, selected_object, *args, **kwargs)
-            if success:
-                processed_components_count += success
+            # Isolate per-object failures so one bad element (e.g. a non-concrete
+            # beam rejected by a handler) does not abort the whole batch and discard
+            # the components already inserted for earlier elements.
+            try:
+                success = callback(model, component, selected_object, *args, **kwargs)
+                if success:
+                    processed_components_count += success
+            except Exception as e:
+                guid = selected_object.Identifier.GUID.ToString()
+                logger.exception("Failed to process component on %s", guid)
+                errors.append({"guid": guid, "error": str(e)})
             processed_count += 1
 
     commit_success: bool | None = None
@@ -66,6 +75,8 @@ def _process_detail_or_component(
 
     if commit_success is False:
         status = "error"
+    elif processed_components_count and errors:
+        status = "partial"
     elif processed_components_count:
         status = "success"
     else:
@@ -77,6 +88,7 @@ def _process_detail_or_component(
         "selected_count": selected_objects.GetSize(),
         "processed_count": processed_count,
         "processed_components_count": processed_components_count,
+        "errors": errors,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
@@ -100,12 +112,18 @@ def _process_seam_or_connection(
 
     processed_pairs_count = 0
     processed_components_count = 0
+    errors: list[dict[str, Any]] = []
 
     wall_pairs = get_wall_pairs(selected_objects)
     for pair in wall_pairs:
-        success = callback(model, component, pair[1], pair[0], *args, **kwargs)
-        if success:
-            processed_components_count += success
+        # Isolate per-pair failures so one bad pair does not abort the whole batch.
+        try:
+            success = callback(model, component, pair[1], pair[0], *args, **kwargs)
+            if success:
+                processed_components_count += success
+        except Exception as e:
+            logger.exception("Failed to process seam/connection on a wall pair")
+            errors.append({"error": str(e)})
         processed_pairs_count += 1
 
     commit_success: bool | None = None
@@ -116,6 +134,8 @@ def _process_seam_or_connection(
 
     if commit_success is False:
         status = "error"
+    elif processed_components_count and errors:
+        status = "partial"
     elif processed_components_count:
         status = "success"
     else:
@@ -127,6 +147,7 @@ def _process_seam_or_connection(
         "selected_count": selected_objects.GetSize(),
         "processed_pairs_count": processed_pairs_count,
         "processed_components_count": processed_components_count,
+        "errors": errors,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success

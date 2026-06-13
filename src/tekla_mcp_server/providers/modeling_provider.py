@@ -26,7 +26,7 @@ from tekla_mcp_server.models import (
 from tekla_mcp_server.utils import format_coordinate_string, mcp_handler
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_objects, wrap_model_object
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.loader import Grid, Operation, Phase, Point, Vector
+from tekla_mcp_server.tekla.loader import Grid, Connection, Operation, Phase, Point, Seam, Vector
 
 
 modeling_provider = LocalProvider()
@@ -35,11 +35,24 @@ T = TypeVar("T", BeamInput, ColumnInput, PanelInput)
 
 
 def _collect_parts(obj: TeklaModelObject) -> list[TeklaPart]:
-    """Return all child Part objects reachable from *obj*."""
-    if isinstance(obj, TeklaAssembly):
-        return [wrapped for raw in obj.get_all_children(include_all=False) if (wrapped := wrap_model_object(raw)) is not None and isinstance(wrapped, TeklaPart)]
+    """Return the child Part objects to move/copy for *obj*.
 
-    return [obj]
+    For an assembly this is the main part, secondaries, single-part-component parts
+    and real sub-assembly parts. Parts created by a Seam or Connection - components
+    that span two or more parts - are skipped: such a component is associative to all
+    its host parts and moves its created parts (e.g. pipes) along when those parts
+    move, so displacing them explicitly as well would put them in the wrong place.
+    """
+    if not isinstance(obj, TeklaAssembly):
+        return [obj]
+
+    parts: list[TeklaPart] = []
+    for raw in obj.get_all_children(include_all=False):
+        wrapped = wrap_model_object(raw)
+        # Skip Seam/Connection parts - the component moves them with its host parts.
+        if isinstance(wrapped, TeklaPart) and not isinstance(raw.GetFatherComponent(), (Seam, Connection)):
+            parts.append(wrapped)
+    return parts
 
 
 def _resolve_numbering_and_name(

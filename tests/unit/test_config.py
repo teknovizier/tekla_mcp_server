@@ -2,10 +2,13 @@
 Unit tests for configuration management.
 """
 
+from typing import Any
+
 import pytest
 from unittest.mock import patch
 
 from tekla_mcp_server.config import Config, get_config, get_report_preview_max_chars, get_report_preview_timeout, _load_json, _load_settings
+from tekla_mcp_server.models import ElementTypes
 
 
 @pytest.fixture(autouse=True)
@@ -102,3 +105,67 @@ class TestReportPreviewConfig:
         with patch("tekla_mcp_server.config._load_settings") as mock_settings:
             mock_settings.return_value = {"tekla_path": "C:\\Tekla", "reports": {"preview_timeout": 120}}
             assert get_report_preview_timeout() == 120.0
+
+
+def _make_element_types() -> dict[str, Any]:
+    """Return element_types data with a known duplicate class (13) across materials."""
+    return {
+        "MATERIAL_CONCRETE": {
+            "COLUMN": {"tekla_classes": [13], "default_name": "ConcreteColumn"},
+        },
+        "MATERIAL_STEEL": {
+            "BEAM": {"tekla_classes": [1, 2], "default_name": "SteelBeam"},
+        },
+        "MATERIAL_REINFORCEMENT": {
+            "MESH": {"tekla_classes": [13], "default_name": "RebarMesh"},
+        },
+    }
+
+
+def _mock_load_json_for_element_types(
+    filename: str,
+    et_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return a mock _load_json that dispatches on filename."""
+    if filename == "settings.json":
+        return {"tekla_path": "C:\\TeklaStructures"}
+    if filename == "element_types.json":
+        return _make_element_types() if et_data is None else et_data
+    return {}
+
+
+class TestElementTypeClassMapping:
+    """Tests for class-number collision handling in element-type resolution."""
+
+    def test_get_element_types_flat_first_occurrence_wins(self):
+        """When class 13 appears under CONCRETE and REINFORCEMENT, the concrete entry wins (first listed)."""
+        with patch("tekla_mcp_server.config._load_json", side_effect=_mock_load_json_for_element_types):
+            config = Config()
+            flat = config.get_element_types_flat()
+        assert 13 in flat
+        assert flat[13]["default_name"] == "ConcreteColumn"
+
+    def test_get_class_mapping_first_occurrence_wins(self):
+        """When class 13 appears under CONCRETE and REINFORCEMENT, the concrete tuple wins."""
+        with patch("tekla_mcp_server.config._load_json", side_effect=_mock_load_json_for_element_types):
+            mapping = ElementTypes.get_class_mapping()
+        assert 13 in mapping
+        material, type_name = mapping[13]
+        assert material == "MATERIAL_CONCRETE"
+        assert type_name == "COLUMN"
+
+    def test_get_element_type_by_class_returns_first(self):
+        """get_element_type_by_class(13) returns the concrete column entry, not reinforcement mesh."""
+        with patch("tekla_mcp_server.config._load_json", side_effect=_mock_load_json_for_element_types):
+            result = ElementTypes.get_element_type_by_class(13)
+        assert result == ("MATERIAL_CONCRETE", "COLUMN")
+
+    def test_no_duplicate_classes_unchanged(self):
+        """Classes that appear only once are not affected by the setdefault logic."""
+        with patch("tekla_mcp_server.config._load_json", side_effect=_mock_load_json_for_element_types):
+            config = Config()
+            flat = config.get_element_types_flat()
+        assert 1 in flat
+        assert flat[1]["default_name"] == "SteelBeam"
+        assert 2 in flat
+        assert flat[2]["default_name"] == "SteelBeam"

@@ -71,13 +71,6 @@ class TestGetDrawings:
         assert result.structured_content["status"] == "success"
         assert result.structured_content["matched_count"] >= 3
 
-    def test_get_drawings_ga_type(self):
-        """Test filtering by GA drawing type."""
-        result = get_drawings(drawing_type="G")
-
-        assert result.structured_content["status"] == "success"
-        assert result.structured_content["matched_count"] > 0
-
     def test_get_drawings_invalid_type(self):
         """Invalid drawing type is rejected."""
         result = get_drawings(drawing_type="U")

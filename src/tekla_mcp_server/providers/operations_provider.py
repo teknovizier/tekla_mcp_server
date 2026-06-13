@@ -271,16 +271,31 @@ def cut_elements_with_cutters(
     processed_count = 0
     performed_cuts = 0
     cutters = list(wrap_model_objects(raw_cutters))
+    used_cutter_ids: set[int] = set()
     logger.debug("Processing %d selected objects with %d cutters (%s)", selected_objects.GetSize(), len(cutters), label)
     if cutters:
         for selected_object in wrap_model_objects(selected_objects):
             element_had_cut = False
             for cutter in cutters:
-                if selected_object.add_cut(cutter, delete_cutting_parts):
+                # Never delete the cutter here: the same cutter may need to cut
+                # several selected targets. Deleting mid-loop would leave later
+                # targets with an invalid (deleted) cutter handle, silently
+                # skipping their cuts. Deletion is deferred until all cuts run.
+                if selected_object.add_cut(cutter, False):
                     performed_cuts += 1
                     element_had_cut = True
+                    used_cutter_ids.add(cutter.id)
             if element_had_cut:
                 processed_count += 1
+
+    # Delete cutters once, after every target has been processed, so a cutter
+    # shared by multiple targets is removed only when it is no longer needed.
+    deleted_cutters = 0
+    if delete_cutting_parts and used_cutter_ids:
+        for cutter in cutters:
+            if cutter.id in used_cutter_ids and cutter.delete():
+                deleted_cutters += 1
+
     commit_success: bool | None = None
     if performed_cuts:
         commit_success = model.commit_changes()
@@ -300,6 +315,8 @@ def cut_elements_with_cutters(
         "processed_count": processed_count,
         "performed_cuts_count": performed_cuts,
     }
+    if delete_cutting_parts:
+        result["deleted_cutters_count"] = deleted_cutters
     if commit_success is not None:
         result["commit_success"] = commit_success
     return ToolResult(structured_content=result)
@@ -879,24 +896,28 @@ def clash_check(
         if filter_name:
             TeklaModel.select_objects(selected_objects)
 
+    timed_out = handler.timed_out
     logger.info(
-        "clash_check finished: selected=%d, checked=%d, clashes=%d (min_distance=%.1f filter_name=%r)",
+        "clash_check finished: selected=%d, checked=%d, clashes=%d, timed_out=%s (min_distance=%.1f filter_name=%r)",
         len(selected_objects),
         checked_count,
         len(records),
+        timed_out,
         min_distance,
         filter_name,
     )
 
-    return ToolResult(
-        structured_content={
-            "status": "success" if not records else "warning",
-            "selected_count": len(selected_objects),
-            "checked_objects_count": checked_count,
-            "clashes_count": len(records),
-            "clashes": [c.to_dict() for c in records],
-        }
-    )
+    result: dict[str, Any] = {
+        "status": "warning" if records or timed_out else "success",
+        "selected_count": len(selected_objects),
+        "checked_objects_count": checked_count,
+        "clashes_count": len(records),
+        "clashes": [c.to_dict() for c in records],
+    }
+    if timed_out:
+        result["timed_out"] = True
+        result["message"] = f"Clash check timed out after {handler.timeout_seconds:.0f}s before Tekla signalled completion. Results may be incomplete - the reported clash count is not conclusive."
+    return ToolResult(structured_content=result)
 
 
 def _report_format(path: Path) -> tuple[str, bool]:
