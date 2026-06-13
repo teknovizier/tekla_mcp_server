@@ -7,7 +7,7 @@ open/close drawing, view listing, move, scale, and delete operations.
 
 import pytest
 
-from tekla_mcp_server.models import ViewScale
+from tekla_mcp_server.models import ViewAttributes
 from tekla_mcp_server.providers.drawings_provider import (
     align_section_views,
     arrange_colliding_drawing_marks,
@@ -24,7 +24,7 @@ from tekla_mcp_server.providers.drawings_provider import (
     print_drawings,
     set_drawings_issue_state,
     set_drawings_properties,
-    set_view_scales,
+    set_views_attributes,
     update_drawings,
 )
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
@@ -288,8 +288,8 @@ class TestMoveView:
         close_drawing(save=False)
 
 
-class TestSetViewScales:
-    """Tests for set_view_scales function."""
+class TestSetViewsAttributes:
+    """Tests for set_views_attributes function."""
 
     @pytest.fixture(autouse=True)
     def ensure_no_open_drawing(self):
@@ -300,20 +300,20 @@ class TestSetViewScales:
         yield
 
     def test_set_scale_no_open_drawing(self):
-        """Setting scale when no drawing is open raises an error."""
-        result = set_view_scales(view_scales=[ViewScale(view_key="dummy", scale=20.0)])
+        """Setting attributes when no drawing is open raises an error."""
+        result = set_views_attributes(views_attributes=[ViewAttributes(view_key="dummy", scale=20.0)])
         assert result.structured_content["status"] == "error"
 
     def test_set_scale_invalid_view_key(self, cu_mark):
-        """Setting scale on a non-existent view."""
+        """Setting attributes on a non-existent view."""
         open_drawing(mark=cu_mark)
-        result = set_view_scales(view_scales=[ViewScale(view_key="MCP_NONEXISTENT_VIEW", scale=20.0)])
+        result = set_views_attributes(views_attributes=[ViewAttributes(view_key="MCP_NONEXISTENT_VIEW", scale=20.0)])
         assert result.structured_content["status"] == "error"
         close_drawing(save=False)
 
     def test_set_scale_empty_list(self):
         """An empty list raises an error."""
-        result = set_view_scales(view_scales=[])
+        result = set_views_attributes(views_attributes=[])
         assert result.structured_content["status"] == "error"
 
     def test_set_scale_on_non_sheet_view(self, cu_mark):
@@ -322,10 +322,22 @@ class TestSetViewScales:
         key = _first_non_sheet_view_key()
         if key is None:
             pytest.skip("No non-sheet view available")
-        result = set_view_scales(view_scales=[ViewScale(view_key=key, scale=20.0)])
+        result = set_views_attributes(views_attributes=[ViewAttributes(view_key=key, scale=20.0)])
         assert result.structured_content["status"] == "success"
         assert result.structured_content["succeeded"] == 1
-        assert result.structured_content["results"][0]["new_scale"] == 20.0
+        assert result.structured_content["results"][0]["updated"] == {"scale": 20.0}
+        close_drawing(save=False)
+
+    def test_set_boolean_attribute_on_non_sheet_view(self, cu_mark):
+        """Set a non-scale display attribute on a non-sheet view."""
+        open_drawing(mark=cu_mark)
+        key = _first_non_sheet_view_key()
+        if key is None:
+            pytest.skip("No non-sheet view available")
+        result = set_views_attributes(views_attributes=[ViewAttributes(view_key=key, reflected_view=True)])
+        assert result.structured_content["status"] == "success"
+        assert result.structured_content["succeeded"] == 1
+        assert result.structured_content["results"][0]["updated"] == {"reflected_view": True}
         close_drawing(save=False)
 
     def test_set_scale_on_sheet_view_rejected(self, cu_mark):
@@ -335,7 +347,7 @@ class TestSetViewScales:
         sheet_key = next((v["view_key"] for v in views if v["is_sheet"]), None)
         if sheet_key is None:
             pytest.skip("No sheet view found")
-        result = set_view_scales(view_scales=[ViewScale(view_key=sheet_key, scale=20.0)])
+        result = set_views_attributes(views_attributes=[ViewAttributes(view_key=sheet_key, scale=20.0)])
         sc = result.structured_content
         assert sc["status"] == "error"
         assert sc["succeeded"] == 0
@@ -350,8 +362,8 @@ class TestSetViewScales:
         non_sheet = [v for v in views if not v["is_sheet"]]
         if len(non_sheet) < 2:
             pytest.skip("Need at least 2 non-sheet views for multi-scale test")
-        scales = [ViewScale(view_key=v["view_key"], scale=30.0) for v in non_sheet]
-        result = set_view_scales(view_scales=scales)
+        updates = [ViewAttributes(view_key=v["view_key"], scale=30.0) for v in non_sheet]
+        result = set_views_attributes(views_attributes=updates)
         assert result.structured_content["status"] == "success"
         assert result.structured_content["succeeded"] == len(non_sheet)
         close_drawing(save=False)

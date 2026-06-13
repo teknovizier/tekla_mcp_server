@@ -7,7 +7,7 @@ import json
 from enum import StrEnum
 from typing import Any, Self, Literal
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer, model_validator
 from pydantic_core import PydanticCustomError
 
 from tekla_mcp_server.config import get_config
@@ -750,8 +750,18 @@ class AttachmentPair(BaseModel):
     target_guid: str = Field(description="GUID of the parent assembly to attach the object to (e.g. from `check_for_orphans` or `get_elements_properties`)")
 
 
-class ViewScale(BaseModel):
-    """A view and the scale to apply to it."""
+class ViewAttributes(BaseModel):
+    """Display attributes to update on a drawing view. At least one attribute must be set."""
 
-    view_key: str = Field(description="View key to rescale (from `get_drawing_views`)")
-    scale: float = Field(gt=0, description="New scale value (e.g. 20 for 1:20)")
+    view_key: str = Field(description="View key to update (from `get_drawing_views`)")
+    scale: float | None = Field(None, gt=0, description="New scale value (e.g. 20 for 1:20)")
+    show_part_openings_or_recess_symbol: bool | None = Field(None, description="Whether to show opening/recess symbols for parts in the view")
+    reflected_view: bool | None = Field(None, description="Whether the view is shown reflected (mirrored)")
+    undeformed_view: bool | None = Field(None, description="Whether parts are shown in their undeformed state")
+    unfolded_view: bool | None = Field(None, description="Whether parts are shown unfolded")
+
+    @model_validator(mode="after")
+    def _at_least_one_set(self) -> "ViewAttributes":
+        if all(v is None for v in (self.scale, self.show_part_openings_or_recess_symbol, self.reflected_view, self.undeformed_view, self.unfolded_view)):
+            raise ValueError("At least one attribute must be set")
+        return self

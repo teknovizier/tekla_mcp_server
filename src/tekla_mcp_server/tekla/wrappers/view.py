@@ -74,6 +74,18 @@ class TeklaDrawingView:
         return self._view.Attributes.Scale
 
     @property
+    def display_settings(self) -> dict[str, Any]:
+        """Returns the current display attribute values for this view."""
+        attrs = self._view.Attributes
+        return {
+            "scale": attrs.Scale,
+            "show_part_openings_or_recess_symbol": attrs.ShowPartOpeningsOrRecessSymbol,
+            "reflected_view": attrs.ReflectedView,
+            "undeformed_view": attrs.UndeformedView,
+            "unfolded_view": attrs.UnfoldedView,
+        }
+
+    @property
     def is_sheet(self) -> bool:
         """Returns whether this is the sheet view."""
         return self._view.IsSheet
@@ -132,18 +144,40 @@ class TeklaDrawingView:
         """Deletes the view from the drawing. Returns True on success."""
         return self._view.Delete()
 
-    def set_scale(self, scale: float) -> bool:
+    def set_attributes(
+        self,
+        scale: float | None = None,
+        show_part_openings_or_recess_symbol: bool | None = None,
+        reflected_view: bool | None = None,
+        undeformed_view: bool | None = None,
+        unfolded_view: bool | None = None,
+    ) -> bool:
         """
-        Sets the view scale and commits via Modify().
+        Sets one or more display attributes and commits via Modify().
+
+        Only attributes passed as non-None are changed.
 
         Args:
             scale: New scale value (e.g. 20 for 1:20, 50 for 1:50).
+            show_part_openings_or_recess_symbol: Show opening/recess symbols for parts.
+            reflected_view: Show the view reflected (mirrored).
+            undeformed_view: Show parts in their undeformed (unbent) state.
+            unfolded_view: Show parts unfolded (flattened).
 
         Returns:
             True if Modify() succeeded.
         """
         attrs = self._view.Attributes
-        attrs.Scale = scale
+        if scale is not None:
+            attrs.Scale = scale
+        if show_part_openings_or_recess_symbol is not None:
+            attrs.ShowPartOpeningsOrRecessSymbol = show_part_openings_or_recess_symbol
+        if reflected_view is not None:
+            attrs.ReflectedView = reflected_view
+        if undeformed_view is not None:
+            attrs.UndeformedView = undeformed_view
+        if unfolded_view is not None:
+            attrs.UnfoldedView = unfolded_view
         self._view.Attributes = attrs
         return self._view.Modify()
 
@@ -228,4 +262,5 @@ class TeklaDrawingView:
             "frame_origin_y": fy,
             "width": self.width,
             "height": self.height,
+            "display_settings": self.display_settings,
         }

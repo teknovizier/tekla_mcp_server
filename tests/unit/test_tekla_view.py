@@ -81,25 +81,30 @@ class TestDelete:
         mock_view.Delete.assert_called_once_with()
 
 
-class TestSetScale:
+class TestSetAttributes:
     def test_sets_scale_and_modifies(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
-        assert wrapper.set_scale(1.0) is True
+        assert wrapper.set_attributes(scale=1.0) is True
         assert mock_view.Attributes.Scale == 1.0
         mock_view.Modify.assert_called_once_with()
 
     def test_returns_false_when_modify_fails(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
         mock_view.Modify.return_value = False
-        assert wrapper.set_scale(0.25) is False
+        assert wrapper.set_attributes(scale=0.25) is False
 
     def test_reassigns_attributes(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
-        wrapper.set_scale(2.0)
+        wrapper.set_attributes(scale=2.0)
         assert mock_view.Attributes.Scale == 2.0
 
-    def test_attributes_setter_was_called(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
-        orig_attrs = mock_view.Attributes
-        orig_attrs.Scale = 3.0
-        wrapper.set_scale(3.0)
-        assert mock_view.Attributes.Scale == 3.0
+    def test_sets_multiple_attributes(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        wrapper.set_attributes(scale=2.0, reflected_view=True, unfolded_view=False)
+        assert mock_view.Attributes.Scale == 2.0
+        assert mock_view.Attributes.ReflectedView is True
+        assert mock_view.Attributes.UnfoldedView is False
+
+    def test_unset_attributes_are_left_unchanged(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        mock_view.Attributes.ReflectedView = "untouched"
+        wrapper.set_attributes(scale=2.0)
+        assert mock_view.Attributes.ReflectedView == "untouched"
 
 
 class TestViewKeyFallback:
@@ -206,7 +211,7 @@ class TestGetAllObjects:
 class TestToDict:
     def test_returns_dict_with_all_keys(self, wrapper: TeklaDrawingView):
         d = wrapper.to_dict()
-        expected_keys = {"name", "view_key", "view_type", "scale", "is_sheet", "origin_x", "origin_y", "frame_origin_x", "frame_origin_y", "width", "height"}
+        expected_keys = {"name", "view_key", "view_type", "scale", "is_sheet", "origin_x", "origin_y", "frame_origin_x", "frame_origin_y", "width", "height", "display_settings"}
         assert set(d.keys()) == expected_keys
 
     def test_values_match_properties(self, wrapper: TeklaDrawingView, mock_view: MagicMock):

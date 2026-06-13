@@ -14,7 +14,7 @@ from pydantic import Field
 
 from tekla_mcp_server.config import get_advanced_option_directories, get_tolerance
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import DrawingType, StringFilterOption, ViewScale
+from tekla_mcp_server.models import DrawingType, StringFilterOption, ViewAttributes
 from tekla_mcp_server.utils import mcp_handler, sanitize_filename, resolve_model_relative_dir
 from tekla_mcp_server.tekla.filter_builder import to_filter_option
 from tekla_mcp_server.tekla.utils import ensure_macro_installed
@@ -1147,16 +1147,23 @@ def align_section_views(
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
-def set_view_scales(
-    view_scales: Annotated[list[ViewScale], Field(description="View key / scale pairs to apply")],
+def set_views_attributes(
+    views_attributes: Annotated[list[ViewAttributes], Field(description="Per-view display attribute updates to apply")],
 ) -> ToolResult:
     """
-    Set the scale of one or more drawing views.
+    Set display attributes (scale, opening symbols, reflected/undeformed/unfolded) on one or more drawing views.
 
-    To apply the same scale to several views, repeat the scale value across pairs.
+    Each item must set at least one attribute. Unset attributes on an item are left unchanged.
+
+    ## EXAMPLES
+    # Set the scale of a view to 1:20:
+        {"views_attributes": [{"view_key": "FrontView_42", "scale": 20}]}
+
+    # Show opening and recess symbols on a view:
+        {"views_attributes": [{"view_key": "FrontView_42", "show_part_openings_or_recess_symbol": true}]}
     """
-    if not view_scales:
-        raise ValueError("view_scales is required")
+    if not views_attributes:
+        raise ValueError("views_attributes is required")
 
     handler = TeklaDrawingHandler()
     drawing = handler.require_active_drawing()
@@ -1165,30 +1172,31 @@ def set_view_scales(
     results: list[dict[str, Any]] = []
     succeeded = 0
 
-    for item in view_scales:
+    for item in views_attributes:
         tekla_view = index.get(item.view_key)
         if tekla_view is None:
             results.append({"view_key": item.view_key, "status": "failed", "message": "View not found"})
             continue
         if tekla_view.is_sheet:
-            results.append({"view_key": item.view_key, "status": "failed", "message": "Cannot set scale on the sheet view"})
+            results.append({"view_key": item.view_key, "status": "failed", "message": "Cannot set attributes on the sheet view"})
             continue
+        updated = item.model_dump(exclude={"view_key"}, exclude_none=True)
         try:
-            if tekla_view.set_scale(item.scale):
+            if tekla_view.set_attributes(**updated):
                 succeeded += 1
-                results.append({"view_key": item.view_key, "status": "success", "new_scale": item.scale})
+                results.append({"view_key": item.view_key, "status": "success", "updated": updated})
             else:
-                results.append({"view_key": item.view_key, "status": "failed", "message": "set_scale() returned False"})
+                results.append({"view_key": item.view_key, "status": "failed", "message": "set_attributes() returned False"})
         except Exception as e:
-            logger.error("Failed to set scale on view %s: %s", item.view_key, e)
+            logger.error("Failed to set attributes on view %s: %s", item.view_key, e)
             results.append({"view_key": item.view_key, "status": "error", "message": str(e)})
 
-    total = len(view_scales)
+    total = len(views_attributes)
     status = "success" if succeeded == total else "partial" if succeeded else "error"
-    logger.info("set_view_scales: %d/%d updated", succeeded, total)
+    logger.info("set_views_attributes: %d/%d updated", succeeded, total)
 
     if succeeded > 0 and not drawing.commit_changes():
-        raise RuntimeError("CommitChanges() failed after setting view scales.")
+        raise RuntimeError("CommitChanges() failed after setting view attributes.")
 
     return ToolResult(
         structured_content={
