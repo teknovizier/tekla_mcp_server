@@ -271,7 +271,6 @@ class TeklaDrawingView:
             "name": self.name,
             "view_key": self.view_key,
             "view_type": self.view_type,
-            "scale": self.scale,
             "is_sheet": False,
             "origin_x": self.origin_x,
             "origin_y": self.origin_y,

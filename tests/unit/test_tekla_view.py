@@ -221,7 +221,6 @@ class TestToDict:
             "name",
             "view_key",
             "view_type",
-            "scale",
             "is_sheet",
             "origin_x",
             "origin_y",
@@ -238,7 +237,6 @@ class TestToDict:
 
     def test_values_match_properties(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
         d = wrapper.to_dict()
-        assert d["scale"] == mock_view.Attributes.Scale
         assert d["is_sheet"] == mock_view.IsSheet
         assert d["origin_x"] == round(mock_view.Origin.X, 1)
         assert d["origin_y"] == round(mock_view.Origin.Y, 1)
