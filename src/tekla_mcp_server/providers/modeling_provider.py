@@ -140,7 +140,7 @@ def _to_tool_result(
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List of beam definitions")] = None) -> ToolResult:
+def place_beams(beams: Annotated[list[BeamInput], Field(description="List of beam definitions")] = []) -> ToolResult:
     """
     Places multiple beams in the Tekla model.
 
@@ -191,7 +191,7 @@ def place_beams(beams: Annotated[list[BeamInput] | None, Field(description="List
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description="List of column definitions")] = None) -> ToolResult:
+def place_columns(columns: Annotated[list[ColumnInput], Field(description="List of column definitions")] = []) -> ToolResult:
     """
     Places multiple columns in the Tekla model.
 
@@ -244,7 +244,7 @@ def place_columns(columns: Annotated[list[ColumnInput] | None, Field(description
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="List of wall panels definitions")] = None) -> ToolResult:
+def place_panels(panels: Annotated[list[PanelInput], Field(description="List of wall panels definitions")] = []) -> ToolResult:
     """
     Places multiple wall panels in the Tekla model.
 
@@ -294,7 +294,7 @@ def place_panels(panels: Annotated[list[PanelInput] | None, Field(description="L
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def place_slabs(slabs: Annotated[list[SlabInput] | None, Field(description="List of slab definitions")] = None) -> ToolResult:
+def place_slabs(slabs: Annotated[list[SlabInput], Field(description="List of slab definitions")] = []) -> ToolResult:
     """
     Places multiple slabs in the Tekla model.
 
@@ -448,10 +448,10 @@ def copy_elements(
 def place_grid(
     x: Annotated[list[float], Field(description="Absolute X axis coordinates (mm), e.g. [0, 5000, 10000]")],
     y: Annotated[list[float], Field(description="Absolute Y axis coordinates (mm)")],
-    z: Annotated[list[float] | None, Field(description="Absolute Z axis coordinates (storey heights, mm)")] = None,
-    x_labels: Annotated[list[str] | None, Field(description="Labels for X axis lines")] = None,
-    y_labels: Annotated[list[str] | None, Field(description="Labels for Y axis lines")] = None,
-    z_labels: Annotated[list[str] | None, Field(description="Labels for Z axis lines")] = None,
+    z: Annotated[list[float], Field(description="Absolute Z axis coordinates (storey heights, mm)")] = [],
+    x_labels: Annotated[list[str], Field(description="Labels for X axis lines")] = [],
+    y_labels: Annotated[list[str], Field(description="Labels for Y axis lines")] = [],
+    z_labels: Annotated[list[str], Field(description="Labels for Z axis lines")] = [],
     origin: Annotated[PointInput | None, Field(description="Grid origin point (mm). Defaults to (0, 0, 0)")] = None,
     name: Annotated[str | None, Field(description="Grid name")] = None,
 ) -> ToolResult:

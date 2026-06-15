@@ -34,10 +34,9 @@ def test_select_elements_by_filter_no_filters_returns_error(model_objects):
 @pytest.mark.parametrize(
     "element_type,tekla_classes",
     [
-        ("Wall", 1),
         ("Wall", [1]),
         ("Wall", [1, 8]),
-        (None, 1),
+        (None, [1]),
     ],
 )
 def test_select_elements_by_filter_element_type_and_tekla_classes(model_objects, element_type, tekla_classes):

@@ -52,7 +52,7 @@ def set_elements_properties(
     assembly_prefix: Annotated[str | None, Field(description="Assembly numbering prefix")] = None,
     assembly_start_number: Annotated[int | None, Field(description="Assembly start number")] = None,
     phase: Annotated[int | None, Field(description="Phase number (1, 2, 3, etc.)")] = None,
-    user_properties: Annotated[dict[str, Any] | None, Field(description="Dictionary of user-defined attribute names and values")] = None,
+    user_properties: Annotated[dict[str, Any], Field(description="Dictionary of user-defined attribute names and values")] = {},
 ) -> ToolResult:
     """
     Sets properties and user-defined attributes (UDAs) on selected Tekla elements (assemblies or parts).
@@ -157,7 +157,7 @@ def set_elements_properties(
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def get_elements_properties(
-    report_props_definitions: Annotated[list[str] | None, Field(description="Additional report property names")] = None,
+    report_props_definitions: Annotated[list[str], Field(description="Additional report property names")] = [],
     mode: Annotated[
         Literal["flat", "snapshot", "guids_only"],
         Field(description="Output detail: 'flat' = key properties table, 'snapshot' = full element state, 'guids_only' = GUIDs only (skips property extraction)"),
@@ -551,7 +551,7 @@ def compare_elements(
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def clear_elements_udas(
-    uda_names: Annotated[list[str] | None, Field(description="List of specific UDA names to clear")] = None,
+    uda_names: Annotated[list[str], Field(description="List of specific UDA names to clear")] = [],
 ) -> ToolResult:
     """
     Clears user-defined attributes (UDAs) from selected Tekla parts and assemblies.

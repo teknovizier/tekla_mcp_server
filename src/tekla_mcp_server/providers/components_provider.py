@@ -200,7 +200,7 @@ def _modify_single_component(model: TeklaModel, component: BaseComponent, select
 def put_components(
     component_name: Annotated[str, Field(description="The Tekla name of the component (e.g. 'Lifting Anchor', 'MeshBars')")],
     properties_set: Annotated[str, Field(description="The name of the Tekla component properties set to use")] = "standard",
-    custom_properties: Annotated[dict[str, Any] | None, Field(description="Custom properties to apply to the component")] = None,
+    custom_properties: Annotated[dict[str, Any], Field(description="Custom properties to apply to the component")] = {},
 ) -> ToolResult:
     """
     Inserts Tekla components into the selected objects.
@@ -211,7 +211,7 @@ def put_components(
     - Use Tekla config keys (e.g. `SpacBarsBottPri`, `BottGradePri`) as property names, NOT user-friendly descriptions.
     - Example: For 'MeshBars', read the schema to get: `SpacBarsBottPri` for 'bottom primary bars spacing', `BottGradePri` for 'bottom primary bars reinforcement grade'.
     """
-    component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=custom_properties)
+    component = BaseComponent(name=component_name, properties_set=properties_set, custom_properties=custom_properties or None)
 
     result = _manage_components_on_selected_objects(_put_single_component, component)
     return result

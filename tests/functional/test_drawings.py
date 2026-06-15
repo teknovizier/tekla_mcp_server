@@ -226,9 +226,10 @@ class TestGetDrawingViews:
         open_drawing(mark=cu_mark)
         result = get_drawing_views()
         common = {"name", "view_key", "view_type", "is_sheet", "origin_x", "origin_y", "width", "height"}
-        # The sheet view has no scale and no frame origin; model views add both.
+        # The sheet view has no frame origin, sheet placement or display settings.
+        # Model views add a frame origin, sheet number/placement and display settings.
         sheet_keys = common
-        non_sheet_keys = common | {"scale", "frame_origin_x", "frame_origin_y"}
+        non_sheet_keys = common | {"frame_origin_x", "frame_origin_y", "sheet_number", "sheet_placement", "display_settings"}
         for view in result.structured_content["views"]:
             expected = sheet_keys if view["is_sheet"] else non_sheet_keys
             assert set(view.keys()) == expected
@@ -436,11 +437,16 @@ class TestDeleteViewClouds:
         result = delete_view_clouds()
         assert result.structured_content["status"] == "error"
 
-    def test_empty_view_keys_rejected(self, cu_mark):
-        """Empty view_keys list is rejected."""
+    def test_empty_view_keys_processes_all_views(self, cu_mark):
+        """An empty view_keys list processes all views, like omitting it."""
         open_drawing(mark=cu_mark)
         result = delete_view_clouds(view_keys=[])
-        assert result.structured_content["status"] == "error"
+        sc = result.structured_content
+        assert sc["status"] == "success"
+        assert sc["total_found"] == 0
+        assert sc["total_deleted"] == 0
+        assert sc["total_failed"] == 0
+        assert sc["views"] == []
         close_drawing(save=False)
 
     def test_invalid_view_key_rejected(self, cu_mark):
@@ -525,11 +531,15 @@ class TestAlignSectionViews:
         assert isinstance(sc["skipped"], list)
         close_drawing(save=False)
 
-    def test_empty_view_keys_errors(self, cu_mark):
-        """An empty view_keys list is rejected (omit it to align all)."""
+    def test_empty_view_keys_aligns_all(self, cu_mark):
+        """An empty view_keys list aligns all section views, like omitting it."""
         open_drawing(mark=cu_mark)
         result = align_section_views(view_keys=[])
-        assert result.structured_content["status"] == "error"
+        sc = result.structured_content
+        assert sc["status"] == "warning"
+        assert sc["aligned_count"] == 0
+        assert sc["moves"] == []
+        assert isinstance(sc["skipped"], list)
         close_drawing(save=False)
 
     def test_unknown_view_key_errors(self, cu_mark):
@@ -542,8 +552,10 @@ class TestAlignSectionViews:
     def test_non_section_view_key_is_skipped(self, cu_mark):
         """A non-section view passed in view_keys is reported as skipped, not aligned."""
         open_drawing(mark=cu_mark)
-        view_key = _first_non_sheet_view_key()
-        assert view_key is not None
+        view_key = _first_non_section_view_key()
+        if view_key is None:
+            close_drawing(save=False)
+            pytest.skip("No non-section view available in this drawing")
         result = align_section_views(view_keys=[view_key])
         sc = result.structured_content
         assert sc["aligned_count"] == 0
@@ -556,6 +568,15 @@ def _first_non_sheet_view_key():
     views = get_drawing_views().structured_content["views"]
     for v in views:
         if not v["is_sheet"]:
+            return v["view_key"]
+    return None
+
+
+def _first_non_section_view_key():
+    """Return view_key of the first non-sheet, non-section view, or None."""
+    views = get_drawing_views().structured_content["views"]
+    for v in views:
+        if not v["is_sheet"] and v["view_type"] != "SectionView":
             return v["view_key"]
     return None
 

@@ -62,11 +62,11 @@ selection_provider = LocalProvider()
 @mcp_handler(scope="tool")
 def select_elements_by_filter(
     element_type: Annotated[str | None, Field(description="Named element type (e.g. 'Wall', 'Steel Beam')")] = None,
-    tekla_classes: Annotated[int | list[int] | None, Field(description="Tekla class numbers")] = None,
-    standard_string_filters: Annotated[dict[str, Any] | None, Field(description="Dict of standard string properties to filter options")] = None,
-    standard_numeric_filters: Annotated[dict[str, Any] | None, Field(description="Dict of standard numeric properties to filter options")] = None,
-    custom_string_filters: Annotated[dict[str, Any] | None, Field(description="Dict of custom attribute names to StringFilterOption")] = None,
-    custom_numeric_filters: Annotated[dict[str, Any] | None, Field(description="Dict of custom property names to NumericFilterOption")] = None,
+    tekla_classes: Annotated[list[int], Field(description="Tekla class numbers")] = [],
+    standard_string_filters: Annotated[dict[str, Any], Field(description="Dict of standard string properties to filter options")] = {},
+    standard_numeric_filters: Annotated[dict[str, Any], Field(description="Dict of standard numeric properties to filter options")] = {},
+    custom_string_filters: Annotated[dict[str, Any], Field(description="Dict of custom attribute names to StringFilterOption")] = {},
+    custom_numeric_filters: Annotated[dict[str, Any], Field(description="Dict of custom property names to NumericFilterOption")] = {},
     combine_with: Annotated[str, Field(description="How to combine filter groups: 'AND' or 'OR'")] = "AND",
 ) -> ToolResult:
     """
@@ -94,7 +94,7 @@ def select_elements_by_filter(
 
     # Elements in class 1 (Wall) with name ending in "1601"
     {
-        "tekla_classes": 1,
+        "tekla_classes": [1],
         "standard_string_filters": {
             "name": {"conditions": {"match_type": "Ends With", "value": "1601"}}
         }
@@ -102,7 +102,7 @@ def select_elements_by_filter(
 
     # Elements in class 1 (Wall) with height > 2m
     {
-        "tekla_classes": 1,
+        "tekla_classes": [1],
         "custom_numeric_filters": {
             "HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000}}
         }
@@ -180,8 +180,6 @@ def select_elements_by_filter(
 
     # Add explicit tekla_classes to filter
     if tekla_classes:
-        if isinstance(tekla_classes, int):
-            tekla_classes = [tekla_classes]
         type_sub = BinaryFilterExpressionCollection()
         for cls in tekla_classes:
             add_filter(type_sub, PartFilterExpressions.Class(), cls, NumericOperatorType.IS_EQUAL, operator=BinaryFilterOperatorType.BOOLEAN_OR)

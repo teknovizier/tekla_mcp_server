@@ -190,12 +190,12 @@ def get_drawings(
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def get_drawings_properties(
-    marks: Annotated[list[str] | None, Field(description="List of drawing marks to get properties for")] = None,
+    marks: Annotated[list[str], Field(description="List of drawing marks to get properties for. Leave empty to use the currently selected drawings")] = [],
 ) -> ToolResult:
     """
     Get properties of drawings by their marks.
 
-    If marks are not provided, gets properties of currently selected drawings in Tekla.
+    If marks are empty, gets properties of currently selected drawings in Tekla.
 
     ## OUTPUT
     - Return the result table in Markdown format EXACTLY as provided by the tool.
@@ -203,7 +203,7 @@ def get_drawings_properties(
     - ALWAYS show the full table. DO NOT remove any rows or columns.
     """
     handler = TeklaDrawingHandler()
-    target_drawings = handler.get_drawings_by_marks(marks)
+    target_drawings = handler.get_drawings_by_marks(marks or None)
 
     drawings_data = [d.to_dict() for d in target_drawings]
     logger.info("Retrieved properties for %s drawings", len(drawings_data))
@@ -221,21 +221,22 @@ def get_drawings_properties(
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def set_drawings_properties(
-    marks: Annotated[list[str] | None, Field(description="List of drawing marks to update")] = None,
+    marks: Annotated[list[str], Field(description="List of drawing marks to update. Leave empty to update the currently selected drawings")] = [],
     name: Annotated[str | None, Field(description="Drawing name")] = None,
     title1: Annotated[str | None, Field(description="First drawing title")] = None,
     title2: Annotated[str | None, Field(description="Second drawing title")] = None,
     title3: Annotated[str | None, Field(description="Third drawing title")] = None,
-    user_properties: Annotated[dict[str, Any] | None, Field(description="Dictionary of user-defined attribute names and values")] = None,
+    user_properties: Annotated[dict[str, Any], Field(description="Dictionary of user-defined attribute names and values")] = {},
 ) -> ToolResult:
     """
     Sets properties and user-defined attributes (UDAs) on drawings by their marks.
 
-    If marks are not provided, updates the currently selected drawings in Tekla.
+    If marks are empty, updates the currently selected drawings in Tekla.
     Does not require any drawing to be open.
     """
     handler = TeklaDrawingHandler()
-    target_drawings = handler.get_drawings_by_marks(marks)
+    target_drawings = handler.get_drawings_by_marks(marks or None)
+    user_properties_or_none = user_properties or None
 
     total_changes: dict[str, int] = {
         "name": 0,
@@ -254,7 +255,7 @@ def set_drawings_properties(
                 title1=title1,
                 title2=title2,
                 title3=title3,
-                user_properties=user_properties,
+                user_properties=user_properties_or_none,
             )
             elem_errors: list[dict] = changes.pop("errors", [])
             for key, value in changes.items():
@@ -297,17 +298,17 @@ def set_drawings_properties(
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def set_drawings_issue_state(
-    marks: Annotated[list[str] | None, Field(description="List of drawing marks to issue or unissue")] = None,
+    marks: Annotated[list[str], Field(description="List of drawing marks to issue or unissue. Leave empty to use the currently selected drawings")] = [],
     action: Annotated[Literal["issue", "unissue"], Field(description="Whether to issue or unissue the drawings")] = "issue",
 ) -> ToolResult:
     """
     Issue or unissue drawings by their marks.
 
-    If marks are not provided, acts on the currently selected drawings in Tekla.
+    If marks are empty, acts on the currently selected drawings in Tekla.
     This is a drawing list level action, it does not require any drawing to be open.
     """
     handler = TeklaDrawingHandler()
-    target_drawings = handler.get_drawings_by_marks(marks)
+    target_drawings = handler.get_drawings_by_marks(marks or None)
 
     if action == "issue":
         action_fn = handler.issue_drawing
@@ -355,17 +356,17 @@ def set_drawings_issue_state(
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def update_drawings(
-    marks: Annotated[list[str] | None, Field(description="List of drawing marks to update")] = None,
+    marks: Annotated[list[str], Field(description="List of drawing marks to update. Leave empty to use the currently selected drawings")] = [],
 ) -> ToolResult:
     """
     Update drawings by their marks, refreshing them from the model.
 
-    If marks are not provided, acts on the currently selected drawings in Tekla.
+    If marks are empty, acts on the currently selected drawings in Tekla.
 
     Numbering must be up to date before calling this tool.
     """
     handler = TeklaDrawingHandler()
-    target_drawings = handler.get_drawings_by_marks(marks)
+    target_drawings = handler.get_drawings_by_marks(marks or None)
 
     # UpdateDrawing acts directly on the drawing list, unlike SetUserProperty -
     # no Modify()/CommitChanges() is needed or applicable here.
@@ -449,7 +450,7 @@ def _detect_view_collisions(tekla_view: Any, view_name: str) -> tuple[list, list
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def arrange_colliding_drawing_marks(
-    view_keys: Annotated[list[str] | None, Field(description="View keys to check (from `get_drawing_views`). Processes all views when omitted")] = None,
+    view_keys: Annotated[list[str], Field(description="View keys to check (from `get_drawing_views`). Processes all views when empty")] = [],
 ) -> ToolResult:
     """
     Detect colliding part marks in the active drawing's views and automatically rearrange them.
@@ -465,9 +466,6 @@ def arrange_colliding_drawing_marks(
     registered it and arrangement is skipped for this call. The result then includes
     a `macro_not_registered` error - restart Tekla Structures and run this tool again.
     """
-    if view_keys is not None and not view_keys:
-        raise ValueError("view_keys must not be an empty list. Omit it to process all views.")
-
     handler = TeklaDrawingHandler()
     drawing = handler.require_active_drawing()
 
@@ -629,21 +627,21 @@ def arrange_colliding_drawing_marks(
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def print_drawings(
-    marks: Annotated[list[str] | None, Field(description="List of drawing marks to process")] = None,
+    marks: Annotated[list[str], Field(description="List of drawing marks to process. Leave empty to use the currently selected drawings")] = [],
     output_filename: Annotated[Literal["name", "mark", "title1", "title2", "title3"] | None, Field(description="Output filename")] = None,
     output_folder: Annotated[str | None, Field(description="Output folder path for PDF output")] = None,
     printer_attributes: Annotated[
-        dict[str, Any] | None,
+        dict[str, Any],
         Field(description="Optional overrides for printing behavior. Used to customize default print settings."),
-    ] = None,
+    ] = {},
 ) -> ToolResult:
     """
     Print drawings by their marks.
 
-    If marks are not provided, prints currently selected drawings in Tekla.
+    If marks are empty, prints currently selected drawings in Tekla.
     """
     handler = TeklaDrawingHandler()
-    target_drawings = handler.get_drawings_by_marks(marks)
+    target_drawings = handler.get_drawings_by_marks(marks or None)
 
     provided_output_folder = output_folder
     if not output_folder:
@@ -1078,7 +1076,7 @@ def move_view(
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def align_section_views(
-    view_keys: Annotated[list[str] | None, Field(description="Section view keys to align (from `get_drawing_views`). Aligns all section views when omitted")] = None,
+    view_keys: Annotated[list[str], Field(description="Section view keys to align (from `get_drawing_views`). Aligns all section views when empty")] = [],
     overlap_tolerance: Annotated[
         float,
         Field(description="Overlap in mm, on the non-aligned axis, above which a section is treated as intentionally placed outside its projection lane and left as-is"),
@@ -1095,9 +1093,6 @@ def align_section_views(
     sets how much non-aligned-axis overlap is tolerated before a section counts as
     out-of-lane.
     """
-    if view_keys is not None and not view_keys:
-        raise ValueError("view_keys must not be an empty list. Omit it to align all section views.")
-
     handler = TeklaDrawingHandler()
     drawing = handler.require_active_drawing()
 
@@ -1113,7 +1108,7 @@ def align_section_views(
     target_set: set[str] | None = None
     moves: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
-    if view_keys is not None:
+    if view_keys:
         missing = [k for k in view_keys if k not in by_key]
         if missing:
             raise ValueError(f"View(s) not found: {missing}. Use `get_drawing_views` to list valid keys.")
@@ -1273,7 +1268,7 @@ def set_views_attributes(
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def delete_view_clouds(
-    view_keys: Annotated[list[str] | None, Field(description="View keys to clear (from `get_drawing_views`). Processes all views when omitted")] = None,
+    view_keys: Annotated[list[str], Field(description="View keys to clear (from `get_drawing_views`). Processes all views when empty")] = [],
 ) -> ToolResult:
     """
     Delete all clouds from model views in the active drawing.
@@ -1281,13 +1276,10 @@ def delete_view_clouds(
     The sheet view aggregates clouds from all child views, so it is
     skipped to avoid double-deletion. Only model-view clouds are affected.
     """
-    if view_keys is not None and not view_keys:
-        raise ValueError("view_keys must not be an empty list. Omit it to process all views.")
-
     handler = TeklaDrawingHandler()
     drawing = handler.require_active_drawing()
 
-    if view_keys is not None:
+    if view_keys:
         index = handler.index_views_by_key()
         missing = [k for k in view_keys if k not in index]
         if missing:

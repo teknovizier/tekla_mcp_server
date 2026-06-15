@@ -242,7 +242,7 @@ def _check_element_bounding_box_rebars(
 @mcp_handler(scope="tool")
 def cut_elements_with_cutters(
     cutter_class: Annotated[int | None, Field(description="Tekla class of the parts to use as cutters")] = None,
-    cutter_guids: Annotated[list[str] | None, Field(description="GUIDs of the parts to use as cutters (e.g. from `get_elements_properties`)")] = None,
+    cutter_guids: Annotated[list[str], Field(description="GUIDs of the parts to use as cutters (e.g. from `get_elements_properties`)")] = [],
     delete_cutting_parts: Annotated[bool, Field(description="Remove cutting parts after cuts are applied")] = False,
 ) -> ToolResult:
     """
@@ -252,9 +252,9 @@ def cut_elements_with_cutters(
     - `cutter_class`: use all parts with the specified Tekla class as cutters
     - `cutter_guids`: use specific parts as cutters (useful in multi-step workflows)
     """
-    if cutter_class is None and cutter_guids is None:
+    if cutter_class is None and not cutter_guids:
         raise ValueError("Provide exactly one of 'cutter_class' or 'cutter_guids'")
-    if cutter_class is not None and cutter_guids is not None:
+    if cutter_class is not None and cutter_guids:
         raise ValueError("Provide exactly one of 'cutter_class' or 'cutter_guids'")
 
     model = TeklaModel()
@@ -264,7 +264,6 @@ def cut_elements_with_cutters(
         raw_cutters = model.get_objects_by_class(cutter_class)
         label = f"class {cutter_class}"
     else:
-        assert cutter_guids is not None  # narrowed by the guards above
         raw_cutters = model.get_objects_by_guid(cutter_guids)
         label = f"{len(cutter_guids)} GUIDs"
 
