@@ -1189,6 +1189,7 @@ def align_section_views(
             "status": "success" if moves else "warning",
             "aligned_count": len(moves),
             "moves": moves,
+            "skipped_count": len(skipped),
             "skipped": skipped,
         }
     )
