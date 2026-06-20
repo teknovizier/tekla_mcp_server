@@ -32,6 +32,38 @@ class TeklaDrawingView:
         return raw or None
 
     @property
+    def label(self) -> str:
+        """
+        Returns the view's label text, assembled from TagsAttributes.TagA1 through TagA5.
+
+        Some view types expose no `TagsAttributes` at all - returns an empty string in that case.
+        """
+        # Lazy import: drawing_utils imports TeklaDrawingView (via tekla.wrappers), so a
+        # top-level import here would be circular
+        from tekla_mcp_server.tekla.drawing_utils import render_content_elements
+
+        try:
+            tags = self._view.Attributes.TagsAttributes
+        except AttributeError:
+            return ""
+        parts: list[str] = []
+        for i in range(1, 6):
+            member = getattr(tags, f"TagA{i}", None)
+            if member is None:
+                continue
+            content = getattr(member, "TagContent", None)
+            if content is None:
+                continue
+            try:
+                rendered = render_content_elements(content).strip()
+            except Exception as e:
+                logger.debug("Failed to iterate TagA%d content for view '%s': %s", i, self.view_key, e)
+                continue
+            if rendered:
+                parts.append(rendered)
+        return " | ".join(parts)
+
+    @property
     def view_type(self) -> str:
         """Returns the semantic view type (e.g. 'SectionView', 'FrontView')."""
         try:
@@ -253,7 +285,7 @@ class TeklaDrawingView:
                 Ignored for the sheet view itself.
         """
         if self.is_sheet:
-            # Sheet view has no scale or frame_origin - those are
+            # Sheet view has no label, scale or frame_origin - those are
             # per-model-view concepts. Omit them to avoid confusion
             return {
                 "name": self.name,
@@ -268,6 +300,7 @@ class TeklaDrawingView:
         fx, fy = self.frame_origin
         return {
             "name": self.name,
+            "label": self.label,
             "view_key": self.view_key,
             "view_type": self.view_type,
             "is_sheet": False,

@@ -16,6 +16,26 @@ if os.getenv("CI") == "true":
 from tekla_mcp_server.tekla.wrappers.view import TeklaDrawingView
 
 
+class TextElement:
+    """Stand-in for PropertyElement/TextElement."""
+
+    def __init__(self, value: str):
+        self.Value = value
+
+
+class SpaceElement:
+    """Stand-in for Tekla's SpaceElement. Name matches the real type."""
+
+
+class NewLineElement:
+    """Stand-in for Tekla's NewLineElement. Name matches the real type."""
+
+
+def _make_tag_a(*content: object) -> MagicMock:
+    """Return a mock `ViewMarkTagAttributes` with the given `TagContent` elements."""
+    return MagicMock(TagContent=list(content))
+
+
 @pytest.fixture
 def mock_view() -> MagicMock:
     """Return a minimal mock DrawingView."""
@@ -28,6 +48,13 @@ def mock_view() -> MagicMock:
         ReflectedView=False,
         UndeformedView=False,
         UnfoldedView=False,
+        TagsAttributes=MagicMock(
+            TagA1=_make_tag_a(TextElement("F"), SpaceElement(), TextElement("-"), SpaceElement(), TextElement("F")),
+            TagA2=_make_tag_a(TextElement("1:30")),
+            TagA3=_make_tag_a(),
+            TagA4=_make_tag_a(),
+            TagA5=_make_tag_a(),
+        ),
     )
     view.IsSheet = False
     view.Width = 500.0
@@ -214,11 +241,39 @@ class TestGetAllObjects:
         mock_view.GetAllObjects.assert_called_once_with()
 
 
+class TestLabel:
+    def test_joins_non_empty_slots_with_pipe(self, wrapper: TeklaDrawingView):
+        assert wrapper.label == "F - F | 1:30"
+
+    def test_skips_empty_slots(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        mock_view.Attributes.TagsAttributes = MagicMock(
+            TagA1=_make_tag_a(TextElement("B")),
+            TagA2=_make_tag_a(),
+            TagA3=_make_tag_a(TextElement("B")),
+            TagA4=_make_tag_a(),
+            TagA5=_make_tag_a(),
+        )
+        assert wrapper.label == "B | B"
+
+    def test_skips_none_slots(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        mock_view.Attributes.TagsAttributes = MagicMock(TagA1=_make_tag_a(TextElement("B")), TagA2=None, TagA3=None, TagA4=None, TagA5=None)
+        assert wrapper.label == "B"
+
+    def test_returns_empty_string_when_no_tags_attributes(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        mock_view.Attributes = MagicMock(spec=["Scale"])
+        assert wrapper.label == ""
+
+    def test_returns_empty_string_when_all_slots_empty(self, wrapper: TeklaDrawingView, mock_view: MagicMock):
+        mock_view.Attributes.TagsAttributes = MagicMock(TagA1=_make_tag_a(), TagA2=_make_tag_a(), TagA3=_make_tag_a(), TagA4=_make_tag_a(), TagA5=_make_tag_a())
+        assert wrapper.label == ""
+
+
 class TestToDict:
     def test_returns_dict_with_all_keys(self, wrapper: TeklaDrawingView):
         d = wrapper.to_dict()
         expected_keys = {
             "name",
+            "label",
             "view_key",
             "view_type",
             "is_sheet",

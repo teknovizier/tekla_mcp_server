@@ -224,24 +224,37 @@ def _extract_mark_text(mark: Any) -> str | None:
     if content is None:
         return None
 
-    parts: list[str] = []
     try:
-        for element in content:
-            element_type = type(element).__name__
-            if element_type == "SpaceElement":
-                parts.append(" ")
-            elif element_type == "NewLineElement":
-                parts.append("\n")
-            else:
-                value = getattr(element, "Value", None)
-                if value is not None:
-                    parts.append(str(value))
+        text = render_content_elements(content).strip()
     except Exception as e:
         logger.debug("Failed to iterate Mark content for %s: %s", type(mark).__name__, e)
         return None
 
-    text = "".join(parts).strip()
     return text or None
+
+
+def render_content_elements(content: Any) -> str:
+    """
+    Render a Tekla annotation-content element collection into its displayed text.
+
+    Args:
+        content: A `ContainerElement` (or any iterable of its element types).
+
+    Returns:
+        The rendered text. Raises on iteration failure - callers decide the fallback.
+    """
+    parts: list[str] = []
+    for element in content:
+        element_type = type(element).__name__
+        if element_type == "SpaceElement":
+            parts.append(" ")
+        elif element_type == "NewLineElement":
+            parts.append("\n")
+        else:
+            value = getattr(element, "Value", None)
+            if value is not None:
+                parts.append(str(value))
+    return "".join(parts)
 
 
 def _extract_mark_target(mark: Any, model: "TeklaModel") -> str | None:
