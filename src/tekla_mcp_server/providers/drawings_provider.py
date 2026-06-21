@@ -5,9 +5,10 @@ Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Annotated, Literal
+from typing import Any, Annotated, Literal, TypeVar
 
 import ezdxf
 
@@ -15,12 +16,29 @@ from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from pydantic import Field
 
-from tekla_mcp_server.config import get_advanced_option_directories, get_dxf_export_timeout, get_mcp_data_dir, get_tolerance
+from tekla_mcp_server.config import (
+    get_advanced_option_directories,
+    get_config_dir,
+    get_default_export_settings,
+    get_dxf_export_timeout,
+    get_export_output_dir,
+    get_mcp_data_dir,
+    get_tolerance,
+)
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import DrawingType, StringFilterOption, ViewAttributes
-from tekla_mcp_server.utils import mcp_handler, sanitize_filename, resolve_model_relative_dir
+from tekla_mcp_server.models import (
+    DWG_FILE_VERSION_MAP,
+    FORMAT_TO_FILE_EXTENSION,
+    DrawingExportFormat,
+    DrawingExportVersion,
+    DrawingType,
+    StringFilterOption,
+    ViewAttributes,
+)
+from tekla_mcp_server.utils import mcp_handler, resolve_model_relative_dir
+from tekla_mcp_server.drawing_export import install_export_settings_content, patch_dwgsetting_xml
 from tekla_mcp_server.tekla.filter_builder import to_filter_option
-from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_export_setting_installed, restore_options_ini_if_interrupted, OPTIONS_INI_BACKUP_SUFFIX, OPTIONS_INI_ABSENT_MARKER_SUFFIX
+from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_export_settings_installed, get_available_attribute_files
 from tekla_mcp_server.providers.operations_provider import run_macro
 from tekla_mcp_server.tekla.drawing_utils import (
     matches_string_filter,
@@ -39,7 +57,7 @@ from tekla_mcp_server.tekla.drawing_utils import (
     ORIENTATION_MAP,
     SCALING_METHOD_MAP,
 )
-from tekla_mcp_server.dxf_operations import run_collision_checks, resolve_entities, duplicate_dxf_stems, match_dxf_for_mark
+from tekla_mcp_server.dxf_operations import run_collision_checks, resolve_entities
 from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -56,6 +74,18 @@ from tekla_mcp_server.tekla.loader import (
 
 
 drawings_provider = LocalProvider()
+
+_T = TypeVar("_T")
+
+# Internal collision-check setting (config/attributes): remaps drawing objects onto
+# custom TEKLA_MCP_* layers the DXF parser depends on, with a TEKLA_MCP_ file prefix.
+# Used as-is by check_drawing_collisions, always DXF.
+COLLISION_EXPORT_SETTING = "TEKLA_MCP_COLLISION_LAYERS"
+
+# Clean base setting (config/attributes) for the user-facing export_drawings tool:
+# standard layers, empty file prefix. Python patches its format/version/output dir
+# per call. The export macro selects it by name.
+EXPORT_BASE_SETTING = "TEKLA_MCP_EXPORT_BASE"
 
 
 def _describe_model_object(guid: str, model_obj: ModelObject) -> dict[str, Any]:
@@ -530,6 +560,162 @@ def print_drawings(
     }
     if provided_output_folder:
         result["output_folder"] = provided_output_folder
+    return ToolResult(structured_content=result)
+
+
+def _close_export_dialog() -> None:
+    """Close the Document Manager export dialog after an export, logging on failure."""
+    close_result = run_macro(macro_name="TeklaMCPCloseExportDialog.cs")
+    if close_result.structured_content.get("status") != "success":
+        logger.warning("Failed to close export dialog after export")
+
+
+def _run_export_macro(model_path: str, setting_name: str, marks: list[str], poll: Callable[[], _T]) -> _T:
+    """
+    Run the shared export macro for `marks` using the named export setting.
+
+    Writes `export.tmp` (a `SETTING=<name>` line plus one mark per line) for the
+    macro to consume, runs the macro, then calls `poll` to verify the output.
+    Closes the export dialog after `poll` returns (closing earlier would cancel
+    the export).
+
+    Args:
+        model_path: Path to the open Tekla model.
+        setting_name: Export setting to select in the Document Manager.
+        marks: Drawing marks to search and select.
+        poll: Callback run after the macro to verify/collect output. Its return
+            value is returned to the caller.
+
+    Returns:
+        Whatever `poll` returns.
+    """
+    ensure_macro_installed("TeklaMCPExportDrawings.cs", category="modeling")
+    ensure_macro_installed("TeklaMCPCloseExportDialog.cs", category="modeling")
+
+    data_dir = get_mcp_data_dir(model_path)
+    export_file = data_dir / "export.tmp"
+    export_file.write_text(f"SETTING={setting_name}\n" + "\n".join(marks), encoding="utf-8")
+
+    try:
+            macro_result = run_macro(macro_name="TeklaMCPExportDrawings.cs")
+            if macro_result.structured_content.get("status") != "success":
+                raise RuntimeError("Export macro failed. Ensure the export setting exists in Document Manager.")
+            result = poll()
+            _close_export_dialog()
+            return result
+    finally:
+        export_file.unlink(missing_ok=True)
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def export_drawings(
+    marks: Annotated[list[str], Field(description="Drawing marks to export. Leave empty to use the currently selected drawings")] = [],
+    drawing_format: Annotated[DrawingExportFormat, Field(description="Output format: dxf, dwg or dgn")] = DrawingExportFormat.DWG,
+    version: Annotated[DrawingExportVersion | None, Field(description="AutoCAD version: 2000, 2004, 2007, 2010 or 2013. Defaults to 2010")] = None,
+    export_settings: Annotated[str | None, Field(description="Name of a customer '.dwgsetting' export setting. When set, format/version are ignored and the setting is used as-is")] = None,
+) -> ToolResult:
+    """
+    Export drawings via the Document Manager export macro.
+
+    Two modes: with `export_settings`, the named setting is used as-is. Without
+    it, the base setting is patched with `drawing_format` and `version`. Empty
+    `marks` uses the current Tekla selection.
+    """
+    # Coerce to enums so direct calls validate too (raises ValueError on bad values)
+    drawing_format = DrawingExportFormat(drawing_format)
+    if version is not None:
+        version = DrawingExportVersion(version)
+
+    handler = TeklaDrawingHandler()
+    if handler.get_active_drawing() is not None:
+        raise RuntimeError("A drawing is currently open. Close it first with `close_drawing` before exporting.")
+
+    target_drawings = handler.get_drawings_by_marks(marks or None)
+    if not target_drawings:
+        raise ValueError("No drawings selected. Select drawings in Document Manager or pass the `marks` parameter.")
+
+    expected_marks = [d.mark for d in target_drawings]
+    model_path = TeklaModel().model_path
+
+    customer_setting = export_settings or get_default_export_settings()
+    if customer_setting:
+        mode = "named"
+        setting_name = customer_setting
+        # Strip .dwgsetting if the user included it, then verify it exists
+        setting_stem = setting_name.removesuffix(".dwgsetting")
+        available = get_available_attribute_files(".dwgsetting")
+        if setting_stem not in available:
+            raise ValueError(f"Export setting '{setting_name}' not found. Available settings: {available}")
+        output_dir: str | None = None
+        ext: str | None = None
+        version_label: str | None = None
+    else:
+        mode = "ongoing"
+        setting_name = EXPORT_BASE_SETTING
+        ext = FORMAT_TO_FILE_EXTENSION[drawing_format]
+        resolved_version = version or DrawingExportVersion.V2010
+        file_version = DWG_FILE_VERSION_MAP[resolved_version]
+        version_label = resolved_version.value
+        raw_dir = get_export_output_dir()
+        output_dir = resolve_model_relative_dir(raw_dir, model_path)
+        if not Path(output_dir).is_dir():
+            raise ValueError(f"Output directory '{output_dir}' does not exist")
+        # Patch the bundled base setting with the chosen format/version/output dir,
+        # then install it into the model so the macro selects it by name.
+        base_xml = (get_config_dir() / "attributes" / f"{EXPORT_BASE_SETTING}.dwgsetting").read_text(encoding="utf-8")
+        patched = patch_dwgsetting_xml(base_xml, file_extension=ext, file_version=file_version, output_dir=raw_dir)
+        install_export_settings_content(model_path, f"{EXPORT_BASE_SETTING}.dwgsetting", patched)
+
+    logger.info("export_drawings: %s mode, %d drawing(s), setting '%s'", mode, len(expected_marks), setting_name)
+
+    # Snapshot existing files so we count only this run's new outputs - the
+    # filename follows Tekla's own XS_DRAWING_PLOT_FILE_NAME_* advanced option
+    # template (not configurable from here, see docs/reference.md), so we diff
+    # rather than match by mark, and never delete the user's existing files.
+    before_files: set[Path] = set()
+    if output_dir is not None and ext and Path(output_dir).is_dir():
+        before_files = set(Path(output_dir).glob(f"*{ext}"))
+
+    def _poll() -> list[Path]:
+        # Named-setting mode: the customer setting owns the output dir and naming,
+        # which we cannot predict, so there is nothing to verify.
+        if output_dir is None or not ext:
+            return []
+        out = Path(output_dir)
+        if not out.is_dir():
+            raise RuntimeError(f"Output directory '{output_dir}' not found after export.")
+        expected = len(expected_marks)
+        produced = sorted(set(out.glob(f"*{ext}")) - before_files)
+        if len(produced) < expected:
+            logger.info("Waiting for %d export file(s) to appear in %s...", expected, output_dir)
+            deadline = time.time() + get_dxf_export_timeout()
+            while len(produced) < expected and time.time() < deadline:
+                time.sleep(2)
+                produced = sorted(set(out.glob(f"*{ext}")) - before_files)
+        return produced
+
+    produced = _run_export_macro(model_path, setting_name, expected_marks, _poll)
+
+    if mode == "named":
+        result: dict[str, Any] = {
+            "status": "success",
+            "message": f"Export submitted for {len(expected_marks)} drawing(s) using setting '{setting_name}'. Output location is defined by the setting.",
+            "setting": setting_name,
+            "total": len(expected_marks),
+            "marks": expected_marks,
+        }
+    else:
+        status = "success" if len(produced) >= len(expected_marks) else "partial"
+        result = {
+            "status": status,
+            "format": drawing_format.value,
+            "version": version_label,
+            "output_folder": raw_dir,
+            "total": len(expected_marks),
+            "exported": len(produced),
+            "files": sorted(p.name for p in produced),
+        }
     return ToolResult(structured_content=result)
 
 
@@ -1186,118 +1372,70 @@ def delete_views(
     )
 
 
+def _export_one_drawing_to_dxf(model_path: str, plotfiles_dir: Path, mark: str) -> Path:
+    """
+    Export a single drawing to DXF and return its output path.
+
+    Output names cannot be forced to contain the mark - matching by filename is
+    not reliable. Instead this exports one mark per macro call and identifies its
+    file by snapshotting Plotfiles/ before and after, so the single new file is
+    unambiguously this mark's DXF.
+
+    Raises:
+        RuntimeError: If zero or more than one new DXF appears within the
+            configured timeout (`get_dxf_export_timeout`, default 120s).
+    """
+    before = set(plotfiles_dir.glob("TEKLA_MCP_*.dxf")) if plotfiles_dir.is_dir() else set()
+    timeout = get_dxf_export_timeout()
+
+    def _poll() -> Path:
+        deadline = time.time() + timeout
+        produced: set[Path] = set()
+        if plotfiles_dir.is_dir():
+            produced = set(plotfiles_dir.glob("TEKLA_MCP_*.dxf")) - before
+        if not produced:
+            logger.info("Waiting for DXF to appear in Plotfiles/ for mark '%s'...", mark)
+            while not produced and time.time() < deadline:
+                time.sleep(2)
+                if plotfiles_dir.is_dir():
+                    produced = set(plotfiles_dir.glob("TEKLA_MCP_*.dxf")) - before
+        if not produced:
+            raise RuntimeError(f"No DXF appeared in Plotfiles/ after {timeout:g}s for mark '{mark}'. Check the {COLLISION_EXPORT_SETTING} export setting output directory.")
+        if len(produced) > 1:
+            raise RuntimeError(f"Expected exactly one new DXF for mark '{mark}', found {len(produced)}: {sorted(p.name for p in produced)}")
+        return next(iter(produced))
+
+    return _run_export_macro(model_path, COLLISION_EXPORT_SETTING, [mark], _poll)
+
+
 def _export_drawings_to_dxf(
     model_path: str,
     plotfiles_dir: Path,
     expected_marks: list[str],
-    marks: list[str] | None = None,
 ) -> dict[str, Path]:
     """
     Export drawings to DXF and return the resulting file paths keyed by mark.
 
-    Sets plot-file naming to use the drawing mark as the filename, runs the
-    appropriate WPF macro (by-marks or Document Manager selection), polls
-    Plotfiles/ until every mark in `expected_marks` resolves to a DXF, then
-    restores the original options.ini.
+    Exports each mark with its own macro call (see `_export_one_drawing_to_dxf`)
+    rather than batching, since output filenames cannot be tied to a mark.
 
     Args:
         model_path: Path to the open Tekla model.
         plotfiles_dir: The model's Plotfiles/ directory.
-        expected_marks: Marks of all drawings being exported (always passed,
-            regardless of whether `marks` drove the macro's selection).
-        marks: Marks to search for and select via the Document Manager search
-            box. When omitted, exports whatever is already selected there.
+        expected_marks: Marks of all drawings being exported.
 
     Raises:
-        RuntimeError: If not every mark in `expected_marks` resolves to a
-            matching DXF in Plotfiles/ within the configured timeout
-            (`get_dxf_export_timeout`, default 120s).
+        RuntimeError: If any mark's export does not produce exactly one new
+            DXF within the configured timeout.
     """
-    macro_name = "TeklaMCPExportDXFByMarks.cs" if marks else "TeklaMCPExportDXFSelected.cs"
-    ensure_export_setting_installed("TEKLA_MCP_DXF_EXPORT.dwgsetting")
-    ensure_macro_installed(macro_name, category="modeling")
-    ensure_macro_installed("TeklaMCPCloseExportDialog.cs", category="modeling")
+    ensure_export_settings_installed(f"{COLLISION_EXPORT_SETTING}.dwgsetting")
 
     # Remove any stale DXF files from previous exports
     if plotfiles_dir.is_dir():
         for p in plotfiles_dir.glob("TEKLA_MCP_*.dxf"):
             p.unlink()
 
-    PLOT_NAME_OPTIONS = [
-        "XS_DRAWING_PLOT_FILE_NAME_A",
-        "XS_DRAWING_PLOT_FILE_NAME_W",
-        "XS_DRAWING_PLOT_FILE_NAME_G",
-        "XS_DRAWING_PLOT_FILE_NAME_M",
-        "XS_DRAWING_PLOT_FILE_NAME_C",
-    ]
-    options_ini = Path(model_path) / "options.ini"
-    backup_path = options_ini.with_name(options_ini.name + OPTIONS_INI_BACKUP_SUFFIX)
-    absent_marker = options_ini.with_name(options_ini.name + OPTIONS_INI_ABSENT_MARKER_SUFFIX)
-
-    # Self-heal from a previous run that was killed before its own finally
-    # could restore options.ini, before mutating it again
-    restore_options_ini_if_interrupted(model_path)
-
-    original_ini_content: str | None = None
-    if options_ini.is_file():
-        original_ini_content = options_ini.read_text(encoding="utf-8")
-        backup_path.write_text(original_ini_content, encoding="utf-8")
-    else:
-        absent_marker.write_text("", encoding="utf-8")
-
-    lines = original_ini_content.splitlines(keepends=True) if original_ini_content else []
-    kept = [ln for ln in lines if not any(ln.strip().startswith(f"{opt}=") for opt in PLOT_NAME_OPTIONS)]
-    kept += [f"{opt}=%DRAWING_NAME.%\n" for opt in PLOT_NAME_OPTIONS]
-    options_ini.write_text("".join(kept), encoding="utf-8")
-
-    data_dir = get_mcp_data_dir(model_path)
-    marks_file: Path | None = None
-    if marks:
-        marks_file = data_dir / "marks.tmp"
-        marks_file.write_text("\n".join(marks), encoding="utf-8")
-
-    try:
-        macro_result = run_macro(macro_name=macro_name)
-        if macro_result.structured_content.get("status") != "success":
-            raise RuntimeError("DXF export macro failed. Ensure TEKLA_MCP_DXF_EXPORT export setting exists.")
-
-        if not plotfiles_dir.is_dir():
-            raise RuntimeError("Plotfiles/ directory not found.")
-
-        resolved: dict[str, Path] = {}
-        unresolved = set(expected_marks)
-
-        def _poll_once() -> None:
-            available = {p.stem: p for p in plotfiles_dir.glob("*.dxf")}
-            for mark in list(unresolved):
-                dxf_path = match_dxf_for_mark(mark, available)
-                if dxf_path is not None:
-                    resolved[mark] = dxf_path
-                    unresolved.discard(mark)
-
-        timeout = get_dxf_export_timeout()
-        _poll_once()
-        if unresolved:
-            logger.info("Waiting for %d DXF(s) to appear in Plotfiles/...", len(unresolved))
-            deadline = time.time() + timeout
-            while unresolved and time.time() < deadline:
-                time.sleep(2)
-                _poll_once()
-        if unresolved:
-            raise RuntimeError(f"No matching DXF appeared in Plotfiles/ after {timeout:g}s for mark(s): {sorted(unresolved)}. Check TEKLA_MCP_DXF_EXPORT export setting output directory.")
-        close_result = run_macro(macro_name="TeklaMCPCloseExportDialog.cs")
-        if close_result.structured_content.get("status") != "success":
-            logger.warning("Failed to close DWG export dialog after DXF export")
-        return resolved
-    finally:
-        if original_ini_content is not None:
-            options_ini.write_text(original_ini_content, encoding="utf-8")
-        else:
-            options_ini.unlink(missing_ok=True)
-        backup_path.unlink(missing_ok=True)
-        absent_marker.unlink(missing_ok=True)
-        if marks_file is not None:
-            marks_file.unlink(missing_ok=True)
+    return {mark: _export_one_drawing_to_dxf(model_path, plotfiles_dir, mark) for mark in expected_marks}
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
@@ -1316,11 +1454,6 @@ def check_drawing_collisions(
 
     if handler.get_active_drawing() is not None:
         raise RuntimeError("A drawing is currently open. Close it first with `close_drawing` before running collision checks.")
-
-    if marks is not None:
-        duplicates = duplicate_dxf_stems(marks)
-        if duplicates:
-            raise ValueError(f"The following mark(s) produce indistinguishable DXF filenames and cannot be matched: {sorted(set(duplicates))}")
 
     model = TeklaModel()
     model_path = model.model_path
@@ -1341,7 +1474,7 @@ def check_drawing_collisions(
         raise ValueError(f"The following drawing(s) must be updated first: {outdated}. Status: {details}")
 
     logger.info("Exporting %d drawing(s) to DXF...", drawing_count)
-    dxf_paths_by_mark = _export_drawings_to_dxf(model_path, plotfiles_dir, expected_marks, marks=marks)
+    dxf_paths_by_mark = _export_drawings_to_dxf(model_path, plotfiles_dir, expected_marks)
 
     all_issues: list = []
     total_clouds_drawn = 0

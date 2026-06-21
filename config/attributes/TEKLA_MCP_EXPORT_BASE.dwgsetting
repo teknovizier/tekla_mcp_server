@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<DwgExportOptions Version="1.1">
+  <FileAttributes FileExtension=".dwg" FilePrefix="" FileSuffix="" FileVersion="Dwg.UI.DwgFileVersion.vAC24" />
+  <Preferences OpenFolder="false" OutputDirectory=".\PlotFiles" UpdateExisting="false" EmbedImages="false" WithoutBlocks="false" IncludeViewsOutsideSheet="false" SnapshotToModelSpace="true" SnapshotScale="1.0" CoordinatesToUse="Local" />
+  <LayerRules>&lt;?xml version="1.0" encoding="utf-16"?&gt;
+&lt;ObjectMappingRules xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;
+  &lt;LayerTemplate /&gt;
+  &lt;Version&gt;1.0&lt;/Version&gt;
+  &lt;MappingRules&gt;
+    &lt;MappingRule&gt;
+      &lt;Setting IncludeInExport="true" Color="AsTSObject" LineStyle="AsTSObject" LineWeight="AsTSObject" PaperSpace="false" LayerName="0" /&gt;
+      &lt;Filter ObjectType="DrawingObject" FilterName="" GroupingStyle="All" /&gt;
+    &lt;/MappingRule&gt;
+  &lt;/MappingRules&gt;
+&lt;/ObjectMappingRules&gt;</LayerRules>
+</DwgExportOptions>

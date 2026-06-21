@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
 
 from ezdxf import bbox as dxf_bbox
 
@@ -746,36 +745,3 @@ def run_collision_checks(views: list[dict], entities: list[WorldEntity]) -> list
     # should have bridged two earlier narrow clusters
     raw_issues.sort(key=lambda i: i.bbox.area, reverse=True)
     return merge_issues(raw_issues)
-
-
-def dxf_stem(mark: str) -> str:
-    """Normalize a drawing mark to its DXF filename stem (drops brackets and whitespace)."""
-    return mark.replace("[", "").replace("]", "").strip()
-
-
-def duplicate_dxf_stems(marks: list[str]) -> list[str]:
-    """
-    Return the marks among `marks` whose `dxf_stem` collides with another mark's.
-
-    Two marks with the same DXF stem would produce indistinguishable output
-    filenames, so callers should reject these before exporting anything.
-    """
-    stems: dict[str, list[str]] = {}
-    for mark in marks:
-        stems.setdefault(dxf_stem(mark), []).append(mark)
-    return [mark for group in stems.values() if len(group) > 1 for mark in group]
-
-
-def match_dxf_for_mark(mark: str, available: dict[str, Path]) -> Path | None:
-    """
-    Find the DXF path matching `mark` among `available` DXFs keyed by stem.
-
-    The export setting TEKLA_MCP_DXF_EXPORT prepends FilePrefix="TEKLA_MCP_"
-    to every output filename, so try both bare and prefixed matching.
-    """
-    stem = dxf_stem(mark)
-    candidates = {stem, f"TEKLA_MCP_{stem}"}
-    for key, path in available.items():
-        if any(key.startswith(c) for c in candidates):
-            return path
-    return None

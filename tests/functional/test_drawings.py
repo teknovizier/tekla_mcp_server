@@ -5,8 +5,14 @@ Tests drawing retrieval, property retrieval, mark collision detection,
 open/close drawing, view listing, move, scale, and delete operations.
 """
 
-import pytest
+import os
+import tempfile
+from pathlib import Path
 
+import pytest
+from unittest.mock import patch
+
+from tekla_mcp_server.config import get_export_output_dir
 from tekla_mcp_server.models import ViewAttributes
 from tekla_mcp_server.providers.drawings_provider import (
     align_section_views,
@@ -14,6 +20,7 @@ from tekla_mcp_server.providers.drawings_provider import (
     close_drawing,
     delete_clouds,
     delete_views,
+    export_drawings,
     get_drawings,
     get_drawings_properties,
     get_drawing_views,
@@ -28,6 +35,8 @@ from tekla_mcp_server.providers.drawings_provider import (
     update_drawings,
 )
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
+from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.utils import resolve_model_relative_dir
 
 
 def _skip_if_drawings_selected():
@@ -142,6 +151,164 @@ class TestPrintDrawings:
 
         assert result.structured_content["status"] == "error"
         assert "no drawings" in result.structured_content["message"].lower()
+
+
+class TestExportDrawings:
+    """Tests for export_drawings function."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Export requires no drawing to be open."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing(save=True)
+        yield
+
+    @pytest.fixture(autouse=True)
+    def cleanup_exported_files(self):
+        """
+        Remove files this test creates in the configured export output folder.
+
+        Leftover files from a prior test run cause Tekla's export dialog to
+        prompt "Overwrite?" on the next on-the-go export, which the macro
+        cannot answer and which the snapshot-diff misreports as 'partial'.
+        """
+        model_path = TeklaModel().model_path
+        output_dir = Path(resolve_model_relative_dir(get_export_output_dir(), model_path))
+        before = set(output_dir.glob("*")) if output_dir.is_dir() else set()
+        yield
+        if output_dir.is_dir():
+            for path in set(output_dir.glob("*")) - before:
+                path.unlink(missing_ok=True)
+
+    def test_export_drawings_no_drawings_selected(self):
+        """Call without selecting any drawings and no marks."""
+        _skip_if_drawings_selected()
+        result = export_drawings()
+
+        assert result.structured_content["status"] == "error"
+        assert "no drawings" in result.structured_content["message"].lower()
+
+    def test_export_drawings_open_drawing_rejected(self, ga_mark):
+        """Export is rejected while a drawing is open."""
+        open_drawing(mark=ga_mark)
+        try:
+            result = export_drawings(marks=[ga_mark])
+            assert result.structured_content["status"] == "error"
+            assert "open" in result.structured_content["message"].lower()
+        finally:
+            close_drawing(save=False)
+
+    def test_export_drawings_on_the_go_dxf(self, ga_mark):
+        """On-the-go DXF export produces a file in the configured output folder."""
+        result = export_drawings(marks=[ga_mark], drawing_format="dxf")
+        sc = result.structured_content
+
+        assert sc["status"] == "success"
+        assert sc["format"] == "dxf"
+        assert sc["exported"] >= 1
+        assert all(name.endswith(".dxf") for name in sc["files"])
+
+    def test_export_drawings_dwg_version(self, ga_mark):
+        """DWG export at a non-default version produces a .dwg file."""
+        result = export_drawings(marks=[ga_mark], drawing_format="dwg", version="2013")
+        sc = result.structured_content
+
+        assert sc["status"] == "success"
+        assert sc["format"] == "dwg"
+        assert sc["version"] == "2013"
+        assert all(name.endswith(".dwg") for name in sc["files"])
+
+    def test_export_drawings_invalid_version_rejected(self, ga_mark):
+        """An unsupported version is rejected by enum validation."""
+        result = export_drawings(marks=[ga_mark], version="2018")
+
+        assert result.structured_content["status"] == "error"
+
+    def test_export_drawings_invalid_version_string_rejected(self, ga_mark):
+        """A non-numeric version string is rejected by enum validation."""
+        result = export_drawings(marks=[ga_mark], version="abc")
+
+        assert result.structured_content["status"] == "error"
+
+    def test_export_drawings_invalid_format_rejected(self, ga_mark):
+        """An unsupported format is rejected by enum validation."""
+        result = export_drawings(marks=[ga_mark], drawing_format="pdf")
+
+        assert result.structured_content["status"] == "error"
+
+    def test_export_drawings_nonexistent_setting_rejected(self, ga_mark):
+        """A named setting that does not exist in Document Manager is rejected."""
+        result = export_drawings(marks=[ga_mark], export_settings="MCP_TEST_NONEXISTENT_SETTING")
+
+        assert result.structured_content["status"] == "error"
+
+    def test_export_drawings_dgn(self, ga_mark):
+        """DGN export produces a .dgn file, defaulting to version 2010."""
+        result = export_drawings(marks=[ga_mark], drawing_format="dgn")
+        sc = result.structured_content
+
+        assert sc["status"] == "success"
+        assert sc["format"] == "dgn"
+        assert sc["version"] == "2010"
+        assert all(name.endswith(".dgn") for name in sc["files"])
+
+    def test_export_drawings_dgn_with_version(self, ga_mark):
+        """DGN accepts an explicit version, same as DWG/DXF."""
+        result = export_drawings(marks=[ga_mark], drawing_format="dgn", version="2013")
+        sc = result.structured_content
+
+        assert sc["status"] == "success"
+        assert sc["version"] == "2013"
+
+    def test_export_drawings_rejects_non_existent_absolute_dir(self, ga_mark):
+        """On-the-go export errors when output_dir is an absolute path that does not exist."""
+        non_existent = os.path.join(tempfile.gettempdir(), "MCP_TEST_NONEXISTENT_12345")
+        assert not os.path.isdir(non_existent)
+        with patch("tekla_mcp_server.providers.drawings_provider.get_export_output_dir", return_value=non_existent):
+            with patch("tekla_mcp_server.providers.drawings_provider.get_default_export_settings", return_value=""):
+                result = export_drawings(marks=[ga_mark])
+                sc = result.structured_content
+                assert sc["status"] == "error"
+                assert "does not exist" in sc["message"]
+
+    def test_export_drawings_rejects_non_existent_relative_dir(self, ga_mark):
+        """On-the-go export errors when output_dir is a relative path that does not exist."""
+        with patch("tekla_mcp_server.providers.drawings_provider.get_export_output_dir", return_value=".\\MCP_TEST_NONEXISTENT_REL"):
+            with patch("tekla_mcp_server.providers.drawings_provider.get_default_export_settings", return_value=""):
+                result = export_drawings(marks=[ga_mark])
+                sc = result.structured_content
+                assert sc["status"] == "error"
+                assert "does not exist" in sc["message"]
+
+    def test_export_drawings_accepts_existing_absolute_dir(self, ga_mark):
+        """On-the-go export succeeds when output_dir is an existing absolute path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("tekla_mcp_server.providers.drawings_provider.get_export_output_dir", return_value=tmpdir):
+                with patch("tekla_mcp_server.providers.drawings_provider.get_default_export_settings", return_value=""):
+                    result = export_drawings(marks=[ga_mark], drawing_format="dxf")
+                    sc = result.structured_content
+                    assert sc["status"] == "success"
+                    assert sc["format"] == "dxf"
+                    assert sc["exported"] >= 1
+
+    def test_export_drawings_rejects_non_existent_dir_dwg(self, ga_mark):
+        """Error reported for non-existent dir regardless of format."""
+        with patch("tekla_mcp_server.providers.drawings_provider.get_export_output_dir", return_value="Z:\\MCP_TEST_NONEXISTENT_DWG"):
+            with patch("tekla_mcp_server.providers.drawings_provider.get_default_export_settings", return_value=""):
+                result = export_drawings(marks=[ga_mark], drawing_format="dwg", version="2013")
+                sc = result.structured_content
+                assert sc["status"] == "error"
+                assert "does not exist" in sc["message"]
+
+    def test_export_drawings_rejects_non_existent_dir_dgn(self, ga_mark):
+        """Error reported for non-existent dir with DGN format."""
+        with patch("tekla_mcp_server.providers.drawings_provider.get_export_output_dir", return_value="Z:\\MCP_TEST_NONEXISTENT_DGN"):
+            with patch("tekla_mcp_server.providers.drawings_provider.get_default_export_settings", return_value=""):
+                result = export_drawings(marks=[ga_mark], drawing_format="dgn")
+                sc = result.structured_content
+                assert sc["status"] == "error"
+                assert "does not exist" in sc["message"]
 
 
 class TestOpenCloseDrawing:
@@ -957,13 +1124,6 @@ class TestCheckDrawingCollisions:
         _skip_if_drawings_selected()
         result = check_drawing_collisions()
         assert result.structured_content["status"] == "error"
-
-    def test_marks_with_colliding_dxf_stems_raise_before_exporting(self, cu_mark):
-        """Two marks that normalize to the same DXF stem raise immediately, without exporting anything."""
-        result = check_drawing_collisions(marks=[cu_mark, f"[{cu_mark}]"])
-        sc = result.structured_content
-        assert sc["status"] == "error"
-        assert cu_mark in sc["message"]
 
     def test_runs_on_one_drawing_and_response_has_required_fields(self, cu_mark):
         """Checking one drawing returns the expected report shape, then clean up any clouds drawn."""

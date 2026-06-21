@@ -44,6 +44,48 @@ class SelectionMode(StrEnum):
     MAIN_PART = "Main Part"
 
 
+class DrawingExportFormat(StrEnum):
+    """
+    File format for drawing export.
+    """
+
+    DXF = "dxf"
+    DWG = "dwg"
+    DGN = "dgn"
+
+
+class DrawingExportVersion(StrEnum):
+    """
+    AutoCAD file version for DWG/DXF drawing export.
+    """
+
+    V2000 = "2000"
+    V2004 = "2004"
+    V2007 = "2007"
+    V2010 = "2010"
+    V2013 = "2013"
+
+
+# Export format -> .dwgsetting FileAttributes/@FileExtension value.
+FORMAT_TO_FILE_EXTENSION: dict[DrawingExportFormat, str] = {
+    DrawingExportFormat.DXF: ".dxf",
+    DrawingExportFormat.DWG: ".dwg",
+    DrawingExportFormat.DGN: ".dgn",
+}
+
+# Export version -> .dwgsetting FileAttributes/@FileVersion token. Applies to
+# all formats, including DGN, which carries a FileVersion just like DWG/DXF.
+# All five verified against live Tekla: each exported DXF's $ACADVER header
+# matched the expected AutoCAD release code (vAC15=AC1015=2000 ... vAC27=AC1027=2013).
+DWG_FILE_VERSION_MAP: dict[DrawingExportVersion, str] = {
+    DrawingExportVersion.V2000: "Dwg.UI.DwgFileVersion.vAC15",
+    DrawingExportVersion.V2004: "Dwg.UI.DwgFileVersion.vAC18",
+    DrawingExportVersion.V2007: "Dwg.UI.DwgFileVersion.vAC21",
+    DrawingExportVersion.V2010: "Dwg.UI.DwgFileVersion.vAC24",
+    DrawingExportVersion.V2013: "Dwg.UI.DwgFileVersion.vAC27",
+}
+
+
 class BeamType(StrEnum):
     """
     Tekla beam object subtypes.

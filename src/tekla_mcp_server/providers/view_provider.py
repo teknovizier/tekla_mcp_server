@@ -15,7 +15,7 @@ from tekla_mcp_server.models import ElementLabel
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
-from tekla_mcp_server.tekla.utils import get_filters, get_active_views, collect_children
+from tekla_mcp_server.tekla.utils import get_available_attribute_files, get_active_views, collect_children
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.loader import (
     AABB,
@@ -230,7 +230,7 @@ def apply_view_filter(
 
     Use `tekla://filters/view` to discover available filters.
     """
-    available = get_filters(".VObjGrp")
+    available = get_available_attribute_files(".VObjGrp") + ["standard"]
     if filter_name not in available:
         raise ValueError(f"Invalid filter '{filter_name}'. Available: {available}")
 

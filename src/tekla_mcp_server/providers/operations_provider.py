@@ -31,7 +31,7 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     REINFORCEMENT_CLASSES,
 )
 from tekla_mcp_server.tekla.loader import Operation
-from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items, get_filters
+from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items, get_available_attribute_files
 
 
 operations_provider = LocalProvider()
@@ -859,7 +859,7 @@ def clash_check(
     selected_objects = list(model.get_selected_objects())
 
     if filter_name:
-        available_filters = get_filters(".SObjGrp")
+        available_filters = get_available_attribute_files(".SObjGrp") + ["standard"]
         if filter_name not in available_filters:
             raise ValueError(f"Filter '{filter_name}' not found. Available filters: {available_filters}")
 

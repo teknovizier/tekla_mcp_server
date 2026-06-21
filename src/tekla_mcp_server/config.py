@@ -396,6 +396,27 @@ def get_dxf_export_timeout() -> float:
     return float(_load_settings().get("drawings", {}).get("dxf_export_timeout", 120))
 
 
+def get_export_output_dir() -> str:
+    """
+    Get the configured drawing-export output directory.
+
+    May be relative (resolved against the model folder at call time, like
+    `print_drawings`) or absolute.     Defaults to '.\\PlotFiles'.
+    """
+    return _load_settings().get("drawings", {}).get("export", {}).get("output_dir", ".\\PlotFiles")
+
+
+def get_default_export_settings() -> str:
+    """
+    Get the default customer export-setting name for `export_drawings`.
+
+    When non-empty, `export_drawings` uses this named setting as-is by default.
+    When empty (the default), exports run in on-the-go mode, patching the base
+    setting with the chosen format/version.
+    """
+    return _load_settings().get("drawings", {}).get("export", {}).get("default_export_settings", "")
+
+
 def get_mcp_data_dir(model_path: str) -> Path:
     """
     Return the TeklaMCPData directory for runtime data in the given model.

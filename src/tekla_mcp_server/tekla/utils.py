@@ -572,7 +572,7 @@ def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawi
     return macro_just_installed
 
 
-def ensure_export_setting_installed(setting_name: str) -> None:
+def ensure_export_settings_installed(setting_name: str) -> None:
     """
     Ensure a DXF export setting is present in the model's attributes folder.
 
@@ -581,7 +581,7 @@ def ensure_export_setting_installed(setting_name: str) -> None:
     that server updates reach users automatically.
 
     Args:
-        setting_name: Export setting file name, e.g. 'TEKLA_MCP_DXF_EXPORT.dwgsetting'.
+        setting_name: Export setting file name, e.g. 'TEKLA_MCP_COLLISION_LAYERS.dwgsetting'.
 
     Raises:
         FileNotFoundError: If the setting source or model path is unavailable.
@@ -605,34 +605,6 @@ def ensure_export_setting_installed(setting_name: str) -> None:
         except Exception as e:
             logger.error("Failed to copy export setting '%s' to '%s': %s", setting_name, destination, e)
             raise
-
-
-# options.ini backup sidecar names, alongside options.ini itself in the model
-# directory. See `restore_options_ini_if_interrupted`
-OPTIONS_INI_BACKUP_SUFFIX = ".tekla_mcp_backup"
-OPTIONS_INI_ABSENT_MARKER_SUFFIX = ".tekla_mcp_backup_absent"
-
-
-def restore_options_ini_if_interrupted(model_path: str) -> None:
-    """
-    Restore options.ini left mutated by an interrupted DXF export, if any.
-
-    Callers back up options.ini and restore it in a `finally` - which can't
-    run if the process is killed mid-export. Calling this before every new
-    mutation detects a leftover backup/absent-marker and repairs it first,
-    bounding the damage to "until the next call."
-    """
-    options_ini = Path(model_path) / "options.ini"
-    backup = options_ini.with_name(options_ini.name + OPTIONS_INI_BACKUP_SUFFIX)
-    absent_marker = options_ini.with_name(options_ini.name + OPTIONS_INI_ABSENT_MARKER_SUFFIX)
-    if absent_marker.is_file():
-        options_ini.unlink(missing_ok=True)
-        absent_marker.unlink(missing_ok=True)
-        logger.warning("Restored options.ini to its prior absent state after an interrupted DXF export.")
-    elif backup.is_file():
-        options_ini.write_text(backup.read_text(encoding="utf-8"), encoding="utf-8")
-        backup.unlink(missing_ok=True)
-        logger.warning("Restored options.ini from backup after an interrupted DXF export.")
 
 
 @lru_cache
@@ -660,20 +632,17 @@ def get_report_templates() -> list[str]:
 
 
 @lru_cache
-def get_filters(file_extension: str) -> list[str]:
+def get_available_attribute_files(file_extension: str) -> list[str]:
     """
-    Get the available Tekla filter names for files with the given extension.
+    Get available Tekla attribute file names for the given extension.
 
-    Searches in:
-    - XS_FIRM
-    - XS_PROJECT
-    - ModelPath/attributes directory
+    Searches in XS_FIRM, XS_PROJECT, and the model's attributes directory.
 
     Args:
-        file_extension: File extension to search for (e.g. '.SObjGrp', '.VObjGrp')
+        file_extension: File extension to search for (e.g. '.SObjGrp', '.VObjGrp', '.dwgsetting').
 
     Returns:
-        Sorted list of filter names without the extension, always including 'standard'.
+        Sorted list of file stems with the given extension.
     """
 
     if not file_extension.startswith("."):
@@ -700,9 +669,9 @@ def get_filters(file_extension: str) -> list[str]:
     except Exception:
         pass
 
-    filter_names: set[str] = {"standard"}
+    names: set[str] = set()
     for dir_path in paths:
         for file in dir_path.rglob(f"*{file_extension}"):
-            filter_names.add(file.stem)
+            names.add(file.stem)
 
-    return sorted(filter_names)
+    return sorted(names)

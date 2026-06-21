@@ -95,6 +95,12 @@ Tolerances are grouped by domain: `model` for model operations and `drawings` fo
 | Property | Default | Description |
 |----------|---------|-------------|
 | `drawings.dxf_export_timeout` | `120` | Max seconds `check_drawing_collisions` waits for exported DXF files to appear in `Plotfiles/` before raising an error. |
+| `drawings.export.output_dir` | `".\PlotFiles"` | Output directory for `export_drawings`. Relative paths are resolved against the model folder. |
+| `drawings.export.default_export_settings` | `""` (empty) | Customer `.dwgsetting` export setting name used by `export_drawings` by default. When non-empty, exports run in named mode using this setting as-is (format/version args are ignored). When empty, on-the-go mode patches the base setting with the chosen format and version. |
+
+The base export setting is stored in `config/attributes/TEKLA_MCP_EXPORT_BASE.dwgsetting`. MCP server patches this file with the chosen format, version and output directory before running the export macro. You can adjust the file directly and the server will pick them up on restart.
+
+Exported file names follow Tekla's `XS_DRAWING_PLOT_FILE_NAME_A/W/G/M/C` advanced options (one per drawing type). To change the output naming, set these values via Tekla's Advanced Options dialog and restart Tekla.
 
 ## Element Types (`element_types.json`)
 

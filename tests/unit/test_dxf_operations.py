@@ -2,8 +2,6 @@
 Unit tests for dxf_operations pairwise-collision helpers.
 """
 
-from pathlib import Path
-
 from tekla_mcp_server.dxf_operations import (
     CLOUD_MARGIN,
     FRAME_CONTENT_PADDING,
@@ -19,9 +17,6 @@ from tekla_mcp_server.dxf_operations import (
     check_cross_view_same_sheet_collision,
     check_marks_leader_overlap,
     check_out_of_grid_with_content,
-    dxf_stem,
-    duplicate_dxf_stems,
-    match_dxf_for_mark,
     merge_issues,
 )
 from tekla_mcp_server.utils import BBox
@@ -544,38 +539,3 @@ def test_content_out_of_sheet_ignores_view_fully_outside():
     sheet = _sheet(100.0, 100.0)
     view = _view("A", None, 200.0, 0.0, w=50.0, h=50.0)
     assert check_content_out_of_sheet([sheet, view], []) == []
-
-
-def test_dxf_stem_strips_brackets_and_whitespace():
-    assert dxf_stem(" [B1] ") == "B1"
-
-
-def test_duplicate_dxf_stems_returns_empty_when_all_unique():
-    assert duplicate_dxf_stems(["B1", "B2", "C1"]) == []
-
-
-def test_duplicate_dxf_stems_returns_colliding_marks():
-    # "[B1]" and "B1" normalize to the same stem and would produce the same
-    # output filename, so both must be reported as colliding
-    duplicates = duplicate_dxf_stems(["[B1]", "B1", "B2"])
-    assert sorted(duplicates) == ["B1", "[B1]"]
-
-
-def test_duplicate_dxf_stems_handles_group_of_three():
-    duplicates = duplicate_dxf_stems(["B1", "[B1]", " B1 ", "B2"])
-    assert sorted(duplicates) == [" B1 ", "B1", "[B1]"]
-
-
-def test_match_dxf_for_mark_matches_bare_stem():
-    available = {"B1": Path("B1.dxf")}
-    assert match_dxf_for_mark("B1", available) == Path("B1.dxf")
-
-
-def test_match_dxf_for_mark_matches_tekla_mcp_prefix():
-    available = {"TEKLA_MCP_B1": Path("TEKLA_MCP_B1.dxf")}
-    assert match_dxf_for_mark("B1", available) == Path("TEKLA_MCP_B1.dxf")
-
-
-def test_match_dxf_for_mark_returns_none_when_absent():
-    available = {"TEKLA_MCP_B2": Path("TEKLA_MCP_B2.dxf")}
-    assert match_dxf_for_mark("B1", available) is None

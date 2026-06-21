@@ -11,7 +11,7 @@ from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.tekla.loader import Grid
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.utils import get_all_materials, get_all_rebar_items, get_macros, get_filters, get_report_templates
+from tekla_mcp_server.tekla.utils import get_all_materials, get_all_rebar_items, get_macros, get_available_attribute_files, get_report_templates
 from tekla_mcp_server.utils import json_resource, mcp_handler, parse_coordinate_string, parse_label_string
 
 
@@ -110,7 +110,7 @@ def get_selection_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla selection filter names from .SObjGrp files.
     """
-    filters = get_filters(".SObjGrp")
+    filters = get_available_attribute_files(".SObjGrp") + ["standard"]
     logger.debug("Retrieved %d selection filters", len(filters))
     return json_resource(filters)
 
@@ -121,7 +121,7 @@ def get_view_filter_list() -> ResourceResult:
     """
     Returns a list of available Tekla view filter names from .VObjGrp files.
     """
-    filters = get_filters(".VObjGrp")
+    filters = get_available_attribute_files(".VObjGrp") + ["standard"]
     logger.debug("Retrieved %d view filters", len(filters))
     return json_resource(filters)
 
