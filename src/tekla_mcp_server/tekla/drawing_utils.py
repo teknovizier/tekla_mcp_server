@@ -2,7 +2,6 @@
 Drawing utility helpers for Tekla MCP server.
 """
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -11,6 +10,7 @@ if TYPE_CHECKING:
 from tekla_mcp_server.config import get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringFilterOption, StringMatchType
+from tekla_mcp_server.utils import BBox
 from tekla_mcp_server.tekla.loader import (
     Cloud,
     DrawingColors,
@@ -49,19 +49,8 @@ from tekla_mcp_server.tekla.loader import (
     DotPrintOutputType,
     DotPrintPaperSize,
     DotPrintScalingType,
-    LeaderLine,
 )
 from tekla_mcp_server.tekla.wrappers import TeklaDrawingView
-from tekla_mcp_server.tekla.wrappers.view import SheetPlacement
-
-
-@dataclass
-class DrawingMarkData:
-    """Extracted bounding box, leader line endpoints and object reference for a drawing mark."""
-
-    bbox: tuple[float, float, float, float]  # (x0, y0, x1, y1) in drawing coordinates
-    line: tuple[tuple[float, float], tuple[float, float]] | None  # Leader line endpoints
-    mark: Mark | MarkSet | WeldMark
 
 
 OUTPUT_TYPE_MAP: dict[str, DotPrintOutputType] = {
@@ -150,16 +139,16 @@ def extract_annotation_content(obj: Any, category: str, model: "TeklaModel | Non
         obj: The annotation object.
         category: Its category from `categorize_drawing_object`.
         model: Model used to resolve a mark's target to a GUID. Required to
-            populate `target_guid` for marks; when None it comes back as None.
+            populate `target_guid` for marks. When None it comes back as None.
 
     Returns:
-        dict with at least 'type' and 'category'; plus 'content' (marks/text)
+        dict with at least 'type' and 'category', plus 'content' (marks/text)
         or 'value' (dimensions) when readable. Marks also carry 'target_guid'.
     """
     info: dict[str, Any] = {"type": type(obj).__name__, "category": category}
     try:
         if category == "marks":
-            # Section/detail marks expose `.Attributes.MarkName`; a plain Mark's
+            # Section/detail marks expose `.Attributes.MarkName`. A plain Mark's
             # string is assembled from `.Attributes.Content` (both handled in the
             # helper). WeldMark/LevelMark have neither and return "N/A" for now.
             info["content"] = _extract_mark_text(obj)
@@ -305,107 +294,6 @@ def _extract_mark_target(mark: Any, model: "TeklaModel") -> str | None:
     except Exception as e:
         logger.debug("Failed to resolve mark target for %s: %s", type(mark).__name__, e)
     return None
-
-
-def rects_intersect(
-    a: tuple[float, float, float, float],
-    b: tuple[float, float, float, float],
-    margin: float = 0.0,
-) -> bool:
-    """
-    Check if two rectangles intersect with margin.
-
-    Args:
-        a: Tuple of (x1, y1, x2, y2) defining first rectangle
-        b: Tuple of (x1, y1, x2, y2) defining second rectangle
-        margin: Optional margin to add to rectangles
-
-    Returns:
-        True if rectangles intersect, False otherwise
-    """
-    return not (a[2] < b[0] - margin or a[0] > b[2] + margin or a[3] < b[1] - margin or a[1] > b[3] + margin)
-
-
-def lines_intersect(
-    p1: tuple[float, float],
-    p2: tuple[float, float],
-    p3: tuple[float, float],
-    p4: tuple[float, float],
-    margin: float = 0.0,
-) -> bool:
-    """
-    Check if two line segments intersect with margin.
-
-    Args:
-        p1: First point of first line segment (x, y)
-        p2: Second point of first line segment (x, y)
-        p3: First point of second line segment (x, y)
-        p4: Second point of second line segment (x, y)
-        margin: Optional margin for intersection tolerance
-
-    Returns:
-        True if line segments intersect, False otherwise
-    """
-    x1, y1 = p1
-    x2, y2 = p2
-    x3, y3 = p3
-    x4, y4 = p4
-
-    epsilon = 0.0001
-    denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    if abs(denom) < epsilon:
-        return False
-
-    t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom
-    u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom
-
-    if 0 - margin <= t <= 1 + margin and 0 - margin <= u <= 1 + margin:
-        return True
-    return False
-
-
-def line_rect_intersect(
-    line_p1: tuple[float, float],
-    line_p2: tuple[float, float],
-    rect: tuple[float, float, float, float],
-    margin: float = 0.0,
-) -> bool:
-    """
-    Check if a line segment intersects a rectangle.
-
-    Args:
-        line_p1: First point of line segment (x, y)
-        line_p2: Second point of line segment (x, y)
-        rect: Tuple of (x1, y1, x2, y2) defining rectangle
-        margin: Optional margin to add to rectangle
-
-    Returns:
-        True if line intersects rectangle, False otherwise
-    """
-    x1, y1 = line_p1
-    x2, y2 = line_p2
-    rx1, ry1, rx2, ry2 = rect
-
-    left = min(rx1, rx2) - margin
-    right = max(rx1, rx2) + margin
-    bottom = min(ry1, ry2) - margin
-    top = max(ry1, ry2) + margin
-
-    if left <= x1 <= right and bottom <= y1 <= top:
-        return True
-    if left <= x2 <= right and bottom <= y2 <= top:
-        return True
-
-    if lines_intersect((x1, y1), (x2, y2), (left, bottom), (right, bottom), margin):
-        return True
-    if lines_intersect((x1, y1), (x2, y2), (right, bottom), (right, top), margin):
-        return True
-    if lines_intersect((x1, y1), (x2, y2), (right, top), (left, top), margin):
-        return True
-    if lines_intersect((x1, y1), (x2, y2), (left, top), (left, bottom), margin):
-        return True
-
-    return False
 
 
 def matches_string_filter(value: str, filter_option: StringFilterOption | None) -> bool:
@@ -563,7 +451,7 @@ def assign_sheet_number(
     cols: int,
     rows: int,
     tolerance: float | None = None,
-) -> tuple[int | None, SheetPlacement]:
+) -> int | None:
     """
     Map a view's visible frame to a 1-based sheet number in a tiled sheet grid.
 
@@ -590,15 +478,8 @@ def assign_sheet_number(
             Defaults to the `tolerances.drawings.sheet_size` config value.
 
     Returns:
-        Tuple of (sheet_number, sheet_placement):
-        - sheet_number: 1-based sheet number of the tile with the largest
-          overlap, or None if `sheet_placement` is `out_of_grid`.
-        - sheet_placement: `fits` if the frame overlaps exactly one tile and
-          stays within the grid bounds, `spans_multiple_sheets` if it
-          overlaps more than one tile, `overflows_sheet` if it extends past
-          the overall grid bounds (would be clipped when printed),
-          `spans_and_overflows` if both apply, or `out_of_grid` if the frame
-          does not overlap the tiled grid at all within `tolerance`.
+        The 1-based sheet number of the tile with the largest overlap, or None
+        if the frame does not overlap the tiled grid at all within `tolerance`.
     """
     if tolerance is None:
         tolerance = get_tolerance("sheet_size", 1.0, group="drawings")
@@ -607,11 +488,10 @@ def assign_sheet_number(
     frame_x_max = frame_origin_x + frame_width
     frame_y_max = frame_origin_y + frame_height
     if frame_x_max < -tolerance or frame_origin_x > grid_width + tolerance or frame_y_max < -tolerance or frame_origin_y > grid_height + tolerance:
-        return None, "out_of_grid"
+        return None
 
     best_sheet_number: int | None = None
     best_overlap = 0.0
-    overlapping_tiles = 0
     for row_from_bottom in range(rows):
         tile_y_min = row_from_bottom * tile_height
         tile_y_max = tile_y_min + tile_height
@@ -624,176 +504,48 @@ def assign_sheet_number(
             overlap_x = min(frame_x_max, tile_x_max) - max(frame_origin_x, tile_x_min)
             if overlap_x <= 0:
                 continue
-            overlapping_tiles += 1
             overlap = overlap_x * overlap_y
             if overlap > best_overlap:
                 best_overlap = overlap
                 row_from_top = (rows - 1) - row_from_bottom
                 best_sheet_number = row_from_top * cols + col + 1
-    if best_sheet_number is None:
-        return None, "out_of_grid"
-
-    spans = overlapping_tiles > 1
-    overflows = frame_origin_x < -tolerance or frame_x_max > grid_width + tolerance or frame_origin_y < -tolerance or frame_y_max > grid_height + tolerance
-    if spans and overflows:
-        placement: SheetPlacement = "spans_and_overflows"
-    elif spans:
-        placement = "spans_multiple_sheets"
-    elif overflows:
-        placement = "overflows_sheet"
-    else:
-        placement = "fits"
-    return best_sheet_number, placement
+    return best_sheet_number
 
 
-def draw_collision_cloud(view: DrawingView, data_a: DrawingMarkData, data_b: DrawingMarkData) -> bool:
+def draw_cloud_bbox(view: DrawingView, bbox: BBox, margin: tuple[float, float], color: Any = DrawingColors.Magenta) -> bool:
     """
-    Draw one magenta revision cloud that encompasses both marks of a collision pair.
-
-    The cloud is placed around the union of the two marks' bounding boxes with
-    a 20 mm margin on all sides (drawing units = mm).
+    Draw a revision cloud around a bounding box in the given drawing view.
 
     Args:
-        view:   Tekla drawing view in which the cloud is inserted.
-        data_a: Collision-data for the first mark.
-        data_b: Collision-data for the second mark.
+        view: Tekla drawing view in which to insert.
+        bbox: Bounding box in drawing coordinates.
+        margin: (margin_x, margin_y) extra space around the bbox (mm) - margin_x
+            pads the left/right sides, margin_y pads the top/bottom sides. Pass
+            (0.0, 0.0) for a bbox that should be drawn exactly as given (e.g. one
+            with its own per-side padding already baked in).
+        color: Cloud line color.
 
     Returns:
-        True if the cloud was inserted successfully, False otherwise.
+        True if inserted successfully.
     """
-    bbox_a = data_a.bbox
-    bbox_b = data_b.bbox
-    combined = (
-        min(bbox_a[0], bbox_b[0]),
-        min(bbox_a[1], bbox_b[1]),
-        max(bbox_a[2], bbox_b[2]),
-        max(bbox_a[3], bbox_b[3]),
-    )
-
-    x0, y0, x1, y1 = combined
-    m = 20.0  # mm: keeps the cloud clear of the mark text
-
+    x0, y0, x1, y1 = bbox
+    margin_x, margin_y = margin
     pts = PointList()
-    pts.Add(Point(x0 - m, y0 - m, 0))
-    pts.Add(Point(x1 + m, y0 - m, 0))
-    pts.Add(Point(x1 + m, y1 + m, 0))
-    pts.Add(Point(x0 - m, y1 + m, 0))
-
+    pts.Add(Point(x0 - margin_x, y0 - margin_y, 0))
+    pts.Add(Point(x1 + margin_x, y0 - margin_y, 0))
+    pts.Add(Point(x1 + margin_x, y1 + margin_y, 0))
+    pts.Add(Point(x0 - margin_x, y1 + margin_y, 0))
     try:
         cloud = Cloud(view, pts)
-        cloud.Attributes.Line.Color = DrawingColors.Magenta
-        cloud.ArcWidth = 5  # mm per arc bump
+        cloud.Attributes.Line.Color = color
+        cloud.ArcWidth = 5
         if not cloud.Insert():
-            logger.warning("Cloud.Insert() returned False for view '%s'", getattr(view, "Name", ""))
+            logger.warning("draw_cloud_bbox: Cloud.Insert() returned False")
             return False
         return True
     except Exception as e:
-        logger.warning("Failed to insert collision cloud in view '%s': %s", getattr(view, "Name", ""), e)
+        logger.warning("draw_cloud_bbox: failed to insert cloud: %s", e)
         return False
-
-
-def get_mark_collision_data(mark: Mark | MarkSet | WeldMark) -> DrawingMarkData | None:
-    """
-    Extract bounding box and leader-line geometry from a drawing mark object.
-
-    Args:
-        mark: Tekla drawing mark to inspect (Mark, MarkSet, or WeldMark).
-
-    Returns:
-        DrawingMarkData with bbox in drawing coordinates, leader-line endpoints
-        (or None when absent), and the original mark. Returns None if the mark
-        has no valid (non-zero-area) bounding box.
-    """
-    aabb = mark.GetAxisAlignedBoundingBox()
-    if not hasattr(aabb, "MinPoint"):
-        return None
-
-    min_pt = aabb.MinPoint
-    max_pt = aabb.MaxPoint
-    x0, y0, x1, y1 = min_pt.X, min_pt.Y, max_pt.X, max_pt.Y
-    if x0 == x1 and y0 == y1:
-        return None
-
-    ip = mark.InsertionPoint
-    if not ip:
-        return DrawingMarkData(bbox=(x0, y0, x1, y1), line=None, mark=mark)
-
-    ip_x, ip_y = ip.X, ip.Y
-
-    # WeldMark reports its AABB Y in model coordinates instead of drawing
-    # coordinates, making it unusable for collision detection. Reconstruct the
-    # Y extent from the insertion point: a weld symbol typically has text both
-    # above and below, so ±font_height covers both lines.
-    if isinstance(mark, WeldMark):
-        try:
-            font_h = mark.Attributes.Font.Height
-        except Exception:
-            font_h = 2.5
-        half_h = max(2.0 * font_h, 5.0)
-        y0 = ip_y - half_h
-        y1 = ip_y + half_h
-
-    leader_start = None
-    leader_end = None
-    children = mark.GetObjects()
-    while children.MoveNext():
-        child = children.Current
-        if isinstance(child, LeaderLine):
-            leader_start = child.StartPoint
-            leader_end = child.EndPoint
-            break
-
-    line: tuple[tuple[float, float], tuple[float, float]] | None = None
-    if leader_start and leader_end:
-        line = ((leader_end.X, leader_end.Y), (leader_start.X, leader_start.Y))
-    elif leader_start:
-        line = ((ip_x, ip_y), (leader_start.X, leader_start.Y))
-
-    return DrawingMarkData(bbox=(x0, y0, x1, y1), line=line, mark=mark)
-
-
-def get_collision_pairs(data_list: list[DrawingMarkData]) -> list[tuple[int, int]]:
-    """
-    Return every colliding (i, j) index pair from a list of mark data.
-
-    Three collision types are checked per pair:
-        - Bounding-box overlap.
-        - Leader-line crossing another leader line.
-        - Leader-line crossing another mark's bounding box.
-
-    Args:
-        data_list: List of DrawingMarkData as returned by get_mark_collision_data.
-
-    Returns:
-        List of (i, j) tuples (i < j) for every colliding pair.
-
-    Note:
-        Runtime is O(n²). Views with hundreds of marks will be noticeably slow.
-    """
-    pairs: list[tuple[int, int]] = []
-    n = len(data_list)
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            di = data_list[i]
-            dj = data_list[j]
-
-            if rects_intersect(di.bbox, dj.bbox):
-                pairs.append((i, j))
-                continue
-
-            if di.line and dj.line and lines_intersect(di.line[0], di.line[1], dj.line[0], dj.line[1]):
-                pairs.append((i, j))
-                continue
-
-            if di.line and line_rect_intersect(di.line[0], di.line[1], dj.bbox):
-                pairs.append((i, j))
-                continue
-
-            if dj.line and line_rect_intersect(dj.line[0], dj.line[1], di.bbox):
-                pairs.append((i, j))
-
-    return pairs
 
 
 def detect_section_parents(views: list[TeklaDrawingView]) -> dict[str, tuple[str, SectionMark]]:

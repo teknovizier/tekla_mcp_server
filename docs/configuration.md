@@ -90,6 +90,12 @@ Tolerances are grouped by domain: `model` for model operations and `drawings` fo
 | `reports.preview_max_chars` | `2000` | Max characters returned in `content_preview` of `create_report`. Set to `0` to disable the preview (the file is not read). |
 | `reports.preview_timeout` | `30` | Max seconds `create_report` blocks waiting for the report file to appear on disk before returning a warning. |
 
+### Drawings
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `drawings.dxf_export_timeout` | `120` | Max seconds `check_drawing_collisions` waits for exported DXF files to appear in `Plotfiles/` before raising an error. |
+
 ## Element Types (`element_types.json`)
 
 Map element type names to Tekla class numbers and numbering settings:

@@ -284,7 +284,6 @@ class TestToDict:
             "width",
             "height",
             "sheet_number",
-            "sheet_placement",
             "display_settings",
         }
         assert set(d.keys()) == expected_keys

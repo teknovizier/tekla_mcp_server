@@ -4,29 +4,30 @@ Drawing tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Annotated, Literal
+
+import ezdxf
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from pydantic import Field
 
-from tekla_mcp_server.config import get_advanced_option_directories, get_tolerance
+from tekla_mcp_server.config import get_advanced_option_directories, get_dxf_export_timeout, get_mcp_data_dir, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import DrawingType, StringFilterOption, ViewAttributes
 from tekla_mcp_server.utils import mcp_handler, sanitize_filename, resolve_model_relative_dir
 from tekla_mcp_server.tekla.filter_builder import to_filter_option
-from tekla_mcp_server.tekla.utils import ensure_macro_installed
+from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_export_setting_installed, restore_options_ini_if_interrupted, OPTIONS_INI_BACKUP_SUFFIX, OPTIONS_INI_ABSENT_MARKER_SUFFIX
 from tekla_mcp_server.providers.operations_provider import run_macro
 from tekla_mcp_server.tekla.drawing_utils import (
     matches_string_filter,
     map_sheet_size_to_paper_size,
     detect_sheet_grid,
     assign_sheet_number,
-    get_mark_collision_data,
-    get_collision_pairs,
-    draw_collision_cloud,
+    draw_cloud_bbox,
     detect_section_parents,
     compute_section_alignment,
     categorize_drawing_object,
@@ -38,6 +39,8 @@ from tekla_mcp_server.tekla.drawing_utils import (
     ORIENTATION_MAP,
     SCALING_METHOD_MAP,
 )
+from tekla_mcp_server.dxf_operations import run_collision_checks, resolve_entities, duplicate_dxf_stems, match_dxf_for_mark
+from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly
@@ -45,9 +48,6 @@ from tekla_mcp_server.tekla.loader import (
     Cloud,
     DrawingConnection,
     DrawingObject,
-    Mark,
-    MarkSet,
-    WeldMark,
     DrawingModelObject,
     DPMPrinterAttributes,
     DotPrintToMultipleSheet,
@@ -56,10 +56,6 @@ from tekla_mcp_server.tekla.loader import (
 
 
 drawings_provider = LocalProvider()
-
-# Max number of times to run the mark-arrangement macro per view before
-# accepting any remaining collisions as unresolved
-MAX_ARRANGE_ATTEMPTS = 3
 
 
 def _describe_model_object(guid: str, model_obj: ModelObject) -> dict[str, Any]:
@@ -413,217 +409,6 @@ def update_drawings(
     return ToolResult(structured_content=result)
 
 
-def _detect_view_collisions(tekla_view: Any, view_name: str) -> tuple[list, list[tuple[int, int]]]:
-    """
-    Collect mark collision data and colliding pairs for a single view.
-
-    Args:
-        tekla_view: The view to inspect.
-        view_name: Display name used for log messages.
-
-    Returns:
-        Tuple of (mark_data, pairs), both empty when the view has no marks
-        or no collisions.
-    """
-    all_mark_objs = tekla_view.get_all_objects([Mark, MarkSet, WeldMark])
-    if all_mark_objs is None:
-        logger.warning("Failed to enumerate mark objects in view '%s'", view_name)
-        return [], []
-
-    mark_data = []
-    for obj in all_mark_objs:
-        try:
-            cd = get_mark_collision_data(obj)
-            if cd is not None:
-                mark_data.append(cd)
-        except Exception as e:
-            logger.warning("get_mark_collision_data failed for object in view '%s': %s", view_name, e)
-
-    logger.debug("View '%s': %d marks collected", view_name, len(mark_data))
-
-    if not mark_data:
-        return mark_data, []
-
-    return mark_data, get_collision_pairs(mark_data)
-
-
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
-@mcp_handler(scope="tool")
-def arrange_colliding_drawing_marks(
-    view_keys: Annotated[list[str], Field(description="View keys to check (from `get_drawing_views`). Processes all views when empty")] = [],
-) -> ToolResult:
-    """
-    Detect colliding part marks in the active drawing's views and automatically rearrange them.
-
-    For each view, colliding Mark and MarkSet objects are rearranged, retrying up to
-    a few times until no collisions remain or no further progress is made. WeldMark
-    objects are not rearranged. Any pairs that still collide, including any new
-    collisions caused by the rearrangement, are highlighted using magenta revision clouds.
-
-    When view_keys is omitted all views in the active drawing are checked.
-
-    If the arrangement macro was just installed or updated, Tekla has not yet
-    registered it and arrangement is skipped for this call. The result then includes
-    a `macro_not_registered` error - restart Tekla Structures and run this tool again.
-    """
-    handler = TeklaDrawingHandler()
-    drawing = handler.require_active_drawing()
-
-    if view_keys:
-        index = handler.index_views_by_key()
-        missing = [k for k in view_keys if k not in index]
-        if missing:
-            raise ValueError(f"View(s) not found: {missing}. Use `get_drawing_views` to list valid keys.")
-        views = [index[k] for k in view_keys]
-    else:
-        views = handler.get_drawing_views()
-
-    view_results: list[dict] = []
-    total_collision_pairs = 0
-    total_adjusted = 0
-    total_unresolved = 0
-    total_new_collisions = 0
-    cloud_failures = 0
-    macro_pending = False
-    errors: list[dict[str, Any]] = []
-
-    # Installed once up front: the macro content is the same for every view, and
-    # a macro that was just installed or updated stays "pending" (not yet
-    # registered by Tekla) for the rest of this call regardless of which view
-    # triggers the registration check first.
-    macro_just_installed = ensure_macro_installed("TeklaMCPArrangeMarks.cs", category="drawings")
-
-    logger.info("Starting collision arrangement for %d view(s) in drawing '%s'", len(views), drawing.mark)
-
-    for tekla_view in views:
-        # Sheet view aggregates marks from all child views - skip to avoid duplicate detection
-        if tekla_view.is_sheet:
-            continue
-
-        view_name = tekla_view.name or tekla_view.view_key
-
-        mark_data, pairs = _detect_view_collisions(tekla_view, view_name)
-        if not pairs:
-            logger.debug("View '%s': no collisions", view_name)
-            continue
-
-        logger.info("View '%s': %d collision pair(s) found", view_name, len(pairs))
-        total_collision_pairs += len(pairs)
-
-        # Tekla API has no direct access to mark arrangement - use a custom macro instead.
-        # Only Mark/MarkSet objects can be rearranged by the macro. One run is not always
-        # enough to separate every pair, so retry up to MAX_ARRANGE_ATTEMPTS times,
-        # re-checking collisions after each run
-        current_mark_data = mark_data
-        new_pairs_set = set(pairs)
-        for attempt in range(1, MAX_ARRANGE_ATTEMPTS + 1):
-            colliding_indices = {i for pair in new_pairs_set for i in pair}
-            alignable = [current_mark_data[i].mark for i in colliding_indices if isinstance(current_mark_data[i].mark, (Mark, MarkSet))]
-            if not alignable:
-                logger.info("All colliding marks in view '%s' are WeldMarks, skipping macro arrangement", view_name)
-                break
-
-            if not handler.select_drawing_objects(alignable):
-                logger.warning("Failed to select %d mark(s) for arrangement in view '%s'", len(alignable), view_name)
-                errors.append({"error": "select_failed", "view_key": tekla_view.view_key, "message": f"Failed to select marks for arrangement in view '{view_name}'"})
-                break
-
-            # NOTE: must be a normal (non-raw) string with an escaped backslash as run_macro
-            # resolves this path relative to the modeling macro directory
-            try:
-                macro_result = run_macro(macro_name="..\\drawings\\TeklaMCPArrangeMarks.cs")
-            finally:
-                handler.unselect_drawing_objects(alignable)
-            if macro_result.structured_content.get("status") != "success":
-                if macro_just_installed:
-                    # Tekla only registers macro content at startup
-                    macro_pending = True
-                    logger.warning("TeklaMCPArrangeMarks macro was just installed or updated and is not yet registered. Restart Tekla Structures to enable mark arrangement")
-                else:
-                    logger.warning("TeklaMCPArrangeMarks macro failed for view '%s' (attempt %d)", view_name, attempt)
-                break
-
-            # Re-check collisions after arrangement, matching pairs by index
-            # since the view enumeration order is stable within a session
-            current_mark_data, new_pairs = _detect_view_collisions(tekla_view, view_name)
-            new_pairs_set = set(new_pairs)
-            if not new_pairs_set:
-                break
-
-        raw_view = tekla_view.view
-        view_cloud_failures = 0
-        original_pairs_set = set(pairs)
-        # Index comparison is valid only if both enumerations returned the same
-        # number of mark_data entries in the same order. A transient failure of
-        # `get_mark_collision_data` or a change to the view can cause
-        # the second enumeration to produce a different-length list, making the
-        # same integer index refer to a different mark. In that case these counts
-        # are unreliable. The clouds below are still correct since they use
-        # indices and data from the same post-macro call
-        view_adjusted = len(original_pairs_set - new_pairs_set)
-        view_unresolved = len(original_pairs_set & new_pairs_set)
-        view_new_collisions = len(new_pairs_set - original_pairs_set)
-        for i, j in new_pairs_set:
-            logger.debug("Drawing cloud for unresolved %s <-> %s", type(current_mark_data[i].mark).__name__, type(current_mark_data[j].mark).__name__)
-            if not draw_collision_cloud(raw_view, current_mark_data[i], current_mark_data[j]):
-                view_cloud_failures += 1
-                cloud_failures += 1
-
-        total_adjusted += view_adjusted
-        total_unresolved += view_unresolved
-        total_new_collisions += view_new_collisions
-
-        view_results.append(
-            {
-                "view_key": tekla_view.view_key,
-                "view": view_name,
-                "total_marks": len(mark_data),
-                "collision_pairs": len(pairs),
-                "adjusted_count": view_adjusted,
-                "unresolved_count": view_unresolved,
-                "new_collisions_count": view_new_collisions,
-                "cloud_failures": view_cloud_failures,
-            }
-        )
-
-    if cloud_failures:
-        errors.append({"error": "cloud_insertion_failed", "count": cloud_failures})
-
-    if macro_pending:
-        errors.append(
-            {
-                "error": "macro_not_registered",
-                "message": "TeklaMCPArrangeMarks macro was just installed or updated and is not yet registered by Tekla. Restart Tekla Structures and run this tool again.",
-            }
-        )
-
-    total_clouds_drawn = total_unresolved + total_new_collisions
-    if total_clouds_drawn > 0 and not drawing.commit_changes():
-        raise RuntimeError(f"CommitChanges() failed after drawing {total_clouds_drawn} collision cloud(s). ")
-
-    logger.info(
-        "Collision arrangement complete: %d total collision pair(s), %d adjusted, %d unresolved in drawing '%s'",
-        total_collision_pairs,
-        total_adjusted,
-        total_unresolved,
-        drawing.mark,
-    )
-    result: dict[str, Any] = {
-        "status": "partial" if errors else "success",
-        "drawing_mark": drawing.mark,
-        "views_checked": len(views),
-        "views_with_collisions": len(view_results),
-        "total_collision_pairs": total_collision_pairs,
-        "adjusted_count": total_adjusted,
-        "unresolved_count": total_unresolved,
-        "new_collisions_count": total_new_collisions,
-        "views": view_results,
-    }
-    if errors:
-        result["errors"] = errors
-    return ToolResult(structured_content=result)
-
-
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def print_drawings(
@@ -785,7 +570,7 @@ def open_drawing(
     )
 
 
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def close_drawing(
     save: Annotated[bool, Field(description="Save before closing")] = True,
@@ -799,30 +584,22 @@ def close_drawing(
 
     mark = active.mark
     if not handler.close_active_drawing(save):
-        raise RuntimeError(f"Failed to save and close drawing '{mark}'.")
+        action = "save and close" if save else "close without saving"
+        raise RuntimeError(f"Failed to {action} drawing '{mark}'.")
 
     logger.info("Closed active drawing (saved=%s)", save)
     return ToolResult(structured_content={"status": "success", "drawing_is_saved": save})
 
 
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
-@mcp_handler(scope="tool")
-def get_drawing_views() -> ToolResult:
+def _resolve_drawing_views(handler: TeklaDrawingHandler, active: TeklaDrawing) -> tuple[list[Any], list[dict[str, Any]], int]:
     """
-    List all views in the active drawing with type, scale, position, and size.
+    Enumerate `active`'s views once: raw Tekla views, their dict form, and sheet count.
 
-    Returns view type, scale, position, size, and a unique `view_key`.
-    Includes the sheet view (`is_sheet=true`).
-
-    Use `view_key` for all follow-up calls.
-    Use `open_drawing` first if no drawing is currently open.
+    Shared by `get_drawing_views` and `check_drawing_collisions` so both reuse
+    one Tekla API enumeration instead of each doing their own.
     """
-    handler = TeklaDrawingHandler()
-
-    active = handler.require_active_drawing()
-
     # Authoritative source for sheet_count/tiling math below - not guaranteed
-    # identical to the sheet view's own width/height in `views`
+    # identical to the sheet view's own width/height in the dict representation
     sheet_width = active.drawing.Layout.SheetSize.Width
     sheet_height = active.drawing.Layout.SheetSize.Height
 
@@ -845,8 +622,26 @@ def get_drawing_views() -> ToolResult:
             view_list.append(v.to_dict())
         else:
             fx, fy = v.frame_origin
-            sheet_number, sheet_placement = assign_sheet_number(fx, fy, v.width, v.height, tile_width, tile_height, cols, rows)
-            view_list.append(v.to_dict(sheet_number=sheet_number, sheet_placement=sheet_placement))
+            sheet_number = assign_sheet_number(fx, fy, v.width, v.height, tile_width, tile_height, cols, rows)
+            view_list.append(v.to_dict(sheet_number=sheet_number))
+
+    return tekla_views, view_list, sheet_count
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def get_drawing_views() -> ToolResult:
+    """
+    List all views in the active drawing.
+    Returns view type, scale, position, size, and a unique `view_key`.
+    Includes the sheet view (`is_sheet=true`).
+
+    Use `view_key` for all follow-up calls.
+    Use `open_drawing` first if no drawing is currently open.
+    """
+    handler = TeklaDrawingHandler()
+    active = handler.require_active_drawing()
+    _tekla_views, view_list, sheet_count = _resolve_drawing_views(handler, active)
 
     return ToolResult(
         structured_content={
@@ -1267,14 +1062,11 @@ def set_views_attributes(
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
-def delete_view_clouds(
+def delete_clouds(
     view_keys: Annotated[list[str], Field(description="View keys to clear (from `get_drawing_views`). Processes all views when empty")] = [],
 ) -> ToolResult:
     """
-    Delete all clouds from model views in the active drawing.
-
-    The sheet view aggregates clouds from all child views, so it is
-    skipped to avoid double-deletion. Only model-view clouds are affected.
+    Delete all clouds from the active drawing, including the sheet view.
     """
     handler = TeklaDrawingHandler()
     drawing = handler.require_active_drawing()
@@ -1294,8 +1086,6 @@ def delete_view_clouds(
     total_failed = 0
 
     for tekla_view in views:
-        if tekla_view.is_sheet:
-            continue
         to_delete = tekla_view.get_all_objects([Cloud])
         if to_delete is None:
             continue
@@ -1330,7 +1120,7 @@ def delete_view_clouds(
         raise RuntimeError(f"CommitChanges() failed after deleting {total_deleted} cloud(s). The drawing editor may not reflect the changes.")
 
     status = "success" if total_failed == 0 else "partial" if total_deleted else "error"
-    logger.info("delete_view_clouds: found=%d deleted=%d failed=%d", total_found, total_deleted, total_failed)
+    logger.info("delete_clouds: found=%d deleted=%d failed=%d", total_found, total_deleted, total_failed)
     return ToolResult(
         structured_content={
             "status": status,
@@ -1394,3 +1184,301 @@ def delete_views(
             "results": results,
         }
     )
+
+
+def _export_drawings_to_dxf(
+    model_path: str,
+    plotfiles_dir: Path,
+    expected_marks: list[str],
+    marks: list[str] | None = None,
+) -> dict[str, Path]:
+    """
+    Export drawings to DXF and return the resulting file paths keyed by mark.
+
+    Sets plot-file naming to use the drawing mark as the filename, runs the
+    appropriate WPF macro (by-marks or Document Manager selection), polls
+    Plotfiles/ until every mark in `expected_marks` resolves to a DXF, then
+    restores the original options.ini.
+
+    Args:
+        model_path: Path to the open Tekla model.
+        plotfiles_dir: The model's Plotfiles/ directory.
+        expected_marks: Marks of all drawings being exported (always passed,
+            regardless of whether `marks` drove the macro's selection).
+        marks: Marks to search for and select via the Document Manager search
+            box. When omitted, exports whatever is already selected there.
+
+    Raises:
+        RuntimeError: If not every mark in `expected_marks` resolves to a
+            matching DXF in Plotfiles/ within the configured timeout
+            (`get_dxf_export_timeout`, default 120s).
+    """
+    macro_name = "TeklaMCPExportDXFByMarks.cs" if marks else "TeklaMCPExportDXFSelected.cs"
+    ensure_export_setting_installed("TEKLA_MCP_DXF_EXPORT.dwgsetting")
+    ensure_macro_installed(macro_name, category="modeling")
+    ensure_macro_installed("TeklaMCPCloseExportDialog.cs", category="modeling")
+
+    # Remove any stale DXF files from previous exports
+    if plotfiles_dir.is_dir():
+        for p in plotfiles_dir.glob("TEKLA_MCP_*.dxf"):
+            p.unlink()
+
+    PLOT_NAME_OPTIONS = [
+        "XS_DRAWING_PLOT_FILE_NAME_A",
+        "XS_DRAWING_PLOT_FILE_NAME_W",
+        "XS_DRAWING_PLOT_FILE_NAME_G",
+        "XS_DRAWING_PLOT_FILE_NAME_M",
+        "XS_DRAWING_PLOT_FILE_NAME_C",
+    ]
+    options_ini = Path(model_path) / "options.ini"
+    backup_path = options_ini.with_name(options_ini.name + OPTIONS_INI_BACKUP_SUFFIX)
+    absent_marker = options_ini.with_name(options_ini.name + OPTIONS_INI_ABSENT_MARKER_SUFFIX)
+
+    # Self-heal from a previous run that was killed before its own finally
+    # could restore options.ini, before mutating it again
+    restore_options_ini_if_interrupted(model_path)
+
+    original_ini_content: str | None = None
+    if options_ini.is_file():
+        original_ini_content = options_ini.read_text(encoding="utf-8")
+        backup_path.write_text(original_ini_content, encoding="utf-8")
+    else:
+        absent_marker.write_text("", encoding="utf-8")
+
+    lines = original_ini_content.splitlines(keepends=True) if original_ini_content else []
+    kept = [ln for ln in lines if not any(ln.strip().startswith(f"{opt}=") for opt in PLOT_NAME_OPTIONS)]
+    kept += [f"{opt}=%DRAWING_NAME.%\n" for opt in PLOT_NAME_OPTIONS]
+    options_ini.write_text("".join(kept), encoding="utf-8")
+
+    data_dir = get_mcp_data_dir(model_path)
+    marks_file: Path | None = None
+    if marks:
+        marks_file = data_dir / "marks.tmp"
+        marks_file.write_text("\n".join(marks), encoding="utf-8")
+
+    try:
+        macro_result = run_macro(macro_name=macro_name)
+        if macro_result.structured_content.get("status") != "success":
+            raise RuntimeError("DXF export macro failed. Ensure TEKLA_MCP_DXF_EXPORT export setting exists.")
+
+        if not plotfiles_dir.is_dir():
+            raise RuntimeError("Plotfiles/ directory not found.")
+
+        resolved: dict[str, Path] = {}
+        unresolved = set(expected_marks)
+
+        def _poll_once() -> None:
+            available = {p.stem: p for p in plotfiles_dir.glob("*.dxf")}
+            for mark in list(unresolved):
+                dxf_path = match_dxf_for_mark(mark, available)
+                if dxf_path is not None:
+                    resolved[mark] = dxf_path
+                    unresolved.discard(mark)
+
+        timeout = get_dxf_export_timeout()
+        _poll_once()
+        if unresolved:
+            logger.info("Waiting for %d DXF(s) to appear in Plotfiles/...", len(unresolved))
+            deadline = time.time() + timeout
+            while unresolved and time.time() < deadline:
+                time.sleep(2)
+                _poll_once()
+        if unresolved:
+            raise RuntimeError(f"No matching DXF appeared in Plotfiles/ after {timeout:g}s for mark(s): {sorted(unresolved)}. Check TEKLA_MCP_DXF_EXPORT export setting output directory.")
+        close_result = run_macro(macro_name="TeklaMCPCloseExportDialog.cs")
+        if close_result.structured_content.get("status") != "success":
+            logger.warning("Failed to close DWG export dialog after DXF export")
+        return resolved
+    finally:
+        if original_ini_content is not None:
+            options_ini.write_text(original_ini_content, encoding="utf-8")
+        else:
+            options_ini.unlink(missing_ok=True)
+        backup_path.unlink(missing_ok=True)
+        absent_marker.unlink(missing_ok=True)
+        if marks_file is not None:
+            marks_file.unlink(missing_ok=True)
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def check_drawing_collisions(
+    marks: Annotated[list[str] | None, Field(description="Drawing marks to check. Uses Document Manager selection when omitted.")] = None,
+) -> ToolResult:
+    """
+    Detect mark collisions in selected drawings by exporting to DXF and analysing geometry overlaps.
+
+    Select drawings in the Document Manager first or pass the `marks` parameter.
+    Magenta revision clouds are drawn at every found collision.
+    """
+
+    handler = TeklaDrawingHandler()
+
+    if handler.get_active_drawing() is not None:
+        raise RuntimeError("A drawing is currently open. Close it first with `close_drawing` before running collision checks.")
+
+    if marks is not None:
+        duplicates = duplicate_dxf_stems(marks)
+        if duplicates:
+            raise ValueError(f"The following mark(s) produce indistinguishable DXF filenames and cannot be matched: {sorted(set(duplicates))}")
+
+    model = TeklaModel()
+    model_path = model.model_path
+    plotfiles_dir = Path(model_path) / "Plotfiles"
+
+    selected = handler.get_drawings_by_marks(marks or None)
+    if not selected:
+        raise ValueError("No drawings selected in Document Manager.")
+
+    drawing_count = len(selected)
+    logger.info("check_drawing_collisions: %d drawing(s) selected", drawing_count)
+
+    expected_marks = [d.mark for d in selected]
+
+    outdated = [d.mark for d in selected if d.up_to_date_status != "DrawingIsUpToDate"]
+    if outdated:
+        details = {d.mark: d.up_to_date_status for d in selected if d.up_to_date_status != "DrawingIsUpToDate"}
+        raise ValueError(f"The following drawing(s) must be updated first: {outdated}. Status: {details}")
+
+    logger.info("Exporting %d drawing(s) to DXF...", drawing_count)
+    dxf_paths_by_mark = _export_drawings_to_dxf(model_path, plotfiles_dir, expected_marks, marks=marks)
+
+    all_issues: list = []
+    total_clouds_drawn = 0
+    total_cloud_failures = 0
+    per_drawing_results: list[dict] = []
+
+    # For each selected drawing: open → read its DXF → run collision checks →
+    # draw magenta revision clouds in Tekla sheet view → save → close.
+    # The whole loop is wrapped in try/finally so the exported DXFs are always
+    # cleaned up below, even if a drawing's processing raises something the
+    # per-drawing except doesn't catch
+    def _fail(mark: str, message: str, log_message: str) -> None:
+        """Record a per-drawing error and log it. Caller still needs its own `continue`."""
+        per_drawing_results.append({"mark": mark, "status": "error", "message": message})
+        logger.warning("check_drawing_collisions: %s", log_message)
+
+    try:
+        for i, drawing in enumerate(selected, 1):
+            mark = drawing.mark
+            logger.info("[%d/%d] Opening '%s'...", i, drawing_count, mark)
+            dxf_path = dxf_paths_by_mark.get(mark)
+            if dxf_path is None or not dxf_path.exists():
+                _fail(mark, f"No matching DXF for mark '{mark}'.", f"no DXF found for drawing '{mark}'")
+                continue
+
+            # The drawing's up-to-date status was checked before exporting, but the
+            # export itself can take up to 120s - re-check against the model now,
+            # right before using its DXF, in case another process modified it meanwhile
+            try:
+                drawing = handler.get_drawings_by_marks([mark])[0]
+            except ValueError:
+                _fail(mark, "Drawing no longer found.", f"drawing '{mark}' no longer found")
+                continue
+            if drawing.up_to_date_status != "DrawingIsUpToDate":
+                _fail(mark, f"Drawing became out of date during export (status: {drawing.up_to_date_status}).", f"drawing '{mark}' became out of date during export")
+                continue
+
+            if not handler.set_active_drawing(drawing):
+                _fail(mark, "Failed to open drawing", f"failed to open drawing '{mark}'")
+                continue
+
+            try:
+                # Read the DXF, flatten block inserts to sheet coordinates
+                doc = ezdxf.readfile(str(dxf_path))
+                msp = doc.modelspace()
+
+                # Get Tekla view metadata (frame positions, sheet placement, etc.) once -
+                # both the dict views (for the checks below) and the raw views (to find
+                # the sheet view object) come from this single Tekla API enumeration
+                tekla_views, views, _sheet_count = _resolve_drawing_views(handler, drawing)
+
+                # Flatten all entities from view blocks into world-space sheet coordinates
+                entities = resolve_entities(doc, msp)
+                logger.info("[%d/%d] Running collision checks for '%s' (%d entities)...", i, drawing_count, mark, len(entities))
+                # Run all checks (registered in CHECKS list), merge nearby duplicates
+                issues = run_collision_checks(views, entities)
+
+                # Draw revision clouds in Tekla - use the sheet view so that DXF
+                # sheet coordinates map directly (no per-view origin transform needed)
+                sheet_view = next((v for v in tekla_views if v.is_sheet), None)
+
+                # Draw a magenta revision cloud in the sheet view for every issue bbox.
+                # DXF coordinates are in sheet mm - the sheet view's coordinate system
+                # is identical, so no transform needed
+                cloud_count = 0
+                cloud_failures = 0
+
+                for issue in issues:
+                    if sheet_view is None:
+                        cloud_failures += 1
+                        continue
+                    if draw_cloud_bbox(sheet_view.view, issue.bbox, margin=issue.margin):
+                        cloud_count += 1
+                    else:
+                        cloud_failures += 1
+
+                if cloud_count > 0 and not drawing.commit_changes():
+                    cloud_failures += cloud_count
+                    cloud_count = 0
+
+                total_clouds_drawn += cloud_count
+                total_cloud_failures += cloud_failures
+
+                per_drawing_results.append(
+                    {
+                        "mark": mark,
+                        "status": "success",
+                        "issues": len(issues),
+                        "clouds_drawn": cloud_count,
+                        "cloud_failures": cloud_failures,
+                    }
+                )
+                all_issues.extend(issues)
+                logger.info("check_drawing_collisions: '%s' - %d issue(s), %d cloud(s)", mark, len(issues), cloud_count)
+            except Exception as e:
+                per_drawing_results.append({"mark": mark, "status": "error", "message": str(e)})
+                logger.error("check_drawing_collisions: error processing drawing '%s': %s", mark, e)
+            finally:
+                handler.close_active_drawing(save=True)
+    finally:
+        # Clean up all exported DXFs (they were only needed for analysis)
+        for p in dxf_paths_by_mark.values():
+            try:
+                p.unlink()
+                logger.debug("Deleted DXF: %s", p)
+            except Exception as e:
+                logger.warning("Failed to delete DXF '%s': %s", p, e)
+
+    # Group all issues by category for the final report. A merged issue can carry
+    # more than one underlying check type (e.g. collides_with_sheet + marks_text_overlap)
+    # - it's counted under every one of those types, not under a single composite
+    # key, so per-category counts stay accurate even after merging
+    issues_by_category: dict[str, list[dict]] = {}
+    for issue in all_issues:
+        entry = {
+            "bbox": [round(c, 1) for c in issue.bbox],
+            "views": sorted(issue.views),
+            "label": issue.label,
+        }
+        for cat in issue.types:
+            issues_by_category.setdefault(cat, []).append(entry)
+
+    succeeded_count = sum(1 for r in per_drawing_results if r["status"] == "success")
+    failed_count = sum(1 for r in per_drawing_results if r["status"] == "error")
+
+    status = "success" if failed_count == 0 else "partial"
+    result: dict[str, Any] = {
+        "status": status,
+        "drawings_selected": drawing_count,
+        "drawings_succeeded": succeeded_count,
+        "drawings_failed": failed_count,
+        "total_issues": len(all_issues),
+        "issues_by_category": issues_by_category,
+        "clouds_drawn": total_clouds_drawn,
+        "cloud_failures": total_cloud_failures,
+        "per_drawing": per_drawing_results,
+    }
+
+    logger.info("check_drawing_collisions: %d/%d drawings, %d total issues", succeeded_count, drawing_count, len(all_issues))
+    return ToolResult(structured_content=result)

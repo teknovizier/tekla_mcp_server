@@ -250,45 +250,44 @@ class TestAssignSheetNumber:
 
     def test_view_in_top_row_is_sheet_1(self):
         # SectionView_1738: frame_origin=(73.8, 955.3), small frame fully inside row 0
-        assert assign_sheet_number(73.8, 955.3, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == (1, "fits")
+        assert assign_sheet_number(73.8, 955.3, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == 1
 
     def test_view_in_second_row_is_sheet_2(self):
         # FrontView_1899: frame_origin=(46.4, 673.3), small frame fully inside row 1
-        assert assign_sheet_number(46.4, 673.3, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == (2, "fits")
+        assert assign_sheet_number(46.4, 673.3, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == 2
 
     def test_view_in_bottom_row_is_sheet_4(self):
         # SectionView_1732: frame_origin=(61.5, 190.3), small frame fully inside row 3
-        assert assign_sheet_number(61.5, 190.3, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == (4, "fits")
+        assert assign_sheet_number(61.5, 190.3, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == 4
 
     def test_view_on_row_boundary_is_sheet_3(self):
         # frame_origin_y exactly on the boundary between rows 1 and 2 (from
         # the bottom): the frame overlaps only row_from_bottom=1 -> sheet 3.
-        assert assign_sheet_number(0.0, 297.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == (3, "fits")
+        assert assign_sheet_number(0.0, 297.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == 3
 
     def test_view_outside_grid_returns_none(self):
         # SectionView_1646: frame_origin=(3483.1, 1546.6), entirely outside
         # the 420 x 1188mm sheet grid.
-        assert assign_sheet_number(3483.1, 1546.6, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == (None, "out_of_grid")
+        assert assign_sheet_number(3483.1, 1546.6, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) is None
 
     def test_view_mostly_on_lower_sheet_assigned_there(self):
         # frame_origin_y=250 falls within row_from_bottom=0 (sheet 4), but
         # the 100mm-tall frame extends to y=350, putting most of its area
-        # (53mm vs 47mm) in row_from_bottom=1 (sheet 3). It overlaps both
-        # tiles, so the placement is spans_multiple_sheets.
-        assert assign_sheet_number(0.0, 250.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == (3, "spans_multiple_sheets")
+        # (53mm vs 47mm) in row_from_bottom=1 (sheet 3), which wins by overlap area
+        assert assign_sheet_number(0.0, 250.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == 3
 
-    def test_view_extending_past_right_edge_flagged(self):
+    def test_view_extending_past_right_edge_assigned_largest_overlap(self):
         # frame_origin_x=350 with width=100 extends to x=450, past the
         # grid's right edge at x=420 (TILE_WIDTH * COLS).
-        assert assign_sheet_number(350.0, 0.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == (4, "overflows_sheet")
+        assert assign_sheet_number(350.0, 0.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == 4
 
-    def test_view_extending_past_top_edge_flagged(self):
+    def test_view_extending_past_top_edge_assigned_largest_overlap(self):
         # frame_origin_y=1150 with height=100 extends to y=1250, past the
         # grid's top edge at y=1188 (TILE_HEIGHT * ROWS).
-        assert assign_sheet_number(0.0, 1150.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == (1, "overflows_sheet")
+        assert assign_sheet_number(0.0, 1150.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == 1
 
-    def test_view_spanning_and_overflowing(self):
+    def test_view_spanning_and_overflowing_assigned_largest_overlap(self):
         # frame_origin=(350, 250), 100x100mm frame: x range 350-450 overflows
         # past the grid's right edge (420), and y range 250-350 spans the
         # row_from_bottom=0/1 boundary (as in test_view_mostly_on_lower_sheet_assigned_there).
-        assert assign_sheet_number(350.0, 250.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == (3, "spans_and_overflows")
+        assert assign_sheet_number(350.0, 250.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == 3

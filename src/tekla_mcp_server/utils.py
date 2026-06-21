@@ -2,7 +2,10 @@
 Module for utility functions.
 """
 
+from __future__ import annotations
+
 import json
+import math
 import re
 from functools import wraps
 from pathlib import Path
@@ -15,6 +18,181 @@ from fastmcp.tools import ToolResult
 import pathvalidate
 
 from tekla_mcp_server.init import logger
+
+
+class BBox(tuple):
+    """
+    Axis-aligned 2D bounding box.
+
+    Stores (xmin, ymin, xmax, ymax) and provides geometric analysis methods.
+    Subclasses tuple so it is JSON-serialisable and supports unpacking.
+    """
+
+    def __new__(cls, xmin: float, ymin: float, xmax: float, ymax: float) -> BBox:
+        return tuple.__new__(cls, (xmin, ymin, xmax, ymax))
+
+    @property
+    def xmin(self) -> float:
+        """Minimum X coordinate."""
+        return self[0]
+
+    @property
+    def ymin(self) -> float:
+        """Minimum Y coordinate."""
+        return self[1]
+
+    @property
+    def xmax(self) -> float:
+        """Maximum X coordinate."""
+        return self[2]
+
+    @property
+    def ymax(self) -> float:
+        """Maximum Y coordinate."""
+        return self[3]
+
+    @property
+    def width(self) -> float:
+        """Width along X axis (xmax - xmin)."""
+        return self.xmax - self.xmin
+
+    @property
+    def height(self) -> float:
+        """Height along Y axis (ymax - ymin)."""
+        return self.ymax - self.ymin
+
+    @property
+    def cx(self) -> float:
+        """Center X coordinate."""
+        return (self.xmin + self.xmax) / 2
+
+    @property
+    def cy(self) -> float:
+        """Center Y coordinate."""
+        return (self.ymin + self.ymax) / 2
+
+    @property
+    def area(self) -> float:
+        """Bounding box area."""
+        return self.width * self.height
+
+    @staticmethod
+    def from_points(points: list[tuple[float, float]]) -> BBox:
+        """
+        Compute the tight axis-aligned bounding box enclosing all given points.
+
+        Args:
+            points: List of (x, y) coordinates.
+
+        Returns:
+            BBox covering all points.
+        """
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        return BBox(min(xs), min(ys), max(xs), max(ys))
+
+    def overlaps(self, other: BBox) -> bool:
+        """
+        Check whether two axis-aligned rectangles intersect.
+
+        Args:
+            other: Another bounding box.
+
+        Returns:
+            True if the rectangles overlap.
+        """
+        return self.xmin < other.xmax and other.xmin < self.xmax and self.ymin < other.ymax and other.ymin < self.ymax
+
+    def contains_point(self, x: float, y: float) -> bool:
+        """
+        Check if a point is inside this bounding box (inclusive).
+
+        Args:
+            x: X coordinate.
+            y: Y coordinate.
+
+        Returns:
+            True if the point lies within the box.
+        """
+        return self.xmin <= x <= self.xmax and self.ymin <= y <= self.ymax
+
+    def inset(self, pad: float) -> BBox:
+        """
+        Shrink the bounding box inward by `pad` on every side.
+
+        Collapses to its center if the box is too small.
+
+        Args:
+            pad: Distance to inset from each edge.
+
+        Returns:
+            A new inset BBox.
+        """
+        if self.width <= 2 * pad or self.height <= 2 * pad:
+            return BBox(self.cx, self.cy, self.cx, self.cy)
+        return BBox(self.xmin + pad, self.ymin + pad, self.xmax - pad, self.ymax - pad)
+
+    def intersection(self, other: BBox) -> BBox | None:
+        """
+        Return the overlapping region of two bounding boxes.
+
+        Args:
+            other: Another bounding box.
+
+        Returns:
+            The intersection BBox, or None if they do not overlap.
+        """
+        ox0 = max(self.xmin, other.xmin)
+        oy0 = max(self.ymin, other.ymin)
+        ox1 = min(self.xmax, other.xmax)
+        oy1 = min(self.ymax, other.ymax)
+        if ox0 <= ox1 and oy0 <= oy1:
+            return BBox(ox0, oy0, ox1, oy1)
+        return None
+
+    def union(self, other: BBox) -> BBox:
+        """
+        Return the minimal BBox that encloses both input boxes.
+
+        Args:
+            other: Another bounding box.
+
+        Returns:
+            The union BBox.
+        """
+        return BBox(
+            min(self.xmin, other.xmin),
+            min(self.ymin, other.ymin),
+            max(self.xmax, other.xmax),
+            max(self.ymax, other.ymax),
+        )
+
+    def gap(self, other: BBox) -> float:
+        """
+        Euclidean gap between two bounding boxes.
+
+        Returns 0.0 if they overlap or touch.
+
+        Args:
+            other: Another bounding box.
+
+        Returns:
+            Distance between the boxes.
+        """
+        dx = max(other.xmin - self.xmax, self.xmin - other.xmax, 0.0)
+        dy = max(other.ymin - self.ymax, self.ymin - other.ymax, 0.0)
+        return math.hypot(dx, dy)
+
+
+class Segment(tuple):
+    """
+    2D line segment from (x0, y0) to (x1, y1).
+
+    Subclasses tuple so it is JSON-serialisable and supports unpacking.
+    """
+
+    def __new__(cls, x0: float, y0: float, x1: float, y1: float) -> Segment:
+        return tuple.__new__(cls, ((x0, y0), (x1, y1)))
 
 
 def normalize_attribute_name(name: str) -> str:

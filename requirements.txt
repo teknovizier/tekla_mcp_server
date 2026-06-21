@@ -4,3 +4,4 @@ pydantic==2.13.4
 pythonnet==3.0.5
 python-dotenv==1.2.2
 sentence-transformers==5.5.0
+ezdxf==1.4.0

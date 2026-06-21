@@ -2,13 +2,10 @@
 Module for Tekla Drawing View wrappers.
 """
 
-from typing import Any, Literal, overload
+from typing import Any, overload
 
 from tekla_mcp_server.tekla.loader import SystemType, SystemArray, DrawingView, DrawingObject, SectionMark, BindingFlags, Point
 from tekla_mcp_server.init import logger
-
-# How a view's visible frame relates to the sheet grid
-SheetPlacement = Literal["fits", "spans_multiple_sheets", "overflows_sheet", "spans_and_overflows", "out_of_grid"]
 
 
 class TeklaDrawingView:
@@ -249,7 +246,7 @@ class TeklaDrawingView:
         """
         Return all SectionMark objects in this view as (mark_name, mark) tuples.
 
-        A SectionMark labels a cut taken in this view; its MarkName matches
+        A SectionMark labels a cut taken in this view. Its MarkName matches
         the name of the section view it produced.
 
         Returns:
@@ -269,7 +266,7 @@ class TeklaDrawingView:
                 result.append((name, obj))
         return result
 
-    def to_dict(self, sheet_number: int | None = None, sheet_placement: SheetPlacement | None = None) -> dict[str, Any]:
+    def to_dict(self, sheet_number: int | None = None) -> dict[str, Any]:
         """
         Returns a serialisable dict of all view metadata.
 
@@ -278,10 +275,6 @@ class TeklaDrawingView:
                 drawings combining multiple sheets into one sheet view.
                 Assigned to the page with which the view's visible frame
                 (`frame_origin` + `width`/`height`) has the largest overlap.
-                Ignored for the sheet view itself.
-            sheet_placement: How the view's visible frame relates to the
-                sheet grid - `fits`, `spans_multiple_sheets`,
-                `overflows_sheet`, `spans_and_overflows` or `out_of_grid`.
                 Ignored for the sheet view itself.
         """
         if self.is_sheet:
@@ -311,6 +304,5 @@ class TeklaDrawingView:
             "width": self.width,
             "height": self.height,
             "sheet_number": sheet_number,
-            "sheet_placement": sheet_placement,
             "display_settings": self.display_settings,
         }

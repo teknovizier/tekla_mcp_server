@@ -10,9 +10,9 @@ import pytest
 from tekla_mcp_server.models import ViewAttributes
 from tekla_mcp_server.providers.drawings_provider import (
     align_section_views,
-    arrange_colliding_drawing_marks,
+    check_drawing_collisions,
     close_drawing,
-    delete_view_clouds,
+    delete_clouds,
     delete_views,
     get_drawings,
     get_drawings_properties,
@@ -28,6 +28,23 @@ from tekla_mcp_server.providers.drawings_provider import (
     update_drawings,
 )
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
+
+
+def _skip_if_drawings_selected():
+    """
+    Skip the test if Tekla's Document Manager currently has a drawing selected.
+
+    Tools that take an optional `marks` list fall back to the Document
+    Manager's current selection when `marks` is omitted or empty - so a
+    "no marks and nothing selected" test only proves its point when nothing
+    is selected. The Tekla Open API's `DrawingSelector` exposes only
+    `GetSelected()`, with no way to clear the selection from code, so this
+    suite cannot reset that precondition. It can only detect and skip when
+    it isn't met (e.g. a drawing left selected from manual use).
+    """
+    handler = TeklaDrawingHandler()
+    if list(handler.handler.GetDrawingSelector().GetSelected()):
+        pytest.skip("A drawing is currently selected in the Tekla Document Manager - cannot test the 'nothing selected' path")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -89,6 +106,7 @@ class TestGetDrawingsProperties:
 
     def test_get_drawings_properties_no_args(self):
         """Call get_drawings_properties without arguments (no selection)."""
+        _skip_if_drawings_selected()
         result = get_drawings_properties()
 
         assert result.structured_content["status"] == "error"
@@ -114,22 +132,12 @@ class TestGetDrawingsProperties:
         assert isinstance(drawing["user_properties"], dict)
 
 
-class TestArrangeCollidingDrawingMarks:
-    """Tests for arrange_colliding_drawing_marks function."""
-
-    def test_arrange_collisions_no_open_drawing(self):
-        """Fails when no drawing is open."""
-        result = arrange_colliding_drawing_marks()
-
-        assert result.structured_content["status"] == "error"
-        assert "drawing" in result.structured_content["message"].lower()
-
-
 class TestPrintDrawings:
     """Tests for print_drawings function."""
 
     def test_print_drawings_no_drawings_selected(self):
         """Call without selecting any drawings."""
+        _skip_if_drawings_selected()
         result = print_drawings()
 
         assert result.structured_content["status"] == "error"
@@ -226,10 +234,9 @@ class TestGetDrawingViews:
         open_drawing(mark=cu_mark)
         result = get_drawing_views()
         common = {"name", "view_key", "view_type", "is_sheet", "origin_x", "origin_y", "width", "height"}
-        # The sheet view has no frame origin, sheet placement or display settings.
-        # Model views add a frame origin, sheet number/placement and display settings.
+        # The sheet view has no label, frame origin, sheet number or display settings
         sheet_keys = common
-        non_sheet_keys = common | {"frame_origin_x", "frame_origin_y", "sheet_number", "sheet_placement", "display_settings"}
+        non_sheet_keys = common | {"label", "frame_origin_x", "frame_origin_y", "sheet_number", "display_settings"}
         for view in result.structured_content["views"]:
             expected = sheet_keys if view["is_sheet"] else non_sheet_keys
             assert set(view.keys()) == expected
@@ -421,8 +428,8 @@ class TestDeleteViews:
         close_drawing(save=False)
 
 
-class TestDeleteViewClouds:
-    """Tests for delete_view_clouds function."""
+class TestDeleteClouds:
+    """Tests for delete_clouds function."""
 
     @pytest.fixture(autouse=True)
     def ensure_no_open_drawing(self):
@@ -434,13 +441,13 @@ class TestDeleteViewClouds:
 
     def test_no_open_drawing_raises(self):
         """Raises when no drawing is open."""
-        result = delete_view_clouds()
+        result = delete_clouds()
         assert result.structured_content["status"] == "error"
 
     def test_empty_view_keys_processes_all_views(self, cu_mark):
         """An empty view_keys list processes all views, like omitting it."""
         open_drawing(mark=cu_mark)
-        result = delete_view_clouds(view_keys=[])
+        result = delete_clouds(view_keys=[])
         sc = result.structured_content
         assert sc["status"] == "success"
         assert sc["total_found"] == 0
@@ -452,14 +459,14 @@ class TestDeleteViewClouds:
     def test_invalid_view_key_rejected(self, cu_mark):
         """A non-existent view_key is rejected."""
         open_drawing(mark=cu_mark)
-        result = delete_view_clouds(view_keys=["MCP_NONEXISTENT_VIEW"])
+        result = delete_clouds(view_keys=["MCP_NONEXISTENT_VIEW"])
         assert result.structured_content["status"] == "error"
         close_drawing(save=False)
 
     def test_no_clouds_returns_success(self, cu_mark):
         """Drawing with no clouds returns success with zero counts."""
         open_drawing(mark=cu_mark)
-        result = delete_view_clouds()
+        result = delete_clouds()
         sc = result.structured_content
         assert sc["status"] == "success"
         assert sc["total_found"] == 0
@@ -471,7 +478,7 @@ class TestDeleteViewClouds:
     def test_response_has_required_fields(self, cu_mark):
         """Response always contains the expected keys."""
         open_drawing(mark=cu_mark)
-        result = delete_view_clouds()
+        result = delete_clouds()
         sc = result.structured_content
         assert {"status", "total_found", "total_deleted", "total_failed", "views"}.issubset(sc.keys())
         close_drawing(save=False)
@@ -483,24 +490,8 @@ class TestDeleteViewClouds:
         non_sheet_keys = [v["view_key"] for v in views if not v["is_sheet"]]
         if not non_sheet_keys:
             pytest.skip("No non-sheet views available")
-        result = delete_view_clouds(view_keys=non_sheet_keys)
+        result = delete_clouds(view_keys=non_sheet_keys)
         assert result.structured_content["status"] in {"success", "partial"}
-        close_drawing(save=False)
-
-    def test_delete_clouds_after_collision_detection(self, cu_mark):
-        """Clouds inserted by arrange_colliding_drawing_marks are removed."""
-        open_drawing(mark=cu_mark)
-        arrange_result = arrange_colliding_drawing_marks()
-        clouds_inserted = arrange_result.structured_content.get("unresolved_count", 0)
-        if clouds_inserted == 0:
-            pytest.skip("No collision clouds were inserted - cannot verify deletion")
-
-        result = delete_view_clouds()
-        sc = result.structured_content
-        assert sc["status"] == "success"
-        assert sc["total_found"] == clouds_inserted
-        assert sc["total_deleted"] == clouds_inserted
-        assert sc["total_failed"] == 0
         close_drawing(save=False)
 
 
@@ -774,6 +765,7 @@ class TestSetDrawingsProperties:
 
     def test_no_drawings_selected(self):
         """No marks and nothing selected raises an error."""
+        _skip_if_drawings_selected()
         result = set_drawings_properties(title1="MCP_TEST_TITLE1")
         assert result.structured_content["status"] == "error"
 
@@ -870,6 +862,7 @@ class TestSetDrawingsIssueState:
 
     def test_no_drawings_selected(self):
         """No marks and nothing selected raises an error."""
+        _skip_if_drawings_selected()
         result = set_drawings_issue_state(action="issue")
         assert result.structured_content["status"] == "error"
 
@@ -921,6 +914,7 @@ class TestUpdateDrawings:
 
     def test_no_drawings_selected(self):
         """No marks and nothing selected raises an error."""
+        _skip_if_drawings_selected()
         result = update_drawings()
         assert result.structured_content["status"] == "error"
 
@@ -945,3 +939,46 @@ class TestUpdateDrawings:
 
         after = get_drawings_properties(marks=[ga_mark]).structured_content["drawings"][0]
         assert after["up_to_date_status"] == "DrawingIsUpToDate"
+
+
+class TestCheckDrawingCollisions:
+    """Tests for check_drawing_collisions function."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Close any open drawing before each test."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing()
+        yield
+
+    def test_no_drawings_selected(self):
+        """No marks and nothing selected raises an error."""
+        _skip_if_drawings_selected()
+        result = check_drawing_collisions()
+        assert result.structured_content["status"] == "error"
+
+    def test_marks_with_colliding_dxf_stems_raise_before_exporting(self, cu_mark):
+        """Two marks that normalize to the same DXF stem raise immediately, without exporting anything."""
+        result = check_drawing_collisions(marks=[cu_mark, f"[{cu_mark}]"])
+        sc = result.structured_content
+        assert sc["status"] == "error"
+        assert cu_mark in sc["message"]
+
+    def test_runs_on_one_drawing_and_response_has_required_fields(self, cu_mark):
+        """Checking one drawing returns the expected report shape, then clean up any clouds drawn."""
+        before = get_drawings_properties(marks=[cu_mark]).structured_content["drawings"][0]
+        if before["up_to_date_status"] != "DrawingIsUpToDate":
+            pytest.skip("Drawing is not up to date, cannot run collision check")
+
+        result = check_drawing_collisions(marks=[cu_mark])
+        sc = result.structured_content
+        assert sc["status"] in {"success", "partial"}
+        assert sc["drawings_selected"] == 1
+        assert {"drawings_succeeded", "drawings_failed", "total_issues", "issues_by_category", "clouds_drawn", "cloud_failures", "per_drawing"}.issubset(sc.keys())
+
+        # Clean up any clouds the check drew, so the scratch drawing stays clean
+        if sc["clouds_drawn"] > 0:
+            open_drawing(mark=cu_mark)
+            delete_clouds()
+            close_drawing(save=True)

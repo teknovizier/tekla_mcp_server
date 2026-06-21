@@ -2,6 +2,8 @@
 Module for Tekla DrawingHandler wrapper.
 """
 
+from __future__ import annotations
+
 from typing import Any
 
 from tekla_mcp_server.tekla.loader import ContainerView, DrawingHandler, DrawingObject, DrawingView

@@ -24,5 +24,8 @@
     "reports": {
         "preview_max_chars": 2000,
         "preview_timeout": 30
+    },
+    "drawings": {
+        "dxf_export_timeout": 120
     }
 }

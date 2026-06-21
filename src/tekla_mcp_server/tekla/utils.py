@@ -572,6 +572,69 @@ def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawi
     return macro_just_installed
 
 
+def ensure_export_setting_installed(setting_name: str) -> None:
+    """
+    Ensure a DXF export setting is present in the model's attributes folder.
+
+    The setting source is read from `config/attributes/{setting_name}` and copied
+    to `{model_path}/attributes/{setting_name}`, overwriting any existing copy so
+    that server updates reach users automatically.
+
+    Args:
+        setting_name: Export setting file name, e.g. 'TEKLA_MCP_DXF_EXPORT.dwgsetting'.
+
+    Raises:
+        FileNotFoundError: If the setting source or model path is unavailable.
+        OSError: If the setting file cannot be copied.
+    """
+    source = get_config_dir() / "attributes" / setting_name
+    if not source.exists():
+        raise FileNotFoundError(f"Bundled export setting not found: {source}")
+
+    model = TeklaModel()
+    model_path = model.model_path
+    if not model_path:
+        raise FileNotFoundError("Cannot resolve model path.")
+
+    destination = Path(model_path) / "attributes" / setting_name
+    if not destination.exists() or not filecmp.cmp(source, destination, shallow=False):
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            logger.info("Installed export setting '%s' to '%s'", setting_name, destination)
+        except Exception as e:
+            logger.error("Failed to copy export setting '%s' to '%s': %s", setting_name, destination, e)
+            raise
+
+
+# options.ini backup sidecar names, alongside options.ini itself in the model
+# directory. See `restore_options_ini_if_interrupted`
+OPTIONS_INI_BACKUP_SUFFIX = ".tekla_mcp_backup"
+OPTIONS_INI_ABSENT_MARKER_SUFFIX = ".tekla_mcp_backup_absent"
+
+
+def restore_options_ini_if_interrupted(model_path: str) -> None:
+    """
+    Restore options.ini left mutated by an interrupted DXF export, if any.
+
+    Callers back up options.ini and restore it in a `finally` - which can't
+    run if the process is killed mid-export. Calling this before every new
+    mutation detects a leftover backup/absent-marker and repairs it first,
+    bounding the damage to "until the next call."
+    """
+    options_ini = Path(model_path) / "options.ini"
+    backup = options_ini.with_name(options_ini.name + OPTIONS_INI_BACKUP_SUFFIX)
+    absent_marker = options_ini.with_name(options_ini.name + OPTIONS_INI_ABSENT_MARKER_SUFFIX)
+    if absent_marker.is_file():
+        options_ini.unlink(missing_ok=True)
+        absent_marker.unlink(missing_ok=True)
+        logger.warning("Restored options.ini to its prior absent state after an interrupted DXF export.")
+    elif backup.is_file():
+        options_ini.write_text(backup.read_text(encoding="utf-8"), encoding="utf-8")
+        backup.unlink(missing_ok=True)
+        logger.warning("Restored options.ini from backup after an interrupted DXF export.")
+
+
 @lru_cache
 def get_report_templates() -> list[str]:
     """

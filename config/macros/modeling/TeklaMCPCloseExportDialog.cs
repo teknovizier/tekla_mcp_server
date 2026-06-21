@@ -8,7 +8,7 @@ namespace UserMacros {
         [Tekla.Macros.Runtime.MacroEntryPointAttribute()]
         public static void Run(Tekla.Macros.Runtime.IMacroRuntime runtime) {
             Tekla.Macros.Wpf.Runtime.IWpfMacroHost wpf = runtime.Get<Tekla.Macros.Wpf.Runtime.IWpfMacroHost>();
-            wpf.InvokeCommand("CommandRepository", "Edit.MarkSolveCrossingLeaderlines");
+            wpf.View("DrawingDWGExport.MainWindow", "").As.Window.Close();
         }
     }
 }

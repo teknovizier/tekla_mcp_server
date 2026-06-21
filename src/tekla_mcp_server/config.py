@@ -15,7 +15,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Name of the per-model runtime data directory
+MCP_DATA_DIR_NAME = "TeklaMCPData"
 
+
+# Config JSON files are read once and cached for the lifetime of the process.
+# Changes to settings.json do not take effect until the MCP server is restarted
 @lru_cache
 def get_config_dir() -> Path:
     """
@@ -28,10 +33,6 @@ def get_config_dir() -> Path:
     """
     env_dir = os.getenv("TEKLA_MCP_CONFIG_DIR", "config")
     return Path(env_dir)
-
-
-# Config JSON files are read once and cached for the lifetime of the process.
-# Changes to settings.json do not take effect until the MCP server is restarted.
 
 
 # maxsize=None is safe here: config filenames are a small, fixed set, so
@@ -365,11 +366,6 @@ class Config:
         return self.report_properties.get(key, [])
 
 
-def _get_reports_config() -> dict[str, Any]:
-    """Get the reports configuration section."""
-    return _load_settings().get("reports", {})
-
-
 def get_report_preview_max_chars() -> int:
     """
     Get the maximum number of characters for report content preview.
@@ -377,7 +373,7 @@ def get_report_preview_max_chars() -> int:
     Returns:
         Max chars for preview (default 2000)
     """
-    return int(_get_reports_config().get("preview_max_chars", 2000))
+    return int(_load_settings().get("reports", {}).get("preview_max_chars", 2000))
 
 
 def get_report_preview_timeout() -> float:
@@ -387,7 +383,28 @@ def get_report_preview_timeout() -> float:
     Returns:
         Timeout in seconds (default 30)
     """
-    return float(_get_reports_config().get("preview_timeout", 30))
+    return float(_load_settings().get("reports", {}).get("preview_timeout", 30))
+
+
+def get_dxf_export_timeout() -> float:
+    """
+    Get the maximum time in seconds to wait for exported DXF files to appear on disk.
+
+    Returns:
+        Timeout in seconds (default 120)
+    """
+    return float(_load_settings().get("drawings", {}).get("dxf_export_timeout", 120))
+
+
+def get_mcp_data_dir(model_path: str) -> Path:
+    """
+    Return the TeklaMCPData directory for runtime data in the given model.
+
+    Creates the directory if it doesn't exist.
+    """
+    data_dir = Path(model_path) / MCP_DATA_DIR_NAME
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
 
 
 def get_tolerance(name: str, default: float, group: str = "model") -> float:
