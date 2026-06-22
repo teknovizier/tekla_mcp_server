@@ -26,10 +26,13 @@
         "preview_timeout": 30
     },
     "drawings": {
-        "dxf_export_timeout": 120,
+        "timeout": 120,
+        "output_dir": ".\\PlotFiles",
         "export": {
-            "output_dir": ".\\PlotFiles",
             "default_export_settings": ""
+        },
+        "print": {
+            "default_print_settings": ""
         }
     }
 }

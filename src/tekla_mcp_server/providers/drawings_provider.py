@@ -17,10 +17,10 @@ from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from tekla_mcp_server.config import (
-    get_advanced_option_directories,
     get_config_dir,
     get_default_export_settings,
-    get_dxf_export_timeout,
+    get_default_print_settings,
+    get_export_timeout,
     get_export_output_dir,
     get_mcp_data_dir,
     get_tolerance,
@@ -36,7 +36,14 @@ from tekla_mcp_server.models import (
     ViewAttributes,
 )
 from tekla_mcp_server.utils import mcp_handler, resolve_model_relative_dir
-from tekla_mcp_server.drawing_export import install_export_settings_content, patch_dwgsetting_xml
+from tekla_mcp_server.drawing_export import (
+    DWGSETTING_EXTENSION,
+    PDF_PRINT_OPTIONS_EXTENSION,
+    install_export_settings_content,
+    patch_dwgsetting_xml,
+    patch_pdf_print_options_xml,
+    pdf_print_options_outputs_single_file,
+)
 from tekla_mcp_server.tekla.filter_builder import to_filter_option
 from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_export_settings_installed, get_available_attribute_files
 from tekla_mcp_server.providers.operations_provider import run_macro
@@ -52,10 +59,6 @@ from tekla_mcp_server.tekla.drawing_utils import (
     extract_annotation_content,
     CATEGORY_TYPES,
     DEFAULT_ANNOTATION_CATEGORIES,
-    OUTPUT_TYPE_MAP,
-    COLOR_MODE_MAP,
-    ORIENTATION_MAP,
-    SCALING_METHOD_MAP,
 )
 from tekla_mcp_server.dxf_operations import run_collision_checks, resolve_entities
 from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing
@@ -67,8 +70,6 @@ from tekla_mcp_server.tekla.loader import (
     DrawingConnection,
     DrawingObject,
     DrawingModelObject,
-    DPMPrinterAttributes,
-    DotPrintToMultipleSheet,
     ModelObject,
 )
 
@@ -86,6 +87,11 @@ COLLISION_EXPORT_SETTING = "TEKLA_MCP_COLLISION_LAYERS"
 # standard layers, empty file prefix. Python patches its format/version/output dir
 # per call. The export macro selects it by name.
 EXPORT_BASE_SETTING = "TEKLA_MCP_EXPORT_BASE"
+
+# Base PDF print setting (config/attributes) for print_drawings. Python patches
+# its paper size/orientation/multi-sheet tiling/output dir per drawing. The
+# print macro selects it by name.
+PDF_BASE_SETTING = "TEKLA_MCP_PDF_BASE"
 
 
 def _describe_model_object(guid: str, model_obj: ModelObject) -> dict[str, Any]:
@@ -439,127 +445,226 @@ def update_drawings(
     return ToolResult(structured_content=result)
 
 
+def _wait_for_new_files(directory: Path, pattern: str, before: set[Path], expected_count: int, timeout: float, *, wait_message: str | None = None) -> list[Path]:
+    """
+    Wait for at least `expected_count` new files matching `pattern` in `directory`.
+
+    Diffs against the `before` snapshot, polling every 2 seconds until either
+    `expected_count` new files appear or `timeout` seconds elapse. Tolerates
+    `directory` not existing yet (treated as zero matches).
+
+    Args:
+        directory: Directory to watch for new files.
+        pattern: Glob pattern to match within `directory`, e.g. '*.pdf'.
+        before: Snapshot of pre-existing matching files, excluded from the result.
+        expected_count: Number of new files to wait for.
+        timeout: Max seconds to wait.
+        wait_message: If given, logged once if the wait loop actually has to run.
+
+    Returns:
+        Sorted list of new file paths found - may have fewer than
+        `expected_count` entries if the timeout elapses first.
+    """
+
+    def _scan() -> list[Path]:
+        return sorted(set(directory.glob(pattern)) - before) if directory.is_dir() else []
+
+    produced = _scan()
+    if len(produced) < expected_count:
+        if wait_message:
+            logger.info(wait_message)
+        deadline = time.time() + timeout
+        while len(produced) < expected_count and time.time() < deadline:
+            time.sleep(2)
+            produced = _scan()
+    return produced
+
+
+def _close_print_dialog() -> None:
+    """Close the Document Manager print dialog after a print, logging on failure."""
+    close_result = run_macro(macro_name="TeklaMCPClosePrintDialog.cs")
+    if close_result.structured_content.get("status") != "success":
+        logger.warning("Failed to close print dialog after print")
+
+
+def _run_print_macro(model_path: str, setting_name: str, marks: list[str], poll: Callable[[], _T]) -> _T:
+    """
+    Run the shared print macro for `marks` using the named print setting.
+
+    Writes `print.tmp` (a `SETTING=<name>` line plus one mark per line) for the
+    macro to consume, runs the macro, then calls `poll` to verify the output.
+    Closes the print dialog after `poll` returns (closing earlier would cancel
+    the print) so the next call doesn't hit an already-open dialog.
+
+    Args:
+        model_path: Path to the open Tekla model.
+        setting_name: Print setting to select in the Document Manager.
+        marks: Drawing marks to search and select.
+        poll: Callback run after the macro to verify/collect output. Its return
+            value is returned to the caller.
+
+    Returns:
+        Whatever `poll` returns.
+    """
+    ensure_macro_installed("TeklaMCPPrintDrawings.cs", category="modeling")
+    ensure_macro_installed("TeklaMCPClosePrintDialog.cs", category="modeling")
+
+    data_dir = get_mcp_data_dir(model_path)
+    print_file = data_dir / "print.tmp"
+    print_file.write_text(f"SETTING={setting_name}\n" + "\n".join(marks), encoding="utf-8")
+
+    try:
+        macro_result = run_macro(macro_name="TeklaMCPPrintDrawings.cs")
+        if macro_result.structured_content.get("status") != "success":
+            raise RuntimeError("Print macro failed. Ensure the print setting exists in Document Manager.")
+        result = poll()
+        _close_print_dialog()
+        return result
+    finally:
+        print_file.unlink(missing_ok=True)
+
+
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def print_drawings(
     marks: Annotated[list[str], Field(description="List of drawing marks to process. Leave empty to use the currently selected drawings")] = [],
-    output_filename: Annotated[Literal["name", "mark", "title1", "title2", "title3"] | None, Field(description="Output filename")] = None,
-    output_folder: Annotated[str | None, Field(description="Output folder path for PDF output")] = None,
-    printer_attributes: Annotated[
-        dict[str, Any],
-        Field(description="Optional overrides for printing behavior. Used to customize default print settings."),
-    ] = {},
+    print_settings: Annotated[str | None, Field(description="Name of a customer '.PdfPrintOptions.xml' print setting. When set, size auto-detection is skipped and the setting is used as-is")] = None,
 ) -> ToolResult:
     """
-    Print drawings by their marks.
+    Print drawings to PDF via the Document Manager print macro.
 
-    If marks are empty, prints currently selected drawings in Tekla.
+    Two modes: with `print_settings`, the named setting is used as-is. Without
+    it, paper size, orientation and multi-sheet tiling (A0-A4, or a clean
+    tiling of one) are auto-detected per drawing, and drawings sharing the
+    same detected size are batched into a single macro call. Empty `marks`
+    uses the current Tekla selection.
     """
     handler = TeklaDrawingHandler()
+    if handler.get_active_drawing() is not None:
+        raise RuntimeError("A drawing is currently open. Close it first with `close_drawing` before exporting.")
+
     target_drawings = handler.get_drawings_by_marks(marks or None)
 
-    provided_output_folder = output_folder
-    if not output_folder:
-        plot_dirs = get_advanced_option_directories("XS_DRAWING_PLOT_FILE_DIRECTORY")
-        if not plot_dirs:
-            raise ValueError("No output directory is set: XS_DRAWING_PLOT_FILE_DIRECTORY is not configured")
-        output_folder = str(Path(plot_dirs[0]).resolve())
-    else:
-        # A relative folder is resolved against the model folder, consistent with
-        # create_report and how relative advanced-option paths are interpreted.
-        output_folder = resolve_model_relative_dir(output_folder, TeklaModel().model_path)
-        if not Path(output_folder).is_dir():
-            raise ValueError(f"Output directory '{output_folder}' does not exist")
+    model_path = TeklaModel().model_path
+    raw_dir = get_export_output_dir()
+    output_dir = resolve_model_relative_dir(raw_dir, model_path)
+    if not Path(output_dir).is_dir():
+        raise ValueError(f"Output directory '{output_dir}' does not exist")
 
-    default_attrs = {
-        "printer_name": "PDF-XChange 3.0",
-        "output_filename": output_filename,
-        "output_type": "PDF",
-        "color_mode": "BlackAndWhite",
-        "orientation": "Landscape",
-        "copies": 1,
-        "scale_factor": 1.0,
-        "open_when_finished": False,
-        "scaling_method": "Auto",
-    }
-    attrs = {**default_attrs, **(printer_attributes or {})}
+    customer_setting = print_settings or get_default_print_settings()
+    if customer_setting:
+        # Strip .PdfPrintOptions.xml if the user included it, then verify it exists.
+        # `get_available_attribute_files` strips only the trailing `.xml`, so its
+        # results still carry the `.PdfPrintOptions` suffix - strip that too
+        setting_stem = customer_setting.removesuffix(PDF_PRINT_OPTIONS_EXTENSION)
+        available = sorted({name.removesuffix(".PdfPrintOptions") for name in get_available_attribute_files(PDF_PRINT_OPTIONS_EXTENSION)})
+        if setting_stem not in available:
+            raise ValueError(f"Print settings '{customer_setting}' not found. Available settings: {available}")
 
-    results: list[dict] = []
-    success_count = 0
+        expected_marks = [d.mark for d in target_drawings]
+        _run_print_macro(model_path, setting_stem, expected_marks, lambda: None)
+        return ToolResult(
+            structured_content={
+                "status": "success",
+                "message": f"Print submitted for {len(expected_marks)} drawing(s) using settings '{setting_stem}'. Output location is defined by the settings.",
+                "settings": setting_stem,
+                "total": len(expected_marks),
+                "marks": expected_marks,
+            }
+        )
 
+    base_xml = (get_config_dir() / "attributes" / f"{PDF_BASE_SETTING}{PDF_PRINT_OPTIONS_EXTENSION}").read_text(encoding="utf-8")
+    # OutputToSingleFile is a user-adjustable field on the base setting (see
+    # docs/configuration.md), never patched per call - a successful combined
+    # print produces one file regardless of how many drawings are in the batch
+    single_file_output = pdf_print_options_outputs_single_file(base_xml)
+
+    produced_files: list[Path] = []
+    errors: dict[str, str] = {}
+
+    # Group drawings by detected paper size/orientation/multi-sheet signature so
+    # drawings sharing the same settings print together in one macro call.
+    # Tekla produces exactly one PDF per drawing regardless of tile count - a
+    # multi-sheet drawing's tiles become pages within that one file, not
+    # separate files. Filenames cannot be reliably attributed back to a
+    # specific mark within a batch, so results are reported at the batch
+    # level (`files`) plus per-mark failures (`errors`)
+    groups: dict[tuple[str, bool, str], list[TeklaDrawing]] = {}
     for drawing in target_drawings:
-        try:
-            sheet_width = drawing.drawing.Layout.SheetSize.Width
-            sheet_height = drawing.drawing.Layout.SheetSize.Height
+        sheet_width = drawing.drawing.Layout.SheetSize.Width
+        sheet_height = drawing.drawing.Layout.SheetSize.Height
 
-            paper_size = map_sheet_size_to_paper_size(sheet_width, sheet_height)
-            if paper_size is None:
+        paper_size = map_sheet_size_to_paper_size(sheet_width, sheet_height)
+        is_multi_sheet = False
+        if paper_size is None:
+            # Single standard size didn't match - check if it's a clean tiling
+            # of multiple standard sheets
+            grid = detect_sheet_grid(sheet_width, sheet_height)
+            if grid is None:
                 logger.warning("Format not supported for drawing %s (size: %sx%s mm)", drawing.mark, sheet_width, sheet_height)
-                results.append({"mark": drawing.mark, "status": "failed", "message": f"Format not supported: sheet size {sheet_width}x{sheet_height} mm does not match A0-A4"})
+                errors[drawing.mark] = f"Format not supported: sheet size {sheet_width}x{sheet_height} mm does not match A0-A4 or a clean tiling of it"
                 continue
+            paper_size, _cols, _rows = grid
+            is_multi_sheet = True
 
-            print_attrs = DPMPrinterAttributes()
-            print_attrs.PrinterName = attrs["printer_name"]
-            print_attrs.OutputType = OUTPUT_TYPE_MAP.get(attrs["output_type"], OUTPUT_TYPE_MAP["PDF"])
-            print_attrs.ColorMode = COLOR_MODE_MAP.get(attrs["color_mode"], COLOR_MODE_MAP["BlackAndWhite"])
-            print_attrs.Orientation = ORIENTATION_MAP.get(attrs["orientation"], ORIENTATION_MAP["Landscape"])
-            print_attrs.PaperSize = paper_size
-            print_attrs.NumberOfCopies = attrs["copies"]
-            print_attrs.ScaleFactor = attrs["scale_factor"]
-            print_attrs.ScalingMethod = SCALING_METHOD_MAP.get(attrs["scaling_method"], SCALING_METHOD_MAP["Auto"])
-            print_attrs.PrintToMultipleSheet = DotPrintToMultipleSheet.Off
+        # Multi-sheet tiles are only ever detected in landscape (see
+        # `detect_sheet_grid`). Single sheets keep their actual orientation -
+        # forcing Landscape unconditionally would print portrait sheets sideways
+        orientation = "Landscape" if is_multi_sheet or sheet_width >= sheet_height else "Portrait"
 
-            file_attr = attrs["output_filename"]
-            raw_name = getattr(drawing, file_attr) if isinstance(file_attr, str) and hasattr(drawing, file_attr) else drawing.mark
-            safe_name = sanitize_filename(str(raw_name))
-            if safe_name is None:
-                logger.warning("Drawing %s has no valid filename after sanitization", drawing.mark)
-                results.append({"mark": drawing.mark, "status": "failed", "message": "No valid filename after sanitization"})
-                continue
-            print_attrs.OutputFileName = safe_name
+        groups.setdefault((str(paper_size), is_multi_sheet, orientation), []).append(drawing)
 
-            output_filename_with_ext = safe_name + ".pdf"
-            output_file = Path(output_folder) / output_filename_with_ext
-            print_attrs.OpenFileWhenFinished = attrs["open_when_finished"]
+    for (paper_size_str, is_multi_sheet, orientation), group_drawings in groups.items():
+        group_marks = [d.mark for d in group_drawings]
+        group_size = len(group_marks)
+        try:
+            # Patch and install the base setting with this group's detected
+            # size/orientation/tiling, then let the macro select it by name
+            patched = patch_pdf_print_options_xml(
+                base_xml,
+                paper_size=paper_size_str,
+                orientation=orientation,
+                multi_sheet=is_multi_sheet,
+                multi_sheet_order="LeftToRightTopToBottom",
+                output_dir=raw_dir,
+            )
+            install_export_settings_content(model_path, f"{PDF_BASE_SETTING}{PDF_PRINT_OPTIONS_EXTENSION}", patched)
 
-            logger.info("Printing drawing %s -> %s", drawing.mark, output_file)
-            print_result = handler.print_drawing(drawing, print_attrs, str(output_file))
+            before_files = set(Path(output_dir).glob("*.pdf"))
+            # A combined file setting always produces one file regardless of
+            # batch size. Otherwise it's exactly one file per drawing
+            expected_files = 1 if single_file_output else group_size
 
-            if not print_result:
-                logger.warning("PrintDrawing returned False for drawing %s (target: %s)", drawing.mark, output_file)
-                results.append({"mark": drawing.mark, "status": "failed", "message": "PrintDrawing returned False"})
-            elif not Path(output_file).exists():
-                # Tekla reports success even when it only queued the job. If the PDF is not
-                # on disk, the print engine could not write the file - most often because the
-                # MCP client launched this server without the permissions/environment Tekla's
-                # PDF print engine needs).
-                message = (
-                    "Tekla reported the print succeeded but no file was created. "
-                    "The print engine could not write the output - check your MCP client settings: "
-                    "the server may be launched without sufficient permissions or environment."
-                )
-                logger.warning("Drawing %s: %s", drawing.mark, message)
-                results.append({"mark": drawing.mark, "status": "failed", "message": message})
+            def _poll() -> list[Path]:
+                return _wait_for_new_files(Path(output_dir), "*.pdf", before_files, expected_files, get_export_timeout())
+
+            logger.info("Printing %d drawing(s) [%s, %s, multi_sheet=%s, single_file=%s] -> %s", group_size, paper_size_str, orientation, is_multi_sheet, single_file_output, output_dir)
+            produced = _run_print_macro(model_path, PDF_BASE_SETTING, group_marks, _poll)
+
+            if len(produced) >= expected_files:
+                produced_files.extend(produced)
             else:
-                success_count += 1
-                logger.info("Printed drawing %s successfully: %s", drawing.mark, output_file)
-                results.append({"mark": drawing.mark, "status": "success", "file_name": output_filename_with_ext})
+                message = f"Expected {expected_files} file(s) for {group_size} drawing(s), found {len(produced)} in the output folder."
+                logger.warning("Group [%s, %s, multi_sheet=%s]: %s", paper_size_str, orientation, is_multi_sheet, message)
+                for mark in group_marks:
+                    errors[mark] = message
 
         except Exception as e:
-            logger.error("Failed to print drawing %s: %s", drawing.mark, str(e))
-            results.append({"mark": drawing.mark, "status": "error", "message": str(e)})
+            logger.error("Failed to print group [%s, %s, multi_sheet=%s]: %s", paper_size_str, orientation, is_multi_sheet, str(e))
+            for mark in group_marks:
+                errors[mark] = str(e)
 
-    status = "success" if success_count == len(target_drawings) else "partial" if success_count > 0 else "error"
+    exported_count = len(target_drawings) - len(errors)
+    status = "success" if not errors else "partial" if exported_count > 0 else "error"
 
     result: dict[str, Any] = {
         "status": status,
+        "output_folder": raw_dir,
         "total": len(target_drawings),
-        "succeeded": success_count,
-        "failed": len(target_drawings) - success_count,
-        "results": results,
+        "exported": exported_count,
+        "files": sorted(p.name for p in produced_files),
+        "errors": errors,
     }
-    if provided_output_folder:
-        result["output_folder"] = provided_output_folder
     return ToolResult(structured_content=result)
 
 
@@ -597,12 +702,12 @@ def _run_export_macro(model_path: str, setting_name: str, marks: list[str], poll
     export_file.write_text(f"SETTING={setting_name}\n" + "\n".join(marks), encoding="utf-8")
 
     try:
-            macro_result = run_macro(macro_name="TeklaMCPExportDrawings.cs")
-            if macro_result.structured_content.get("status") != "success":
-                raise RuntimeError("Export macro failed. Ensure the export setting exists in Document Manager.")
-            result = poll()
-            _close_export_dialog()
-            return result
+        macro_result = run_macro(macro_name="TeklaMCPExportDrawings.cs")
+        if macro_result.structured_content.get("status") != "success":
+            raise RuntimeError("Export macro failed. Ensure the export setting exists in Document Manager.")
+        result = poll()
+        _close_export_dialog()
+        return result
     finally:
         export_file.unlink(missing_ok=True)
 
@@ -642,11 +747,12 @@ def export_drawings(
     if customer_setting:
         mode = "named"
         setting_name = customer_setting
+
         # Strip .dwgsetting if the user included it, then verify it exists
-        setting_stem = setting_name.removesuffix(".dwgsetting")
-        available = get_available_attribute_files(".dwgsetting")
+        setting_stem = setting_name.removesuffix(DWGSETTING_EXTENSION)
+        available = get_available_attribute_files(DWGSETTING_EXTENSION)
         if setting_stem not in available:
-            raise ValueError(f"Export setting '{setting_name}' not found. Available settings: {available}")
+            raise ValueError(f"Export settings '{setting_name}' not found. Available settings: {available}")
         output_dir: str | None = None
         ext: str | None = None
         version_label: str | None = None
@@ -663,9 +769,9 @@ def export_drawings(
             raise ValueError(f"Output directory '{output_dir}' does not exist")
         # Patch the bundled base setting with the chosen format/version/output dir,
         # then install it into the model so the macro selects it by name.
-        base_xml = (get_config_dir() / "attributes" / f"{EXPORT_BASE_SETTING}.dwgsetting").read_text(encoding="utf-8")
+        base_xml = (get_config_dir() / "attributes" / f"{EXPORT_BASE_SETTING}{DWGSETTING_EXTENSION}").read_text(encoding="utf-8")
         patched = patch_dwgsetting_xml(base_xml, file_extension=ext, file_version=file_version, output_dir=raw_dir)
-        install_export_settings_content(model_path, f"{EXPORT_BASE_SETTING}.dwgsetting", patched)
+        install_export_settings_content(model_path, f"{EXPORT_BASE_SETTING}{DWGSETTING_EXTENSION}", patched)
 
     logger.info("export_drawings: %s mode, %d drawing(s), setting '%s'", mode, len(expected_marks), setting_name)
 
@@ -686,22 +792,15 @@ def export_drawings(
         if not out.is_dir():
             raise RuntimeError(f"Output directory '{output_dir}' not found after export.")
         expected = len(expected_marks)
-        produced = sorted(set(out.glob(f"*{ext}")) - before_files)
-        if len(produced) < expected:
-            logger.info("Waiting for %d export file(s) to appear in %s...", expected, output_dir)
-            deadline = time.time() + get_dxf_export_timeout()
-            while len(produced) < expected and time.time() < deadline:
-                time.sleep(2)
-                produced = sorted(set(out.glob(f"*{ext}")) - before_files)
-        return produced
+        return _wait_for_new_files(out, f"*{ext}", before_files, expected, get_export_timeout(), wait_message=f"Waiting for {expected} export file(s) to appear in {output_dir}...")
 
     produced = _run_export_macro(model_path, setting_name, expected_marks, _poll)
 
     if mode == "named":
         result: dict[str, Any] = {
             "status": "success",
-            "message": f"Export submitted for {len(expected_marks)} drawing(s) using setting '{setting_name}'. Output location is defined by the setting.",
-            "setting": setting_name,
+            "message": f"Export submitted for {len(expected_marks)} drawing(s) using settings '{setting_name}'. Output location is defined by the settings.",
+            "settings": setting_name,
             "total": len(expected_marks),
             "marks": expected_marks,
         }
@@ -1383,27 +1482,18 @@ def _export_one_drawing_to_dxf(model_path: str, plotfiles_dir: Path, mark: str) 
 
     Raises:
         RuntimeError: If zero or more than one new DXF appears within the
-            configured timeout (`get_dxf_export_timeout`, default 120s).
+            configured timeout (`get_export_timeout`, default 120s).
     """
     before = set(plotfiles_dir.glob("TEKLA_MCP_*.dxf")) if plotfiles_dir.is_dir() else set()
-    timeout = get_dxf_export_timeout()
+    timeout = get_export_timeout()
 
     def _poll() -> Path:
-        deadline = time.time() + timeout
-        produced: set[Path] = set()
-        if plotfiles_dir.is_dir():
-            produced = set(plotfiles_dir.glob("TEKLA_MCP_*.dxf")) - before
-        if not produced:
-            logger.info("Waiting for DXF to appear in Plotfiles/ for mark '%s'...", mark)
-            while not produced and time.time() < deadline:
-                time.sleep(2)
-                if plotfiles_dir.is_dir():
-                    produced = set(plotfiles_dir.glob("TEKLA_MCP_*.dxf")) - before
+        produced = _wait_for_new_files(plotfiles_dir, "TEKLA_MCP_*.dxf", before, 1, timeout, wait_message=f"Waiting for DXF to appear in Plotfiles/ for mark '{mark}'...")
         if not produced:
             raise RuntimeError(f"No DXF appeared in Plotfiles/ after {timeout:g}s for mark '{mark}'. Check the {COLLISION_EXPORT_SETTING} export setting output directory.")
         if len(produced) > 1:
             raise RuntimeError(f"Expected exactly one new DXF for mark '{mark}', found {len(produced)}: {sorted(p.name for p in produced)}")
-        return next(iter(produced))
+        return produced[0]
 
     return _run_export_macro(model_path, COLLISION_EXPORT_SETTING, [mark], _poll)
 
@@ -1428,7 +1518,7 @@ def _export_drawings_to_dxf(
         RuntimeError: If any mark's export does not produce exactly one new
             DXF within the configured timeout.
     """
-    ensure_export_settings_installed(f"{COLLISION_EXPORT_SETTING}.dwgsetting")
+    ensure_export_settings_installed(f"{COLLISION_EXPORT_SETTING}{DWGSETTING_EXTENSION}")
 
     # Remove any stale DXF files from previous exports
     if plotfiles_dir.is_dir():

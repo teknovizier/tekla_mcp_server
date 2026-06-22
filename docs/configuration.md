@@ -94,11 +94,12 @@ Tolerances are grouped by domain: `model` for model operations and `drawings` fo
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `drawings.dxf_export_timeout` | `120` | Max seconds `check_drawing_collisions` waits for exported DXF files to appear in `Plotfiles/` before raising an error. |
-| `drawings.export.output_dir` | `".\PlotFiles"` | Output directory for `export_drawings`. Relative paths are resolved against the model folder. |
+| `drawings.timeout` | `120` | Max seconds `export_drawings`, `print_drawings` and `check_drawing_collisions` wait for exported files to appear in the output folder before raising an error. |
+| `drawings.output_dir` | `".\PlotFiles"` | Output directory shared by `export_drawings` and `print_drawings`. Relative paths are resolved against the model folder. |
 | `drawings.export.default_export_settings` | `""` (empty) | Customer `.dwgsetting` export setting name used by `export_drawings` by default. When non-empty, exports run in named mode using this setting as-is (format/version args are ignored). When empty, on-the-go mode patches the base setting with the chosen format and version. |
+| `drawings.print.default_print_settings` | `""` (empty) | Customer `.PdfPrintOptions.xml` print setting name used by `print_drawings` by default. When non-empty, prints run in named mode using this setting as-is (size auto-detection is skipped). When empty, on-the-go mode patches the base setting with the auto-detected paper size and multi-sheet tiling. |
 
-The base export setting is stored in `config/attributes/TEKLA_MCP_EXPORT_BASE.dwgsetting`. MCP server patches this file with the chosen format, version and output directory before running the export macro. You can adjust the file directly and the server will pick them up on restart.
+The base export settings are stored in `config/attributes/TEKLA_MCP_EXPORT_BASE.dwgsetting`, and the base print settings in `config/attributes/TEKLA_MCP_PDF_BASE.PdfPrintOptions.xml`. MCP server patches these files with the chosen/detected values before running the export or print macro. You can adjust them directly and the server will pick them up on restart.
 
 Exported file names follow Tekla's `XS_DRAWING_PLOT_FILE_NAME_A/W/G/M/C` advanced options (one per drawing type). To change the output naming, set these values via Tekla's Advanced Options dialog and restart Tekla.
 

@@ -386,35 +386,48 @@ def get_report_preview_timeout() -> float:
     return float(_load_settings().get("reports", {}).get("preview_timeout", 30))
 
 
-def get_dxf_export_timeout() -> float:
+def get_export_timeout() -> float:
     """
-    Get the maximum time in seconds to wait for exported DXF files to appear on disk.
+    Get the maximum time in seconds to wait for exported files to appear on disk.
+
+    Shared by `export_drawings`, `print_drawings` and `check_drawing_collisions`.
 
     Returns:
         Timeout in seconds (default 120)
     """
-    return float(_load_settings().get("drawings", {}).get("dxf_export_timeout", 120))
+    return float(_load_settings().get("drawings", {}).get("timeout", 120))
 
 
 def get_export_output_dir() -> str:
     """
     Get the configured drawing-export output directory.
 
-    May be relative (resolved against the model folder at call time, like
-    `print_drawings`) or absolute.     Defaults to '.\\PlotFiles'.
+    Shared by `export_drawings` and `print_drawings`. May be relative (resolved
+    against the model folder at call time) or absolute. Defaults to './PlotFiles'.
     """
-    return _load_settings().get("drawings", {}).get("export", {}).get("output_dir", ".\\PlotFiles")
+    return _load_settings().get("drawings", {}).get("output_dir", "./PlotFiles")
 
 
 def get_default_export_settings() -> str:
     """
-    Get the default customer export-setting name for `export_drawings`.
+    Get the default customer export settings name for `export_drawings`.
 
-    When non-empty, `export_drawings` uses this named setting as-is by default.
+    When non-empty, `export_drawings` uses these settings as-is by default.
     When empty (the default), exports run in on-the-go mode, patching the base
-    setting with the chosen format/version.
+    settings with the chosen format/version.
     """
     return _load_settings().get("drawings", {}).get("export", {}).get("default_export_settings", "")
+
+
+def get_default_print_settings() -> str:
+    """
+    Get the default customer print settings name for `print_drawings`.
+
+    When non-empty, `print_drawings` uses these settings as-is by default.
+    When empty (the default), prints run in on-the-go mode, patching the base
+    settings with the auto-detected paper size and multi-sheet tiling.
+    """
+    return _load_settings().get("drawings", {}).get("print", {}).get("default_print_settings", "")
 
 
 def get_mcp_data_dir(model_path: str) -> Path:

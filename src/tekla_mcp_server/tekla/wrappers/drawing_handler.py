@@ -4,8 +4,6 @@ Module for Tekla DrawingHandler wrapper.
 
 from __future__ import annotations
 
-from typing import Any
-
 from tekla_mcp_server.tekla.loader import ContainerView, DrawingHandler, DrawingObject, DrawingView
 from tekla_mcp_server.tekla.utils import to_array_list
 
@@ -128,10 +126,6 @@ class TeklaDrawingHandler:
         if view is None:
             raise ValueError(f"No view found with key '{view_key}'. Use `get_drawing_views` to list available keys.")
         return view
-
-    def print_drawing(self, drawing: TeklaDrawing, print_attributes: Any, output_file: str) -> bool:
-        """Print a drawing. Returns True on success."""
-        return self._handler.PrintDrawing(drawing.drawing, print_attributes, output_file)
 
     def select_drawing_objects(self, objects: list[DrawingObject]) -> bool:
         """Select the given drawing objects in the active drawing. Returns True on success."""

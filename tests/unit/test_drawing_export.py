@@ -4,10 +4,12 @@ Unit tests for the drawing export helpers.
 
 import pytest
 
-from tekla_mcp_server.config import _load_json, _load_settings, get_default_export_settings, get_export_output_dir
+from tekla_mcp_server.config import _load_json, _load_settings, get_default_export_settings, get_default_print_settings, get_export_output_dir
 from tekla_mcp_server.drawing_export import (
     install_export_settings_content,
     patch_dwgsetting_xml,
+    patch_pdf_print_options_xml,
+    pdf_print_options_outputs_single_file,
 )
 from tekla_mcp_server.models import (
     DWG_FILE_VERSION_MAP,
@@ -31,6 +33,23 @@ SAMPLE_DWGSETTING = (
     '  <FileAttributes FileExtension=".dxf" FilePrefix="TEKLA_MCP_" FileSuffix="" FileVersion="Dwg.UI.DwgFileVersion.vAC24" />\n'
     '  <Preferences OpenFolder="false" OutputDirectory=".\\PlotFiles" UpdateExisting="false" />\n'
     "</DwgExportOptions>"
+)
+
+SAMPLE_PDF_PRINT_OPTIONS = (
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<PdfPrintOptions Version="1.5">\n'
+    "  <Options>\n"
+    "    <PrintTarget>PDF</PrintTarget>\n"
+    "    <PrinterName>PDF-XChange 3.0</PrinterName>\n"
+    "    <PDFAndPlotFileLocation>.\\Plotfiles</PDFAndPlotFileLocation>\n"
+    "    <ColorMode>BlackAndWhite</ColorMode>\n"
+    "    <PrintOnMultipleSheets>false</PrintOnMultipleSheets>\n"
+    "    <MultipleSheetOrder>LeftToRightTopToBottom</MultipleSheetOrder>\n"
+    "    <PaperSize>A3</PaperSize>\n"
+    "    <Orientation>Landscape</Orientation>\n"
+    "    <OutputToSingleFile>false</OutputToSingleFile>\n"
+    "  </Options>\n"
+    "</PdfPrintOptions>"
 )
 
 
@@ -67,6 +86,77 @@ def test_get_export_output_dir_default():
 def test_get_default_export_settings_empty_by_default():
     """Empty default means on-the-go mode, not a customer setting."""
     assert get_default_export_settings() == ""
+
+
+def test_get_default_print_settings_empty_by_default():
+    """Empty default means on-the-go mode, not a customer setting."""
+    assert get_default_print_settings() == ""
+
+
+# patch_pdf_print_options_xml
+def test_patch_pdf_sets_all_five_fields():
+    out = patch_pdf_print_options_xml(SAMPLE_PDF_PRINT_OPTIONS, paper_size="A0", orientation="Portrait", multi_sheet=True, multi_sheet_order="LeftToRightTopToBottom", output_dir="C:/exports")
+    assert "<PaperSize>A0</PaperSize>" in out
+    assert "<Orientation>Portrait</Orientation>" in out
+    assert "<PrintOnMultipleSheets>true</PrintOnMultipleSheets>" in out
+    assert "<MultipleSheetOrder>LeftToRightTopToBottom</MultipleSheetOrder>" in out
+    assert "<PDFAndPlotFileLocation>C:/exports</PDFAndPlotFileLocation>" in out
+
+
+def test_patch_pdf_multi_sheet_false_writes_lowercase_false():
+    out = patch_pdf_print_options_xml(SAMPLE_PDF_PRINT_OPTIONS, paper_size="A3", orientation="Landscape", multi_sheet=False, multi_sheet_order="LeftToRightTopToBottom", output_dir="d")
+    assert "<PrintOnMultipleSheets>false</PrintOnMultipleSheets>" in out
+
+
+def test_patch_pdf_preserves_unrelated_fields():
+    out = patch_pdf_print_options_xml(SAMPLE_PDF_PRINT_OPTIONS, paper_size="A3", orientation="Landscape", multi_sheet=False, multi_sheet_order="LeftToRightTopToBottom", output_dir="d")
+    assert "<PrinterName>PDF-XChange 3.0</PrinterName>" in out
+    assert "<ColorMode>BlackAndWhite</ColorMode>" in out
+    assert "<OutputToSingleFile>false</OutputToSingleFile>" in out
+
+
+def test_patch_pdf_does_not_mutate_input():
+    before = SAMPLE_PDF_PRINT_OPTIONS
+    patch_pdf_print_options_xml(SAMPLE_PDF_PRINT_OPTIONS, paper_size="A0", orientation="Portrait", multi_sheet=True, multi_sheet_order="LeftToRightTopToBottom", output_dir="d")
+    assert SAMPLE_PDF_PRINT_OPTIONS == before
+
+
+def test_patch_pdf_raises_on_missing_options_element():
+    bad = '<?xml version="1.0"?>\n<PdfPrintOptions></PdfPrintOptions>'
+    with pytest.raises(ValueError):
+        patch_pdf_print_options_xml(bad, paper_size="A3", orientation="Landscape", multi_sheet=False, multi_sheet_order="LeftToRightTopToBottom", output_dir="d")
+
+
+def test_patch_pdf_raises_on_missing_child_element():
+    bad = '<?xml version="1.0"?>\n<PdfPrintOptions><Options></Options></PdfPrintOptions>'
+    with pytest.raises(ValueError):
+        patch_pdf_print_options_xml(bad, paper_size="A3", orientation="Landscape", multi_sheet=False, multi_sheet_order="LeftToRightTopToBottom", output_dir="d")
+
+
+# pdf_print_options_outputs_single_file
+def test_outputs_single_file_false_by_default():
+    assert pdf_print_options_outputs_single_file(SAMPLE_PDF_PRINT_OPTIONS) is False
+
+
+def test_outputs_single_file_true_when_set():
+    xml = SAMPLE_PDF_PRINT_OPTIONS.replace("<OutputToSingleFile>false</OutputToSingleFile>", "<OutputToSingleFile>true</OutputToSingleFile>")
+    assert pdf_print_options_outputs_single_file(xml) is True
+
+
+def test_outputs_single_file_case_insensitive():
+    xml = SAMPLE_PDF_PRINT_OPTIONS.replace("<OutputToSingleFile>false</OutputToSingleFile>", "<OutputToSingleFile>True</OutputToSingleFile>")
+    assert pdf_print_options_outputs_single_file(xml) is True
+
+
+def test_outputs_single_file_false_when_element_missing():
+    """Missing element is treated as the documented default (one file per drawing)."""
+    bad = '<?xml version="1.0"?>\n<PdfPrintOptions><Options></Options></PdfPrintOptions>'
+    assert pdf_print_options_outputs_single_file(bad) is False
+
+
+def test_outputs_single_file_false_when_options_missing():
+    bad = '<?xml version="1.0"?>\n<PdfPrintOptions></PdfPrintOptions>'
+    assert pdf_print_options_outputs_single_file(bad) is False
 
 
 # patch_dwgsetting_xml

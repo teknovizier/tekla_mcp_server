@@ -1,0 +1,101 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<PdfPrintOptions Version="1.5">
+  <Options>
+    <PrintTarget>PDF</PrintTarget>
+    <PrinterName>PDF-XChange 3.0</PrinterName>
+    <PDFAndPlotFileLocation>.\Plotfiles</PDFAndPlotFileLocation>
+    <EmbedFonts>true</EmbedFonts>
+    <OpenFolderWhenFinished>false</OpenFolderWhenFinished>
+    <OpenFileWhenFinished>false</OpenFileWhenFinished>
+    <OutputToSingleFile>false</OutputToSingleFile>
+    <SinglePDFFileName>Combined</SinglePDFFileName>
+    <PlotFileExtension>plt</PlotFileExtension>
+    <PlotFilePrefix></PlotFilePrefix>
+    <PlotFileSuffix></PlotFileSuffix>
+    <ScalingMethod>Scale</ScalingMethod>
+    <ScaleFactor>1</ScaleFactor>
+    <CenterDrawingOnPaper>false</CenterDrawingOnPaper>
+    <PrintOnMultipleSheets>true</PrintOnMultipleSheets>
+    <MultipleSheetOrder>LeftToRightTopToBottom</MultipleSheetOrder>
+    <PaperSize>A3</PaperSize>
+    <Orientation>Landscape</Orientation>
+    <ColorMode>BlackAndWhite</ColorMode>
+    <NumberOfCopies>1</NumberOfCopies>
+    <Collate>false</Collate>
+    <IncludeRevision>true</IncludeRevision>
+    <DefaultLineProperties PlotColor="0x00000000" Pen="1" OutputMode="Object" />
+    <LineThicknesses>
+      <LineThickness Color="151" Pen="0" />
+      <LineThickness Color="150" Pen="0" />
+      <LineThickness Color="0" Pen="0" />
+      <LineThickness Color="152" Pen="0" />
+      <LineThickness Color="153" Pen="0" />
+      <LineThickness Color="160" Pen="0" />
+      <LineThickness Color="161" Pen="0" />
+      <LineThickness Color="162" Pen="30" />
+      <LineThickness Color="163" Pen="0" />
+      <LineThickness Color="164" Pen="20" />
+      <LineThickness Color="165" Pen="0" />
+      <LineThickness Color="154" Pen="20" />
+      <LineThickness Color="155" Pen="0" />
+      <LineThickness Color="156" Pen="0" />
+      <LineThickness Color="157" Pen="0" />
+      <LineThickness Color="158" Pen="0" />
+      <LineThickness Color="159" Pen="0" />
+      <LineThickness Color="130" Pen="0" />
+      <LineThickness Color="131" Pen="0" />
+      <LineThickness Color="132" Pen="0" />
+      <LineThickness Color="133" Pen="0" />
+    </LineThicknesses>
+    <PlotColors>
+      <PlotColor Color="151" PlotColor="0xFF000000" />
+      <PlotColor Color="150" PlotColor="0xFFFFFFFF" />
+      <PlotColor Color="0" PlotColor="0xFF000000" />
+      <PlotColor Color="152" PlotColor="0xFFE7E7E7" />
+      <PlotColor Color="153" PlotColor="0xFF000000" />
+      <PlotColor Color="160" PlotColor="0xFFFF0000" />
+      <PlotColor Color="161" PlotColor="0xFF54EC54" />
+      <PlotColor Color="162" PlotColor="0xFF0000FF" />
+      <PlotColor Color="163" PlotColor="0xFF00BBE0" />
+      <PlotColor Color="164" PlotColor="0xFF7F7F00" />
+      <PlotColor Color="165" PlotColor="0xFFC400CD" />
+      <PlotColor Color="154" PlotColor="0xFF804040" />
+      <PlotColor Color="155" PlotColor="0xFF00A000" />
+      <PlotColor Color="156" PlotColor="0xFF333399" />
+      <PlotColor Color="157" PlotColor="0xFF008080" />
+      <PlotColor Color="158" PlotColor="0xFFFF9933" />
+      <PlotColor Color="159" PlotColor="0xFF706B70" />
+      <PlotColor Color="130" PlotColor="0xFF4C4C4C" />
+      <PlotColor Color="131" PlotColor="0xFF7F7F7F" />
+      <PlotColor Color="132" PlotColor="0xFFB2B2B2" />
+      <PlotColor Color="133" PlotColor="0xFFE5E5E5" />
+    </PlotColors>
+    <OutputModes>
+      <OutputMode Color="151" OutputMode="Object" />
+      <OutputMode Color="150" OutputMode="Custom" />
+      <OutputMode Color="0" OutputMode="Object" />
+      <OutputMode Color="152" OutputMode="Object" />
+      <OutputMode Color="153" OutputMode="Object" />
+      <OutputMode Color="160" OutputMode="Custom" />
+      <OutputMode Color="161" OutputMode="Custom" />
+      <OutputMode Color="162" OutputMode="Custom" />
+      <OutputMode Color="163" OutputMode="Custom" />
+      <OutputMode Color="164" OutputMode="Object" />
+      <OutputMode Color="165" OutputMode="Custom" />
+      <OutputMode Color="154" OutputMode="Custom" />
+      <OutputMode Color="155" OutputMode="Custom" />
+      <OutputMode Color="156" OutputMode="Custom" />
+      <OutputMode Color="157" OutputMode="Custom" />
+      <OutputMode Color="158" OutputMode="Custom" />
+      <OutputMode Color="159" OutputMode="Custom" />
+      <OutputMode Color="130" OutputMode="Object" />
+      <OutputMode Color="131" OutputMode="Object" />
+      <OutputMode Color="132" OutputMode="Object" />
+      <OutputMode Color="133" OutputMode="Object" />
+    </OutputModes>
+    <LinkDrawingsToModelObjects>true</LinkDrawingsToModelObjects>
+    <LinkAssemblyDrawingsToMainPart>false</LinkAssemblyDrawingsToMainPart>
+    <SelectedTrimbleConnectSetting>standard</SelectedTrimbleConnectSetting>
+  </Options>
+  <PreviewMinimumPenWidth>0.5</PreviewMinimumPenWidth>
+</PdfPrintOptions>
