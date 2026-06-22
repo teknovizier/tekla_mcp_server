@@ -31,7 +31,7 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     REINFORCEMENT_CLASSES,
 )
 from tekla_mcp_server.tekla.loader import Operation
-from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items, get_available_attribute_files
+from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items, get_available_attribute_files, ensure_macro_installed
 
 
 operations_provider = LocalProvider()
@@ -390,6 +390,26 @@ def run_macro(macro_name: Annotated[str, Field(description="Name of the macro fi
             "macro_name": macro_name,
         }
     )
+
+
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def select_model_objects_from_drawings() -> ToolResult:
+    """
+    Select the model objects corresponding to the currently selected drawing objects.
+    """
+    # Runs the bundled macro, which triggers Tekla's native "Select objects in the model
+    # for selected drawings" command. The macro approach was chosen because it is fast,
+    # needs no reimplementation of logic Tekla already provides natively, and it works
+
+    SELECT_MODEL_OBJECTS_MACRO = "TeklaMCPSelectModelObjectsFromDrawings.cs"
+    ensure_macro_installed(SELECT_MODEL_OBJECTS_MACRO, category="modeling")
+
+    macro_result = run_macro(macro_name=SELECT_MODEL_OBJECTS_MACRO)
+    if macro_result.structured_content.get("status") != "success":
+        raise RuntimeError("Select-in-model macro failed. Ensure Document Manager has drawings selected.")
+
+    return ToolResult(structured_content={"status": "success"})
 
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
