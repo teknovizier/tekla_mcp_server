@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Generator, Iterable
+from dataclasses import dataclass
 from typing import Any, overload
 
 from tekla_mcp_server.config import get_config, get_tolerance
@@ -17,6 +18,7 @@ from tekla_mcp_server.tekla.loader import (
     Assembly,
     Beam,
     BaseWeld,
+    BoltArray,
     BooleanPart,
     ContourPlate,
     ContourPoint,
@@ -278,6 +280,7 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
 
     Returns:
         - TeklaAssembly if the object is an Assembly
+        - TeklaBoltArray if the object is a BoltArray
         - TeklaBeam if the object is a Beam
         - TeklaContourPlate if the object is a ContourPlate
         - TeklaPart if the object is a Part
@@ -287,6 +290,8 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
     """
     if isinstance(model_object, Assembly):
         return TeklaAssembly(model_object)
+    elif isinstance(model_object, BoltArray):
+        return TeklaBoltArray(model_object)
     elif isinstance(model_object, Beam):
         return TeklaBeam(model_object)
     elif isinstance(model_object, ContourPlate):
@@ -588,6 +593,65 @@ class TeklaReferenceModelObject(TeklaModelObject):
         props = super().get_properties(report_props_definitions)
         props["guid"] = self.get_report_property("GUID")
         return props
+
+
+@dataclass
+class PartReference:
+    """
+    A part referenced by GUID, with its name and position for display.
+    """
+
+    guid: str | None
+    name: str | None
+    position: str | None
+
+
+@dataclass
+class BoltedParts:
+    """
+    The two parts a bolt connects.
+    """
+
+    part_to_be_bolted: PartReference
+    part_to_bolt_to: PartReference
+
+
+class TeklaBoltArray(TeklaModelObject):
+    """
+    A wrapper class around the Tekla Structures BoltArray object.
+    """
+
+    @property
+    def bolt_standard(self) -> str:
+        """
+        Returns the bolt standard (catalog identifier).
+        """
+        return self.model_object.BoltStandard
+
+    @property
+    def bolt_size(self) -> float:
+        """
+        Returns the bolt size (diameter, mm).
+        """
+        return self.model_object.BoltSize
+
+    @property
+    def connected_parts(self) -> BoltedParts:
+        """
+        Returns the GUID, name and position of the two parts this bolt connects.
+        """
+
+        def _connected_part(part: Part | None) -> PartReference:
+            """Build a `PartReference` from a connected part, if it is one."""
+            if not isinstance(part, Part):
+                return PartReference(guid=None, name=None, position=None)
+            wrapped = wrap_model_object(part)
+            return PartReference(guid=wrapped.guid, name=wrapped.name, position=wrapped.position)
+
+        return BoltedParts(
+            part_to_be_bolted=_connected_part(self.model_object.PartToBeBolted),
+            part_to_bolt_to=_connected_part(self.model_object.PartToBoltTo),
+        )
 
 
 class TeklaAssembly(TeklaModelObject):

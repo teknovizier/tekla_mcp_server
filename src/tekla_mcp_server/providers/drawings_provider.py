@@ -64,13 +64,20 @@ from tekla_mcp_server.dxf_operations import run_collision_checks, resolve_entiti
 from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly, TeklaBoltArray
+from tekla_mcp_server.tekla.wrappers.view import TeklaDrawingView
 from tekla_mcp_server.tekla.loader import (
+    BaseRebarGroup,
+    BoltArray,
     Cloud,
     DrawingConnection,
     DrawingObject,
     DrawingModelObject,
     ModelObject,
+    Part,
+    RebarMesh,
+    RebarStrand,
+    SingleRebar,
 )
 
 
@@ -1117,6 +1124,172 @@ def get_view_annotations(
             "counts_by_category": counts_by_category,
             "returned_count": len(annotations),
             "annotations": annotations,
+            "limit": limit,
+            "has_more": has_more,
+        }
+    )
+
+
+_REINFORCEMENT_TYPES = (BaseRebarGroup, RebarMesh, RebarStrand, SingleRebar)
+
+
+def _classify_unmarked_category(model_obj: ModelObject) -> str | None:
+    """Bucket a resolved model object into `parts`/`reinforcement`/`bolts`, or None if it is none of those."""
+    if isinstance(model_obj, BoltArray):
+        return "bolts"
+    if isinstance(model_obj, _REINFORCEMENT_TYPES):
+        return "reinforcement"
+    if isinstance(model_obj, Part):
+        return "parts"
+    return None
+
+
+def _find_unmarked_in_view(view: TeklaDrawingView, model: TeklaModel, wanted_categories: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Diff one view's model objects against its marks, scoped to `wanted_categories`.
+
+    Returns:
+        Tuple of (every checked unit, the subset with no mark).
+    """
+    # Sheet view aggregates objects from all child views - it has none of its own
+    if view.is_sheet:
+        return [], []
+
+    drawing_objects = view.get_all_objects([DrawingModelObject])
+    if drawing_objects is None:
+        raise RuntimeError(f"Failed to enumerate model objects in view '{view.view_key}'. The view state may be corrupted or the connection lost.")
+
+    units: dict[str, dict[str, Any]] = {}
+    # Member part guid -> owning embedded-detail assembly guid, so a mark on
+    # any one member resolves to the assembly it belongs to
+    member_to_unit: dict[str, str] = {}
+    model_objects_by_id: dict[int, ModelObject | None] = {}
+
+    for drawing_obj in drawing_objects:
+        if isinstance(drawing_obj, DrawingConnection):
+            continue
+        identifier = getattr(drawing_obj, "ModelIdentifier", None)
+        if identifier is None:
+            continue
+        object_id = int(identifier.ID)
+        if object_id not in model_objects_by_id:
+            model_objects_by_id[object_id] = model.get_object_by_id(object_id)
+        model_obj = model_objects_by_id[object_id]
+        if model_obj is None:
+            continue
+
+        unit_guid: str | None = None
+        if "parts" in wanted_categories:
+            # Promote a part belonging to an embedded-detail subassembly to the
+            # subassembly itself, mirroring get_view_objects's promotion logic
+            try:
+                parent_assembly = model_obj.GetAssembly()
+            except Exception as e:
+                logger.debug("GetAssembly() failed for model object id %s: %s", identifier.ID, e)
+                parent_assembly = None
+            if parent_assembly is not None:
+                wrapped_assembly = wrap_model_object(parent_assembly)
+                if isinstance(wrapped_assembly, TeklaAssembly):
+                    try:
+                        if wrapped_assembly.is_embedded_detail():
+                            unit_guid = parent_assembly.Identifier.GUID.ToString()
+                            member_to_unit[model_obj.Identifier.GUID.ToString()] = unit_guid
+                    except Exception as e:
+                        logger.debug("is_embedded_detail() failed for assembly id %s: %s", parent_assembly.Identifier.ID, e)
+
+        if unit_guid is not None:
+            if unit_guid not in units:
+                units[unit_guid] = {
+                    "guid": unit_guid,
+                    "category": "parts",
+                    "element_type": "EmbeddedDetail",
+                    "mark_scope": "assembly",
+                    "name": wrapped_assembly.name or None,
+                    "position": wrapped_assembly.position or None,
+                }
+            continue
+
+        unit_guid = model_obj.Identifier.GUID.ToString()
+        if unit_guid in units:
+            continue
+        category = _classify_unmarked_category(model_obj)
+        if category not in wanted_categories:
+            continue
+        wrapped_obj = wrap_model_object(model_obj)
+        unit: dict[str, Any] = {
+            "guid": unit_guid,
+            "category": category,
+            "element_type": type(model_obj).__name__,
+            "mark_scope": "part",
+            "name": getattr(wrapped_obj, "name", None) or None,
+            "position": getattr(wrapped_obj, "position", None) or None,
+        }
+        if isinstance(wrapped_obj, TeklaBoltArray):
+            unit["bolt_standard"] = wrapped_obj.bolt_standard
+            unit["bolt_size"] = wrapped_obj.bolt_size
+            unit["connected_parts"] = asdict(wrapped_obj.connected_parts)
+        units[unit_guid] = unit
+
+    mark_objects = view.get_all_objects(list(CATEGORY_TYPES["marks"]))
+    if mark_objects is None:
+        raise RuntimeError(f"Failed to enumerate marks in view '{view.view_key}'. The view state may be corrupted or the connection lost.")
+
+    marked_units: set[str] = set()
+    for obj in mark_objects:
+        if categorize_drawing_object(obj) != "marks":
+            continue
+        annotation = extract_annotation_content(obj, "marks", model)
+        target_guid = annotation.get("target_guid")
+        if target_guid is None:
+            continue
+        marked_units.add(member_to_unit.get(target_guid, target_guid))
+
+    all_units = list(units.values())
+    unmarked = [unit for unit in all_units if unit["guid"] not in marked_units]
+    return all_units, unmarked
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def check_for_unmarked_objects(
+    view_keys: Annotated[list[str], Field(description="Views to check (from `get_drawing_views`). Empty checks every non-sheet view in the active drawing")] = [],
+    categories: Annotated[
+        list[Literal["all", "parts", "reinforcement", "bolts"]],
+        Field(description="Object categories to check. `all` (or empty) checks parts, reinforcement and bolts"),
+    ] = [],
+    limit: Annotated[int, Field(description="Max unmarked objects in the list", ge=1)] = 200,
+) -> ToolResult:
+    """
+    Find parts, reinforcement and bolts with no mark pointing at them.
+    """
+    handler = TeklaDrawingHandler()
+    handler.require_active_drawing()
+    model = TeklaModel()
+
+    views = [handler.get_view_by_key(view_key) for view_key in dict.fromkeys(view_keys)] if view_keys else [v for v in handler.get_drawing_views() if not v.is_sheet]
+    wanted_categories: set[str] = {"parts", "reinforcement", "bolts"} if not categories or "all" in categories else set(categories)
+
+    counts_by_category: dict[str, dict[str, int]] = {category: {"total": 0, "missing": 0} for category in wanted_categories}
+    unmarked: list[dict[str, Any]] = []
+    for view in views:
+        all_units, view_unmarked = _find_unmarked_in_view(view, model, wanted_categories)
+        for unit in all_units:
+            counts_by_category[unit["category"]]["total"] += 1
+        for unit in view_unmarked:
+            counts_by_category[unit["category"]]["missing"] += 1
+            unmarked.append({"view_key": view.view_key, **unit})
+
+    has_more = len(unmarked) > limit
+    unmarked = unmarked[:limit]
+
+    logger.info("check_for_unmarked_objects: %d view(s) checked, %d unmarked object(s) found", len(views), len(unmarked))
+    return ToolResult(
+        structured_content={
+            "status": "success",
+            "view_keys_checked": [v.view_key for v in views],
+            "categories_checked": sorted(wanted_categories),
+            "counts_by_category": counts_by_category,
+            "unmarked": unmarked,
             "limit": limit,
             "has_more": has_more,
         }

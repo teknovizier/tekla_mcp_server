@@ -17,6 +17,7 @@ from tekla_mcp_server.models import ViewAttributes
 from tekla_mcp_server.providers.drawings_provider import (
     align_section_views,
     check_drawing_collisions,
+    check_for_unmarked_objects,
     close_drawing,
     delete_clouds,
     delete_views,
@@ -84,6 +85,16 @@ def cu_mark():
     marks = result.structured_content.get("marks", [])
     if not marks:
         pytest.skip("No cast unit drawings available in model")
+    return marks[0]
+
+
+@pytest.fixture(scope="module")
+def assembly_mark():
+    """Return the mark of a assembly drawing in the model."""
+    result = get_drawings(drawing_type="A")
+    marks = result.structured_content.get("marks", [])
+    if not marks:
+        pytest.skip("No assembly drawings available in model")
     return marks[0]
 
 
@@ -1142,3 +1153,133 @@ class TestCheckDrawingCollisions:
             open_drawing(mark=cu_mark)
             delete_clouds()
             close_drawing(save=True)
+
+
+class TestCheckForUnmarkedObjects:
+    """Tests for check_for_unmarked_objects function (cast unit drawing)."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Close any open drawing before each test."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing()
+        yield
+
+    def test_no_open_drawing(self):
+        """Checking when no drawing is open raises an error."""
+        result = check_for_unmarked_objects()
+        assert result.structured_content["status"] == "error"
+
+    def test_invalid_view_key(self, assembly_mark):
+        """A non-existent view_key is rejected."""
+        open_drawing(mark=assembly_mark)
+        result = check_for_unmarked_objects(view_keys=["MCP_NONEXISTENT_VIEW"])
+        assert result.structured_content["status"] == "error"
+        close_drawing(save=False)
+
+    def test_mix_of_valid_and_invalid_view_keys_is_rejected(self, assembly_mark):
+        """One invalid key among otherwise-valid ones still fails the whole call."""
+        open_drawing(mark=assembly_mark)
+        views = get_drawing_views().structured_content["views"]
+        valid_key = next(v["view_key"] for v in views if not v["is_sheet"])
+        result = check_for_unmarked_objects(view_keys=[valid_key, "MCP_NONEXISTENT_VIEW"])
+        assert result.structured_content["status"] == "error"
+        close_drawing(save=False)
+
+    def test_success_shape(self, assembly_mark):
+        """A cast unit drawing returns the expected envelope."""
+        open_drawing(mark=assembly_mark)
+        sc = check_for_unmarked_objects().structured_content
+        assert sc["status"] == "success"
+        assert set(sc["counts_by_category"]).issubset({"parts", "reinforcement", "bolts"})
+        assert sc["categories_checked"]
+        close_drawing(save=False)
+
+    def test_empty_view_keys_checks_every_non_sheet_view(self, assembly_mark):
+        """An empty view_keys list checks every non-sheet view, like omitting it."""
+        open_drawing(mark=assembly_mark)
+        views = get_drawing_views().structured_content["views"]
+        non_sheet_keys = {v["view_key"] for v in views if not v["is_sheet"]}
+        sc = check_for_unmarked_objects(view_keys=[]).structured_content
+        assert set(sc["view_keys_checked"]) == non_sheet_keys
+        close_drawing(save=False)
+
+    def test_duplicate_view_keys_are_not_double_counted(self, assembly_mark):
+        """Repeating the same view_key must not double-count totals or unmarked entries."""
+        open_drawing(mark=assembly_mark)
+        views = get_drawing_views().structured_content["views"]
+        valid_key = next(v["view_key"] for v in views if not v["is_sheet"])
+        once = check_for_unmarked_objects(view_keys=[valid_key]).structured_content
+        twice = check_for_unmarked_objects(view_keys=[valid_key, valid_key]).structured_content
+        assert twice["view_keys_checked"] == [valid_key]
+        assert twice["counts_by_category"] == once["counts_by_category"]
+        assert len(twice["unmarked"]) == len(once["unmarked"])
+        close_drawing(save=False)
+
+    def test_categories_filter_scopes_counts_by_category(self, assembly_mark):
+        """Scoping to one category must not pad counts_by_category with the others."""
+        open_drawing(mark=assembly_mark)
+        sc = check_for_unmarked_objects(categories=["parts"]).structured_content
+        assert sc["categories_checked"] == ["parts"]
+        assert set(sc["counts_by_category"]) == {"parts"}
+        close_drawing(save=False)
+
+    def test_all_literal_checks_every_category(self, assembly_mark):
+        """categories=['all'] is equivalent to omitting categories."""
+        open_drawing(mark=assembly_mark)
+        sc = check_for_unmarked_objects(categories=["all"]).structured_content
+        assert sorted(sc["categories_checked"]) == ["bolts", "parts", "reinforcement"]
+        close_drawing(save=False)
+
+    def test_limit_truncates_and_sets_has_more(self, assembly_mark):
+        """limit caps returned unmarked items and flags has_more when more exist."""
+        open_drawing(mark=assembly_mark)
+        full = check_for_unmarked_objects().structured_content
+        if len(full["unmarked"]) < 2:
+            pytest.skip("Fewer than 2 unmarked objects in this drawing, cannot test truncation")
+        sc = check_for_unmarked_objects(limit=1).structured_content
+        assert len(sc["unmarked"]) == 1
+        assert sc["has_more"] is True
+        close_drawing(save=False)
+
+    def test_unmarked_items_reference_real_view_objects(self, assembly_mark):
+        """Every unmarked guid corresponds to an object actually shown in its view."""
+        open_drawing(mark=assembly_mark)
+        sc = check_for_unmarked_objects().structured_content
+        if not sc["unmarked"]:
+            pytest.skip("No unmarked objects in this drawing")
+        by_view: dict[str, set[str]] = {}
+        for item in sc["unmarked"]:
+            by_view.setdefault(item["view_key"], set()).add(item["guid"])
+        for view_key, guids in by_view.items():
+            assert guids & _view_object_guids(view_key)
+        close_drawing(save=False)
+
+    def test_bolt_entries_carry_bolt_specific_fields_not_name_or_position(self, assembly_mark):
+        """An unmarked bolt has null name/position but carries bolt_standard/bolt_size/connected_parts."""
+        open_drawing(mark=assembly_mark)
+        sc = check_for_unmarked_objects(categories=["bolts"]).structured_content
+        bolts = [u for u in sc["unmarked"] if u["category"] == "bolts"]
+        if not bolts:
+            pytest.skip("No unmarked bolts in this drawing")
+        for bolt in bolts:
+            assert bolt["name"] is None
+            assert bolt["position"] is None
+            assert "bolt_standard" in bolt
+            assert "bolt_size" in bolt
+            assert set(bolt["connected_parts"]) == {"part_to_be_bolted", "part_to_bolt_to"}
+            for connected in bolt["connected_parts"].values():
+                assert set(connected) == {"guid", "name", "position"}
+        close_drawing(save=False)
+
+    def test_embedded_detail_units_use_mark_scope_assembly(self, assembly_mark):
+        """An unmarked embedded detail is reported once, scoped at assembly level."""
+        open_drawing(mark=assembly_mark)
+        sc = check_for_unmarked_objects().structured_content
+        details = [u for u in sc["unmarked"] if u["element_type"] == "EmbeddedDetail"]
+        if not details:
+            pytest.skip("No unmarked embedded detail in this drawing")
+        for detail in details:
+            assert detail["mark_scope"] == "assembly"
+        close_drawing(save=False)
