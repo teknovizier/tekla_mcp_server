@@ -6,13 +6,17 @@ where Tekla is not available, since `drawings_provider` transitively imports `te
 """
 
 import os
+from dataclasses import asdict
+from unittest.mock import MagicMock
 
 import pytest
 
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_mcp_server.providers.drawings_provider import _wait_for_new_files
+from tekla_mcp_server.providers.drawings_provider import _classify_unmarked_category, _describe_wrapped_object, _wait_for_new_files
+from tekla_mcp_server.tekla.loader import BoltArray, BoltXYList
+from tekla_mcp_server.tekla.wrappers.model_object import BoltedParts, PartReference, TeklaBoltGroup
 
 
 def test_returns_immediately_when_already_satisfied(tmp_path):
@@ -68,3 +72,52 @@ def test_wait_message_logged_only_when_waiting(tmp_path, caplog):
     with caplog.at_level("INFO"):
         _wait_for_new_files(tmp_path, "*.pdf", set(), expected_count=5, timeout=0, wait_message="waiting now")
     assert "waiting now" in caplog.text
+
+
+class _WrappedStub:
+    """Minimal stand-in for a wrapped model object - exposes only set attributes."""
+
+    def __init__(self, **attrs):
+        self.__dict__.update(attrs)
+
+
+def test_describe_wrapped_omits_none_and_missing_fields():
+    """None-valued and absent attributes are omitted, present ones kept (omit-when-None)."""
+    wrapped = _WrappedStub(name="B-1", position=None)
+    out = _describe_wrapped_object(wrapped, ("name", "position", "profile"))
+    assert out == {"name": "B-1"}
+
+
+def test_describe_wrapped_respects_field_tuple():
+    """Only attributes named in `fields` are read, even when others exist."""
+    wrapped = _WrappedStub(name="B-1", position="2", profile="HEA200")
+    out = _describe_wrapped_object(wrapped, ("name", "position"))
+    assert out == {"name": "B-1", "position": "2"}
+
+
+def test_describe_wrapped_appends_bolt_fields():
+    """A TeklaBoltArray gets standard/size/count/connected_parts appended."""
+    bolt = MagicMock(spec=TeklaBoltGroup)
+    bolt.bolt_standard = "M16"
+    bolt.bolt_size = 16.0
+    bolt.bolt_count = 6
+    bolt.connected_parts = BoltedParts(
+        part_to_be_bolted=PartReference(guid="g1", name="BEAM", position="1"),
+        part_to_bolt_to=PartReference(guid="g2", name="PLATE", position="2"),
+    )
+    # Empty field tuple isolates the bolt branch from the attribute loop
+    out = _describe_wrapped_object(bolt, ())
+    assert out == {
+        "bolt_standard": "M16",
+        "bolt_size": 16.0,
+        "bolt_count": 6,
+        "connected_parts": asdict(bolt.connected_parts),
+    }
+
+
+def test_classify_unmarked_category_covers_all_bolt_groups():
+    """Every bolt arrangement is classified as 'bolts', not just rectangular BoltArray."""
+    # Real instances: isinstance against pythonnet .NET types cannot be mocked.
+    # BoltXYList is a BoltGroup but not a BoltArray - the old BoltArray-only check missed it.
+    assert _classify_unmarked_category(BoltXYList()) == "bolts"
+    assert _classify_unmarked_category(BoltArray()) == "bolts"

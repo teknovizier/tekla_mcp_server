@@ -18,7 +18,7 @@ from tekla_mcp_server.tekla.loader import (
     Assembly,
     Beam,
     BaseWeld,
-    BoltArray,
+    BoltGroup,
     BooleanPart,
     ContourPlate,
     ContourPoint,
@@ -280,7 +280,7 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
 
     Returns:
         - TeklaAssembly if the object is an Assembly
-        - TeklaBoltArray if the object is a BoltArray
+        - TeklaBoltGroup if the object is a BoltGroup
         - TeklaBeam if the object is a Beam
         - TeklaContourPlate if the object is a ContourPlate
         - TeklaPart if the object is a Part
@@ -290,8 +290,8 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
     """
     if isinstance(model_object, Assembly):
         return TeklaAssembly(model_object)
-    elif isinstance(model_object, BoltArray):
-        return TeklaBoltArray(model_object)
+    elif isinstance(model_object, BoltGroup):
+        return TeklaBoltGroup(model_object)
     elif isinstance(model_object, Beam):
         return TeklaBeam(model_object)
     elif isinstance(model_object, ContourPlate):
@@ -616,9 +616,9 @@ class BoltedParts:
     part_to_bolt_to: PartReference
 
 
-class TeklaBoltArray(TeklaModelObject):
+class TeklaBoltGroup(TeklaModelObject):
     """
-    A wrapper class around the Tekla Structures BoltArray object.
+    A wrapper class around the Tekla Structures BoltGroup object.
     """
 
     @property
@@ -634,6 +634,20 @@ class TeklaBoltArray(TeklaModelObject):
         Returns the bolt size (diameter, mm).
         """
         return self.model_object.BoltSize
+
+    @property
+    def bolt_type(self) -> float:
+        """
+        Returns the bolt type.
+        """
+        return self.model_object.BoltType
+
+    @property
+    def bolt_count(self) -> int:
+        """
+        Returns the number of bolts in the group.
+        """
+        return self.model_object.BoltPositions.Count
 
     @property
     def connected_parts(self) -> BoltedParts:

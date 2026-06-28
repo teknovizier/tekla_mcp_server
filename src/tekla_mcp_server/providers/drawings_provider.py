@@ -64,14 +64,13 @@ from tekla_mcp_server.dxf_operations import run_collision_checks, resolve_entiti
 from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly, TeklaBoltArray
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly, TeklaBoltGroup
 from tekla_mcp_server.tekla.wrappers.view import TeklaDrawingView
 from tekla_mcp_server.tekla.loader import (
     BaseRebarGroup,
-    BoltArray,
+    BoltGroup,
     Cloud,
     DrawingConnection,
-    DrawingObject,
     DrawingModelObject,
     ModelObject,
     Part,
@@ -101,27 +100,49 @@ EXPORT_BASE_SETTING = "TEKLA_MCP_EXPORT_BASE"
 PDF_BASE_SETTING = "TEKLA_MCP_PDF_BASE"
 
 
-def _describe_model_object(guid: str, model_obj: ModelObject) -> dict[str, Any]:
+def _describe_wrapped_object(wrapped: Any, attr_names: tuple[str, ...]) -> dict[str, Any]:
     """
-    Build a lightweight record for a model object shown in a view (no geometry).
+    Build the shared descriptor fields for a wrapped model object.
 
-    Resolves name/profile/material/class via the model-object wrappers where the
-    type is supported (parts, assemblies, reinforcement). Unsupported types
-    (e.g. bolts) fall back to the raw object's name so nothing is dropped.
+    Reads each attribute in `attr_names`, omitting any that is missing or None,
+    and appends the bolt sub-object for a `TeklaBoltGroup`. Shared by
+    `_describe_model_object` and `_find_unmarked_in_view` so both describe an
+    object the same way (omit-when-None policy, identical bolt fields).
     """
-    # Use .NET type name (Beam, Column, etc.) as element_type identifier
-    entry: dict[str, Any] = {"guid": guid, "element_type": type(model_obj).__name__}
-    wrapped = wrap_model_object(model_obj)
-    if wrapped is None:
-        entry["name"] = getattr(model_obj, "Name", None) or None
-        return entry
-    for attr in ("name", "position", "profile", "material", "tekla_class"):
+    entry: dict[str, Any] = {}
+    for attr in attr_names:
         try:
             value = getattr(wrapped, attr)
         except AttributeError:
             continue
         if value is not None:
             entry[attr] = value
+    if isinstance(wrapped, TeklaBoltGroup):
+        entry["bolt_standard"] = wrapped.bolt_standard
+        entry["bolt_size"] = wrapped.bolt_size
+        entry["bolt_count"] = wrapped.bolt_count
+        entry["connected_parts"] = asdict(wrapped.connected_parts)
+    return entry
+
+
+def _describe_model_object(guid: str, model_obj: ModelObject) -> dict[str, Any]:
+    """
+    Build a lightweight record for a model object shown in a view (no geometry).
+
+    Resolves name/profile/material/class via the model-object wrappers where the
+    type is supported (parts, assemblies, reinforcement). Bolts additionally
+    report their standard, size, count and connected parts. Types with no wrapper
+    fall back to the raw object's name so nothing is dropped.
+    """
+    # Use .NET type name (Beam, Column, etc.) as element_type identifier
+    entry: dict[str, Any] = {"guid": guid, "element_type": type(model_obj).__name__}
+    wrapped = wrap_model_object(model_obj)
+    if wrapped is None:
+        name = getattr(model_obj, "Name", None) or None
+        if name is not None:
+            entry["name"] = name
+        return entry
+    entry.update(_describe_wrapped_object(wrapped, ("name", "position", "profile", "material", "tekla_class")))
     return entry
 
 
@@ -151,6 +172,104 @@ class EmbeddedDetail:
 def _describe_embedded_detail(guid: str, assembly: TeklaAssembly) -> EmbeddedDetail:
     """Build an `EmbeddedDetail` record from an embedded detail subassembly."""
     return EmbeddedDetail(guid=guid, name=assembly.name or None, position=assembly.position or None)
+
+
+@dataclass
+class _ResolvedViewItem:
+    """
+    A drawing-model-object resolved to its model object, with embedded-detail
+    members promoted to the parent assembly.
+
+    `assembly` is set only when this entry is a promoted embedded-detail member -
+    `guid` is then the assembly's GUID while `model_obj` stays the member part.
+    """
+
+    model_obj: ModelObject
+    guid: str
+    assembly: TeklaAssembly | None = None
+
+
+def _resolve_view_model_objects(view: TeklaDrawingView, model: TeklaModel, promote_embedded_details: bool = True) -> tuple[list[_ResolvedViewItem], int, int]:
+    """
+    Enumerate the model objects shown in a view, resolving each `DrawingModelObject`
+    to its model object and promoting embedded-detail members to the parent assembly.
+
+    Shared by `get_view_objects` and `check_for_unmarked_objects` so both tools
+    enumerate and resolve view objects the same way.
+
+    Args:
+        view: Drawing view to enumerate.
+        model: Model used to resolve `ModelIdentifier.ID` to model objects.
+        promote_embedded_details: Whether to detect and promote embedded-detail
+            members. Callers that don't care about the `parts` category can skip
+            this to save the extra `GetAssembly()`/`is_embedded_detail()` calls.
+
+    Returns:
+        Tuple of (resolved items, total_count, unresolved_count). `total_count`
+        excludes `DrawingConnection` objects, `unresolved_count` counts objects
+        whose model object could not be resolved.
+    """
+    # Sheet view aggregates model objects from all child views - it has none of its own
+    if view.is_sheet:
+        return [], 0, 0
+
+    drawing_objects = view.get_all_objects([DrawingModelObject])
+    if drawing_objects is None:
+        raise RuntimeError(f"Failed to enumerate model objects in view '{view.view_key}'. The view state may be corrupted or the connection lost.")
+
+    total_count = sum(1 for o in drawing_objects if not isinstance(o, DrawingConnection))
+    resolved: list[_ResolvedViewItem] = []
+    unresolved_count = 0
+    # The same model object can be referenced by multiple drawing objects (e.g. a
+    # part and its weld marks), so cache lookups to avoid repeat SelectModelObject calls
+    model_objects_by_id: dict[int, ModelObject | None] = {}
+
+    for drawing_obj in drawing_objects:
+        # Tekla components shown in a drawing view are internal
+        # connection geometry, not structural parts. Skip them
+        if isinstance(drawing_obj, DrawingConnection):
+            continue
+        identifier = getattr(drawing_obj, "ModelIdentifier", None)
+        if identifier is None:
+            unresolved_count += 1
+            continue
+        # The drawing-side ModelIdentifier carries a zero GUID, only its
+        # integer ID maps to the model object
+        object_id = int(identifier.ID)
+        if object_id not in model_objects_by_id:
+            model_objects_by_id[object_id] = model.get_object_by_id(object_id)
+        model_obj = model_objects_by_id[object_id]
+        if model_obj is None:
+            unresolved_count += 1
+            continue
+
+        if promote_embedded_details:
+            # Promote a part belonging to an embedded-detail subassembly to the
+            # subassembly itself
+            try:
+                parent_assembly = model_obj.GetAssembly()
+            except Exception as e:
+                logger.debug("GetAssembly() failed for model object id %s: %s", identifier.ID, e)
+                parent_assembly = None
+            if parent_assembly is not None:
+                wrapped_assembly = wrap_model_object(parent_assembly)
+                if isinstance(wrapped_assembly, TeklaAssembly):
+                    try:
+                        if wrapped_assembly.is_embedded_detail():
+                            resolved.append(
+                                _ResolvedViewItem(
+                                    model_obj=model_obj,
+                                    guid=parent_assembly.Identifier.GUID.ToString(),
+                                    assembly=wrapped_assembly,
+                                )
+                            )
+                            continue
+                    except Exception as e:
+                        logger.debug("is_embedded_detail() failed for assembly id %s: %s", parent_assembly.Identifier.ID, e)
+
+        resolved.append(_ResolvedViewItem(model_obj=model_obj, guid=model_obj.Identifier.GUID.ToString()))
+
+    return resolved, total_count, unresolved_count
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -962,84 +1081,41 @@ def get_view_objects(
     view = handler.get_view_by_key(view_key)
     model = TeklaModel()
 
-    # Sheet view aggregates model objects from all child views - it has none of its own
-    if view.is_sheet:
-        drawing_objects: list[DrawingObject] = []
-    else:
-        drawing_objects = view.get_all_objects([DrawingModelObject])
-        if drawing_objects is None:
-            raise RuntimeError(f"Failed to enumerate model objects in view '{view_key}'. The view state may be corrupted or the connection lost.")
+    resolved, total_count, unresolved_count = _resolve_view_model_objects(view, model)
 
-    # Exclude Connection objects from total_count
-    total_count = sum(1 for o in drawing_objects if not isinstance(o, DrawingConnection))
     objects: list[dict[str, Any] | EmbeddedDetail] = []
     embedded_details: dict[str, EmbeddedDetail] = {}
-    unresolved_count = 0
     returned_count = 0
     has_more = False
     seen_guids: set[str] = set()
-    # The same model object can be referenced by multiple drawing objects (e.g. a
-    # part and its weld marks), so cache lookups to avoid repeat SelectModelObject calls
-    model_objects_by_id: dict[int, ModelObject | None] = {}
 
-    for drawing_obj in drawing_objects:
+    for item in resolved:
         if returned_count >= limit:
             has_more = True
             break
-        # Tekla components shown in a drawing view are internal
-        # connection geometry, not structural parts. Skip them
-        if isinstance(drawing_obj, DrawingConnection):
-            continue
-        identifier = getattr(drawing_obj, "ModelIdentifier", None)
-        if identifier is None:
-            unresolved_count += 1
-            continue
-        # The drawing-side ModelIdentifier carries a zero GUID, only its
-        # integer ID maps to the model object
-        object_id = int(identifier.ID)
-        if object_id not in model_objects_by_id:
-            model_objects_by_id[object_id] = model.get_object_by_id(object_id)
-        model_obj = model_objects_by_id[object_id]
-        if model_obj is None:
-            unresolved_count += 1
+
+        if item.assembly is not None:
+            # Promoted embedded-detail member - dedup its other parts but count them
+            detail = embedded_details.get(item.guid)
+            if detail is None:
+                detail = _describe_embedded_detail(item.guid, item.assembly)
+                embedded_details[item.guid] = detail
+                objects.append(detail)
+            part_guid = item.model_obj.Identifier.GUID.ToString()
+            # Track individual parts so the client gets a part_count breakdown
+            if part_guid not in {p.guid for p in detail.parts}:
+                detail.parts.append(EmbeddedDetailPart(guid=part_guid, element_type=type(item.model_obj).__name__))
+                returned_count += 1
             continue
 
-        # Promote a part belonging to an embedded-detail subassembly to the
-        # subassembly itself, deduplicating its other parts but counting them
-        try:
-            parent_assembly = model_obj.GetAssembly()
-        except Exception as e:
-            logger.debug("GetAssembly() failed for model object id %s: %s", identifier.ID, e)
-            parent_assembly = None
-        if parent_assembly is not None:
-            wrapped_assembly = wrap_model_object(parent_assembly)
-            if isinstance(wrapped_assembly, TeklaAssembly):
-                try:
-                    if wrapped_assembly.is_embedded_detail():
-                        guid = parent_assembly.Identifier.GUID.ToString()
-                        detail = embedded_details.get(guid)
-                        if detail is None:
-                            detail = _describe_embedded_detail(guid, wrapped_assembly)
-                            embedded_details[guid] = detail
-                            objects.append(detail)
-                        part_guid = model_obj.Identifier.GUID.ToString()
-                        # Track individual parts so the client gets a part_count breakdown
-                        if part_guid not in {p.guid for p in detail.parts}:
-                            detail.parts.append(EmbeddedDetailPart(guid=part_guid, element_type=type(model_obj).__name__))
-                            returned_count += 1
-                        continue
-                except ValueError:
-                    pass
-
-        guid = model_obj.Identifier.GUID.ToString()
-        if guid in seen_guids:
+        if item.guid in seen_guids:
             continue
-        seen_guids.add(guid)
+        seen_guids.add(item.guid)
         try:
-            objects.append(_describe_model_object(guid, model_obj))
+            objects.append(_describe_model_object(item.guid, item.model_obj))
             returned_count += 1
         except Exception as e:
-            logger.debug("Failed to describe model object %s in view '%s': %s", guid, view_key, e)
+            logger.debug("Failed to describe model object %s in view '%s': %s", item.guid, view_key, e)
             unresolved_count += 1
 
     logger.info("get_view_objects: view '%s' has %d model object(s), %d returned, %d unresolved", view_key, total_count, returned_count, unresolved_count)
@@ -1135,7 +1211,8 @@ _REINFORCEMENT_TYPES = (BaseRebarGroup, RebarMesh, RebarStrand, SingleRebar)
 
 def _classify_unmarked_category(model_obj: ModelObject) -> str | None:
     """Bucket a resolved model object into `parts`/`reinforcement`/`bolts`, or None if it is none of those."""
-    if isinstance(model_obj, BoltArray):
+    # BoltGroup covers every bolt arrangement (BoltArray, BoltXYList, BoltCircle)
+    if isinstance(model_obj, BoltGroup):
         return "bolts"
     if isinstance(model_obj, _REINFORCEMENT_TYPES):
         return "reinforcement"
@@ -1155,80 +1232,52 @@ def _find_unmarked_in_view(view: TeklaDrawingView, model: TeklaModel, wanted_cat
     if view.is_sheet:
         return [], []
 
-    drawing_objects = view.get_all_objects([DrawingModelObject])
-    if drawing_objects is None:
-        raise RuntimeError(f"Failed to enumerate model objects in view '{view.view_key}'. The view state may be corrupted or the connection lost.")
+    resolved, _, _ = _resolve_view_model_objects(view, model, promote_embedded_details="parts" in wanted_categories)
 
+    # A "unit" is one counted entity - a standalone object, or an embedded
+    # detail folded into its parent assembly. Keyed by GUID.
     units: dict[str, dict[str, Any]] = {}
     # Member part guid -> owning embedded-detail assembly guid, so a mark on
     # any one member resolves to the assembly it belongs to
     member_to_unit: dict[str, str] = {}
-    model_objects_by_id: dict[int, ModelObject | None] = {}
 
-    for drawing_obj in drawing_objects:
-        if isinstance(drawing_obj, DrawingConnection):
-            continue
-        identifier = getattr(drawing_obj, "ModelIdentifier", None)
-        if identifier is None:
-            continue
-        object_id = int(identifier.ID)
-        if object_id not in model_objects_by_id:
-            model_objects_by_id[object_id] = model.get_object_by_id(object_id)
-        model_obj = model_objects_by_id[object_id]
-        if model_obj is None:
-            continue
-
-        unit_guid: str | None = None
-        if "parts" in wanted_categories:
-            # Promote a part belonging to an embedded-detail subassembly to the
-            # subassembly itself, mirroring get_view_objects's promotion logic
-            try:
-                parent_assembly = model_obj.GetAssembly()
-            except Exception as e:
-                logger.debug("GetAssembly() failed for model object id %s: %s", identifier.ID, e)
-                parent_assembly = None
-            if parent_assembly is not None:
-                wrapped_assembly = wrap_model_object(parent_assembly)
-                if isinstance(wrapped_assembly, TeklaAssembly):
-                    try:
-                        if wrapped_assembly.is_embedded_detail():
-                            unit_guid = parent_assembly.Identifier.GUID.ToString()
-                            member_to_unit[model_obj.Identifier.GUID.ToString()] = unit_guid
-                    except Exception as e:
-                        logger.debug("is_embedded_detail() failed for assembly id %s: %s", parent_assembly.Identifier.ID, e)
-
-        if unit_guid is not None:
-            if unit_guid not in units:
-                units[unit_guid] = {
-                    "guid": unit_guid,
+    for item in resolved:
+        if item.assembly is not None:
+            member_to_unit[item.model_obj.Identifier.GUID.ToString()] = item.guid
+            if item.guid not in units:
+                units[item.guid] = {
+                    "guid": item.guid,
                     "category": "parts",
                     "element_type": "EmbeddedDetail",
                     "mark_scope": "assembly",
-                    "name": wrapped_assembly.name or None,
-                    "position": wrapped_assembly.position or None,
+                    "name": item.assembly.name or None,
+                    "position": item.assembly.position or None,
                 }
             continue
 
-        unit_guid = model_obj.Identifier.GUID.ToString()
-        if unit_guid in units:
+        if item.guid in units:
             continue
-        category = _classify_unmarked_category(model_obj)
+        category = _classify_unmarked_category(item.model_obj)
         if category not in wanted_categories:
             continue
-        wrapped_obj = wrap_model_object(model_obj)
+        # wrap_model_object returns None for bolt groups other than BoltArray
+        # (BoltXYList, BoltCircle) - they are still flagged, just without rich detail
+        wrapped_obj = wrap_model_object(item.model_obj)
         unit: dict[str, Any] = {
-            "guid": unit_guid,
+            "guid": item.guid,
             "category": category,
-            "element_type": type(model_obj).__name__,
+            "element_type": type(item.model_obj).__name__,
             "mark_scope": "part",
-            "name": getattr(wrapped_obj, "name", None) or None,
-            "position": getattr(wrapped_obj, "position", None) or None,
         }
-        if isinstance(wrapped_obj, TeklaBoltArray):
-            unit["bolt_standard"] = wrapped_obj.bolt_standard
-            unit["bolt_size"] = wrapped_obj.bolt_size
-            unit["connected_parts"] = asdict(wrapped_obj.connected_parts)
-        units[unit_guid] = unit
+        # name/position (+ bolt fields) come from the shared describer so this tool
+        # and get_view_objects describe an object identically. One object's failed
+        # property read must not abort the whole view - get_view_objects degrades
+        # the same way, so the object is still recorded as present (and unmarked)
+        try:
+            unit.update(_describe_wrapped_object(wrapped_obj, ("name", "position")))
+        except Exception as e:
+            logger.debug("Failed to describe object %s in view '%s': %s", item.guid, view.view_key, e)
+        units[item.guid] = unit
 
     mark_objects = view.get_all_objects(list(CATEGORY_TYPES["marks"]))
     if mark_objects is None:

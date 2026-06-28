@@ -15,7 +15,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 from tekla_mcp_server.tekla.loader import Beam, Position, Point
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaPart
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaBoltGroup, TeklaPart
 
 
 created_elements: Any = []
@@ -52,6 +52,13 @@ def mock_beam(x, y, z, name="TEST_WALL"):
 def wall1():
     """Returns a TeklaModelObject wrapping a mock beam."""
     return wrap_model_object(mock_beam(0, 0, 0, "TEST_WALL1"))
+
+
+def test_bolt_count_reads_bolt_positions():
+    """bolt_count is the count of actual placed bolts (BoltPositions), type-agnostic."""
+    model_object = MagicMock()
+    model_object.BoltPositions.Count = 4
+    assert TeklaBoltGroup(model_object).bolt_count == 4
 
 
 def test_position_property(wall1):
