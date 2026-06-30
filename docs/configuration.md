@@ -82,6 +82,7 @@ Tolerances are grouped by domain: `model` for model operations and `drawings` fo
 | `tolerances.model.comparison` | `0.01` | Numeric tolerance used in `compare_elements`. Values within this tolerance are treated as equal. |
 | `tolerances.drawings.snap_tolerance` | `0.1` | Snap tolerance in mm for `align_section_views`. Section views already within this distance of their projection are treated as aligned and left untouched. |
 | `tolerances.drawings.sheet_size` | `1.0` | Tolerance in mm for matching sheet dimensions to standard paper sizes and multi-sheet tilings in `get_drawing_views`. |
+| `tolerances.drawings.dimension_snap` | `0.1` | Tolerance in sheet mm for `check_for_unattached_dimensions`. A dimension point within this distance of a part corner or edge midpoint, bolt/hole centre, or grid/centre line is treated as attached/snapped. |
 
 ### Reports
 

@@ -16,6 +16,7 @@ from tekla_mcp_server.config import get_export_output_dir
 from tekla_mcp_server.models import ViewAttributes
 from tekla_mcp_server.providers.drawings_provider import (
     align_section_views,
+    check_for_unattached_dimensions,
     check_drawing_collisions,
     check_for_unmarked_objects,
     close_drawing,
@@ -1147,6 +1148,56 @@ class TestCheckDrawingCollisions:
         assert sc["status"] in {"success", "partial"}
         assert sc["drawings_selected"] == 1
         assert {"drawings_succeeded", "drawings_failed", "total_issues", "issues_by_category", "clouds_drawn", "cloud_failures", "per_drawing"}.issubset(sc.keys())
+
+        # Clean up any clouds the check drew, so the scratch drawing stays clean
+        if sc["clouds_drawn"] > 0:
+            open_drawing(mark=cu_mark)
+            delete_clouds()
+            close_drawing(save=True)
+
+
+class TestCheckForUnattachedDimensions:
+    """Tests for check_for_unattached_dimensions function."""
+
+    @pytest.fixture(autouse=True)
+    def ensure_no_open_drawing(self):
+        """Close any open drawing before each test."""
+        handler = TeklaDrawingHandler()
+        if handler.get_active_drawing() is not None:
+            handler.close_active_drawing()
+        yield
+
+    def test_no_drawings_selected(self):
+        """No marks and nothing selected raises an error."""
+        _skip_if_drawings_selected()
+        result = check_for_unattached_dimensions()
+        assert result.structured_content["status"] == "error"
+
+    def test_rejects_open_drawing(self, cu_mark):
+        """An open drawing blocks the check - the export needs the Document Manager."""
+        open_drawing(mark=cu_mark)
+        try:
+            result = check_for_unattached_dimensions(marks=[cu_mark])
+            assert result.structured_content["status"] == "error"
+        finally:
+            close_drawing(save=False)
+
+    def test_runs_on_one_drawing_and_response_has_required_fields(self, cu_mark):
+        """Checking one drawing returns the expected report shape, then clean up any clouds drawn."""
+        before = get_drawings_properties(marks=[cu_mark]).structured_content["drawings"][0]
+        if before["up_to_date_status"] != "DrawingIsUpToDate":
+            pytest.skip("Drawing is not up to date, cannot run attachment check")
+
+        result = check_for_unattached_dimensions(marks=[cu_mark])
+        sc = result.structured_content
+        assert sc["status"] in {"success", "partial"}
+        assert sc["drawings_selected"] == 1
+        assert {"drawings_succeeded", "drawings_failed", "dimension_points_checked", "total_unattached", "clouds_drawn", "cloud_failures", "per_drawing"}.issubset(sc.keys())
+
+        # Each unattached point reported carries its sheet location and source view
+        for drawing_result in sc["per_drawing"]:
+            for pt in drawing_result.get("unattached_points", []):
+                assert {"x", "y", "view"}.issubset(pt.keys())
 
         # Clean up any clouds the check drew, so the scratch drawing stays clean
         if sc["clouds_drawn"] > 0:

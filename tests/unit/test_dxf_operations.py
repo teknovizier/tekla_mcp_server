@@ -17,7 +17,13 @@ from tekla_mcp_server.dxf_operations import (
     check_cross_view_same_sheet_collision,
     check_marks_leader_overlap,
     check_out_of_grid_with_content,
+    collect_attach_targets,
+    dimension_point_is_attached,
     merge_issues,
+    on_any_horizontal_edge,
+    on_any_vertical_edge,
+    point_is_attached,
+    view_local_to_sheet,
 )
 from tekla_mcp_server.utils import BBox
 
@@ -539,3 +545,103 @@ def test_content_out_of_sheet_ignores_view_fully_outside():
     sheet = _sheet(100.0, 100.0)
     view = _view("A", None, 200.0, 0.0, w=50.0, h=50.0)
     assert check_content_out_of_sheet([sheet, view], []) == []
+
+
+def _part_seg(x0, y0, x1, y1, layer="TEKLA_MCP_PARTS"):
+    """A part-edge entity with one segment, for attach-target tests."""
+    return WorldEntity(layer=layer, bbox=BBox(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)), segments=[((x0, y0), (x1, y1))], parent="p")
+
+
+def _circle(cx, cy, layer="TEKLA_MCP_BOLTS"):
+    """A circle entity (no segments) - its bbox centre is the target point."""
+    return WorldEntity(layer=layer, bbox=BBox(cx, cy, cx, cy), segments=[], kind="CIRCLE", parent="b")
+
+
+def test_view_local_to_sheet_applies_origin_and_scale():
+    # 1:20 view at sheet origin (267, 1556.5); local point (-80, -11035)
+    sx, sy = view_local_to_sheet(-80.0, -11035.0, 267.0, 1556.5, 20.0)
+    assert round(sx, 2) == 263.0
+    assert round(sy, 2) == 1004.75
+
+
+def test_collect_attach_targets_lines_and_centers():
+    entities = [
+        _part_seg(0.0, 0.0, 10.0, 0.0),
+        _circle(5.0, 5.0, layer="TEKLA_MCP_BOLTS"),
+        _part_seg(0.0, 0.0, 0.0, 20.0, layer="TEKLA_MCP_GRIDS"),
+    ]
+    targets = collect_attach_targets(entities)
+    # Part edge and grid both become line targets
+    assert len(targets.lines) == 2
+    assert (5.0, 5.0) in targets.centers
+
+
+def test_point_is_attached_only_at_corner_or_midpoint_not_arbitrary_mid_span():
+    # Horizontal edge (0,0)-(10,0): corners at the ends, midpoint at (5,0)
+    targets = collect_attach_targets([_part_seg(0.0, 0.0, 10.0, 0.0)])
+    assert point_is_attached(0.0, 0.0, targets, tol=0.5)  # corner
+    assert point_is_attached(5.0, 0.0, targets, tol=0.5)  # midpoint
+    # A point on the edge but away from corner and midpoint is NOT matched here -
+    # the orientation-agnostic check does not cover the whole edge
+    assert not point_is_attached(3.0, 0.0, targets, tol=0.5)
+    # Off the edge entirely
+    assert not point_is_attached(5.0, 5.0, targets, tol=0.5)
+
+
+def test_on_any_edge_matches_only_its_orientation():
+    targets = collect_attach_targets(
+        [
+            _part_seg(0.0, 0.0, 10.0, 0.0),  # horizontal
+            _part_seg(0.0, 0.0, 0.0, 10.0),  # vertical
+        ]
+    )
+    # Mid-span on the horizontal edge: a horizontal-edge match, not a vertical one
+    assert on_any_horizontal_edge(3.0, 0.0, targets, tol=0.5)
+    assert not on_any_vertical_edge(3.0, 0.0, targets, tol=0.5)
+    # Mid-span on the vertical edge: the mirror image
+    assert on_any_vertical_edge(0.0, 3.0, targets, tol=0.5)
+    assert not on_any_horizontal_edge(0.0, 3.0, targets, tol=0.5)
+
+
+def test_dimension_point_is_attached_is_directional():
+    targets = collect_attach_targets(
+        [
+            _part_seg(0.0, 0.0, 10.0, 0.0),  # horizontal edge at y=0
+            _part_seg(0.0, 0.0, 0.0, 10.0),  # vertical edge at x=0
+        ]
+    )
+    # A vertical dimension attaches anywhere along a HORIZONTAL edge...
+    assert dimension_point_is_attached(3.0, 0.0, targets, tol=0.5, dim_is_vertical=True)
+    # ...but not mid-span along a vertical edge
+    assert not dimension_point_is_attached(0.0, 3.0, targets, tol=0.5, dim_is_vertical=True)
+    # A horizontal dimension is the mirror image
+    assert dimension_point_is_attached(0.0, 3.0, targets, tol=0.5, dim_is_vertical=False)
+    assert not dimension_point_is_attached(3.0, 0.0, targets, tol=0.5, dim_is_vertical=False)
+
+
+def test_dimension_point_is_attached_corner_and_center_regardless_of_direction():
+    targets = collect_attach_targets(
+        [
+            _part_seg(0.0, 0.0, 10.0, 0.0),
+            _circle(20.0, 20.0, layer="TEKLA_MCP_BOLTS"),
+        ]
+    )
+    # A corner is accepted whichever way the dimension runs
+    assert dimension_point_is_attached(0.0, 0.0, targets, tol=0.5, dim_is_vertical=True)
+    assert dimension_point_is_attached(0.0, 0.0, targets, tol=0.5, dim_is_vertical=False)
+    # A bolt/hole centre likewise
+    assert dimension_point_is_attached(20.0, 20.0, targets, tol=0.5, dim_is_vertical=True)
+    # A point off all geometry is flagged (unattached) in either direction
+    assert not dimension_point_is_attached(50.0, 50.0, targets, tol=0.5, dim_is_vertical=False)
+
+
+def test_point_is_attached_to_reference_line_at_corner_or_midpoint():
+    targets = collect_attach_targets([_part_seg(0.0, 0.0, 0.0, 100.0, layer="TEKLA_MCP_REFERENCE_LINES")])
+    assert point_is_attached(1.0, 50.0, targets, tol=2.0)
+    assert not point_is_attached(10.0, 50.0, targets, tol=2.0)
+
+
+def test_point_is_attached_to_bolt_or_hole_center():
+    targets = collect_attach_targets([_circle(5.0, 5.0, layer="TEKLA_MCP_BOLTS")])
+    assert point_is_attached(5.0, 6.0, targets, tol=2.0)
+    assert not point_is_attached(5.0, 10.0, targets, tol=2.0)

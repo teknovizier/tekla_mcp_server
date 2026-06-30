@@ -21,6 +21,20 @@ SHEET_FURNITURE_LAYERS = {"TEKLA_MCP_DRAWING_FRAME", "TEKLA_MCP_DRAWING_TABLE"}
 # DXF layers that carry mark annotations
 MARK_LAYERS = {"TEKLA_MCP_MARKS", "TEKLA_MCP_DETAIL_MARKS", "TEKLA_MCP_WELD_MARKS"}
 
+# Layers whose lines are valid dimension attach targets: part faces, section
+# edges, grids, centre and reference lines. A dimension endpoint attaches at a
+# corner or midpoint of any such edge and anywhere along an edge perpendicular
+# to the dimension (see `dimension_point_is_attached` for more details)
+LINE_TARGET_LAYERS = {
+    "TEKLA_MCP_PARTS",
+    "TEKLA_MCP_SECTION_EDGES",
+    "TEKLA_MCP_GRIDS",
+    "TEKLA_MCP_CENTER_LINES",
+    "TEKLA_MCP_REFERENCE_LINES",
+}
+# Layers whose circle/arc centres are point targets (bolt and hole centres)
+CENTER_TARGET_LAYERS = {"TEKLA_MCP_BOLTS", "TEKLA_MCP_PARTS"}
+
 
 # Empty space between a view's frame rectangle and any real content drawn inside it
 FRAME_CONTENT_PADDING = 5.0
@@ -715,6 +729,120 @@ def merge_issues(issues: list[CollisionIssue]) -> list[CollisionIssue]:
             # Start a new merged group
             merged.append(issue)
     return merged
+
+
+@dataclass
+class AttachTargets:
+    """Valid geometry a dimension point may attach to, in sheet coordinates."""
+
+    lines: list[Segment]
+    centers: list[tuple[float, float]]
+
+
+def collect_attach_targets(entities: list[WorldEntity]) -> AttachTargets:
+    """
+    Gather the valid dimension attach targets from flattened DXF entities.
+
+    Targets are edge lines (part faces, section cuts, grids, centre/reference
+    lines) and circle/arc centres (bolt and hole centres). All in sheet coordinates.
+    """
+    lines: list[Segment] = []
+    centers: list[tuple[float, float]] = []
+
+    for e in entities:
+        if e.layer in LINE_TARGET_LAYERS:
+            lines.extend(e.segments)
+        # Circles/arcs carry no segments - their centre is the bbox centre
+        if e.layer in CENTER_TARGET_LAYERS and e.kind in ("CIRCLE", "ARC"):
+            centers.append((e.bbox.cx, e.bbox.cy))
+
+    return AttachTargets(lines, centers)
+
+
+def view_local_to_sheet(x: float, y: float, origin_x: float, origin_y: float, scale: float) -> tuple[float, float]:
+    """
+    Map a view-local, model-scale dimension point to sheet coordinates.
+
+    Tekla's StraightDimension.StartPoint/EndPoint are view-local in real
+    model mm. The sheet position is the view origin plus the local offset
+    divided by the view scale. Valid for unrotated views.
+    """
+    return (origin_x + x / scale, origin_y + y / scale)
+
+
+def _point_to_segment_distance(px: float, py: float, seg: Segment) -> float:
+    """Shortest distance from a point to a line segment."""
+    (ax, ay), (bx, by) = seg
+    dx, dy = bx - ax, by - ay
+    if dx == 0.0 and dy == 0.0:
+        return ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+    t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
+    t = max(0.0, min(1.0, t))
+    cx, cy = ax + t * dx, ay + t * dy
+    return ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5
+
+
+def on_any_horizontal_edge(x: float, y: float, targets: AttachTargets, tol: float) -> bool:
+    """True if point lies on any predominantly horizontal edge segment."""
+    for (ax, ay), (bx, by) in targets.lines:
+        if abs(by - ay) < abs(bx - ax):
+            if _point_to_segment_distance(x, y, ((ax, ay), (bx, by))) <= tol:
+                return True
+    return False
+
+
+def on_any_vertical_edge(x: float, y: float, targets: AttachTargets, tol: float) -> bool:
+    """True if point lies on any predominantly vertical edge segment."""
+    for (ax, ay), (bx, by) in targets.lines:
+        if abs(bx - ax) < abs(by - ay):
+            if _point_to_segment_distance(x, y, ((ax, ay), (bx, by))) <= tol:
+                return True
+    return False
+
+
+def point_is_attached(x: float, y: float, targets: AttachTargets, tol: float) -> bool:
+    """
+    True if a point meets a direction-agnostic target within `tol`.
+
+    The direction-agnostic targets are circle/arc centres (bolts, holes) and the
+    corners and midpoints of every edge - matched the same way regardless of a
+    dimension's orientation. The orientation-dependent whole-edge rule lives in
+    `dimension_point_is_attached`, which builds on this.
+    """
+    tol_sq = tol * tol
+    for qx, qy in targets.centers:
+        if (x - qx) ** 2 + (y - qy) ** 2 <= tol_sq:
+            return True
+    for (ax, ay), (bx, by) in targets.lines:
+        if (x - ax) ** 2 + (y - ay) ** 2 <= tol_sq:
+            return True
+        if (x - bx) ** 2 + (y - by) ** 2 <= tol_sq:
+            return True
+        mx, my = (ax + bx) / 2.0, (ay + by) / 2.0
+        if (x - mx) ** 2 + (y - my) ** 2 <= tol_sq:
+            return True
+    return False
+
+
+def dimension_point_is_attached(x: float, y: float, targets: AttachTargets, tol: float, dim_is_vertical: bool) -> bool:
+    """
+    True if a dimension endpoint attaches to valid geometry within `tol`.
+
+    A dimension measures between faces perpendicular to its run, so an endpoint
+    is attached when it lies anywhere along an edge of that perpendicular
+    orientation - a vertical dimension onto a horizontal edge, a horizontal
+    dimension onto a vertical edge. It also attaches at any edge corner or
+    midpoint or a bolt/hole centre, regardless of direction (`point_is_attached`).
+
+    A diagonal dimension is classified by its dominant axis, so only one edge
+    orientation counts as perpendicular - an endpoint on a truly sloped edge is
+    matched only at that edge's corners/midpoint, not along its length.
+    """
+    if point_is_attached(x, y, targets, tol):
+        return True
+    if dim_is_vertical:
+        return on_any_horizontal_edge(x, y, targets, tol)
+    return on_any_vertical_edge(x, y, targets, tol)
 
 
 def run_collision_checks(views: list[dict], entities: list[WorldEntity]) -> list[CollisionIssue]:

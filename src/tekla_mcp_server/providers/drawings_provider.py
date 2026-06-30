@@ -60,7 +60,16 @@ from tekla_mcp_server.tekla.drawing_utils import (
     CATEGORY_TYPES,
     DEFAULT_ANNOTATION_CATEGORIES,
 )
-from tekla_mcp_server.dxf_operations import run_collision_checks, resolve_entities
+from tekla_mcp_server.dxf_operations import (
+    run_collision_checks,
+    resolve_entities,
+    collect_attach_targets,
+    view_local_to_sheet,
+    dimension_point_is_attached,
+    AttachTargets,
+    MARK_CLOUD_MARGIN,
+)
+from tekla_mcp_server.utils import BBox
 from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -77,6 +86,8 @@ from tekla_mcp_server.tekla.loader import (
     RebarMesh,
     RebarStrand,
     SingleRebar,
+    StraightDimension,
+    StraightDimensionSet,
 )
 
 
@@ -1750,7 +1761,7 @@ def _export_drawings_to_dxf(
     return {mark: _export_one_drawing_to_dxf(model_path, plotfiles_dir, mark) for mark in expected_marks}
 
 
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def check_drawing_collisions(
     marks: Annotated[list[str] | None, Field(description="Drawing marks to check. Uses Document Manager selection when omitted.")] = None,
@@ -1927,3 +1938,206 @@ def check_drawing_collisions(
 
     logger.info("check_drawing_collisions: %d/%d drawings, %d total issues", succeeded_count, drawing_count, len(all_issues))
     return ToolResult(structured_content=result)
+
+
+def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: AttachTargets) -> tuple[int, list[dict[str, Any]]]:
+    """
+    Find dimension points in the active drawing not attached to valid geometry.
+
+    Reads every StraightDimension's StartPoint/EndPoint from each non-sheet
+    view, transforms them to sheet coordinates, and tests each against the DXF
+    attach targets. Points that round to the same sheet location (chained
+    dimensions share endpoints) are deduplicated so each gets one cloud.
+
+    Args:
+        handler: Drawing handler with the target drawing already active.
+        targets: `AttachTargets` collected from the DXF.
+
+    Returns:
+        Tuple of (dimension points checked, unattached point dicts). Each dict
+        carries sheet `x`/`y` and the source `view`.
+    """
+    tol = get_tolerance("dimension_snap", default=0.1, group="drawings")
+    checked = 0
+    unattached: dict[tuple[int, int], dict[str, Any]] = {}
+    for view in handler.get_drawing_views():
+        if view.is_sheet:
+            continue
+        dims = view.get_all_objects([StraightDimension, StraightDimensionSet])
+        if not dims:
+            continue
+        origin_x, origin_y = view.origin
+        scale = view.scale
+        # GetAllObjects returns both a StraightDimensionSet and the
+        # StraightDimensions it contains, so the same dimension can be
+        # processed twice. Use the sheet endpoints to remove duplicates
+        seen_pairs: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+        for d in dims:
+            pairs: list[tuple[Any, Any]] = []
+            if isinstance(d, StraightDimensionSet):
+                enum = d.GetObjects()
+                while enum.MoveNext():
+                    sd = enum.Current
+                    pairs.append((sd.StartPoint, sd.EndPoint))
+            else:
+                pairs.append((d.StartPoint, d.EndPoint))
+            for sp, ep in pairs:
+                if sp is None or ep is None:
+                    continue
+                sx_sp, sy_sp = view_local_to_sheet(sp.X, sp.Y, origin_x, origin_y, scale)
+                sx_ep, sy_ep = view_local_to_sheet(ep.X, ep.Y, origin_x, origin_y, scale)
+                # Round coordinates to the tolerance grid so nearby duplicate points are
+                # treated as the same. This removes duplicate chain endpoints and repeated
+                # dimension points, while keeping points that are truly separate
+                end_a, end_b = (round(sx_sp / tol), round(sy_sp / tol)), (round(sx_ep / tol), round(sy_ep / tol))
+                pair_key = (end_a, end_b) if end_a <= end_b else (end_b, end_a)
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+                dim_is_vertical = abs(sx_sp - sx_ep) < abs(sy_sp - sy_ep)
+                for sx, sy in ((sx_sp, sy_sp), (sx_ep, sy_ep)):
+                    checked += 1
+                    if dimension_point_is_attached(sx, sy, targets, tol, dim_is_vertical):
+                        continue
+                    key = (round(sx / tol), round(sy / tol))
+                    unattached.setdefault(key, {"x": round(sx, 1), "y": round(sy, 1), "view": view.view_key})
+    return checked, list(unattached.values())
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def check_for_unattached_dimensions(
+    marks: Annotated[list[str] | None, Field(description="Drawing marks to check. Uses Document Manager selection when omitted.")] = None,
+) -> ToolResult:
+    """
+    Detect dimensions not attached to part geometry and cloud them.
+
+    Select drawings in the Document Manager first or pass the `marks` parameter.
+    """
+
+    handler = TeklaDrawingHandler()
+
+    if handler.get_active_drawing() is not None:
+        raise RuntimeError("A drawing is currently open. Close it first with `close_drawing` before running the attachment check.")
+
+    model = TeklaModel()
+    model_path = model.model_path
+    plotfiles_dir = Path(model_path) / "Plotfiles"
+
+    selected = handler.get_drawings_by_marks(marks or None)
+    if not selected:
+        raise ValueError("No drawings selected in Document Manager.")
+
+    drawing_count = len(selected)
+    expected_marks = [d.mark for d in selected]
+
+    outdated = [d.mark for d in selected if d.up_to_date_status != "DrawingIsUpToDate"]
+    if outdated:
+        details = {d.mark: d.up_to_date_status for d in selected if d.up_to_date_status != "DrawingIsUpToDate"}
+        raise ValueError(f"The following drawing(s) must be updated first: {outdated}. Status: {details}")
+
+    logger.info("check_for_unattached_dimensions: exporting %d drawing(s) to DXF...", drawing_count)
+    dxf_paths_by_mark = _export_drawings_to_dxf(model_path, plotfiles_dir, expected_marks)
+
+    total_unattached = 0
+    total_checked = 0
+    total_clouds_drawn = 0
+    total_cloud_failures = 0
+    per_drawing_results: list[dict] = []
+
+    def _fail(mark: str, message: str) -> None:
+        per_drawing_results.append({"mark": mark, "status": "error", "message": message})
+        logger.warning("check_for_unattached_dimensions: %s", message)
+
+    try:
+        for i, drawing in enumerate(selected, 1):
+            mark = drawing.mark
+            dxf_path = dxf_paths_by_mark.get(mark)
+            if dxf_path is None or not dxf_path.exists():
+                _fail(mark, f"No matching DXF for mark '{mark}'.")
+                continue
+
+            # The export can take a while - re-fetch and re-check up-to-date now
+            try:
+                drawing = handler.get_drawings_by_marks([mark])[0]
+            except ValueError:
+                _fail(mark, f"Drawing '{mark}' no longer found.")
+                continue
+            if drawing.up_to_date_status != "DrawingIsUpToDate":
+                _fail(mark, f"Drawing '{mark}' became out of date during export.")
+                continue
+            if not handler.set_active_drawing(drawing):
+                _fail(mark, f"Failed to open drawing '{mark}'.")
+                continue
+
+            try:
+                doc = ezdxf.readfile(str(dxf_path))
+                entities = resolve_entities(doc, doc.modelspace())
+                targets = collect_attach_targets(entities)
+
+                checked, unattached = _collect_unattached_dimension_points(handler, targets)
+                total_checked += checked
+                total_unattached += len(unattached)
+
+                # Clouds go in the sheet view - dimension points are already in
+                # sheet coordinates, matching the sheet view's coordinate system
+                sheet_view = next((v for v in handler.get_drawing_views() if v.is_sheet), None)
+                cloud_count = 0
+                cloud_failures = 0
+                for pt in unattached:
+                    bbox = BBox(pt["x"], pt["y"], pt["x"], pt["y"])
+                    # Half the mark-cloud margin - a dimension point needs a tighter cloud
+                    cloud_margin = MARK_CLOUD_MARGIN / 2
+                    if sheet_view is not None and draw_cloud_bbox(sheet_view.view, bbox, margin=(cloud_margin, cloud_margin)):
+                        cloud_count += 1
+                    else:
+                        cloud_failures += 1
+
+                if cloud_count > 0 and not drawing.commit_changes():
+                    cloud_failures += cloud_count
+                    cloud_count = 0
+
+                total_clouds_drawn += cloud_count
+                total_cloud_failures += cloud_failures
+                per_drawing_results.append(
+                    {
+                        "mark": mark,
+                        "status": "success",
+                        "dimension_points_checked": checked,
+                        "unattached": len(unattached),
+                        "clouds_drawn": cloud_count,
+                        "cloud_failures": cloud_failures,
+                        "unattached_points": unattached,
+                    }
+                )
+                logger.info("check_for_unattached_dimensions: '%s' - %d unattached of %d checked", mark, len(unattached), checked)
+            except Exception as e:
+                _fail(mark, f"Error processing drawing '{mark}': {e}")
+                logger.error("check_for_unattached_dimensions: error processing '%s': %s", mark, e)
+            finally:
+                handler.close_active_drawing(save=True)
+    finally:
+        for p in dxf_paths_by_mark.values():
+            try:
+                p.unlink()
+            except Exception as e:
+                logger.warning("Failed to delete DXF '%s': %s", p, e)
+
+    succeeded_count = sum(1 for r in per_drawing_results if r["status"] == "success")
+    failed_count = sum(1 for r in per_drawing_results if r["status"] == "error")
+    status = "success" if failed_count == 0 else "partial"
+
+    logger.info("check_for_unattached_dimensions: %d/%d drawings, %d unattached points", succeeded_count, drawing_count, total_unattached)
+    return ToolResult(
+        structured_content={
+            "status": status,
+            "drawings_selected": drawing_count,
+            "drawings_succeeded": succeeded_count,
+            "drawings_failed": failed_count,
+            "dimension_points_checked": total_checked,
+            "total_unattached": total_unattached,
+            "clouds_drawn": total_clouds_drawn,
+            "cloud_failures": total_cloud_failures,
+            "per_drawing": per_drawing_results,
+        }
+    )

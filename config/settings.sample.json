@@ -18,7 +18,8 @@
         },
         "drawings": {
             "snap_tolerance": 0.1,
-            "sheet_size": 1.0
+            "sheet_size": 1.0,
+            "dimension_snap": 0.1
         }
     },
     "reports": {
