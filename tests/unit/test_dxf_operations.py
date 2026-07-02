@@ -23,6 +23,8 @@ from tekla_mcp_server.dxf_operations import (
     on_any_horizontal_edge,
     on_any_vertical_edge,
     point_is_attached,
+    shortened_axis_to_sheet,
+    shortening_gaps_from_boxes,
     view_local_to_sheet,
 )
 from tekla_mcp_server.utils import BBox
@@ -645,3 +647,75 @@ def test_point_is_attached_to_bolt_or_hole_center():
     targets = collect_attach_targets([_circle(5.0, 5.0, layer="TEKLA_MCP_BOLTS")])
     assert point_is_attached(5.0, 6.0, targets, tol=2.0)
     assert not point_is_attached(5.0, 10.0, targets, tol=2.0)
+
+
+def test_dimension_point_attaches_to_bolt_axis_line():
+    # Bolts/holes are drawn as axis lines or centre crosses when the view's
+    # bolt representation is not a circle - the axis line must work as a line
+    # target: a horizontal dimension attaches mid-span on the vertical axis
+    # line, and the cross centre (both lines' midpoint) attaches regardless
+    # of direction
+    targets = collect_attach_targets(
+        [
+            _part_seg(105.34, 198.18, 105.34, 204.18, layer="TEKLA_MCP_BOLTS"),  # vertical hole axis
+            _part_seg(103.54, 201.18, 107.14, 201.18, layer="TEKLA_MCP_BOLTS"),  # horizontal cross arm
+        ]
+    )
+    assert dimension_point_is_attached(105.31, 202.2, targets, tol=0.1, dim_is_vertical=False)
+    # Mid-span on the axis line does not satisfy a vertical dimension
+    assert not dimension_point_is_attached(105.31, 202.2, targets, tol=0.1, dim_is_vertical=True)
+    # The cross centre (midpoint of both arms) attaches in either direction
+    assert dimension_point_is_attached(105.34, 201.18, targets, tol=0.1, dim_is_vertical=True)
+
+
+# --- shortening helpers ------------------------------------------------------
+
+
+def test_shortening_gaps_from_boxes_empty_and_single_box():
+    assert shortening_gaps_from_boxes([]) == ([], [])
+    assert shortening_gaps_from_boxes([(0.0, 0.0, 100.0, 50.0)]) == ([], [])
+
+
+def test_shortening_gaps_from_boxes_x_gap():
+    # Two visible regions along X with full-height boxes: one X gap, no Y gap
+    boxes = [(-165.5, -85.2, 854.1, 191.4), (3438.9, -85.2, 4470.5, 191.4)]
+    x_gaps, y_gaps = shortening_gaps_from_boxes(boxes)
+    assert x_gaps == [(854.1, 3438.9)]
+    assert y_gaps == []
+
+
+def test_shortening_gaps_from_boxes_sorts_and_merges_overlapping():
+    # Boxes given out of order, with the two left ones overlapping in X -
+    # they merge into one visible interval, leaving a single gap
+    boxes = [(500.0, 0.0, 900.0, 10.0), (0.0, 0.0, 600.0, 10.0), (2000.0, 0.0, 3000.0, 10.0)]
+    x_gaps, _ = shortening_gaps_from_boxes(boxes)
+    assert x_gaps == [(900.0, 2000.0)]
+
+
+def test_shortened_axis_to_sheet_no_gaps_matches_plain_transform():
+    assert shortened_axis_to_sheet(79.1, 97.4, 10.0, [], 0.0) == view_local_to_sheet(79.1, 0.0, 97.4, 0.0, 10.0)[0]
+
+
+def test_shortened_axis_to_sheet_point_before_gap_is_unshifted():
+    gaps = [(854.1, 3438.9)]
+    assert round(shortened_axis_to_sheet(44.1, 97.4, 10.0, gaps, 1.0), 2) == 101.81
+
+
+def test_shortened_axis_to_sheet_point_after_gap_collapses_gap_and_adds_seam_offset():
+    # Real NB-4008 numbers: local 4248.9 with a 2584.8 mm gap at 1:10 plus the
+    # 1.0 mm seam offset lands at the DXF-verified 264.81, not off-sheet 522.29
+    gaps = [(854.1, 3438.9)]
+    assert round(shortened_axis_to_sheet(4248.9, 97.4, 10.0, gaps, 1.0), 2) == 264.81
+
+
+def test_shortened_axis_to_sheet_point_inside_gap_collapses_to_seam():
+    gaps = [(854.1, 3438.9)]
+    seam = shortened_axis_to_sheet(854.1, 97.4, 10.0, gaps, 1.0)
+    assert shortened_axis_to_sheet(2000.0, 97.4, 10.0, gaps, 1.0) == seam
+
+
+def test_shortened_axis_to_sheet_accumulates_multiple_gaps():
+    # Two gaps of 100 each at 1:10 with 1.0 mm seam offset: a point past both
+    # is pulled back 20 mm on the sheet and pushed out 2 seam offsets
+    gaps = [(100.0, 200.0), (300.0, 400.0)]
+    assert shortened_axis_to_sheet(500.0, 0.0, 10.0, gaps, 1.0) == (500.0 - 200.0) / 10.0 + 2.0

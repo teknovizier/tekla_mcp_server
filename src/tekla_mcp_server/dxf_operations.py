@@ -22,15 +22,19 @@ SHEET_FURNITURE_LAYERS = {"TEKLA_MCP_DRAWING_FRAME", "TEKLA_MCP_DRAWING_TABLE"}
 MARK_LAYERS = {"TEKLA_MCP_MARKS", "TEKLA_MCP_DETAIL_MARKS", "TEKLA_MCP_WELD_MARKS"}
 
 # Layers whose lines are valid dimension attach targets: part faces, section
-# edges, grids, centre and reference lines. A dimension endpoint attaches at a
-# corner or midpoint of any such edge and anywhere along an edge perpendicular
-# to the dimension (see `dimension_point_is_attached` for more details)
+# edges, grids, centre and reference lines, plus bolt/hole geometry (bolts and
+# holes are drawn as axis lines or centre crosses when the view's bolt
+# representation is not a circle - their midpoints double as the centre). A
+# dimension endpoint attaches at a corner or midpoint of any such edge and
+# anywhere along an edge perpendicular to the dimension (see
+# `dimension_point_is_attached` for more details)
 LINE_TARGET_LAYERS = {
     "TEKLA_MCP_PARTS",
     "TEKLA_MCP_SECTION_EDGES",
     "TEKLA_MCP_GRIDS",
     "TEKLA_MCP_CENTER_LINES",
     "TEKLA_MCP_REFERENCE_LINES",
+    "TEKLA_MCP_BOLTS",
 }
 # Layers whose circle/arc centres are point targets (bolt and hole centres)
 CENTER_TARGET_LAYERS = {"TEKLA_MCP_BOLTS", "TEKLA_MCP_PARTS"}
@@ -765,9 +769,71 @@ def view_local_to_sheet(x: float, y: float, origin_x: float, origin_y: float, sc
 
     Tekla's StraightDimension.StartPoint/EndPoint are view-local in real
     model mm. The sheet position is the view origin plus the local offset
-    divided by the view scale. Valid for unrotated views.
+    divided by the view scale. Valid for unrotated views without part
+    shortening - for shortened views use `shortened_axis_to_sheet` per axis.
     """
     return (origin_x + x / scale, origin_y + y / scale)
+
+
+def shortening_gaps_from_boxes(boxes: list[tuple[float, float, float, float]]) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    """
+    Derive part-shortening gaps along X and Y from a view's visible-area boxes.
+
+    A shortened view renders only the regions inside its visible-area
+    restriction boxes (view-local model mm, from `TeklaDrawingView.get_shortening`).
+    The gaps are the local intervals removed between those regions along each
+    axis. Overlapping or touching boxes merge into one visible interval.
+
+    Args:
+        boxes: Visible-area boxes as (xmin, ymin, xmax, ymax) tuples.
+
+    Returns:
+        Tuple of (x_gaps, y_gaps) - sorted, disjoint (start, end) removed
+        intervals per axis. Both empty when there are fewer than two boxes.
+    """
+
+    def axis_gaps(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        merged: list[list[float]] = []
+        for lo, hi in sorted(intervals):
+            if merged and lo <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], hi)
+            else:
+                merged.append([lo, hi])
+        return [(merged[i][1], merged[i + 1][0]) for i in range(len(merged) - 1)]
+
+    if len(boxes) < 2:
+        return [], []
+    return axis_gaps([(b[0], b[2]) for b in boxes]), axis_gaps([(b[1], b[3]) for b in boxes])
+
+
+def shortened_axis_to_sheet(local: float, origin: float, scale: float, gaps: list[tuple[float, float]], gap_offset: float) -> float:
+    """
+    Map one view-local axis coordinate to sheet mm, collapsing shortening gaps.
+
+    Content beyond each gap is drawn shifted towards the origin by the gap
+    length and separated by `gap_offset` sheet mm at the cut seam. A
+    coordinate inside a gap collapses to the seam. With no gaps this equals
+    `view_local_to_sheet` for the axis.
+
+    Args:
+        local: View-local coordinate in model mm.
+        origin: View origin sheet coordinate for this axis.
+        scale: View scale.
+        gaps: Sorted, disjoint removed intervals from `shortening_gaps_from_boxes`.
+        gap_offset: Sheet-mm spacing Tekla draws between the halves at each
+            cut (the view's `Shortening.Offset`).
+    """
+    removed = 0.0
+    crossed = 0
+    for gap_start, gap_end in gaps:
+        if local >= gap_end:
+            removed += gap_end - gap_start
+            crossed += 1
+        elif local > gap_start:
+            removed += local - gap_start
+        else:
+            break
+    return origin + (local - removed) / scale + crossed * gap_offset
 
 
 def _point_to_segment_distance(px: float, py: float, seg: Segment) -> float:

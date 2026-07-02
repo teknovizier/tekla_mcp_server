@@ -242,6 +242,27 @@ class TeklaDrawingView:
             logger.warning("get_all_objects() failed for view '%s': %s", self.view_key, e)
             return None
 
+    def get_shortening(self) -> tuple[list[tuple[float, float, float, float]], float]:
+        """
+        Return the view's visible-area boxes and the shortening seam offset.
+
+        A view with part shortening renders only the regions inside its
+        visible-area restriction boxes (view-local model mm). Two or more
+        boxes mean the space between them is cut out of the rendered view,
+        with `offset` sheet mm drawn between the halves at each cut.
+
+        Returns:
+            Tuple of (boxes, offset). Each box is (xmin, ymin, xmax, ymax).
+            Returns ([], 0.0) if the query fails.
+        """
+        try:
+            boxes = [(b.MinPoint.X, b.MinPoint.Y, b.MaxPoint.X, b.MaxPoint.Y) for b in self._view.GetVisibleAreaRestrictionBoxes()]
+            offset = float(self._view.Attributes.Shortening.Offset)
+            return boxes, offset
+        except Exception as e:
+            logger.warning("get_shortening() failed for view '%s': %s", self.view_key, e)
+            return [], 0.0
+
     def get_section_marks(self) -> list[tuple[str, SectionMark]]:
         """
         Return all SectionMark objects in this view as (mark_name, mark) tuples.

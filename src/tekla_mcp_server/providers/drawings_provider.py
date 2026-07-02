@@ -65,7 +65,8 @@ from tekla_mcp_server.dxf_operations import (
     run_collision_checks,
     resolve_entities,
     collect_attach_targets,
-    view_local_to_sheet,
+    shortened_axis_to_sheet,
+    shortening_gaps_from_boxes,
     dimension_point_is_attached,
     AttachTargets,
     MARK_CLOUD_MARGIN,
@@ -1947,8 +1948,10 @@ def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: 
 
     Reads every StraightDimension's StartPoint/EndPoint from each non-sheet
     view, transforms them to sheet coordinates, and tests each against the DXF
-    attach targets. Points that round to the same sheet location (chained
-    dimensions share endpoints) are deduplicated so each gets one cloud.
+    attach targets. Views with part shortening render with the cut-out local
+    intervals collapsed, so the transform folds those gaps per axis (see
+    `shortened_axis_to_sheet`). Points that round to the same sheet location
+    (chained dimensions share endpoints) are deduplicated so each gets one cloud.
 
     Args:
         handler: Drawing handler with the target drawing already active.
@@ -1969,6 +1972,8 @@ def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: 
             continue
         origin_x, origin_y = view.origin
         scale = view.scale
+        boxes, gap_offset = view.get_shortening()
+        x_gaps, y_gaps = shortening_gaps_from_boxes(boxes)
         # GetAllObjects returns both a StraightDimensionSet and the
         # StraightDimensions it contains, so the same dimension can be
         # processed twice. Use the sheet endpoints to remove duplicates
@@ -1985,8 +1990,10 @@ def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: 
             for sp, ep in pairs:
                 if sp is None or ep is None:
                     continue
-                sx_sp, sy_sp = view_local_to_sheet(sp.X, sp.Y, origin_x, origin_y, scale)
-                sx_ep, sy_ep = view_local_to_sheet(ep.X, ep.Y, origin_x, origin_y, scale)
+                sx_sp = shortened_axis_to_sheet(sp.X, origin_x, scale, x_gaps, gap_offset)
+                sy_sp = shortened_axis_to_sheet(sp.Y, origin_y, scale, y_gaps, gap_offset)
+                sx_ep = shortened_axis_to_sheet(ep.X, origin_x, scale, x_gaps, gap_offset)
+                sy_ep = shortened_axis_to_sheet(ep.Y, origin_y, scale, y_gaps, gap_offset)
                 # Round coordinates to the tolerance grid so nearby duplicate points are
                 # treated as the same. This removes duplicate chain endpoints and repeated
                 # dimension points, while keeping points that are truly separate
