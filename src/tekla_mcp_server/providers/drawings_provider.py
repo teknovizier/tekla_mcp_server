@@ -53,6 +53,7 @@ from tekla_mcp_server.tekla.drawing_utils import (
     detect_sheet_grid,
     assign_sheet_number,
     draw_cloud_bbox,
+    color_for_issue_types,
     detect_section_parents,
     compute_section_alignment,
     categorize_drawing_object,
@@ -79,6 +80,7 @@ from tekla_mcp_server.tekla.loader import (
     BaseRebarGroup,
     BoltGroup,
     Cloud,
+    DrawingColors,
     DrawingConnection,
     DrawingModelObject,
     ModelObject,
@@ -1859,9 +1861,8 @@ def check_drawing_collisions(
                 # sheet coordinates map directly (no per-view origin transform needed)
                 sheet_view = next((v for v in tekla_views if v.is_sheet), None)
 
-                # Draw a magenta revision cloud in the sheet view for every issue bbox.
-                # DXF coordinates are in sheet mm - the sheet view's coordinate system
-                # is identical, so no transform needed
+                # Draw a colored revision cloud for each issue bbox in the sheet view
+                # DXF coordinates match sheet view coordinates directly
                 cloud_count = 0
                 cloud_failures = 0
 
@@ -1869,7 +1870,7 @@ def check_drawing_collisions(
                     if sheet_view is None:
                         cloud_failures += 1
                         continue
-                    if draw_cloud_bbox(sheet_view.view, issue.bbox, margin=issue.margin):
+                    if draw_cloud_bbox(sheet_view.view, issue.bbox, margin=issue.margin, color=color_for_issue_types(issue.types)):
                         cloud_count += 1
                     else:
                         cloud_failures += 1
@@ -2088,7 +2089,7 @@ def check_for_unattached_dimensions(
                     bbox = BBox(pt["x"], pt["y"], pt["x"], pt["y"])
                     # Half the mark-cloud margin - a dimension point needs a tighter cloud
                     cloud_margin = MARK_CLOUD_MARGIN / 2
-                    if sheet_view is not None and draw_cloud_bbox(sheet_view.view, bbox, margin=(cloud_margin, cloud_margin)):
+                    if sheet_view is not None and draw_cloud_bbox(sheet_view.view, bbox, margin=(cloud_margin, cloud_margin), color=DrawingColors.Magenta):
                         cloud_count += 1
                     else:
                         cloud_failures += 1

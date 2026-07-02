@@ -17,11 +17,12 @@ if os.getenv("CI") == "true":
 from tekla_mcp_server.tekla.drawing_utils import (
     _extract_mark_target,
     assign_sheet_number,
+    color_for_issue_types,
     compute_section_alignment,
     detect_section_parents,
     detect_sheet_grid,
 )
-from tekla_mcp_server.tekla.loader import DotPrintPaperSize
+from tekla_mcp_server.tekla.loader import DotPrintPaperSize, DrawingColors
 
 
 class StubEnumerator:
@@ -291,3 +292,33 @@ class TestAssignSheetNumber:
         # past the grid's right edge (420), and y range 250-350 spans the
         # row_from_bottom=0/1 boundary (as in test_view_mostly_on_lower_sheet_assigned_there).
         assert assign_sheet_number(350.0, 250.0, 100.0, 100.0, self.TILE_WIDTH, self.TILE_HEIGHT, self.COLS, self.ROWS) == 3
+
+
+class TestColorForIssueTypes:
+    """Tests for `color_for_issue_types` - the cloud color lookup for a merged collision issue."""
+
+    def test_single_type_returns_mapped_color(self):
+        assert color_for_issue_types({"cross_sheet_collision"}) == DrawingColors.Red
+
+    def test_each_geometry_collision_type_maps_to_red(self):
+        for type_ in ("cross_sheet_collision", "cross_view_same_sheet_collision", "collides_with_sheet"):
+            assert color_for_issue_types({type_}) == DrawingColors.Red
+
+    def test_each_marks_overlap_type_maps_to_blue(self):
+        for type_ in ("marks_text_overlap", "marks_leader_overlap", "marks_text_leader_overlap"):
+            assert color_for_issue_types({type_}) == DrawingColors.Blue
+
+    def test_each_outside_sheet_type_maps_to_cyan(self):
+        for type_ in ("out_of_grid_with_content", "content_out_of_sheet"):
+            assert color_for_issue_types({type_}) == DrawingColors.Cyan
+
+    def test_multiple_types_first_declared_match_wins(self):
+        # collides_with_sheet (Red) is declared before content_out_of_sheet (Cyan)
+        # in _ISSUE_COLOR_MAP, so a merged issue carrying both resolves to Red.
+        assert color_for_issue_types({"content_out_of_sheet", "collides_with_sheet"}) == DrawingColors.Red
+
+    def test_unknown_type_falls_back_to_magenta(self):
+        assert color_for_issue_types({"some_future_check"}) == DrawingColors.Magenta
+
+    def test_empty_types_falls_back_to_magenta(self):
+        assert color_for_issue_types(set()) == DrawingColors.Magenta

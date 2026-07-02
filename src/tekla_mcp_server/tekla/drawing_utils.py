@@ -512,6 +512,36 @@ def assign_sheet_number(
     return best_sheet_number
 
 
+# Cloud colors keyed by issue type. First matching type wins (declaration order).
+# Types not listed (and unattached-dimension checks) fall back to DrawingColors.Magenta.
+_ISSUE_COLOR_MAP: dict[str, DrawingColors] = {
+    "cross_sheet_collision": DrawingColors.Red,
+    "cross_view_same_sheet_collision": DrawingColors.Red,
+    "collides_with_sheet": DrawingColors.Red,
+    "marks_text_overlap": DrawingColors.Blue,
+    "marks_leader_overlap": DrawingColors.Blue,
+    "marks_text_leader_overlap": DrawingColors.Blue,
+    "out_of_grid_with_content": DrawingColors.Cyan,
+    "content_out_of_sheet": DrawingColors.Cyan,
+}
+
+
+def color_for_issue_types(types: set[str]) -> DrawingColors:
+    """
+    Map a collision issue's types to a revision cloud color.
+
+    Args:
+        types: The issue's merged type strings.
+
+    Returns:
+        DrawingColors value for the cloud.
+    """
+    for type_, color in _ISSUE_COLOR_MAP.items():
+        if type_ in types:
+            return color
+    return DrawingColors.Magenta
+
+
 def draw_cloud_bbox(view: DrawingView, bbox: BBox, margin: tuple[float, float], color: Any = DrawingColors.Magenta) -> bool:
     """
     Draw a revision cloud around a bounding box in the given drawing view.
