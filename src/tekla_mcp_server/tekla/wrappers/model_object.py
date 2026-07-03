@@ -660,6 +660,8 @@ class TeklaBoltGroup(TeklaModelObject):
             if not isinstance(part, Part):
                 return PartReference(guid=None, name=None, position=None)
             wrapped = wrap_model_object(part)
+            if not isinstance(wrapped, TeklaPart):
+                return PartReference(guid=None, name=None, position=None)
             return PartReference(guid=wrapped.guid, name=wrapped.name, position=wrapped.position)
 
         return BoltedParts(
