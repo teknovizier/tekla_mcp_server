@@ -64,6 +64,7 @@ from tekla_mcp_server.tekla.drawing_utils import (
 from tekla_mcp_server.dxf_operations import (
     run_collision_checks,
     resolve_entities,
+    align_entities_to_sheet,
     collect_attach_targets,
     shortened_axis_to_sheet,
     shortening_gaps_from_boxes,
@@ -1847,23 +1848,23 @@ def check_drawing_collisions(
                 doc = ezdxf.readfile(str(dxf_path))
                 msp = doc.modelspace()
 
-                # Get Tekla view metadata (frame positions, sheet placement, etc.) once -
-                # both the dict views (for the checks below) and the raw views (to find
-                # the sheet view object) come from this single Tekla API enumeration
+                # Get Tekla view metadata (frame positions, sheet placement) once -
+                # both dict views (for checks) and raw views (to find the sheet
+                # view object) come from this single API call
                 tekla_views, views, _sheet_count = _resolve_drawing_views(handler, drawing)
 
-                # Flatten all entities from view blocks into world-space sheet coordinates
+                # Flatten view blocks into world-space sheet coordinates
                 entities = resolve_entities(doc, msp)
+                # Normalize export origin to sheet coordinates
+                align_entities_to_sheet(entities)
                 logger.info("[%d/%d] Running collision checks for '%s' (%d entities)...", i, drawing_count, mark, len(entities))
-                # Run all checks (registered in CHECKS list), merge nearby duplicates
+                # Run all checks and merge nearby duplicates
                 issues = run_collision_checks(views, entities)
 
-                # Draw revision clouds in Tekla - use the sheet view so that DXF
-                # sheet coordinates map directly (no per-view origin transform needed)
+                # Use the sheet view so DXF coordinates map directly
                 sheet_view = next((v for v in tekla_views if v.is_sheet), None)
 
-                # Draw a colored revision cloud for each issue bbox in the sheet view
-                # DXF coordinates match sheet view coordinates directly
+                # Draw a colored revision cloud for each issue bbox
                 cloud_count = 0
                 cloud_failures = 0
 
@@ -1900,7 +1901,7 @@ def check_drawing_collisions(
             finally:
                 handler.close_active_drawing(save=True)
     finally:
-        # Clean up all exported DXFs (they were only needed for analysis)
+        # Clean up exported DXFs
         for p in dxf_paths_by_mark.values():
             try:
                 p.unlink()
@@ -1908,10 +1909,9 @@ def check_drawing_collisions(
             except Exception as e:
                 logger.warning("Failed to delete DXF '%s': %s", p, e)
 
-    # Group all issues by category for the final report. A merged issue can carry
-    # more than one underlying check type (e.g. collides_with_sheet + marks_text_overlap)
-    # - it's counted under every one of those types, not under a single composite
-    # key, so per-category counts stay accurate even after merging
+    # Group issues by category for the report. A merged issue can have
+    # multiple check types (e.g. collides_with_sheet + marks_text_overlap)
+    # - counted under each type, not one composite key
     issues_by_category: dict[str, list[dict]] = {}
     for issue in all_issues:
         entry = {
@@ -1942,26 +1942,52 @@ def check_drawing_collisions(
     return ToolResult(structured_content=result)
 
 
+def _dimension_lost_all_anchors(dim: Any) -> bool:
+    """
+    True if a drawing dimension has no model objects left to anchor to.
+
+    `GetRelatedObjects()` returns the dimension's associated model objects.
+    When all anchors were deleted, the list is empty - the dimension is
+    dangling even if its points happen to sit on other drawn geometry.
+    A non-empty list must never rescue a geometrically unattached point,
+    since Tekla keeps associativity for dimensions pointing at nothing.
+
+    Fails OPEN: on API error returns False, falling back to the geometric
+    test. This avoids false positives but means a dangling dimension whose
+    enumeration throws is not caught here.
+    """
+    try:
+        enum = dim.GetRelatedObjects()
+        while enum.MoveNext():
+            if isinstance(enum.Current, DrawingModelObject):
+                return False
+        return True
+    except Exception as e:
+        logger.warning("GetRelatedObjects failed for dimension, treating as anchored: %s", e)
+        return False
+
+
 def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: AttachTargets) -> tuple[int, list[dict[str, Any]]]:
     """
     Find dimension points in the active drawing not attached to valid geometry.
 
-    Reads every StraightDimension's StartPoint/EndPoint from each non-sheet
-    view, transforms them to sheet coordinates, and tests each against the DXF
-    attach targets. Views with part shortening render with the cut-out local
-    intervals collapsed, so the transform folds those gaps per axis (see
-    `shortened_axis_to_sheet`). Points that round to the same sheet location
-    (chained dimensions share endpoints) are deduplicated so each gets one cloud.
+    Reads each StraightDimension's StartPoint/EndPoint from non-sheet views,
+    transforms to sheet coordinates, and tests against DXF attach targets.
+    Views with part shortening collapse the cut-out intervals per axis
+    (see `shortened_axis_to_sheet`). A dimension that lost all model anchors
+    is flagged at both endpoints regardless of geometry
+    (see `_dimension_lost_all_anchors`). Points at the same sheet location
+    are deduplicated so each gets one cloud.
 
     Args:
-        handler: Drawing handler with the target drawing already active.
-        targets: `AttachTargets` collected from the DXF.
+        handler: Drawing handler with the target drawing active.
+        targets: `AttachTargets` from the DXF.
 
     Returns:
-        Tuple of (dimension points checked, unattached point dicts). Each dict
-        carries sheet `x`/`y` and the source `view`.
+        Tuple of (points checked, unattached point dicts). Each dict
+        has sheet `x`/`y` and the source `view`.
     """
-    tol = get_tolerance("dimension_snap", default=0.1, group="drawings")
+    tol = get_tolerance("dimension_snap", default=0.5, group="drawings")
     checked = 0
     unattached: dict[tuple[int, int], dict[str, Any]] = {}
     for view in handler.get_drawing_views():
@@ -1974,38 +2000,38 @@ def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: 
         scale = view.scale
         boxes, gap_offset = view.get_shortening()
         x_gaps, y_gaps = shortening_gaps_from_boxes(boxes)
-        # GetAllObjects returns both a StraightDimensionSet and the
-        # StraightDimensions it contains, so the same dimension can be
-        # processed twice. Use the sheet endpoints to remove duplicates
+        # GetAllObjects returns both the set and its contained dimensions,
+        # so the same dimension can be seen twice. Dedup by sheet endpoints
         seen_pairs: set[tuple[tuple[int, int], tuple[int, int]]] = set()
         for d in dims:
-            pairs: list[tuple[Any, Any]] = []
+            pairs: list[tuple[Any, Any, Any]] = []
             if isinstance(d, StraightDimensionSet):
                 enum = d.GetObjects()
                 while enum.MoveNext():
                     sd = enum.Current
-                    pairs.append((sd.StartPoint, sd.EndPoint))
+                    pairs.append((sd.StartPoint, sd.EndPoint, sd))
             else:
-                pairs.append((d.StartPoint, d.EndPoint))
-            for sp, ep in pairs:
+                pairs.append((d.StartPoint, d.EndPoint, d))
+            for sp, ep, dim in pairs:
                 if sp is None or ep is None:
                     continue
                 sx_sp = shortened_axis_to_sheet(sp.X, origin_x, scale, x_gaps, gap_offset)
                 sy_sp = shortened_axis_to_sheet(sp.Y, origin_y, scale, y_gaps, gap_offset)
                 sx_ep = shortened_axis_to_sheet(ep.X, origin_x, scale, x_gaps, gap_offset)
                 sy_ep = shortened_axis_to_sheet(ep.Y, origin_y, scale, y_gaps, gap_offset)
-                # Round coordinates to the tolerance grid so nearby duplicate points are
-                # treated as the same. This removes duplicate chain endpoints and repeated
-                # dimension points, while keeping points that are truly separate
+                # Round to tolerance grid so nearby duplicate points are treated
+                # as the same (removes chain endpoints and repeats)
                 end_a, end_b = (round(sx_sp / tol), round(sy_sp / tol)), (round(sx_ep / tol), round(sy_ep / tol))
                 pair_key = (end_a, end_b) if end_a <= end_b else (end_b, end_a)
                 if pair_key in seen_pairs:
                     continue
                 seen_pairs.add(pair_key)
                 dim_is_vertical = abs(sx_sp - sx_ep) < abs(sy_sp - sy_ep)
+                # A dimension with no model anchors left dangles at both ends
+                dangling_dim = _dimension_lost_all_anchors(dim)
                 for sx, sy in ((sx_sp, sy_sp), (sx_ep, sy_ep)):
                     checked += 1
-                    if dimension_point_is_attached(sx, sy, targets, tol, dim_is_vertical):
+                    if not dangling_dim and dimension_point_is_attached(sx, sy, targets, tol, dim_is_vertical):
                         continue
                     key = (round(sx / tol), round(sy / tol))
                     unattached.setdefault(key, {"x": round(sx, 1), "y": round(sy, 1), "view": view.view_key})
@@ -2080,7 +2106,10 @@ def check_for_unattached_dimensions(
 
             try:
                 doc = ezdxf.readfile(str(dxf_path))
-                entities = resolve_entities(doc, doc.modelspace())
+                # Include hatches for rebar/bolt cross-section dot targets
+                entities = resolve_entities(doc, doc.modelspace(), include_hatches=True)
+                # Normalize export origin to sheet coordinates
+                align_entities_to_sheet(entities)
                 targets = collect_attach_targets(entities)
 
                 checked, unattached = _collect_unattached_dimension_points(handler, targets)

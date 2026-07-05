@@ -7,16 +7,69 @@ where Tekla is not available, since `drawings_provider` transitively imports `te
 
 import os
 from dataclasses import asdict
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_mcp_server.providers.drawings_provider import _classify_unmarked_category, _describe_wrapped_object, _wait_for_new_files
+from tekla_mcp_server.providers.drawings_provider import _classify_unmarked_category, _describe_wrapped_object, _dimension_lost_all_anchors, _wait_for_new_files
 from tekla_mcp_server.tekla.loader import BoltArray, BoltXYList
 from tekla_mcp_server.tekla.wrappers.model_object import BoltedParts, PartReference, TeklaBoltGroup
+
+
+class _StubModelObject:
+    """Stand-in for DrawingModelObject - .NET types don't satisfy
+    isinstance against a MagicMock spec, so we patch the module name."""
+
+
+class _RelatedEnum:
+    """Minimal .NET-style enumerator over a fixed list."""
+
+    def __init__(self, items):
+        self._items = list(items)
+        self._i = -1
+
+    def MoveNext(self) -> bool:
+        self._i += 1
+        return self._i < len(self._items)
+
+    @property
+    def Current(self):
+        return self._items[self._i]
+
+
+def _dim_with_related(items):
+    """Stub dimension with GetRelatedObjects yielding `items`."""
+    dim = MagicMock()
+    dim.GetRelatedObjects.return_value = _RelatedEnum(items)
+    return dim
+
+
+def test_dimension_lost_all_anchors_true_when_no_related_objects():
+    # All anchors deleted -> empty list -> dangling
+    assert _dimension_lost_all_anchors(_dim_with_related([])) is True
+
+
+def test_dimension_lost_all_anchors_false_when_a_model_object_remains():
+    # A live model object representation -> still anchored
+    with patch("tekla_mcp_server.providers.drawings_provider.DrawingModelObject", _StubModelObject):
+        assert _dimension_lost_all_anchors(_dim_with_related([_StubModelObject()])) is False
+
+
+def test_dimension_lost_all_anchors_true_when_only_non_model_objects():
+    # Non-model objects (e.g. annotations) do not count as anchors
+    assert _dimension_lost_all_anchors(_dim_with_related([object(), object()])) is True
+
+
+def test_dimension_lost_all_anchors_fails_open_on_api_error():
+    # Fail OPEN: an API error must not force-flag - fall back to geometry.
+    # This is the anti-false-positive choice, at the cost of missing a dangle
+    # whose enumeration throws
+    dim = MagicMock()
+    dim.GetRelatedObjects.side_effect = RuntimeError("COM boom")
+    assert _dimension_lost_all_anchors(dim) is False
 
 
 def test_returns_immediately_when_already_satisfied(tmp_path):
