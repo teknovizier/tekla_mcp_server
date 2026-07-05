@@ -181,6 +181,14 @@ class TeklaDrawing:
         """
         return self.drawing.CommitMessage
 
+    @property
+    def sheet_size(self) -> tuple[float, float]:
+        """
+        Returns the drawing sheet size as (width, height) in mm.
+        """
+        size = self.drawing.Layout.SheetSize
+        return size.Width, size.Height
+
     def modify(self) -> bool:
         """
         Modifies the drawing in the database. Returns True on success.

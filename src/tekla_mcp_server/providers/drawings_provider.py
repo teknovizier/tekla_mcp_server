@@ -314,12 +314,12 @@ def get_drawings(
         }
     }
 
-    # Get drawings with mark starting with "HCS" (multiple conditions)
+    # Get drawings with mark starting with "HCS" or "W" (multiple conditions)
     {
         "mark_filter": {
             "conditions": [
                 {"match_type": "Starts With", "value": "HCS"},
-                {"match_type": "Starts With", "value": "HCS"}
+                {"match_type": "Starts With", "value": "W"}
             ],
             "logic": "OR"
         }
@@ -419,7 +419,7 @@ def set_drawings_properties(
         "udas": 0,
     }
     modified_count = 0
-    property_errors: list[dict] = []
+    property_errors: list[dict[str, Any]] = []
 
     for drawing in target_drawings:
         try:
@@ -430,7 +430,7 @@ def set_drawings_properties(
                 title3=title3,
                 user_properties=user_properties_or_none,
             )
-            elem_errors: list[dict] = changes.pop("errors", [])
+            elem_errors: list[dict[str, Any]] = changes.pop("errors", [])
             for key, value in changes.items():
                 if key in total_changes:
                     total_changes[key] += value
@@ -443,8 +443,11 @@ def set_drawings_properties(
             if elem_errors:
                 logger.warning("Property errors on drawing %s: %s", drawing.mark, elem_errors)
                 property_errors.append({"mark": drawing.mark, "errors": elem_errors})
-        except Exception:
+        except Exception as e:
+            # A drawing that throws outright must still be reported, not silently
+            # dropped - otherwise the tool can return success over a hard failure
             logger.exception("Failed to set properties on drawing %s", drawing.mark)
+            property_errors.append({"mark": drawing.mark, "errors": [{"property": "exception", "reason": str(e)}]})
 
     if modified_count > 0 and property_errors:
         status = "partial"
@@ -452,6 +455,9 @@ def set_drawings_properties(
     elif modified_count > 0:
         status = "success"
         message = f"Successfully modified {modified_count} drawing(s)"
+    elif property_errors:
+        status = "error"
+        message = f"Failed to modify {len(property_errors)} drawing(s)"
     else:
         status = "warning"
         message = "No drawings were modified"
@@ -511,6 +517,9 @@ def set_drawings_issue_state(
     elif modified_count > 0:
         status = "success"
         message = f"Successfully {action}d {modified_count} drawing(s)"
+    elif errors:
+        status = "error"
+        message = f"Failed to {action} {len(errors)} drawing(s)"
     else:
         status = "warning"
         message = f"No drawings were {action}d"
@@ -568,8 +577,8 @@ def update_drawings(
         if skipped_count > 0:
             message += f", {skipped_count} already up to date"
     elif errors:
-        status = "warning"
-        message = "No drawings were updated"
+        status = "error"
+        message = f"Failed to update {len(errors)} drawing(s)"
     else:
         status = "success"
         message = f"All {skipped_count} drawing(s) were already up to date"
@@ -722,6 +731,7 @@ def print_drawings(
 
     produced_files: list[Path] = []
     errors: dict[str, str] = {}
+    warnings: list[dict[str, Any]] = []
 
     # Group drawings by detected paper size/orientation/multi-sheet signature so
     # drawings sharing the same settings print together in one macro call.
@@ -729,11 +739,11 @@ def print_drawings(
     # multi-sheet drawing's tiles become pages within that one file, not
     # separate files. Filenames cannot be reliably attributed back to a
     # specific mark within a batch, so results are reported at the batch
-    # level (`files`) plus per-mark failures (`errors`)
+    # level (`files`), with true per-mark failures in `errors` and batch-level
+    # file-count shortfalls in `warnings`
     groups: dict[tuple[str, bool, str], list[TeklaDrawing]] = {}
     for drawing in target_drawings:
-        sheet_width = drawing.drawing.Layout.SheetSize.Width
-        sheet_height = drawing.drawing.Layout.SheetSize.Height
+        sheet_width, sheet_height = drawing.sheet_size
 
         paper_size = map_sheet_size_to_paper_size(sheet_width, sheet_height)
         is_multi_sheet = False
@@ -782,13 +792,25 @@ def print_drawings(
             logger.info("Printing %d drawing(s) [%s, %s, multi_sheet=%s, single_file=%s] -> %s", group_size, paper_size_str, orientation, is_multi_sheet, single_file_output, output_dir)
             produced = _run_print_macro(model_path, PDF_BASE_SETTING, group_marks, _poll)
 
-            if len(produced) >= expected_files:
-                produced_files.extend(produced)
-            else:
+            produced_files.extend(produced)
+            if len(produced) < expected_files:
+                # A file-count shortfall cannot be attributed to specific marks
+                # in the batch - some of these drawings may well have printed.
+                # Report it once at the batch level instead of fabricating an
+                # identical error for every mark in the group
                 message = f"Expected {expected_files} file(s) for {group_size} drawing(s), found {len(produced)} in the output folder."
                 logger.warning("Group [%s, %s, multi_sheet=%s]: %s", paper_size_str, orientation, is_multi_sheet, message)
-                for mark in group_marks:
-                    errors[mark] = message
+                warnings.append(
+                    {
+                        "marks": group_marks,
+                        "paper_size": paper_size_str,
+                        "orientation": orientation,
+                        "multi_sheet": is_multi_sheet,
+                        "expected_files": expected_files,
+                        "found_files": len(produced),
+                        "message": message,
+                    }
+                )
 
         except Exception as e:
             logger.error("Failed to print group [%s, %s, multi_sheet=%s]: %s", paper_size_str, orientation, is_multi_sheet, str(e))
@@ -796,7 +818,12 @@ def print_drawings(
                 errors[mark] = str(e)
 
     exported_count = len(target_drawings) - len(errors)
-    status = "success" if not errors else "partial" if exported_count > 0 else "error"
+    if not errors and not warnings:
+        status = "success"
+    elif exported_count > 0:
+        status = "partial"
+    else:
+        status = "error"
 
     result: dict[str, Any] = {
         "status": status,
@@ -804,6 +831,7 @@ def print_drawings(
         "total": len(target_drawings),
         "exported": exported_count,
         "files": sorted(p.name for p in produced_files),
+        "warnings": warnings,
         "errors": errors,
     }
     return ToolResult(structured_content=result)
@@ -1026,8 +1054,7 @@ def _resolve_drawing_views(handler: TeklaDrawingHandler, active: TeklaDrawing) -
     """
     # Authoritative source for sheet_count/tiling math below - not guaranteed
     # identical to the sheet view's own width/height in the dict representation
-    sheet_width = active.drawing.Layout.SheetSize.Width
-    sheet_height = active.drawing.Layout.SheetSize.Height
+    sheet_width, sheet_height = active.sheet_size
 
     tekla_views = handler.get_drawing_views()
 
@@ -1236,18 +1263,21 @@ def _classify_unmarked_category(model_obj: ModelObject) -> str | None:
     return None
 
 
-def _find_unmarked_in_view(view: TeklaDrawingView, model: TeklaModel, wanted_categories: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _find_unmarked_in_view(view: TeklaDrawingView, model: TeklaModel, wanted_categories: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
     """
     Diff one view's model objects against its marks, scoped to `wanted_categories`.
 
     Returns:
-        Tuple of (every checked unit, the subset with no mark).
+        Tuple of (every checked unit, the subset with no mark, count of view
+        objects that could not be resolved to a model object). The unresolved
+        count is surfaced so a checker that quietly dropped objects does not
+        report a clean result.
     """
     # Sheet view aggregates objects from all child views - it has none of its own
     if view.is_sheet:
-        return [], []
+        return [], [], 0
 
-    resolved, _, _ = _resolve_view_model_objects(view, model, promote_embedded_details="parts" in wanted_categories)
+    resolved, _, unresolved_count = _resolve_view_model_objects(view, model, promote_embedded_details="parts" in wanted_categories)
 
     # A "unit" is one counted entity - a standalone object, or an embedded
     # detail folded into its parent assembly. Keyed by GUID.
@@ -1310,7 +1340,7 @@ def _find_unmarked_in_view(view: TeklaDrawingView, model: TeklaModel, wanted_cat
 
     all_units = list(units.values())
     unmarked = [unit for unit in all_units if unit["guid"] not in marked_units]
-    return all_units, unmarked
+    return all_units, unmarked, unresolved_count
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -1335,8 +1365,10 @@ def check_for_unmarked_objects(
 
     counts_by_category: dict[str, dict[str, int]] = {category: {"total": 0, "missing": 0} for category in wanted_categories}
     unmarked: list[dict[str, Any]] = []
+    unresolved_count = 0
     for view in views:
-        all_units, view_unmarked = _find_unmarked_in_view(view, model, wanted_categories)
+        all_units, view_unmarked, view_unresolved = _find_unmarked_in_view(view, model, wanted_categories)
+        unresolved_count += view_unresolved
         for unit in all_units:
             counts_by_category[unit["category"]]["total"] += 1
         for unit in view_unmarked:
@@ -1346,13 +1378,14 @@ def check_for_unmarked_objects(
     has_more = len(unmarked) > limit
     unmarked = unmarked[:limit]
 
-    logger.info("check_for_unmarked_objects: %d view(s) checked, %d unmarked object(s) found", len(views), len(unmarked))
+    logger.info("check_for_unmarked_objects: %d view(s) checked, %d unmarked object(s) found, %d unresolved", len(views), len(unmarked), unresolved_count)
     return ToolResult(
         structured_content={
             "status": "success",
             "view_keys_checked": [v.view_key for v in views],
             "categories_checked": sorted(wanted_categories),
             "counts_by_category": counts_by_category,
+            "unresolved_count": unresolved_count,
             "unmarked": unmarked,
             "limit": limit,
             "has_more": has_more,
@@ -1425,6 +1458,7 @@ def align_section_views(
     target_set: set[str] | None = None
     moves: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
     if view_keys:
         missing = [k for k in view_keys if k not in by_key]
         if missing:
@@ -1480,8 +1514,16 @@ def align_section_views(
 
         ox, oy = v.origin
         v.origin = (ox + delta, oy) if axis == "x" else (ox, oy + delta)
-        if not v.modify():
-            raise RuntimeError(f"Failed to align view '{v.view_key}'.")
+        # Collect per-view failures and keep going, rather than aborting mid-loop
+        # and stranding views already moved in this pass
+        try:
+            if not v.modify():
+                failed.append({"view_key": v.view_key, "view_name": v.name, "reason": "Modify() returned False"})
+                continue
+        except Exception as e:
+            logger.error("Failed to align view %s: %s", v.view_key, e)
+            failed.append({"view_key": v.view_key, "view_name": v.name, "reason": str(e)})
+            continue
         moves.append(
             {
                 "view_key": v.view_key,
@@ -1495,14 +1537,17 @@ def align_section_views(
     if moves and not drawing.commit_changes():
         raise RuntimeError("CommitChanges() failed after aligning section views.")
 
-    logger.info("align_section_views: aligned %d section view(s), skipped %d", len(moves), len(skipped))
+    status = "partial" if moves and failed else "success" if moves else "error" if failed else "warning"
+    logger.info("align_section_views: aligned %d section view(s), skipped %d, failed %d", len(moves), len(skipped), len(failed))
     return ToolResult(
         structured_content={
-            "status": "success" if moves else "warning",
+            "status": status,
             "aligned_count": len(moves),
             "moves": moves,
             "skipped_count": len(skipped),
             "skipped": skipped,
+            "failed_count": len(failed),
+            "failed": failed,
         }
     )
 
@@ -1765,25 +1810,42 @@ def _export_drawings_to_dxf(
     return {mark: _export_one_drawing_to_dxf(model_path, plotfiles_dir, mark) for mark in expected_marks}
 
 
-@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
-@mcp_handler(scope="tool")
-def check_drawing_collisions(
-    marks: Annotated[list[str] | None, Field(description="Drawing marks to check. Uses Document Manager selection when omitted.")] = None,
-) -> ToolResult:
+def _run_dxf_drawing_check(
+    marks: list[str] | None,
+    busy_message: str,
+    log_prefix: str,
+    process: Callable[[TeklaDrawingHandler, TeklaDrawing, Path], dict[str, Any]],
+) -> list[dict[str, Any]]:
     """
-    Detect mark collisions in selected drawings by exporting to DXF and analysing geometry overlaps.
+    Shared scaffolding for the DXF-export drawing checks.
 
-    Select drawings in the Document Manager first or pass the `marks` parameter.
-    Magenta revision clouds are drawn at every found collision.
+    Guards that no drawing is open, resolves the selected drawings, enforces
+    up-to-date status, and exports each to DXF. Then for every drawing it
+    re-checks the drawing is still current (the export can take up to the
+    export timeout), opens it, runs `process`, and closes it saving. Exported
+    DXFs are always cleaned up, even if a drawing raises.
+
+    Args:
+        marks: Drawing marks to check, or None to use the Document Manager selection.
+        busy_message: Error raised when a drawing is already open.
+        log_prefix: Tool name used in log lines and failure records.
+        process: Per-drawing callback given the handler, the active drawing and
+            its DXF path. Returns that drawing's result dict with a "success"
+            status. Any exception raised by it is recorded as a per-drawing error.
+
+    Returns:
+        One result dict per selected drawing, in selection order.
+
+    Raises:
+        RuntimeError: If a drawing is already open.
+        ValueError: If no drawings are selected or any is out of date.
     """
-
     handler = TeklaDrawingHandler()
 
     if handler.get_active_drawing() is not None:
-        raise RuntimeError("A drawing is currently open. Close it first with `close_drawing` before running collision checks.")
+        raise RuntimeError(busy_message)
 
-    model = TeklaModel()
-    model_path = model.model_path
+    model_path = TeklaModel().model_path
     plotfiles_dir = Path(model_path) / "Plotfiles"
 
     selected = handler.get_drawings_by_marks(marks or None)
@@ -1791,8 +1853,6 @@ def check_drawing_collisions(
         raise ValueError("No drawings selected in Document Manager.")
 
     drawing_count = len(selected)
-    logger.info("check_drawing_collisions: %d drawing(s) selected", drawing_count)
-
     expected_marks = [d.mark for d in selected]
 
     outdated = [d.mark for d in selected if d.up_to_date_status != "DrawingIsUpToDate"]
@@ -1800,104 +1860,46 @@ def check_drawing_collisions(
         details = {d.mark: d.up_to_date_status for d in selected if d.up_to_date_status != "DrawingIsUpToDate"}
         raise ValueError(f"The following drawing(s) must be updated first: {outdated}. Status: {details}")
 
-    logger.info("Exporting %d drawing(s) to DXF...", drawing_count)
+    logger.info("%s: exporting %d drawing(s) to DXF...", log_prefix, drawing_count)
     dxf_paths_by_mark = _export_drawings_to_dxf(model_path, plotfiles_dir, expected_marks)
 
-    all_issues: list = []
-    total_clouds_drawn = 0
-    total_cloud_failures = 0
-    per_drawing_results: list[dict] = []
+    per_drawing_results: list[dict[str, Any]] = []
 
-    # For each selected drawing: open → read its DXF → run collision checks →
-    # draw magenta revision clouds in Tekla sheet view → save → close.
-    # The whole loop is wrapped in try/finally so the exported DXFs are always
-    # cleaned up below, even if a drawing's processing raises something the
-    # per-drawing except doesn't catch
-    def _fail(mark: str, message: str, log_message: str) -> None:
-        """Record a per-drawing error and log it. Caller still needs its own `continue`."""
+    def _fail(mark: str, message: str) -> None:
         per_drawing_results.append({"mark": mark, "status": "error", "message": message})
-        logger.warning("check_drawing_collisions: %s", log_message)
+        logger.warning("%s: %s", log_prefix, message)
 
+    # The whole loop is wrapped in try/finally so the exported DXFs are always
+    # cleaned up below, even if a drawing's processing raises
     try:
         for i, drawing in enumerate(selected, 1):
             mark = drawing.mark
-            logger.info("[%d/%d] Opening '%s'...", i, drawing_count, mark)
+            logger.info("[%d/%d] Processing '%s'...", i, drawing_count, mark)
             dxf_path = dxf_paths_by_mark.get(mark)
             if dxf_path is None or not dxf_path.exists():
-                _fail(mark, f"No matching DXF for mark '{mark}'.", f"no DXF found for drawing '{mark}'")
+                _fail(mark, f"No matching DXF for mark '{mark}'.")
                 continue
 
-            # The drawing's up-to-date status was checked before exporting, but the
-            # export itself can take up to 120s - re-check against the model now,
-            # right before using its DXF, in case another process modified it meanwhile
+            # The up-to-date status was checked before exporting, but the export
+            # itself can take up to the export timeout - re-fetch and re-check
+            # now, right before using the DXF, in case another process modified it
             try:
                 drawing = handler.get_drawings_by_marks([mark])[0]
             except ValueError:
-                _fail(mark, "Drawing no longer found.", f"drawing '{mark}' no longer found")
+                _fail(mark, f"Drawing '{mark}' no longer found.")
                 continue
             if drawing.up_to_date_status != "DrawingIsUpToDate":
-                _fail(mark, f"Drawing became out of date during export (status: {drawing.up_to_date_status}).", f"drawing '{mark}' became out of date during export")
+                _fail(mark, f"Drawing '{mark}' became out of date during export (status: {drawing.up_to_date_status}).")
                 continue
-
             if not handler.set_active_drawing(drawing):
-                _fail(mark, "Failed to open drawing", f"failed to open drawing '{mark}'")
+                _fail(mark, f"Failed to open drawing '{mark}'.")
                 continue
 
             try:
-                # Read the DXF, flatten block inserts to sheet coordinates
-                doc = ezdxf.readfile(str(dxf_path))
-                msp = doc.modelspace()
-
-                # Get Tekla view metadata (frame positions, sheet placement) once -
-                # both dict views (for checks) and raw views (to find the sheet
-                # view object) come from this single API call
-                tekla_views, views, _sheet_count = _resolve_drawing_views(handler, drawing)
-
-                # Flatten view blocks into world-space sheet coordinates
-                entities = resolve_entities(doc, msp)
-                # Normalize export origin to sheet coordinates
-                align_entities_to_sheet(entities)
-                logger.info("[%d/%d] Running collision checks for '%s' (%d entities)...", i, drawing_count, mark, len(entities))
-                # Run all checks and merge nearby duplicates
-                issues = run_collision_checks(views, entities)
-
-                # Use the sheet view so DXF coordinates map directly
-                sheet_view = next((v for v in tekla_views if v.is_sheet), None)
-
-                # Draw a colored revision cloud for each issue bbox
-                cloud_count = 0
-                cloud_failures = 0
-
-                for issue in issues:
-                    if sheet_view is None:
-                        cloud_failures += 1
-                        continue
-                    if draw_cloud_bbox(sheet_view.view, issue.bbox, margin=issue.margin, color=color_for_issue_types(issue.types)):
-                        cloud_count += 1
-                    else:
-                        cloud_failures += 1
-
-                if cloud_count > 0 and not drawing.commit_changes():
-                    cloud_failures += cloud_count
-                    cloud_count = 0
-
-                total_clouds_drawn += cloud_count
-                total_cloud_failures += cloud_failures
-
-                per_drawing_results.append(
-                    {
-                        "mark": mark,
-                        "status": "success",
-                        "issues": len(issues),
-                        "clouds_drawn": cloud_count,
-                        "cloud_failures": cloud_failures,
-                    }
-                )
-                all_issues.extend(issues)
-                logger.info("check_drawing_collisions: '%s' - %d issue(s), %d cloud(s)", mark, len(issues), cloud_count)
+                per_drawing_results.append(process(handler, drawing, dxf_path))
             except Exception as e:
-                per_drawing_results.append({"mark": mark, "status": "error", "message": str(e)})
-                logger.error("check_drawing_collisions: error processing drawing '%s': %s", mark, e)
+                _fail(mark, f"Error processing drawing '{mark}': {e}")
+                logger.error("%s: error processing '%s': %s", log_prefix, mark, e)
             finally:
                 handler.close_active_drawing(save=True)
     finally:
@@ -1909,10 +1911,88 @@ def check_drawing_collisions(
             except Exception as e:
                 logger.warning("Failed to delete DXF '%s': %s", p, e)
 
+    return per_drawing_results
+
+
+@drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def check_drawing_collisions(
+    marks: Annotated[list[str] | None, Field(description="Drawing marks to check. Uses Document Manager selection when omitted.")] = None,
+) -> ToolResult:
+    """
+    Detect mark collisions in selected drawings by exporting to DXF and analysing geometry overlaps.
+
+    Select drawings in the Document Manager first or pass the `marks` parameter.
+    Magenta revision clouds are drawn at every found collision.
+    """
+    all_issues: list = []
+    total_clouds_drawn = 0
+    total_cloud_failures = 0
+
+    # Per drawing: read its DXF, run collision checks, draw a colored revision
+    # cloud per issue in the sheet view, then commit
+    def _process(handler: TeklaDrawingHandler, drawing: TeklaDrawing, dxf_path: Path) -> dict[str, Any]:
+        nonlocal total_clouds_drawn, total_cloud_failures
+        mark = drawing.mark
+        # Read the DXF, flatten block inserts to sheet coordinates
+        doc = ezdxf.readfile(str(dxf_path))
+        msp = doc.modelspace()
+
+        # Get Tekla view metadata (frame positions, sheet placement) once - both
+        # dict views (for checks) and raw views (to find the sheet view object)
+        # come from this single API call
+        tekla_views, views, _sheet_count = _resolve_drawing_views(handler, drawing)
+
+        # Flatten view blocks into world-space sheet coordinates
+        entities = resolve_entities(doc, msp)
+        # Normalize export origin to sheet coordinates
+        align_entities_to_sheet(entities)
+        logger.info("Running collision checks for '%s' (%d entities)...", mark, len(entities))
+        # Run all checks and merge nearby duplicates
+        issues = run_collision_checks(views, entities)
+
+        # Use the sheet view so DXF coordinates map directly
+        sheet_view = next((v for v in tekla_views if v.is_sheet), None)
+
+        # Draw a colored revision cloud for each issue bbox
+        cloud_count = 0
+        cloud_failures = 0
+        for issue in issues:
+            if sheet_view is None:
+                cloud_failures += 1
+                continue
+            if draw_cloud_bbox(sheet_view.view, issue.bbox, margin=issue.margin, color=color_for_issue_types(issue.types)):
+                cloud_count += 1
+            else:
+                cloud_failures += 1
+
+        if cloud_count > 0 and not drawing.commit_changes():
+            cloud_failures += cloud_count
+            cloud_count = 0
+
+        total_clouds_drawn += cloud_count
+        total_cloud_failures += cloud_failures
+        all_issues.extend(issues)
+        logger.info("check_drawing_collisions: '%s' - %d issue(s), %d cloud(s)", mark, len(issues), cloud_count)
+        return {
+            "mark": mark,
+            "status": "success",
+            "issues": len(issues),
+            "clouds_drawn": cloud_count,
+            "cloud_failures": cloud_failures,
+        }
+
+    per_drawing_results = _run_dxf_drawing_check(
+        marks,
+        busy_message="A drawing is currently open. Close it first with `close_drawing` before running collision checks.",
+        log_prefix="check_drawing_collisions",
+        process=_process,
+    )
+
     # Group issues by category for the report. A merged issue can have
     # multiple check types (e.g. collides_with_sheet + marks_text_overlap)
     # - counted under each type, not one composite key
-    issues_by_category: dict[str, list[dict]] = {}
+    issues_by_category: dict[str, list[dict[str, Any]]] = {}
     for issue in all_issues:
         entry = {
             "bbox": [round(c, 1) for c in issue.bbox],
@@ -1922,10 +2002,11 @@ def check_drawing_collisions(
         for cat in issue.types:
             issues_by_category.setdefault(cat, []).append(entry)
 
+    drawing_count = len(per_drawing_results)
     succeeded_count = sum(1 for r in per_drawing_results if r["status"] == "success")
-    failed_count = sum(1 for r in per_drawing_results if r["status"] == "error")
+    failed_count = drawing_count - succeeded_count
 
-    status = "success" if failed_count == 0 else "partial"
+    status = "success" if failed_count == 0 else "error" if succeeded_count == 0 else "partial"
     result: dict[str, Any] = {
         "status": status,
         "drawings_selected": drawing_count,
@@ -1942,9 +2023,9 @@ def check_drawing_collisions(
     return ToolResult(structured_content=result)
 
 
-def _dimension_lost_all_anchors(dim: Any) -> bool:
+def _dimension_lost_all_anchors(dim: Any) -> bool | None:
     """
-    True if a drawing dimension has no model objects left to anchor to.
+    Whether a drawing dimension has no model objects left to anchor to.
 
     `GetRelatedObjects()` returns the dimension's associated model objects.
     When all anchors were deleted, the list is empty - the dimension is
@@ -1952,9 +2033,11 @@ def _dimension_lost_all_anchors(dim: Any) -> bool:
     A non-empty list must never rescue a geometrically unattached point,
     since Tekla keeps associativity for dimensions pointing at nothing.
 
-    Fails OPEN: on API error returns False, falling back to the geometric
-    test. This avoids false positives but means a dangling dimension whose
-    enumeration throws is not caught here.
+    Returns True if all anchors are gone, False if at least one remains, and
+    None if the anchor state could not be determined (API error). Callers
+    treat None as fail-open (fall back to the geometric test) but should count
+    it as a degraded check so a dangling dimension whose enumeration throws is
+    not silently reported as fine.
     """
     try:
         enum = dim.GetRelatedObjects()
@@ -1964,10 +2047,10 @@ def _dimension_lost_all_anchors(dim: Any) -> bool:
         return True
     except Exception as e:
         logger.warning("GetRelatedObjects failed for dimension, treating as anchored: %s", e)
-        return False
+        return None
 
 
-def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: AttachTargets) -> tuple[int, list[dict[str, Any]]]:
+def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: AttachTargets) -> tuple[int, list[dict[str, Any]], int]:
     """
     Find dimension points in the active drawing not attached to valid geometry.
 
@@ -1984,11 +2067,14 @@ def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: 
         targets: `AttachTargets` from the DXF.
 
     Returns:
-        Tuple of (points checked, unattached point dicts). Each dict
-        has sheet `x`/`y` and the source `view`.
+        Tuple of (points checked, unattached point dicts, degraded dimension
+        count). Each unattached dict has sheet `x`/`y` and the source `view`.
+        `degraded` counts dimensions whose anchor state could not be read, so
+        the caller can surface that the check was not fully conclusive.
     """
     tol = get_tolerance("dimension_snap", default=0.5, group="drawings")
     checked = 0
+    degraded = 0
     unattached: dict[tuple[int, int], dict[str, Any]] = {}
     for view in handler.get_drawing_views():
         if view.is_sheet:
@@ -2027,15 +2113,20 @@ def _collect_unattached_dimension_points(handler: TeklaDrawingHandler, targets: 
                     continue
                 seen_pairs.add(pair_key)
                 dim_is_vertical = abs(sx_sp - sx_ep) < abs(sy_sp - sy_ep)
-                # A dimension with no model anchors left dangles at both ends
-                dangling_dim = _dimension_lost_all_anchors(dim)
+                # A dimension with no model anchors left dangles at both ends.
+                # None means the anchor state was unreadable - fail open to the
+                # geometric test but count it as a degraded check
+                anchor_state = _dimension_lost_all_anchors(dim)
+                if anchor_state is None:
+                    degraded += 1
+                dangling_dim = anchor_state is True
                 for sx, sy in ((sx_sp, sy_sp), (sx_ep, sy_ep)):
                     checked += 1
                     if not dangling_dim and dimension_point_is_attached(sx, sy, targets, tol, dim_is_vertical):
                         continue
                     key = (round(sx / tol), round(sy / tol))
                     unattached.setdefault(key, {"x": round(sx, 1), "y": round(sy, 1), "view": view.view_key})
-    return checked, list(unattached.values())
+    return checked, list(unattached.values()), degraded
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": False, "destructiveHint": False})
@@ -2048,121 +2139,72 @@ def check_for_unattached_dimensions(
 
     Select drawings in the Document Manager first or pass the `marks` parameter.
     """
-
-    handler = TeklaDrawingHandler()
-
-    if handler.get_active_drawing() is not None:
-        raise RuntimeError("A drawing is currently open. Close it first with `close_drawing` before running the attachment check.")
-
-    model = TeklaModel()
-    model_path = model.model_path
-    plotfiles_dir = Path(model_path) / "Plotfiles"
-
-    selected = handler.get_drawings_by_marks(marks or None)
-    if not selected:
-        raise ValueError("No drawings selected in Document Manager.")
-
-    drawing_count = len(selected)
-    expected_marks = [d.mark for d in selected]
-
-    outdated = [d.mark for d in selected if d.up_to_date_status != "DrawingIsUpToDate"]
-    if outdated:
-        details = {d.mark: d.up_to_date_status for d in selected if d.up_to_date_status != "DrawingIsUpToDate"}
-        raise ValueError(f"The following drawing(s) must be updated first: {outdated}. Status: {details}")
-
-    logger.info("check_for_unattached_dimensions: exporting %d drawing(s) to DXF...", drawing_count)
-    dxf_paths_by_mark = _export_drawings_to_dxf(model_path, plotfiles_dir, expected_marks)
-
     total_unattached = 0
     total_checked = 0
+    total_degraded = 0
     total_clouds_drawn = 0
     total_cloud_failures = 0
-    per_drawing_results: list[dict] = []
 
-    def _fail(mark: str, message: str) -> None:
-        per_drawing_results.append({"mark": mark, "status": "error", "message": message})
-        logger.warning("check_for_unattached_dimensions: %s", message)
+    # Per drawing: read its DXF, collect attach targets, find unattached
+    # dimension points, cloud each in the sheet view, then commit
+    def _process(handler: TeklaDrawingHandler, drawing: TeklaDrawing, dxf_path: Path) -> dict[str, Any]:
+        nonlocal total_unattached, total_checked, total_degraded, total_clouds_drawn, total_cloud_failures
+        mark = drawing.mark
+        doc = ezdxf.readfile(str(dxf_path))
+        # Include hatches for rebar/bolt cross-section dot targets
+        entities = resolve_entities(doc, doc.modelspace(), include_hatches=True)
+        # Normalize export origin to sheet coordinates
+        align_entities_to_sheet(entities)
+        targets = collect_attach_targets(entities)
 
-    try:
-        for i, drawing in enumerate(selected, 1):
-            mark = drawing.mark
-            dxf_path = dxf_paths_by_mark.get(mark)
-            if dxf_path is None or not dxf_path.exists():
-                _fail(mark, f"No matching DXF for mark '{mark}'.")
-                continue
+        checked, unattached, degraded = _collect_unattached_dimension_points(handler, targets)
+        total_checked += checked
+        total_unattached += len(unattached)
+        total_degraded += degraded
 
-            # The export can take a while - re-fetch and re-check up-to-date now
-            try:
-                drawing = handler.get_drawings_by_marks([mark])[0]
-            except ValueError:
-                _fail(mark, f"Drawing '{mark}' no longer found.")
-                continue
-            if drawing.up_to_date_status != "DrawingIsUpToDate":
-                _fail(mark, f"Drawing '{mark}' became out of date during export.")
-                continue
-            if not handler.set_active_drawing(drawing):
-                _fail(mark, f"Failed to open drawing '{mark}'.")
-                continue
+        # Clouds go in the sheet view - dimension points are already in sheet
+        # coordinates, matching the sheet view's coordinate system
+        sheet_view = next((v for v in handler.get_drawing_views() if v.is_sheet), None)
+        cloud_count = 0
+        cloud_failures = 0
+        for pt in unattached:
+            bbox = BBox(pt["x"], pt["y"], pt["x"], pt["y"])
+            # Half the mark-cloud margin - a dimension point needs a tighter cloud
+            cloud_margin = MARK_CLOUD_MARGIN / 2
+            if sheet_view is not None and draw_cloud_bbox(sheet_view.view, bbox, margin=(cloud_margin, cloud_margin), color=DrawingColors.Magenta):
+                cloud_count += 1
+            else:
+                cloud_failures += 1
 
-            try:
-                doc = ezdxf.readfile(str(dxf_path))
-                # Include hatches for rebar/bolt cross-section dot targets
-                entities = resolve_entities(doc, doc.modelspace(), include_hatches=True)
-                # Normalize export origin to sheet coordinates
-                align_entities_to_sheet(entities)
-                targets = collect_attach_targets(entities)
+        if cloud_count > 0 and not drawing.commit_changes():
+            cloud_failures += cloud_count
+            cloud_count = 0
 
-                checked, unattached = _collect_unattached_dimension_points(handler, targets)
-                total_checked += checked
-                total_unattached += len(unattached)
+        total_clouds_drawn += cloud_count
+        total_cloud_failures += cloud_failures
+        logger.info("check_for_unattached_dimensions: '%s' - %d unattached of %d checked", mark, len(unattached), checked)
+        return {
+            "mark": mark,
+            "status": "success",
+            "dimension_points_checked": checked,
+            "unattached": len(unattached),
+            "degraded_dimensions": degraded,
+            "clouds_drawn": cloud_count,
+            "cloud_failures": cloud_failures,
+            "unattached_points": unattached,
+        }
 
-                # Clouds go in the sheet view - dimension points are already in
-                # sheet coordinates, matching the sheet view's coordinate system
-                sheet_view = next((v for v in handler.get_drawing_views() if v.is_sheet), None)
-                cloud_count = 0
-                cloud_failures = 0
-                for pt in unattached:
-                    bbox = BBox(pt["x"], pt["y"], pt["x"], pt["y"])
-                    # Half the mark-cloud margin - a dimension point needs a tighter cloud
-                    cloud_margin = MARK_CLOUD_MARGIN / 2
-                    if sheet_view is not None and draw_cloud_bbox(sheet_view.view, bbox, margin=(cloud_margin, cloud_margin), color=DrawingColors.Magenta):
-                        cloud_count += 1
-                    else:
-                        cloud_failures += 1
+    per_drawing_results = _run_dxf_drawing_check(
+        marks,
+        busy_message="A drawing is currently open. Close it first with `close_drawing` before running the attachment check.",
+        log_prefix="check_for_unattached_dimensions",
+        process=_process,
+    )
 
-                if cloud_count > 0 and not drawing.commit_changes():
-                    cloud_failures += cloud_count
-                    cloud_count = 0
-
-                total_clouds_drawn += cloud_count
-                total_cloud_failures += cloud_failures
-                per_drawing_results.append(
-                    {
-                        "mark": mark,
-                        "status": "success",
-                        "dimension_points_checked": checked,
-                        "unattached": len(unattached),
-                        "clouds_drawn": cloud_count,
-                        "cloud_failures": cloud_failures,
-                        "unattached_points": unattached,
-                    }
-                )
-                logger.info("check_for_unattached_dimensions: '%s' - %d unattached of %d checked", mark, len(unattached), checked)
-            except Exception as e:
-                _fail(mark, f"Error processing drawing '{mark}': {e}")
-                logger.error("check_for_unattached_dimensions: error processing '%s': %s", mark, e)
-            finally:
-                handler.close_active_drawing(save=True)
-    finally:
-        for p in dxf_paths_by_mark.values():
-            try:
-                p.unlink()
-            except Exception as e:
-                logger.warning("Failed to delete DXF '%s': %s", p, e)
-
+    drawing_count = len(per_drawing_results)
     succeeded_count = sum(1 for r in per_drawing_results if r["status"] == "success")
-    failed_count = sum(1 for r in per_drawing_results if r["status"] == "error")
-    status = "success" if failed_count == 0 else "partial"
+    failed_count = drawing_count - succeeded_count
+    status = "success" if failed_count == 0 else "error" if succeeded_count == 0 else "partial"
 
     logger.info("check_for_unattached_dimensions: %d/%d drawings, %d unattached points", succeeded_count, drawing_count, total_unattached)
     return ToolResult(
@@ -2173,6 +2215,7 @@ def check_for_unattached_dimensions(
             "drawings_failed": failed_count,
             "dimension_points_checked": total_checked,
             "total_unattached": total_unattached,
+            "degraded_dimensions": total_degraded,
             "clouds_drawn": total_clouds_drawn,
             "cloud_failures": total_cloud_failures,
             "per_drawing": per_drawing_results,

@@ -63,13 +63,13 @@ def test_dimension_lost_all_anchors_true_when_only_non_model_objects():
     assert _dimension_lost_all_anchors(_dim_with_related([object(), object()])) is True
 
 
-def test_dimension_lost_all_anchors_fails_open_on_api_error():
-    # Fail OPEN: an API error must not force-flag - fall back to geometry.
-    # This is the anti-false-positive choice, at the cost of missing a dangle
-    # whose enumeration throws
+def test_dimension_lost_all_anchors_returns_none_on_api_error():
+    # An API error yields None (indeterminate): callers fail open to the
+    # geometric test but count it as a degraded check. This is the
+    # anti-false-positive choice, at the cost of a dangle whose enumeration throws
     dim = MagicMock()
     dim.GetRelatedObjects.side_effect = RuntimeError("COM boom")
-    assert _dimension_lost_all_anchors(dim) is False
+    assert _dimension_lost_all_anchors(dim) is None
 
 
 def test_returns_immediately_when_already_satisfied(tmp_path):
