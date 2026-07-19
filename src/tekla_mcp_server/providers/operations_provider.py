@@ -396,7 +396,7 @@ def run_macro(macro_name: Annotated[str, Field(description="Name of the macro fi
 @mcp_handler(scope="tool")
 def select_model_objects_from_drawings() -> ToolResult:
     """
-    Select the model objects corresponding to the currently selected drawing objects.
+    Select the model objects corresponding to the currently selected drawings.
     """
     # Runs the bundled macro, which triggers Tekla's native "Select objects in the model
     # for selected drawings" command. The macro approach was chosen because it is fast,
