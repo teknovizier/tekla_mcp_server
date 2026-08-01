@@ -18,8 +18,10 @@ import clr
 import System
 
 
-# Global flag and lock to prevent re-loading DLLs
-_dlls_loaded = False
+# Cached load outcome and lock to prevent re-loading DLLs. None means "not attempted
+# yet". A failed attempt is cached too, so a partial load is not silently retried on
+# every later call - which would repeat the sys.path and Console.SetOut side effects
+_load_result: bool | None = None
 _dlls_loaded_lock = threading.Lock()
 
 # Constants
@@ -48,19 +50,22 @@ def load_dlls() -> bool:
     Side effect: redirects .NET Console.Out to Console.Error for the lifetime of the
     process, so Tekla API output does not corrupt the MCP stdio transport.
 
+    The outcome of the first attempt is cached, so later calls report the same
+    result without repeating the load and its process-wide side effects.
+
     Returns:
-        True if DLLs were loaded successfully, True if already loaded.
+        True if all DLLs were loaded successfully, False if only some were.
 
     Raises:
         FileNotFoundError: If Tekla DLLs are not found at the configured path.
         System.IO.FileNotFoundException: If a specific DLL cannot be loaded.
         json.JSONDecodeError: If configuration file is invalid.
     """
-    global _dlls_loaded
+    global _load_result
 
     with _dlls_loaded_lock:
-        if _dlls_loaded:
-            return True
+        if _load_result is not None:
+            return _load_result
 
         dlls = [
             "Tekla.Structures.dll",
@@ -113,11 +118,12 @@ def load_dlls() -> bool:
                             loaded_dlls.add(dll)
 
             if len(loaded_dlls) != len(dlls):
-                logger.error(f"Only {len(loaded_dlls)} out of {len(dlls)} Tekla Structures DLLs were loaded")
+                logger.error("Only %d out of %d Tekla Structures DLLs were loaded", len(loaded_dlls), len(dlls))
+                _load_result = False
                 return False
 
-            _dlls_loaded = True
-            logger.info(f"Successfully loaded {len(loaded_dlls)} out of {len(dlls)} Tekla Structures DLLs")
+            _load_result = True
+            logger.info("Successfully loaded %d out of %d Tekla Structures DLLs", len(loaded_dlls), len(dlls))
             return True
 
         except System.IO.FileNotFoundException:

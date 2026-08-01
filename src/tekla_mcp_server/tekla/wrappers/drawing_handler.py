@@ -5,7 +5,7 @@ Module for Tekla DrawingHandler wrapper.
 from __future__ import annotations
 
 from tekla_mcp_server.tekla.loader import ContainerView, DrawingHandler, DrawingObject, DrawingView
-from tekla_mcp_server.tekla.utils import to_array_list
+from tekla_mcp_server.tekla.interop import to_array_list
 
 from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing, wrap_drawings
 from tekla_mcp_server.tekla.wrappers.view import TeklaDrawingView

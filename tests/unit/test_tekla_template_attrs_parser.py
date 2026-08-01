@@ -35,6 +35,35 @@ def reset_parser():
     TemplateAttributeParser._semantic_loaded = False
 
 
+def test_load_attributes_from_file_strips_utf8_bom(tmp_path):
+    """A BOM must not stop the first line being recognised as a comment."""
+    lst = tmp_path / "contentattributes_bom.lst"
+    lst.write_text(
+        "// ---- header comment ----\nAREA_NET                        FLOAT       RIGHT    TRUE      10        m2\n",
+        encoding="utf-8-sig",
+    )
+
+    TemplateAttributeParser._load_attributes_from_file(str(lst))
+
+    assert "﻿//" not in TemplateAttributeParser._cache, "BOM'd comment line was cached as an attribute"
+    assert list(TemplateAttributeParser._cache) == ["AREA_NET"]
+    assert TemplateAttributeParser._cache["AREA_NET"].data_type is float
+
+
+def test_load_attributes_from_file_keeps_names_split_by_a_single_space(tmp_path):
+    """
+    Long names are separated from the type column by only ONE space in the stock
+    files, so the name must be split on the first whitespace, not on the column gap.
+    """
+    lst = tmp_path / "contentattributes_singlespace.lst"
+    lst.write_text("ASSEMBLY_TOP_LEVEL_UNFORMATTED FLOAT       LEFT     TRUE      10        mm\n", encoding="utf-8")
+
+    TemplateAttributeParser._load_attributes_from_file(str(lst))
+
+    assert "ASSEMBLY_TOP_LEVEL_UNFORMATTED" in TemplateAttributeParser._cache
+    assert TemplateAttributeParser._cache["ASSEMBLY_TOP_LEVEL_UNFORMATTED"].data_type is float
+
+
 @pytest.mark.parametrize(
     "attr_name,expected_type,expected_unit",
     [

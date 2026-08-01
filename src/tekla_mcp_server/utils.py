@@ -120,7 +120,10 @@ class BBox(tuple):
         """
         Shrink the bounding box inward by `pad` on every side.
 
-        Collapses to its center if the box is too small.
+        Each axis is handled independently: an axis too narrow to absorb the padding
+        collapses to its own center, while the other keeps its extent. Collapsing both
+        axes together would reduce a long, thin box - a narrow view frame, say - to a
+        single point, hiding it from every check that works on the inset frame.
 
         Args:
             pad: Distance to inset from each edge.
@@ -128,9 +131,15 @@ class BBox(tuple):
         Returns:
             A new inset BBox.
         """
-        if self.width <= 2 * pad or self.height <= 2 * pad:
-            return BBox(self.cx, self.cy, self.cx, self.cy)
-        return BBox(self.xmin + pad, self.ymin + pad, self.xmax - pad, self.ymax - pad)
+        if self.width <= 2 * pad:
+            x0 = x1 = self.cx
+        else:
+            x0, x1 = self.xmin + pad, self.xmax - pad
+        if self.height <= 2 * pad:
+            y0 = y1 = self.cy
+        else:
+            y0, y1 = self.ymin + pad, self.ymax - pad
+        return BBox(x0, y0, x1, y1)
 
     def intersection(self, other: BBox) -> BBox | None:
         """

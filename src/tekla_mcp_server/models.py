@@ -432,23 +432,12 @@ class BaseComponent(BaseModel):
         if self.properties_set is None:
             self.properties_set = "standard"
 
-        if self.custom_properties:
-            if isinstance(self.custom_properties, str):
-                try:
-                    custom_props = json.loads(self.custom_properties)
-                    if not isinstance(custom_props, dict):
-                        raise ValueError("custom_properties JSON must parse to a dictionary")
-                    if self._properties is None:
-                        self._properties = {}
-                    self._properties.update(custom_props)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON in custom_properties: {e}") from e
-            elif isinstance(self.custom_properties, dict):
-                if self._properties is None:
-                    self._properties = {}
-                self._properties.update(self.custom_properties)
-            else:
-                raise TypeError("custom_properties must be a dictionary or JSON string")
+        # `validate_custom_properties` runs first and has already parsed any JSON string
+        # into a dict and rejected everything that is not one, so only a dict reaches here
+        if isinstance(self.custom_properties, dict) and self.custom_properties:
+            if self._properties is None:
+                self._properties = {}
+            self._properties.update(self.custom_properties)
 
     # Getters
     @property

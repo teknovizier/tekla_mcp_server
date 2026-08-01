@@ -20,7 +20,8 @@ This file defines basic rules for AI agents and human contributors working on th
 Failures CI cannot catch (silent, delayed or Tekla-behavioral):
 
 - **Import-time DLL load**: importing any module that transitively imports `tekla/loader.py` loads the Tekla DLLs at import, so such modules cannot be imported where Tekla is absent (CI, pure unit tests). This is why Tekla-touching test modules carry a CI skip guard (see [Testing Guidelines](#testing-guidelines)).
-- **pythonnet interop**: Python containers do not marshal to .NET. Use .NET collections at the Tekla boundary - `ArrayList()`, `List[ModelObject]()`, `SystemArray[SystemType](...)` - not a plain Python `list`. `out`-params come back as extra tuple elements (the first is the success bool), so always unpack: `is_ok, value = obj.GetReportProperty(name, str())`. The trailing placeholder's type selects the .NET overload.
+- **pythonnet interop**: Python containers do not marshal to .NET. Use .NET collections at the Tekla boundary - `ArrayList()`, `List[ModelObject]()`, `SystemArray[SystemType](...)` - not a plain Python `list`. Shared conversion helpers live in `tekla/interop.py` (e.g. `to_array_list`). `out`-params come back as extra tuple elements (the first is the success bool), so always unpack: `is_ok, value = obj.GetReportProperty(name, str())`. The trailing placeholder's type selects the .NET overload.
+- **Import layering under `tekla/`**: `tekla/utils.py` imports the wrappers, so nothing under `tekla/wrappers/` may import it at module level - that closes a cycle (`utils` -> `wrappers.model` -> `wrappers/__init__` -> `drawing_handler` -> `utils`) which only fails when the module happens to be imported first, so the full test suite hides it. Put helpers the wrappers need in a leaf module such as `tekla/interop.py` instead of reaching for a lazy in-function import.
 - **Work plane**: to work in an object's local coordinates, save the current plane, set the local one, then restore it in a `finally` (`GetWorkPlaneHandler().GetCurrentTransformationPlane()` / `SetCurrentTransformationPlane(...)`). Leaving it changed corrupts later geometry.
 - **CI-enforced invariants** (pure-AST unit tests that fail the PR): `test_tool_annotations.py` requires every `@<provider>.tool` to pass `annotations` with a boolean `readOnlyHint` (and a boolean `destructiveHint` when not read-only), `test_docs_reference_parity.py` requires `docs/reference.md` to list exactly the tools and resources in code. Both scan only `providers/*_provider.py` (resources: only `resources_provider.py`), so a tool or resource defined elsewhere evades both checks.
 - **`readOnlyHint` is security-critical**: read-only mode (`ReadOnlyToolFilter`) only filters tool visibility - there is no runtime write-block, and CI checks the hint is present, not correct. A mutating tool mislabeled `readOnlyHint: True` will run in read-only mode. Only human review catches a wrong hint.
@@ -111,6 +112,7 @@ tekla_mcp_server/
 │       ├── component_handlers.py        # Component handler registry and implementations
 │       ├── drawing_utils.py             # Drawing helpers
 │       ├── filter_builder.py            # Filter expression builder helpers
+│       ├── interop.py                   # Python -> .NET conversions (imports only `loader`)
 │       ├── snapshot_builder.py          # Part/Assembly snapshot construction
 │       ├── template_attrs_parser.py     # Report property type resolution
 │       ├── utils.py                     # Tekla-API-side helpers
@@ -144,6 +146,7 @@ tekla_mcp_server/
 | Model wrapper | `tekla/wrappers/model.py`, `tekla/wrappers/model_object.py` |
 | Drawing wrappers | `tekla/wrappers/drawing.py`, `tekla/wrappers/drawing_handler.py`, `tekla/wrappers/view.py` |
 | Tekla-specific utility | `tekla/utils.py` |
+| Python -> .NET conversion helper | `tekla/interop.py` (must import only `tekla/loader.py`, so wrappers can use it without an import cycle) |
 | Pure-Python feature logic with no Tekla import (DLL-free, fully unit-testable in CI) | top-level module in `src/tekla_mcp_server/`, not `tekla/` |
 | Configuration | `config/*.json` |
 | General utility | `utils.py` |

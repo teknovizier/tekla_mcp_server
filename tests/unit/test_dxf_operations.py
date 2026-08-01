@@ -25,11 +25,14 @@ from tekla_mcp_server.dxf_operations import (
     on_any_horizontal_edge,
     on_any_vertical_edge,
     point_is_attached,
+    resolve_entities,
     shortened_axis_to_sheet,
     shortening_gaps_from_boxes,
     view_local_to_sheet,
 )
 from tekla_mcp_server.utils import BBox, Segment
+
+import ezdxf
 
 
 def _pairwise_collisions(items, issue_type, label, margin=(0.0, 0.0)):
@@ -335,6 +338,45 @@ def test_view_frame_bbox_padded_insets_by_frame_content_padding():
     view = _view("A", None, 10.0, 20.0, w=100.0, h=50.0)
     pad = FRAME_CONTENT_PADDING
     assert _view_frame_bbox(view, padded=True) == BBox(10.0 + pad, 20.0 + pad, 110.0 - pad, 70.0 - pad)
+
+
+def test_inset_collapses_only_the_axis_that_is_too_thin():
+    # A long, thin box must keep its long axis. Collapsing both would reduce a
+    # narrow view frame to a point and hide it from every inset-frame check.
+    inset = BBox(0.0, 0.0, 1000.0, 5.0).inset(5.0)
+    assert inset.width == 990.0
+    assert inset.height == 0.0
+    assert (inset.cy, inset.ymin, inset.ymax) == (2.5, 2.5, 2.5)
+
+    # Thin on X instead
+    inset = BBox(0.0, 0.0, 5.0, 1000.0).inset(5.0)
+    assert inset.width == 0.0
+    assert inset.height == 990.0
+
+
+def test_inset_unchanged_for_boxes_wider_than_the_padding():
+    # Normal frames must be untouched by the per-axis handling
+    assert BBox(0.0, 0.0, 1000.0, 500.0).inset(5.0) == BBox(5.0, 5.0, 995.0, 495.0)
+
+
+def test_resolve_entities_skips_text_degenerate_on_either_axis():
+    # ezdxf reports an infinite bbox for empty text but a ZERO-WIDTH, real-height
+    # bbox for whitespace-only text. The latter used to survive as a sliver that
+    # collides with anything crossing its vertical line.
+    doc = ezdxf.new()
+    block = doc.blocks.new(name="View - 100")
+    block.add_text("A1", height=2.5, dxfattribs={"layer": "TEKLA_MCP_MARKS"})
+    block.add_text("   ", height=2.5, dxfattribs={"layer": "TEKLA_MCP_MARKS"})
+    block.add_text("", height=2.5, dxfattribs={"layer": "TEKLA_MCP_MARKS"})
+    block.add_mtext("", dxfattribs={"layer": "TEKLA_MCP_MARKS"})
+    msp = doc.modelspace()
+    msp.add_blockref("View - 100", (0.0, 0.0))
+
+    entities = resolve_entities(doc, msp)
+
+    assert len(entities) == 1, "only the text with a real two-dimensional bbox should survive"
+    assert entities[0].bbox.width > 0.0
+    assert entities[0].bbox.height > 0.0
 
 
 # check_content_out_of_sheet

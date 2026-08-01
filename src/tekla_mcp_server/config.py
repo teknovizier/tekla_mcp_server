@@ -7,6 +7,7 @@ Loads configuration from JSON files in the config/ directory.
 import json
 import os
 import re
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -21,18 +22,51 @@ MCP_DATA_DIR_NAME = "TeklaMCPData"
 
 # Config JSON files are read once and cached for the lifetime of the process.
 # Changes to settings.json do not take effect until the MCP server is restarted
+def _config_dir_candidates() -> list[Path]:
+    """
+    Candidate configuration directories, in resolution order.
+
+    Returns:
+        List of candidate paths, most specific first.
+    """
+    candidates: list[Path] = []
+    # PyInstaller bundle: 'config' sits netx to the executable, not inside the
+    # unpacked bundle directory - settings.json holds 'tekla_path' and has to stay
+    # editable after install
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).parent / "config")
+    # Source checkout: src/tekla_mcp_server/config.py -> repository root
+    candidates.append(Path(__file__).resolve().parents[2] / "config")
+    # Current working directory, the historical behaviour
+    candidates.append(Path("config"))
+    return candidates
+
+
 @lru_cache
 def get_config_dir() -> Path:
     """
     Get the configuration directory path.
 
-    Supports TEKLA_MCP_CONFIG_DIR environment variable override.
+    Resolution order, first existing directory wins:
+    1. `TEKLA_MCP_CONFIG_DIR`, returned as given even when it does not exist, so an
+       explicit override is never silently overruled by a fallback
+    2. `config` next to the executable, when frozen into a PyInstaller bundle
+    3. `config` at the repository root, so running from source works from any CWD
+    4. `config` relative to the current working directory
 
     Returns:
         Path to the configuration directory
     """
-    env_dir = os.getenv("TEKLA_MCP_CONFIG_DIR", "config")
-    return Path(env_dir)
+    env_dir = os.getenv("TEKLA_MCP_CONFIG_DIR")
+    if env_dir:
+        return Path(env_dir)
+
+    for candidate in _config_dir_candidates():
+        if candidate.is_dir():
+            return candidate
+
+    # Nothing exists - return the CWD-relative path so the error names a stable location
+    return Path("config")
 
 
 # maxsize=None is safe here: config filenames are a small, fixed set, so
@@ -56,7 +90,11 @@ def _load_json(filename: str) -> dict[str, Any]:
     config_dir = get_config_dir()
     file_path = config_dir / filename
     if not file_path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {file_path}")
+        # This is the first thing a fresh checkout hits, since config/*.json is
+        # gitignored - so say where we looked and what to do about it
+        sample = config_dir / f"{Path(filename).stem}.sample.json"
+        hint = f"Copy '{sample}' to '{filename}'" if sample.exists() else f"Create '{filename}' in that folder"
+        raise FileNotFoundError(f"Configuration file not found: {file_path.resolve()} (config directory: {config_dir.resolve()}). {hint}, or set TEKLA_MCP_CONFIG_DIR to the folder that holds it.")
     try:
         with open(file_path, encoding="utf-8") as f:
             return json.load(f)
@@ -144,7 +182,7 @@ def _get_contentattributes_file_paths() -> list[str]:
 
     # Find main contentattributes.lst file
     content_attr_path: Path | None = None
-    for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in ini_path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
         if "contentattributes.lst" in line.lower():
             content_attr_path = resolve_path(line.strip(), ini_path, tekla_base)
             break
@@ -155,7 +193,7 @@ def _get_contentattributes_file_paths() -> list[str]:
     # Parse included files
     included_files: list[str] = []
     try:
-        for line in content_attr_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in content_attr_path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
             stripped = line.strip()
             if stripped.startswith("[BINDINGS]"):
                 break

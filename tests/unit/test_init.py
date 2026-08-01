@@ -19,7 +19,7 @@ def test_load_dlls_success():
     """Checks that all DLLs are loaded and returns True."""
     import tekla_mcp_server.init as init_module
 
-    init_module._dlls_loaded = False
+    init_module._load_result = None
 
     mock_config = MagicMock()
     mock_config.tekla_path = "C:\\Tekla"
@@ -38,7 +38,7 @@ def test_load_dlls_file_not_found_triggers_exception_and_exit():
     """Checks error handling when DLL is missing."""
     import tekla_mcp_server.init as init_module
 
-    init_module._dlls_loaded = False
+    init_module._load_result = None
 
     mock_config = MagicMock()
     mock_config.tekla_path = "C:\\Tekla"
@@ -56,3 +56,27 @@ def test_load_dlls_file_not_found_triggers_exception_and_exit():
             load_dlls()
 
         mock_exception.assert_called_once()
+
+
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Tekla not available in CI")
+def test_load_dlls_partial_load_returns_false_and_is_cached():
+    """A partial load returns False and is not retried on the next call."""
+    import tekla_mcp_server.init as init_module
+
+    init_module._load_result = None
+
+    mock_config = MagicMock()
+    mock_config.tekla_path = "C:\\Tekla"
+    with (
+        patch("tekla_mcp_server.init.get_config", return_value=mock_config),
+        patch("pathlib.Path.is_dir", return_value=True),
+        # No DLL file is present, so fewer are loaded than expected
+        patch("pathlib.Path.exists", return_value=False),
+        patch("tekla_mcp_server.init.clr.AddReference") as mock_add_ref,
+    ):
+        assert load_dlls() is False
+        assert mock_add_ref.call_count == 0
+
+        # Second call must reuse the cached failure instead of loading again
+        assert load_dlls() is False
+        assert mock_add_ref.call_count == 0

@@ -9,7 +9,7 @@ import re
 import shutil
 from functools import wraps, lru_cache
 from typing import Any, Literal
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -18,7 +18,6 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import BaseComponent
 
 from tekla_mcp_server.tekla.loader import (
-    ArrayList,
     Point,
     Vector,
     ModelObject,
@@ -312,14 +311,6 @@ def get_active_views() -> list[View]:
             views.append(view_enum.Current)
 
     return views
-
-
-def to_array_list(objects: Iterable[Any]) -> ArrayList:
-    """Convert a Python iterable to a .NET ArrayList."""
-    array_list = ArrayList()
-    for obj in objects:
-        array_list.Add(obj)
-    return array_list
 
 
 def collect_children(selected_objects: ModelObjectEnumerator) -> List[ModelObject]:
@@ -659,6 +650,9 @@ def get_available_attribute_files(file_extension: str) -> list[str]:
             if path.is_dir():
                 paths.append(path.resolve())
 
+    # The model's own attributes folder is one search location among several, so a
+    # failure here must not kill the whole lookup. It must still be visible though -
+    # silently returning a short list looks like "no such setting exists" to the caller.
     try:
         model = TeklaModel()
         model_path = model.model_path
@@ -666,8 +660,8 @@ def get_available_attribute_files(file_extension: str) -> list[str]:
             attributes_dir = Path(model_path) / "attributes"
             if attributes_dir.is_dir():
                 paths.append(attributes_dir.resolve())
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Could not read the model's attributes folder while listing '%s' files, results are incomplete: %s", file_extension, e)
 
     names: set[str] = set()
     for dir_path in paths:

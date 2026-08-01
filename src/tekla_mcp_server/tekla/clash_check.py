@@ -127,8 +127,7 @@ class TeklaClashCheckHandler:
 
     def _subscribe(self) -> None:
         if self._subscribed:
-            logger.warning("Already subscribed to clash check events")
-            return
+            raise RuntimeError("Clash check is already running on this handler. Create a new TeklaClashCheckHandler per run.")
 
         self._raw_records = []
         self._done.clear()

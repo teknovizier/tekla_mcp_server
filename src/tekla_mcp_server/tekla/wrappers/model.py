@@ -12,6 +12,7 @@ from typing import ClassVar
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_function_call
 from tekla_mcp_server.tekla.filter_builder import add_filter
+from tekla_mcp_server.tekla.interop import to_array_list
 
 from tekla_mcp_server.tekla.loader import (
     Identifier,
@@ -179,6 +180,20 @@ class TeklaModel:
         info = self.model.GetInfo()
         return info.ModelPath or "" if info is not None else ""
 
+    def _require_connection(self) -> None:
+        """
+        Raise if the Tekla connection is down.
+
+        `ModelObjectSelector` and `ModelObjectSelectorUI` are standalone .NET objects
+        that never touch the `model` property, so methods built on them must check the
+        connection themselves. Without this a lost connection surfaces as an empty
+        result set or a bare False return, with nothing pointing at the real cause.
+
+        Raises:
+            ConnectionError: If the connection to Tekla is lost.
+        """
+        _ = self.model
+
     @log_function_call
     def commit_changes(self) -> bool:
         """
@@ -196,7 +211,11 @@ class TeklaModel:
 
         Returns:
             ModelObjectEnumerator containing all objects in the model
+
+        Raises:
+            ConnectionError: If the connection to Tekla is lost.
         """
+        self._require_connection()
         selector = ModelObjectSelector()
         return selector.GetAllObjects()
 
@@ -238,17 +257,27 @@ class TeklaModel:
         """
         Returns model objects by their GUIDs.
 
+        GUIDs that are not in the model are skipped and logged - the returned
+        ArrayList carries no way to tell the caller which ones dropped out.
+
         Args:
             guids: List of GUID strings to retrieve
 
         Returns:
-            ArrayList containing the found model objects
+            ArrayList containing the found model objects. Shorter than `guids` when
+            some of them do not resolve.
         """
         objects_to_select = ArrayList()
+        missing: list[str] = []
         for guid in guids:
             obj = self.model.SelectModelObject(Identifier(guid))
             if obj is not None:
                 objects_to_select.Add(obj)
+            else:
+                missing.append(guid)
+
+        if missing:
+            logger.warning("get_objects_by_guid: %d of %d GUIDs not found in the model: %s", len(missing), len(guids), missing)
 
         return objects_to_select
 
@@ -282,7 +311,9 @@ class TeklaModel:
 
         Raises:
             TypeError: If the provided filter type is not FilterExpression or str.
+            ConnectionError: If the connection to Tekla is lost.
         """
+        self._require_connection()
         selector = ModelObjectSelector()
         if isinstance(model_filter, FilterExpression):
             objects_to_select = selector.GetObjectsByFilter(model_filter)
@@ -311,10 +342,11 @@ class TeklaModel:
 
         Returns:
             True if selection was successful
-        """
-        # Lazy import to avoid a circular dependency
-        from tekla_mcp_server.tekla.utils import to_array_list
 
+        Raises:
+            ConnectionError: If the connection to Tekla is lost.
+        """
+        TeklaModel()._require_connection()
         selector = ModelObjectSelectorUI()
 
         if isinstance(model_objects, ArrayList):
@@ -329,6 +361,10 @@ class TeklaModel:
 
         Returns:
             True if selection was cleared successfully
+
+        Raises:
+            ConnectionError: If the connection to Tekla is lost.
         """
+        TeklaModel()._require_connection()
         selector = ModelObjectSelectorUI()
         return selector.Select(ArrayList())

@@ -84,7 +84,8 @@ def add_filter(
         operator: Boolean operator joining this item with previous entries.
 
     Raises:
-        TypeError: If the value's type can't be mapped to a constant expression.
+        TypeError: If `match_type` has no operator for the value's type, e.g. a
+            `StringMatchType.CONTAINS` against a numeric value.
     """
     if not isinstance(value, (str, int, float)):
         expr = BinaryFilterExpression(filter_expression, NumericOperatorType.IS_EQUAL, NumericConstantFilterExpression(value))
@@ -109,17 +110,20 @@ def add_filter(
         if match_type is None:
             match_type = StringMatchType.IS_EQUAL
         op = STRING_MATCH_TYPE_MAPPING.get(match_type)
+        if op is None:
+            raise TypeError(f"Match type '{match_type}' has no string operator, so it cannot be applied to the string value {value!r}")
         expr = BinaryFilterExpression(filter_expression, op, StringConstantFilterExpression(value))
-    elif isinstance(value, (int, float)):
+    else:
+        # int or float - the guard at the top has already excluded everything else
         if match_type is None:
             match_type = NumericOperatorType.IS_EQUAL
         if isinstance(match_type, NumericOperatorType):
             op = match_type
         else:
             op = NUMERIC_MATCH_TYPE_MAPPING.get(match_type)
+        if op is None:
+            raise TypeError(f"Match type '{match_type}' has no numeric operator, so it cannot be applied to the numeric value {value!r}")
         expr = BinaryFilterExpression(filter_expression, op, NumericConstantFilterExpression(value))
-    else:
-        raise TypeError(f"Unsupported value type in filter: {type(value).__name__}")
 
     filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
 

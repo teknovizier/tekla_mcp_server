@@ -9,7 +9,7 @@ from fastmcp import FastMCP
 from fastmcp.server.transforms import ResourcesAsTools, Transform
 
 from tekla_mcp_server.config import get_config
-from tekla_mcp_server.init import load_dlls, logger
+from tekla_mcp_server.init import logger
 from tekla_mcp_server.providers import (
     resources_provider,
     selection_provider,
@@ -50,9 +50,6 @@ mcp.add_provider(modeling_provider)
 
 # Run the MCP server locally
 if __name__ == "__main__":
-    if not load_dlls():
-        logger.error("Not all Tekla DLLs were loaded. The server may not function correctly.")
-
     from tekla_mcp_server.embeddings import is_embeddings_enabled, check_embeddings_ready
 
     if not is_embeddings_enabled():

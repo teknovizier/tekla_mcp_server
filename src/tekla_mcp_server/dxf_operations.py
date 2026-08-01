@@ -270,8 +270,11 @@ def resolve_entities(doc, msp, include_hatches: bool = False) -> list[WorldEntit
                 local_bbox = dxf_bbox.extents([e])
                 x0, y0 = local_bbox.extmin[0], local_bbox.extmin[1]
                 x1, y1 = local_bbox.extmax[0], local_bbox.extmax[1]
-                # Guard against degenerate bbox (e.g. empty string)
-                if x1 <= x0 and y1 <= y0:
+                # Guard against a degenerate bbox on either axis. An empty string
+                # gives an infinite bbox on both, but whitespace-only TEXT reports
+                # zero width with real height - as a zero-width sliver that would
+                # collide with anything crossing its vertical line
+                if x1 <= x0 or y1 <= y0:
                     continue
                 local_points = [(x0, y0), (x1, y1)]
             elif t == "HATCH" and include_hatches:
@@ -659,11 +662,10 @@ def check_content_out_of_sheet(views: list[dict], entities: list[WorldEntity]) -
             issues.append(_out_of_sheet_issue(v["view_key"], crossing_bbox))
     return issues
 
-    # All collision checks in execution order.
-    # Signature: (views, entities) -> list[CollisionIssue].
-    # Add new checks by writing a function and appending it here
 
-
+# All collision checks in execution order.
+# Signature: (views, entities) -> list[CollisionIssue].
+# Add new checks by writing a function and appending it here
 CHECKS = [
     check_out_of_grid_with_content,
     check_collides_with_sheet,

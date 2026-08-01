@@ -91,7 +91,10 @@ class TemplateAttributeParser:
             file_path: Path to the contentattributes file to load
         """
         try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            # utf-8-sig, not utf-8: several stock contentattributes files carry a UTF-8
+            # BOM, which would otherwise land in the first line and stop it matching the
+            # '//' comment test, caching a junk attribute named '﻿//'
+            with open(file_path, "r", encoding="utf-8-sig", errors="replace") as f:
                 for line in f:
                     s = line.strip()
                     if s.startswith("[BINDINGS]"):
