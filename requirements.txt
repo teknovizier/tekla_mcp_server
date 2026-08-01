@@ -1,7 +1,7 @@
-fastmcp==3.4.0
+fastmcp==3.4.5
 pathvalidate==3.3.1
 pydantic==2.13.4
-pythonnet==3.0.5
+pythonnet==3.1.0
 python-dotenv==1.2.2
-sentence-transformers==5.5.0
-ezdxf==1.4.0
+sentence-transformers==5.6.1
+ezdxf==1.4.4
