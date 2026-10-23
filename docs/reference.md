@@ -76,7 +76,7 @@ Type and default shown where relevant.
 | Modeling | ⚠️ `move_elements` | Move selected elements by a displacement vector | `dx` (float, mm, default: `0`), `dy` (float, mm, default: `0`), `dz` (float, mm, default: `0`) - at least one must be non-zero |
 | Modeling | ✏️ `copy_elements` | Copy selected elements to a new position defined by the displacement vector, keeping originals in place. Assemblies are expanded to all constituent parts recursively | `dx` (float, mm, default: `0`), `dy` (float, mm, default: `0`), `dz` (float, mm, default: `0`) - at least one must be non-zero |
 | Modeling | ✏️ `place_grid` | Place a rectangular grid in the Tekla model | **`x`** (list[float], mm), **`y`** (list[float], mm), `z` (list[float], mm), `x_labels` (list[str]), `y_labels` (list[str]), `z_labels` (list[str]), `origin` (PointInput), `name` (str) |
-| Modeling | ⚠️ `delete_selected` | Delete all selected elements | - |
+| Modeling | ⚠️ `delete_elements` | Delete objects by GUID or all selected elements if no GUIDs are given.  | `guids` (list[str], default: `[]`) |
 | Modeling | ✏️ `create_phase` | Create a new phase in the Tekla model | **`phase_number`** (int), `name` (str, optional) |
 
 ## Resources

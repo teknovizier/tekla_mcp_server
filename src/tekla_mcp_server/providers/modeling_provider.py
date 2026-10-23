@@ -4,7 +4,8 @@ Modeling tools provider for Tekla MCP server.
 Provides tools for placing beams, columns, panels and managing elements.
 """
 
-from typing import Annotated, Callable, TypeVar
+from typing import Annotated, Any, Callable, TypeVar
+from uuid import UUID
 from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
@@ -512,42 +513,83 @@ def place_grid(
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
-def delete_selected() -> ToolResult:
+def delete_elements(
+    guids: Annotated[
+        list[str],
+        Field(
+            description="GUIDs of the objects to delete"
+        ),
+    ] = [],
+) -> ToolResult:
     """
-    Deletes all currently selected elements in Tekla.
+    Deletes objects by GUID or all currently selected elements if no GUIDs are given.
     """
     model = TeklaModel()
-    selected = model.get_selected_objects()
-    count = selected.GetSize()
+    missing_guids: list[str] = []
+    invalid_guids: list[str] = []
+    if guids:
+        objects = []
+        # Strip and drop repeats so a duplicate GUID is not reported as a failed delete
+        for guid in dict.fromkeys(guid.strip() for guid in guids):
+            try:
+                UUID(guid)
+            except ValueError:
+                # A malformed GUID would make the Tekla Identifier lookup throw and abort the whole call
+                invalid_guids.append(guid)
+                continue
+            obj = model.get_object_by_guid(guid)
+            if obj is not None:
+                objects.append(obj)
+            else:
+                missing_guids.append(guid)
+        if not objects:
+            raise ValueError(f"None of the {len(guids)} GUIDs were found in the model (missing: {missing_guids}, invalid: {invalid_guids})")
+    else:
+        objects = list(model.get_selected_objects())
+    count = len(objects)
 
     deleted = 0
-    for obj in selected:
-        if obj.Delete():
+    failed_count = 0
+    for obj in objects:
+        # An attached object listed after its father part is already gone with it, which still counts as deleted
+        if obj.Delete() or model.model.SelectModelObject(obj.Identifier) is None:
             deleted += 1
+        else:
+            failed_count += 1
+            logger.warning("Failed to delete %s (%s)", type(obj).__name__, obj.Identifier.GUID)
 
-    commit_success = model.commit_changes()
-    if not commit_success:
-        logger.error("commit_changes() failed after deleting %d objects", deleted)
-        deleted = 0
+    commit_success: bool | None = None
+    if deleted:
+        commit_success = model.commit_changes()
+
+    if not deleted:
         status = "error"
-        message = "Delete failed: commit_changes() returned false"
-    elif deleted == count:
-        status = "success"
+        message = f"None of the {count} objects could be deleted"
+    elif not commit_success:
+        logger.error("commit_changes() failed after deleting %d objects", deleted)
+        status = "error"
+        # The deletions already ran in the open model, only saving them failed
+        message = f"Deleted {deleted} of {count} objects but commit_changes() failed, the deletions may not be saved"
+    elif failed_count or missing_guids or invalid_guids:
+        status = "partial"
         message = f"Deleted {deleted} of {count} objects"
     else:
-        status = "warning"
+        status = "success"
         message = f"Deleted {deleted} of {count} objects"
 
-    logger.info("Deleted %d of %d objects (commit: %s)", deleted, count, commit_success)
-    return ToolResult(
-        structured_content={
-            "status": status,
-            "total_selected": count,
-            "total_deleted": deleted,
-            "commit_success": commit_success,
-            "message": message,
-        }
-    )
+    logger.info("Deleted %d of %d objects (commit: %s, missing GUIDs: %s, invalid GUIDs: %s)", deleted, count, commit_success, missing_guids, invalid_guids)
+    result: dict[str, Any] = {
+        "status": status,
+        "total_found": count,
+        "total_deleted": deleted,
+        "failed_count": failed_count,
+        "missing_guids": missing_guids,
+        "invalid_guids": invalid_guids,
+        "message": message,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
