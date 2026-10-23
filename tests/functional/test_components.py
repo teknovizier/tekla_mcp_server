@@ -4,7 +4,7 @@ Functional tests for components_provider.
 Tests component placement, removal, modification, and retrieval operations.
 """
 
-from tekla_mcp_server.providers.components_provider import put_components, remove_components, get_components, modify_components
+from tekla_mcp_server.providers.components_provider import put_components, remove_components, get_components, modify_components, explode_components
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
@@ -137,6 +137,30 @@ def test_put_components_no_selection():
     TeklaModel.clear_selection()
     result = put_components(component_name="MeshBars")
     assert result.structured_content["status"] == "error"
+
+
+def test_explode_components(model_objects):
+    """Exploded component is gone from the element and is reported per name."""
+    TeklaModel.select_objects([model_objects["test_wall8"]])
+    remove_components(component_name="MeshBars")
+    put_components(component_name="MeshBars")
+    result = explode_components(component_names=["meshbars"])
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["exploded"] == {"MeshBars": 1}
+    assert result.structured_content["not_found"] == []
+
+    components = get_components().structured_content["elements"][0]["components"]
+    assert "MeshBars" not in [c["name"] for c in components]
+
+
+def test_explode_components_no_matching(model_objects):
+    """No matching component: nothing is exploded, status is warning, no commit attempted."""
+    TeklaModel.select_objects([model_objects["test_wall6"]])
+    result = explode_components(component_names=["NonExistentComponent"])
+    assert result.structured_content["status"] == "warning"
+    assert result.structured_content["exploded"] == {}
+    assert result.structured_content["not_found"] == ["NonExistentComponent"]
+    assert "commit_success" not in result.structured_content
 
 
 def test_remove_components_no_matching(model_objects):

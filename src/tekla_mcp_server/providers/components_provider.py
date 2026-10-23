@@ -14,11 +14,12 @@ from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import BaseComponent, ComponentType, TYPE_DEFAULTS
 from tekla_mcp_server.utils import mcp_handler
+from tekla_mcp_server.providers.operations_provider import run_macro
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.component_handlers import HandlerRegistry
 from tekla_mcp_server.tekla.loader import Beam, CustomPart, Part
-from tekla_mcp_server.tekla.utils import ensure_transformation_plane, get_wall_pairs, insert_component, insert_detail
+from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_transformation_plane, get_wall_pairs, insert_component, insert_detail
 
 
 components_provider = LocalProvider()
@@ -260,6 +261,81 @@ def remove_components(component_name: Annotated[str, Field(description="The Tekl
         "status": status,
         "selected_count": selected_objects.GetSize(),
         "removed_components_count": counter,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)
+
+
+@components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def explode_components(
+    component_names: Annotated[list[str], Field(min_length=1, description="Tekla names of the components to explode, as returned by `get_components`")],
+) -> ToolResult:
+    """
+    Explode components with the given names on selected elements.
+    """
+    # The Open API has no explode method for components, so the bundled macro runs
+    # Tekla's native command on a selection made of just the matched components
+    model = TeklaModel()
+    selected_objects = list(model.get_selected_objects())
+    wanted = {name.strip().lower(): name.strip() for name in component_names if name.strip()}
+
+    matches: dict[str, Any] = {}  # component GUID -> component
+    for obj in selected_objects:
+        # Only Part and CustomPart support GetComponents()
+        if not isinstance(obj, (Part, CustomPart)):
+            continue
+        for comp in obj.GetComponents():
+            if comp.Name and comp.Name.lower() in wanted:
+                # A connection between two selected parts is returned by both, keep it once
+                matches.setdefault(str(comp.Identifier.GUID), comp)
+
+    found_names = {comp.Name.lower() for comp in matches.values()}
+    not_found = [name for key, name in wanted.items() if key not in found_names]
+
+    exploded: dict[str, int] = {}
+    failed_count = 0
+    commit_success: bool | None = None
+    if matches:
+        EXPLODE_COMPONENTS_MACRO = "TeklaMCPExplodeSelectedComponents.cs"
+        ensure_macro_installed(EXPLODE_COMPONENTS_MACRO, category="modeling")
+        try:
+            TeklaModel.select_objects(matches.values())
+            macro_result = run_macro(macro_name=EXPLODE_COMPONENTS_MACRO)
+            if macro_result.structured_content.get("status") != "success":
+                raise RuntimeError(f"Explode macro '{EXPLODE_COMPONENTS_MACRO}' failed.")
+        finally:
+            TeklaModel.select_objects(selected_objects)
+
+        # The macro reports no per-object result, so a component that still exists was not exploded
+        for comp in matches.values():
+            if model.model.SelectModelObject(comp.Identifier) is None:
+                exploded[comp.Name] = exploded.get(comp.Name, 0) + 1
+            else:
+                failed_count += 1
+                logger.warning("Component '%s' (%s) still exists after explode", comp.Name, comp.Identifier.GUID)
+
+        if exploded:
+            commit_success = model.commit_changes()
+            if not commit_success:
+                logger.error("commit_changes() failed after exploding %s components", sum(exploded.values()))
+
+    if commit_success is False or (matches and not exploded):
+        status = "error"
+    elif not matches:
+        status = "warning"
+    elif failed_count or not_found:
+        status = "partial"
+    else:
+        status = "success"
+    logger.info("Exploded components: %s, failed: %s, not found: %s", exploded, failed_count, not_found)
+    result: dict[str, Any] = {
+        "status": status,
+        "selected_count": len(selected_objects),
+        "exploded": exploded,
+        "not_found": not_found,
+        "failed_count": failed_count,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
