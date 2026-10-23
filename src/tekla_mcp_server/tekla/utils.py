@@ -362,20 +362,21 @@ def get_candidates_in_bounding_box(element: TeklaModelObject, tolerance: float) 
     return candidates
 
 
-def iterate_boolean_parts(model_object: ModelObject) -> list[ModelObject]:
+def iterate_boolean_parts(model_object: ModelObject, types: tuple[type, ...] = (BooleanPart,)) -> list[ModelObject]:
     """
     Iterate over boolean parts attached to a model object.
 
     Args:
         model_object: The Tekla model object to get booleans from
+        types: Boolean classes to keep, e.g. `(BooleanPart, Fitting, CutPlane, EdgeChamfer)`
 
     Returns:
-        List of BooleanPart objects attached to the model object
+        List of the booleans attached to the model object that match `types`
     """
     boolean_parts: list[ModelObject] = []
     boolean_enum = model_object.GetBooleans()
     while boolean_enum.MoveNext():
-        if isinstance(boolean_enum.Current, BooleanPart):
+        if isinstance(boolean_enum.Current, types):
             boolean_parts.append(boolean_enum.Current)
     return boolean_parts
 

@@ -25,11 +25,20 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     wrap_model_object,
     wrap_model_objects,
 )
-from tekla_mcp_server.tekla.loader import BooleanPart, Operation
+from tekla_mcp_server.tekla.loader import BooleanPart, CutPlane, EdgeChamfer, Fitting, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 
 properties_provider = LocalProvider()
+
+
+def _plane_to_dict(plane: Any) -> dict[str, dict[str, float]]:
+    """Convert the `Plane` of a fitting or cut plane to its origin and axes, in the current work plane."""
+    return {
+        "origin": {"x": plane.Origin.X, "y": plane.Origin.Y, "z": plane.Origin.Z},
+        "axis_x": {"x": plane.AxisX.X, "y": plane.AxisX.Y, "z": plane.AxisX.Z},
+        "axis_y": {"x": plane.AxisY.X, "y": plane.AxisY.Y, "z": plane.AxisY.Z},
+    }
 
 
 def _validate_at_least_two_selected(count: int) -> None:
@@ -356,13 +365,18 @@ def get_elements_properties(
 @mcp_handler(scope="tool")
 def get_elements_cut_parts() -> ToolResult:
     """
-    Find all boolean cut parts in the selected Tekla elements, grouped by parent part.
+    Find all boolean cut parts, fittings, cut planes and edge chamfers in the selected Tekla elements, grouped by parent part.
+
+    Coordinates of fitting and cut plane planes and of edge chamfer ends are in the current work plane.
     """
     selected_objects = TeklaModel().get_selected_objects()
 
     processed_count = 0
     parts_with_cuts: list[dict[str, Any]] = []
     total_cut_parts = 0
+    total_fittings = 0
+    total_cut_planes = 0
+    total_edge_chamfers = 0
 
     for selected_object in wrap_model_objects(selected_objects):
         if not isinstance(selected_object, TeklaPart):
@@ -370,20 +384,41 @@ def get_elements_cut_parts() -> ToolResult:
             continue
 
         cuts: list[dict[str, Any]] = []
-        for boolean_part in iterate_boolean_parts(selected_object.model_object):
-            if boolean_part.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_CUT:
-                cutting_part = wrap_model_object(boolean_part.OperativePart)
+        for boolean in iterate_boolean_parts(selected_object.model_object, (BooleanPart, Fitting, CutPlane, EdgeChamfer)):
+            if isinstance(boolean, BooleanPart):
+                if boolean.Type != BooleanPart.BooleanTypeEnum.BOOLEAN_CUT:
+                    continue
+                cutting_part = wrap_model_object(boolean.OperativePart)
                 if cutting_part is None:
                     logger.warning("get_elements_cut_parts: could not wrap OperativePart for boolean on %s, skipping", selected_object.guid)
                     continue
                 cuts.append(
                     {
                         "type": "BOOLEAN_CUT",
+                        "guid": boolean.Identifier.GUID.ToString(),
                         "cutting_part_guid": cutting_part.guid,
                         "cutting_profile": cutting_part.profile if isinstance(cutting_part, TeklaPart) else "N/A",
                     }
                 )
                 total_cut_parts += 1
+            elif isinstance(boolean, Fitting):
+                cuts.append({"type": "FITTING", "guid": boolean.Identifier.GUID.ToString(), "plane": _plane_to_dict(boolean.Plane)})
+                total_fittings += 1
+            elif isinstance(boolean, CutPlane):
+                cuts.append({"type": "CUT_PLANE", "guid": boolean.Identifier.GUID.ToString(), "plane": _plane_to_dict(boolean.Plane)})
+                total_cut_planes += 1
+            elif isinstance(boolean, EdgeChamfer):
+                chamfer = boolean.Chamfer
+                cuts.append(
+                    {
+                        "type": "EDGE_CHAMFER",
+                        "guid": boolean.Identifier.GUID.ToString(),
+                        "first_end": {"x": boolean.FirstEnd.X, "y": boolean.FirstEnd.Y, "z": boolean.FirstEnd.Z},
+                        "second_end": {"x": boolean.SecondEnd.X, "y": boolean.SecondEnd.Y, "z": boolean.SecondEnd.Z},
+                        "chamfer": {"type": str(chamfer.Type), "x": chamfer.X, "y": chamfer.Y},
+                    }
+                )
+                total_edge_chamfers += 1
 
         if cuts:
             parts_with_cuts.append(
@@ -396,13 +431,23 @@ def get_elements_cut_parts() -> ToolResult:
 
         processed_count += 1
 
-    logger.info("Found %s cut parts in %s elements with cuts", total_cut_parts, len(parts_with_cuts))
+    logger.info(
+        "Found %s cut parts, %s fittings, %s cut planes and %s edge chamfers in %s elements with cuts",
+        total_cut_parts,
+        total_fittings,
+        total_cut_planes,
+        total_edge_chamfers,
+        len(parts_with_cuts),
+    )
     return ToolResult(
         structured_content={
             "status": "success" if parts_with_cuts else "warning",
             "selected_count": selected_objects.GetSize(),
             "processed_count": processed_count,
             "total_cut_parts_count": total_cut_parts,
+            "total_fittings_count": total_fittings,
+            "total_cut_planes_count": total_cut_planes,
+            "total_edge_chamfers_count": total_edge_chamfers,
             "parts_with_cuts": parts_with_cuts,
         },
     )

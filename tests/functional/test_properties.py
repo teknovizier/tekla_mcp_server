@@ -387,6 +387,9 @@ def test_get_elements_cut_parts_with_cuts(model_objects):
 
     assert result.structured_content["status"] == "success"
     assert result.structured_content["selected_count"] == 1
+    cuts = result.structured_content["parts_with_cuts"][0]["cuts"]
+    assert any(cut["type"] == "BOOLEAN_CUT" for cut in cuts)
+    assert all(cut["guid"] for cut in cuts)
 
 
 def test_get_elements_cut_parts_without_cuts(model_objects):
@@ -397,6 +400,9 @@ def test_get_elements_cut_parts_without_cuts(model_objects):
     assert result.structured_content["status"] == "warning"
     assert result.structured_content["selected_count"] == 1
     assert result.structured_content["total_cut_parts_count"] == 0
+    assert result.structured_content["total_fittings_count"] == 0
+    assert result.structured_content["total_cut_planes_count"] == 0
+    assert result.structured_content["total_edge_chamfers_count"] == 0
 
 
 def test_compare_elements_numbering_not_up_to_date(model_objects):
