@@ -43,13 +43,13 @@ Both settings compose: `excluded_tags` and `read_only` can be active simultaneou
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `embeddings.enabled` | `true` | Enable semantic search |
+| `embeddings.enabled` | `false` | Enable semantic search |
 | `embeddings.embedding_model` | `teknovizier/minilm-tekla-attr-embed-v1` | HuggingFace model ID or local path |
 | `embeddings.embedding_spread_threshold` | `0.1` | Min stddev for auto-resolution (0-1) |
 | `embeddings.embedding_minimum_threshold` | `0.8` | Min confidence score (0-1) |
 
 #### Semantic Attribute Mapping
-The server uses **sentence-transformers** (MiniLM) to perform semantic attribute mapping for **template attributes**, converting user-friendly text into Tekla attribute names. By default, it loads **fine‑tuned Tekla‑specific model** published on HuggingFace: [teknovizier/minilm-tekla-attr-embed-v1](https://huggingface.co/teknovizier/minilm-tekla-attr-embed-v1).
+The server uses **sentence-transformers** (MiniLM) to perform semantic attribute mapping for **template attributes**, converting user-friendly text into Tekla attribute names. It is disabled by default - without it, attribute names are resolved by exact and override matching only. When enabled, it loads **fine‑tuned Tekla‑specific model** published on HuggingFace: [teknovizier/minilm-tekla-attr-embed-v1](https://huggingface.co/teknovizier/minilm-tekla-attr-embed-v1).
 
 ##### How it works
 

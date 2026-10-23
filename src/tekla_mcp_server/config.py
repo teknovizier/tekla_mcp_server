@@ -299,7 +299,7 @@ class Config:
     @property
     def embeddings_enabled(self) -> bool:
         """Whether embeddings/semantic search is enabled."""
-        return self.embeddings.get("enabled", True)
+        return self.embeddings.get("enabled", False)
 
     @property
     def embedding_model(self) -> str | None:

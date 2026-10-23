@@ -47,7 +47,7 @@ To use this server, one must first install and configure an MCP client.
 
 - **LLM‑Powered Component Property Understanding**: Natural language mapping like "concrete cover thickness" → actual Tekla component property.
 
-- **Semantic Attribute Mapping**: Hybrid semantic system (MiniLM embedding model + LLM fallback) for mapping user‑friendly names to Tekla attributes.
+- **Semantic Attribute Mapping**: Hybrid semantic system (MiniLM embedding model + LLM fallback) for mapping user‑friendly names to Tekla attributes. Opt-in, disabled by default.
 
 - **Flexible Access Control**: Possibility to run in read-only mode for safe query-only access and to hide specific tool categories based on project or workflow needs.
 

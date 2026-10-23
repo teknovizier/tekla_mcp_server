@@ -22,7 +22,7 @@ uv pip install -r requirements-dev.txt
 | `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
 | `read_only` | `false` | When `true`, exposes only read-only tools, everything that writes the model is hidden. Selection, view, and query tools remain available |
 | `excluded_tags` | `[]` | List of tool tags to hide from the LLM. See [configuration guide](configuration.md#tool-visibility) |
-| `embeddings.enabled` | `true` | Enable semantic attribute search |
+| `embeddings.enabled` | `false` | Enable semantic attribute search |
 | `embeddings.embedding_model` | `teknovizier/minilm-tekla-attr-embed-v1` | HuggingFace model or local path |
 
 See the [configuration guide](configuration.md#settings-settingsjson) for the full list of settings (embeddings thresholds, tolerances, reports).
@@ -72,6 +72,6 @@ You may experience a naming conflict with the `clr` package. Solution: rename or
 - Config files are **read once on startup**. Restart the MCP server after any changes
 
 ### Embedding Model Issues
-- If semantic mapping fails, set `"embeddings": { "enabled": false }` in `settings.json` to fall back to LLM-only attribute resolution
+- Embeddings are disabled by default. Set `"embeddings": { "enabled": true }` in `settings.json` to resolve fuzzy attribute names semantically
 - The embedding model downloads automatically on first use (~120 MB)
 - If the download hangs, manually download `teknovizier/minilm-tekla-attr-embed-v1` from HuggingFace and set `embedding_model` to the local path
