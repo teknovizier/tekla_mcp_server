@@ -220,47 +220,66 @@ def put_components(
 
 @components_provider.tool(tags={"components"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
-def remove_components(component_name: Annotated[str, Field(description="The Tekla name of the component (e.g. 'Lifting Anchor', 'MeshBars')")]) -> ToolResult:
+def remove_components(
+    component_names: Annotated[list[str], Field(min_length=1, description="Tekla names of the components to remove, as returned by `get_components` (e.g. 'Lifting Anchor', 'MeshBars')")],
+) -> ToolResult:
     """
-    Removes Tekla components from selected objects.
+    Remove components with the given names from selected elements.
     """
-    component = BaseComponent(name=component_name)
     model = TeklaModel()
-    selected_objects = model.get_selected_objects()
+    selected_objects = list(model.get_selected_objects())
+    wanted = {name.strip().lower(): name.strip() for name in component_names if name.strip()}
 
-    handler = HandlerRegistry.get(component.name)
+    # Handlers clean up objects their component created outside itself (e.g. lifting anchor recess cuts)
+    cleaned_count = 0
+    for name in wanted.values():
+        handler = HandlerRegistry.get(name)
+        if handler and hasattr(handler, "pre_remove"):
+            cleaned_count += handler.pre_remove(selected_objects)
 
-    counter = 0
-    objects_list = list(selected_objects)
-    if handler and hasattr(handler, "pre_remove"):
-        counter += handler.pre_remove(objects_list)
-
-    for obj in objects_list:
+    matches: dict[str, Any] = {}  # component GUID -> component
+    for obj in selected_objects:
         # Only Part and CustomPart support GetComponents()
         if not isinstance(obj, (Part, CustomPart)):
             continue
-        # Collect matches before deleting
-        to_delete = [comp for comp in obj.GetComponents() if comp.Number == component.number and comp.Name == component.name]
-        for comp in to_delete:
-            if comp.Delete():
-                counter += 1
+        for comp in obj.GetComponents():
+            if comp.Name and comp.Name.lower() in wanted:
+                # A connection between two selected parts is returned by both, keep it once
+                matches.setdefault(str(comp.Identifier.GUID), comp)
+
+    found_names = {comp.Name.lower() for comp in matches.values()}
+    not_found = [name for key, name in wanted.items() if key not in found_names]
+
+    removed: dict[str, int] = {}
+    failed_count = 0
+    for comp in matches.values():
+        if comp.Delete():
+            removed[comp.Name] = removed.get(comp.Name, 0) + 1
+        else:
+            failed_count += 1
+            logger.warning("Failed to delete component '%s' (%s)", comp.Name, comp.Identifier.GUID)
+
     commit_success: bool | None = None
-    if counter > 0:
+    if removed or cleaned_count:
         commit_success = model.commit_changes()
         if not commit_success:
-            logger.error("commit_changes() failed after removing %s components", counter)
+            logger.error("commit_changes() failed after removing %s components", sum(removed.values()))
 
-    if commit_success is False:
+    if commit_success is False or (matches and not removed):
         status = "error"
-    elif counter > 0:
-        status = "success"
-    else:
+    elif not matches:
         status = "warning"
-    logger.info("Total components removed: %s", counter)
-    result: dict = {
+    elif failed_count or not_found:
+        status = "partial"
+    else:
+        status = "success"
+    logger.info("Removed components: %s, failed: %s, not found: %s, cleaned up objects: %s", removed, failed_count, not_found, cleaned_count)
+    result: dict[str, Any] = {
         "status": status,
-        "selected_count": selected_objects.GetSize(),
-        "removed_components_count": counter,
+        "selected_count": len(selected_objects),
+        "removed": removed,
+        "not_found": not_found,
+        "failed_count": failed_count,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success

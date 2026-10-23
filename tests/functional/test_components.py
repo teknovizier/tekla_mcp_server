@@ -26,7 +26,7 @@ def test_remove_lifting_anchors(model_objects):
     """Tests remove_components for lifting anchors."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
     put_components(component_name="Lifting Anchor")
-    result = remove_components(component_name="Lifting Anchor")
+    result = remove_components(component_names=["Lifting Anchor"])
     assert result.structured_content["status"] == "success"
 
 
@@ -48,8 +48,21 @@ def test_remove_components(model_objects):
     """Tests remove_components function."""
     TeklaModel.select_objects([model_objects["test_wall8"]])
     put_components(component_name="MeshBars")
-    result = remove_components(component_name="MeshBars")
+    result = remove_components(component_names=["meshbars"])
     assert result.structured_content["status"] == "success"
+    assert result.structured_content["removed"] == {"MeshBars": 1}
+    assert result.structured_content["not_found"] == []
+
+
+def test_remove_components_several_names(model_objects):
+    """Several names in one call: found ones are removed, missing ones are reported, status is partial."""
+    TeklaModel.select_objects([model_objects["test_wall8"]])
+    remove_components(component_names=["MeshBars"])
+    put_components(component_name="MeshBars")
+    result = remove_components(component_names=["MeshBars", "NonExistentComponent"])
+    assert result.structured_content["status"] == "partial"
+    assert result.structured_content["removed"] == {"MeshBars": 1}
+    assert result.structured_content["not_found"] == ["NonExistentComponent"]
 
 
 def test_get_components_returns_components(model_objects):
@@ -142,7 +155,7 @@ def test_put_components_no_selection():
 def test_explode_components(model_objects):
     """Exploded component is gone from the element and is reported per name."""
     TeklaModel.select_objects([model_objects["test_wall8"]])
-    remove_components(component_name="MeshBars")
+    remove_components(component_names=["MeshBars"])
     put_components(component_name="MeshBars")
     result = explode_components(component_names=["meshbars"])
     assert result.structured_content["status"] == "success"
@@ -164,9 +177,10 @@ def test_explode_components_no_matching(model_objects):
 
 
 def test_remove_components_no_matching(model_objects):
-    """Selected element with no matching component: removed count is 0, status is warning, no commit attempted."""
+    """Selected element with no matching component: nothing is removed, status is warning, no commit attempted."""
     TeklaModel.select_objects([model_objects["test_wall6"]])
-    result = remove_components(component_name="MeshBars")
+    result = remove_components(component_names=["MeshBars"])
     assert result.structured_content["status"] == "warning"
-    assert result.structured_content["removed_components_count"] == 0
+    assert result.structured_content["removed"] == {}
+    assert result.structured_content["not_found"] == ["MeshBars"]
     assert "commit_success" not in result.structured_content
