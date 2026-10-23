@@ -38,17 +38,33 @@ def test_draw_elements_labels_with_label(model_objects):
 
 
 def test_draw_elements_labels_with_valid_custom_label(model_objects):
-    """Tests draw_elements_labels with custom_label."""
+    """Tests draw_elements_labels with a single custom label."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    result = draw_elements_labels(label="Custom", custom_label="AREA_NET")
+    result = draw_elements_labels(label="Custom", custom_labels=["AREA_NET"])
     assert result.structured_content["status"] == "success"
 
 
-def test_draw_elements_labels_with_invalid_custom_label(model_objects):
-    """Tests draw_elements_labels with invalid custom_label."""
+def test_draw_elements_labels_with_multiple_custom_labels(model_objects):
+    """Tests draw_elements_labels with several custom labels drawn as one label per element."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    result = draw_elements_labels(label="Custom", custom_label="InvalidProperty")
+    result = draw_elements_labels(custom_labels=["AREA_NET", "WEIGHT", "LENGTH"])
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["drawn_labels_count"] == 2
+
+
+def test_draw_elements_labels_with_invalid_custom_label(model_objects):
+    """Tests draw_elements_labels with invalid custom label."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    result = draw_elements_labels(label="Custom", custom_labels=["InvalidProperty"])
     assert result.structured_content["status"] == "error"
+
+
+def test_draw_elements_labels_with_one_invalid_of_many_custom_labels(model_objects):
+    """One unresolvable name among valid ones fails the whole call, nothing is drawn."""
+    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
+    result = draw_elements_labels(custom_labels=["AREA_NET", "InvalidProperty"])
+    assert result.structured_content["status"] == "error"
+    assert "InvalidProperty" in result.structured_content["message"]
 
 
 def test_zoom_to_selection(model_objects):

@@ -38,14 +38,14 @@ view_provider = LocalProvider()
 @mcp_handler(scope="tool")
 def draw_elements_labels(
     label: Annotated[str | None, Field(description="Type of label to draw")] = None,
-    custom_label: Annotated[str | None, Field(description="User-provided report property name")] = None,
+    custom_labels: Annotated[list[str], Field(description="User-provided report property names, drawn together as one label per element")] = [],
 ) -> ToolResult:
     """
     Draws temporary labels in the Tekla model.
 
     ## BEHAVIOR
     Treat any value provided by the user as the name of a Tekla attribute.
-    If `custom_label` is provided, use it.
+    If `custom_labels` is provided, use it and draw every property in one label, in the given order.
     Otherwise use `label`.
 
     ## VALID VALUES BY ELEMENT TYPE
@@ -60,7 +60,8 @@ def draw_elements_labels(
     """
     selected_objects = TeklaModel().get_selected_objects()
 
-    if custom_label:
+    custom_labels = [name.strip() for name in custom_labels if name.strip()]
+    if custom_labels:
         label_value = "Custom"
     else:
         label_value = "Name" if label is None else label
@@ -70,19 +71,20 @@ def draw_elements_labels(
     except Exception as e:
         raise ValueError(f"Invalid label: {e}") from e
 
-    resolved_label = None
-    unit = None
+    # Resolved attribute name -> unit suffix, in the order the user gave them
+    resolved_labels: dict[str, str] = {}
 
-    if label_enum == ElementLabel.CUSTOM and custom_label:
-        resolution = TemplateAttributeParser.resolve_attributes([custom_label])
+    if label_enum == ElementLabel.CUSTOM:
+        if not custom_labels:
+            raise ValueError("Label 'Custom' requires at least one name in `custom_labels`")
+        resolution = TemplateAttributeParser.resolve_attributes(custom_labels)
         errors = resolution.get("errors", [])
         if errors:
-            candidates: list[str] = next((e.get("candidates", []) for e in errors if e.get("query") == custom_label), [])
-            raise ValueError(f"Failed to resolve custom label '{custom_label}'. Candidates: {candidates}")
-        else:
-            resolved_label = resolution["resolved"][0]
+            failures = "; ".join(f"'{e.get('query')}' (candidates: {e.get('candidates', [])})" for e in errors)
+            raise ValueError(f"Failed to resolve custom labels: {failures}")
+        for resolved_label in resolution["resolved"]:
             custom_property = TemplateAttributeParser.get_attribute(resolved_label)
-            unit = f" {custom_property.unit}" if custom_property.unit else ""
+            resolved_labels[resolved_label] = f" {custom_property.unit}" if custom_property.unit else ""
 
     color_black = (0.0, 0.0, 0.0)
     drawer = GraphicsDrawer()
@@ -92,8 +94,8 @@ def draw_elements_labels(
     for selected_object in wrap_model_objects(selected_objects):
         try:
             if label_enum == ElementLabel.CUSTOM:
-                value = selected_object.get_report_property(resolved_label)
-                text = f"{resolved_label} = {value}{unit}"
+                # One line keeps the values together in every view direction
+                text = " | ".join(f"{name} = {selected_object.get_report_property(name)}{unit}" for name, unit in resolved_labels.items())
             else:
                 if isinstance(selected_object, TeklaAssembly):
                     assembly_labels = {
