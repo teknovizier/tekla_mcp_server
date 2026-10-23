@@ -14,6 +14,7 @@ This file defines basic rules for AI agents and human contributors working on th
 - Make changes minimal, focused, and consistent
 - Never remove existing comments, keep them as they are unless explicitly instructed otherwise
 - Backwards compatibility is not required, changes can introduce breaking behavior for older versions
+- Shell commands run in Git Bash on Windows - never redirect or pipe output to `/dev/null` or `nul`
 
 ## Critical Traps
 
