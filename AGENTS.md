@@ -230,12 +230,14 @@ def function():
 - Avoid overusing `-` in docstrings - prefer plain prose sentences
 
 ### Docstrings
-All tool functions must use **Google-style** docstrings with:
+All functions must use **Google-style** docstrings with:
 - Summary line (imperative mood, max 79 chars)
 - Concise and short - no more prose than needed to convey the "what" and "why"
 - `Args:` section for parameters
 - `Returns:` section for return values
 - `Raises:` section for exceptions (where applicable)
+
+**Exception: MCP tools in `providers/`:** docstrings of `@<provider>.tool` functions must NOT have `Args:`, `Returns:` or `Raises:` sections. The docstring becomes the tool description sent to MCP clients, and parameters are already described via `Annotated[..., Field(description=...)]`. Keep only the summary line and, if needed, a short prose description.
 
 For a multi-line docstring, the opening `"""` goes on its own line - never put the first line of text on the same line as the opening quotes.
 
