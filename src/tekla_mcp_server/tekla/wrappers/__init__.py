@@ -10,6 +10,7 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     TeklaAssembly,
     TeklaBeam,
     TeklaContourPlate,
+    TeklaReferenceModel,
     wrap_model_object,
     wrap_model_objects,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "wrap_model_objects",
     "TeklaBeam",
     "TeklaContourPlate",
+    "TeklaReferenceModel",
     "TeklaDrawing",
     "wrap_drawings",
     "BoundingBox",

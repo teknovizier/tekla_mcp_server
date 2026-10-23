@@ -13,6 +13,7 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import log_function_call
 from tekla_mcp_server.tekla.filter_builder import add_filter
 from tekla_mcp_server.tekla.interop import to_array_list
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaReferenceModel
 
 from tekla_mcp_server.tekla.loader import (
     Identifier,
@@ -23,6 +24,7 @@ from tekla_mcp_server.tekla.loader import (
     ModelObjectEnumerator,
     ModelObjectSelectorUI,
     PhaseCollection,
+    ReferenceModel,
     FilterExpression,
     BinaryFilterExpressionCollection,
     PartFilterExpressions,
@@ -331,6 +333,15 @@ class TeklaModel:
     def get_phases(self) -> PhaseCollection:
         """Return all phases defined in the model."""
         return self.model.GetPhases()
+
+    @log_function_call
+    def get_reference_models(self) -> list[TeklaReferenceModel]:
+        """Return all reference models inserted in the model."""
+        enumerator = self.model.GetModelObjectSelector().GetAllObjectsWithType(ReferenceModel.ModelObjectEnum.REFERENCE_MODEL)
+        reference_models = []
+        while enumerator.MoveNext():
+            reference_models.append(TeklaReferenceModel(enumerator.Current))
+        return reference_models
 
     @staticmethod
     def select_objects(model_objects: Iterable) -> bool:

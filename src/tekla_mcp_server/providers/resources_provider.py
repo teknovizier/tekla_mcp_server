@@ -4,6 +4,8 @@ Resources provider for Tekla MCP server.
 Provides read-only data resources for discovery and metadata.
 """
 
+from dataclasses import asdict
+
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers import LocalProvider
 
@@ -198,6 +200,26 @@ def get_grid_list() -> ResourceResult:
         )
     logger.debug("Retrieved %d grids", len(grid_data))
     return json_resource({"grids": grid_data})
+
+
+@resources_provider.resource("tekla://reference_models")
+@mcp_handler(scope="resource")
+def get_reference_model_list() -> ResourceResult:
+    """
+    Returns reference models in the current Tekla model.
+    """
+    tekla_model = TeklaModel()
+    reference_model_data = [
+        {
+            "guid": reference_model.guid,
+            "title": reference_model.title,
+            "file_name": reference_model.file_name,
+            "revisions": [asdict(revision) for revision in reference_model.revisions],
+        }
+        for reference_model in tekla_model.get_reference_models()
+    ]
+    logger.debug("Retrieved %d reference models", len(reference_model_data))
+    return json_resource({"reference_models": reference_model_data})
 
 
 @resources_provider.resource("tekla://connection_status")

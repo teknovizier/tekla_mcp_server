@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 from collections.abc import Generator, Iterable
 from dataclasses import dataclass
+from pathlib import PureWindowsPath
 from typing import Any, overload
 
 from tekla_mcp_server.config import get_config, get_tolerance
@@ -32,6 +33,7 @@ from tekla_mcp_server.tekla.loader import (
     Solid,
     Hashtable,
     Phase,
+    ReferenceModel,
     ReferenceModelObject,
 )
 
@@ -284,6 +286,7 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         - TeklaBeam if the object is a Beam
         - TeklaContourPlate if the object is a ContourPlate
         - TeklaPart if the object is a Part
+        - TeklaReferenceModel if the object is a ReferenceModel
         - TeklaReferenceModelObject if the object is a ReferenceModelObject
         - TeklaReinforcement if the object is a TeklaReinforcement
         - TeklaModelObject for any other object types
@@ -298,6 +301,8 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         return TeklaContourPlate(model_object)
     elif isinstance(model_object, Part):
         return TeklaPart(model_object)
+    elif isinstance(model_object, ReferenceModel):
+        return TeklaReferenceModel(model_object)
     elif isinstance(model_object, ReferenceModelObject):
         return TeklaReferenceModelObject(model_object)
     elif isinstance(model_object, Reinforcement):
@@ -593,6 +598,62 @@ class TeklaReferenceModelObject(TeklaModelObject):
         props = super().get_properties(report_props_definitions)
         props["guid"] = self.get_report_property("GUID")
         return props
+
+
+@dataclass
+class TeklaReferenceModelRevision:
+    """
+    One revision of a reference model.
+    """
+
+    id: int
+    time: str
+    file_name: str
+    is_current: bool
+
+
+class TeklaReferenceModel(TeklaModelObject):
+    """
+    A wrapper class around the Tekla Structures ReferenceModel object.
+    """
+
+    @property
+    def title(self) -> str:
+        """
+        Returns the reference model title.
+        """
+        return self.model_object.Title
+
+    @property
+    def file_path(self) -> str:
+        """
+        Returns the full path of the reference model file.
+        For local use only.
+        """
+        return self.model_object.Filename
+
+    @property
+    def file_name(self) -> str:
+        """
+        Returns the reference model file name without the directory.
+        """
+        return PureWindowsPath(self.model_object.Filename).name
+
+    @property
+    def revisions(self) -> list[TeklaReferenceModelRevision]:
+        """
+        Returns all revisions of the reference model, oldest first.
+        """
+        revisions = [
+            TeklaReferenceModelRevision(
+                id=revision.Id,
+                time=revision.Time.ToString("s"),
+                file_name=PureWindowsPath(revision.FileName).name,
+                is_current=revision.IsCurrentRevision,
+            )
+            for revision in self.model_object.GetRevisions()
+        ]
+        return sorted(revisions, key=lambda revision: revision.time)
 
 
 @dataclass
