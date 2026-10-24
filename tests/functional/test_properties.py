@@ -18,6 +18,7 @@ from tekla_mcp_server.providers.properties_provider import (
     copy_properties_from_ifc,
 )
 from tekla_mcp_server.providers.selection_provider import select_elements_assemblies_or_main_parts, select_elements_by_guid
+from tekla_mcp_server.tekla.interop import to_array_list
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
@@ -422,7 +423,7 @@ def test_compare_identical_parts(model_objects):
     sc = result.structured_content
     assert sc["status"] == "success"
     assert sc["identical"] is True
-    assert len(sc["guids"]) == 2
+    assert len(sc["elements"]) == 2
     assert "diff" not in sc
 
 
@@ -440,7 +441,7 @@ def test_compare_different_parts_different_profile(model_objects):
 
 
 def test_compare_three_elements(model_objects):
-    """Tests compare_elements with three elements: guids list has 3 entries."""
+    """Tests compare_elements with three elements: elements legend has 3 entries."""
     TeklaModel.select_objects(
         [
             model_objects["test_wall1"],
@@ -452,28 +453,29 @@ def test_compare_three_elements(model_objects):
 
     sc = result.structured_content
     assert sc["status"] == "success"
-    assert len(sc["guids"]) == 3
-    assert len(sc["raws"]) == 3
+    assert len(sc["elements"]) == 3
 
 
-def test_compare_guids_contains_all_selected(model_objects):
-    """guids must contain one non-empty string per selected element."""
+def test_compare_elements_legend_has_guid_and_pos(model_objects):
+    """Each `elements` entry carries a non-empty guid and a pos mark, one per selected element."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
     result = compare_elements(ignore_numbering=True)
 
-    sc = result.structured_content
-    assert len(sc["guids"]) == 2
-    assert all(isinstance(g, str) and g for g in sc["guids"])
+    elements = result.structured_content["elements"]
+    assert len(elements) == 2
+    assert all(isinstance(e["guid"], str) and e["guid"] for e in elements)
+    assert all(isinstance(e["pos"], str) for e in elements)
+    assert len({e["guid"] for e in elements}) == 2
 
 
-def test_compare_diff_values_aligned_with_guids(model_objects):
-    """Every leaf value list in diff must have exactly len(guids) entries at any nesting depth."""
+def test_compare_diff_values_aligned_with_elements(model_objects):
+    """Every leaf value list in diff must have exactly len(elements) entries at any nesting depth."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
     result = compare_elements(ignore_numbering=True)
 
     sc = result.structured_content
     assert sc["identical"] is False
-    n = len(sc["guids"])
+    n = len(sc["elements"])
 
     def check_leaf_lengths(val: object, path: str = "") -> None:
         if isinstance(val, list):
@@ -484,6 +486,370 @@ def test_compare_diff_values_aligned_with_guids(model_objects):
 
     for field, value in sc["diff"].items():
         check_leaf_lengths(value, field)
+
+
+def test_compare_legend_maps_values_to_elements(model_objects):
+    """The odd one out's value sits at its own index in `elements`, whatever order Tekla returns."""
+    odd, twins = model_objects["test_wall7"], [model_objects["test_wall5"], model_objects["test_wall6"]]
+    TeklaModel.select_objects([*twins, odd])
+    sc = compare_elements(ignore_numbering=True).structured_content
+
+    guids = [e["guid"] for e in sc["elements"]]
+    profiles = sc["diff"]["report_properties"]["PROFILE"]
+    assert profiles[guids.index(odd.Identifier.GUID.ToString())] == "2000*150"
+    for twin in twins:
+        assert profiles[guids.index(twin.Identifier.GUID.ToString())] == "3000*200"
+
+
+def _compare_cut_walls(cut_offsets: list[list[float]]) -> dict:
+    """
+    Compare fresh walls cut by D400 voids at the given offsets from each wall start, then delete them.
+
+    Args:
+        cut_offsets: Per wall, the X offsets of its cuts
+
+    Returns:
+        The `compare_elements` structured content
+    """
+    from tekla_mcp_server.models import BeamInput, PanelInput, PointInput
+    from tekla_mcp_server.providers.modeling_provider import place_beams, place_panels
+    from tekla_mcp_server.providers.operations_provider import cut_elements_with_cutters
+
+    model = TeklaModel()
+    starts = [190000 + i * 3000 for i in range(len(cut_offsets))]
+    walls = [
+        PanelInput(start_point=PointInput(x=x, y=0, z=0), end_point=PointInput(x=x + 2000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CMP_CUT")
+        for x in starts
+    ]
+    wall_guids = [r["guid"] for r in place_panels(panels=walls).structured_content["results"]]
+    void_guids: list[str] = []
+    try:
+        for x, wall_guid, offsets in zip(starts, wall_guids, cut_offsets, strict=True):
+            voids = [
+                BeamInput(
+                    start_point=PointInput(x=x + dx, y=0, z=1000), end_point=PointInput(x=x + dx, y=200, z=1000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_CMP_VOID"
+                )
+                for dx in offsets
+            ]
+            cutters = [r["guid"] for r in place_beams(beams=voids).structured_content["results"]]
+            void_guids += cutters
+            TeklaModel.select_objects(list(model.get_objects_by_guid([wall_guid])))
+            assert cut_elements_with_cutters(cutter_guids=cutters).structured_content["performed_cuts_count"] == len(offsets)
+
+        TeklaModel.select_objects(list(model.get_objects_by_guid(wall_guids)))
+        return compare_elements(ignore_numbering=True).structured_content
+    finally:
+        for obj in model.get_objects_by_guid(wall_guids + void_guids):
+            obj.Delete()
+        model.commit_changes()
+
+
+def _leaf_lists(val: object):
+    """Every list in a diff, without descending into the lists themselves."""
+    if isinstance(val, list):
+        yield val
+    elif isinstance(val, dict):
+        for v in val.values():
+            yield from _leaf_lists(v)
+
+
+def test_compare_cut_parts_keyed_by_position():
+    """Cut part lists of equal length are diffed by position, so every list left in the diff stays aligned with `elements`."""
+    # Two cuts per wall: the first at the same spot, the second moved on the second wall
+    sc = _compare_cut_walls([[500, 1500], [500, 1200]])
+    cut_diff = sc["diff"]["cutparts"]
+    assert isinstance(cut_diff, dict) and len(cut_diff) == 1, cut_diff
+    assert next(iter(cut_diff)).startswith("#")
+    assert all(len(leaf) == 2 for leaf in _leaf_lists(sc["diff"]))
+
+
+def test_compare_cut_parts_different_count():
+    """With different cut counts, only the cuts not every wall has are reported, next to each wall's count."""
+    # The shared cut at 500 is left out, only the extra cut at 1500 is reported
+    sc = _compare_cut_walls([[500, 1500], [500]])
+    cut_diff = sc["diff"]["cutparts"]
+    assert sc["elements"][0]["guid"] != sc["elements"][1]["guid"]
+    assert sorted(cut_diff["count"]) == [1, 2]
+    extra = cut_diff["not_in_all"]
+    two_cut_index = cut_diff["count"].index(2)
+    assert len(extra[two_cut_index]) == 1 and extra[1 - two_cut_index] == []
+    assert all(len(leaf) == 2 for leaf in _leaf_lists(sc["diff"]))
+
+
+def test_compare_rebars_reports_bar_count_and_spacing():
+    """Rebar groups laid out with a different spacing differ in bar count and exact spacing, on the right element."""
+    from tekla_mcp_server.models import PanelInput, PointInput
+    from tekla_mcp_server.providers.components_provider import modify_components, put_components
+    from tekla_mcp_server.providers.modeling_provider import place_panels
+
+    model = TeklaModel()
+    walls = [
+        PanelInput(start_point=PointInput(x=x, y=0, z=0), end_point=PointInput(x=x + 2000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CMP_MESH")
+        for x in (210000, 213000)
+    ]
+    wall_guids = [r["guid"] for r in place_panels(panels=walls).structured_content["results"]]
+    try:
+        standard, dense = model.get_objects_by_guid(wall_guids)
+        TeklaModel.select_objects([standard, dense])
+        put_components(component_name="MeshBars")
+        TeklaModel.select_objects([dense])
+        modify_components(component_name="MeshBars", custom_properties={"SpacBarsBottPri": 100.0})
+
+        def bottom_primary(wall):
+            return next(r for r in model.get_object_by_guid(wall.Identifier.GUID.ToString()).GetReinforcements() if r.Class == 3)
+
+        rebars = [bottom_primary(standard), bottom_primary(dense)]
+        TeklaModel.select_objects(rebars)
+        sc = compare_elements(ignore_numbering=True).structured_content
+        props = sc["diff"]["report_properties"]
+        index = {e["guid"]: i for i, e in enumerate(sc["elements"])}
+        standard_i, dense_i = (index[r.Identifier.GUID.ToString()] for r in rebars)
+
+        assert props["NUMBER_OF_BARS_IN_GROUP"][dense_i] > props["NUMBER_OF_BARS_IN_GROUP"][standard_i]
+        assert props["NUMBER_OF_BARS_IN_GROUP"][dense_i] == rebars[1].GetRebarGeometries(False).Count
+        assert props["CC_EXACT"][standard_i] != props["CC_EXACT"][dense_i]
+    finally:
+        for obj in model.get_objects_by_guid(wall_guids):
+            obj.Delete()
+        model.commit_changes()
+
+
+class _Panel:
+    """A wall with one cut, a mesh and a strand, plus copies made with `copy_elements`. Everything is deleted afterwards."""
+
+    X = 240000
+
+    def __init__(self) -> None:
+        from tekla_mcp_server.models import BeamInput, PanelInput, PointInput
+        from tekla_mcp_server.providers.modeling_provider import place_beams, place_panels
+        from tekla_mcp_server.providers.operations_provider import cut_elements_with_cutters
+        from tekla_mcp_server.tekla.interop import to_array_list
+        from tekla_mcp_server.tekla.loader import Polygon, Point, RebarMesh, RebarStrand
+
+        self.model = TeklaModel()
+        self.created: list[str] = []
+        x = self.X
+        res = place_panels(
+            panels=[
+                PanelInput(
+                    start_point=PointInput(x=x, y=0, z=0), end_point=PointInput(x=x + 2000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_CMP_PANEL"
+                )
+            ]
+        )
+        self.created.append(res.structured_content["results"][0]["guid"])
+        wall = self.wall
+
+        cutter = place_beams(
+            beams=[
+                BeamInput(
+                    start_point=PointInput(x=x + 500, y=-150, z=1000),
+                    end_point=PointInput(x=x + 500, y=150, z=1000),
+                    profile="D400",
+                    material="Concrete_Undefined",
+                    tekla_class=0,
+                    name="MCP_TEST_CMP_VOID",
+                )
+            ]
+        )
+        cutter_guid = cutter.structured_content["results"][0]["guid"]
+        self.created.append(cutter_guid)
+        TeklaModel.select_objects([wall])
+        assert cut_elements_with_cutters(cutter_guids=[cutter_guid]).structured_content["performed_cuts_count"] == 1
+
+        # Mesh and strand modelled on a real precast panel: custom polygon mesh at 150 spacing, two strands near the top
+        solid = wall.GetSolid()
+        y = (solid.MinimumPoint.Y + solid.MaximumPoint.Y) / 2
+        z0, z1 = solid.MinimumPoint.Z, solid.MaximumPoint.Z
+        mesh = RebarMesh()
+        mesh.Father = wall
+        mesh.Name, mesh.Class, mesh.Grade = "MESH", 13, "NK500AB-W"
+        mesh.MeshType = RebarMesh.RebarMeshTypeEnum.POLYGON_MESH
+        mesh.CatalogName = "Custom Mesh"
+        mesh.LongitudinalSize = mesh.CrossSize = "8"
+        mesh.LongitudinalSpacingMethod = RebarMesh.RebarMeshSpacingMethodEnum.SPACING_TYPE_SAME_DISTANCE
+        mesh.LongitudinalDistances = to_array_list([150.0])
+        mesh.CrossDistances = to_array_list([150.0])
+        mesh.CrossBarLocation = RebarMesh.RebarMeshCrossBarLocationEnum.LOCATION_TYPE_ABOVE
+        mesh.RadiusValues = to_array_list([5.0])
+        mesh.OnPlaneOffsets = to_array_list([20.0])
+        polygon = Polygon()
+        for px, pz in ((x + 1950, z1 - 50), (x + 50, z1 - 50), (x + 50, z0 + 50), (x + 1950, z0 + 50)):
+            polygon.Points.Add(Point(px, y, pz))
+        mesh.Polygon = polygon
+        mesh.StartPoint, mesh.EndPoint = Point(x + 1950, y, z0 + 50), Point(x + 1950, y, z1 - 50)
+        assert mesh.Insert()
+
+        strand = RebarStrand()
+        strand.Father = wall
+        strand.Name, strand.Class, strand.Size, strand.Grade = "STRAND", 12, "9.3", "Undefined_strand"
+        start, end = Point(x + 2000, y, z1 - 200), Point(x, y, z1 - 200)
+        pattern = Polygon()
+        pattern.Points.Add(Point(start.X, start.Y, start.Z))
+        pattern.Points.Add(Point(end.X, end.Y, end.Z))
+        strand.Patterns = to_array_list([pattern])
+        strand.StartPoint, strand.EndPoint = start, end
+        assert strand.Insert()
+        self.model.commit_changes()
+
+    @property
+    def wall(self):
+        return self.model.get_object_by_guid(self.created[0])
+
+    def copy(self):
+        """Copy the wall with `copy_elements` and return the copy, found by its moved bounding box."""
+        from tekla_mcp_server.providers.modeling_provider import copy_elements
+        from tekla_mcp_server.tekla.loader import ModelObjectSelector, Part, Point
+
+        dy = 20000 * len(self.created)
+        wall = self.wall
+        TeklaModel.select_objects([wall])
+        assert copy_elements(dy=dy).structured_content["success"]
+        mn, mx = wall.GetSolid().MinimumPoint, wall.GetSolid().MaximumPoint
+        for obj in ModelObjectSelector().GetObjectsByBoundingBox(Point(mn.X - 1, mn.Y + dy - 1, mn.Z - 1), Point(mx.X + 1, mx.Y + dy + 1, mx.Z + 1)):
+            if isinstance(obj, Part) and obj.Name == wall.Name:
+                self.created.append(obj.Identifier.GUID.ToString())
+                return obj
+        raise AssertionError("copy not found")
+
+    def rebar(self, part, kind_name: str):
+        """The single strand or mesh of `part`, freshly read."""
+        fresh = self.model.get_object_by_guid(part.Identifier.GUID.ToString())
+        return next(r for r in fresh.GetReinforcements() if type(r).__name__ == kind_name)
+
+    def delete(self) -> None:
+        operatives = []
+        for guid in self.created:
+            obj = self.model.get_object_by_guid(guid)
+            if obj is not None:
+                operatives += [b.OperativePart for b in obj.GetBooleans() if b.OperativePart is not None]
+                obj.Delete()
+        for obj in operatives:
+            obj.Delete()
+        self.model.commit_changes()
+
+
+@pytest.fixture
+def panel():
+    """A fresh `_Panel`, deleted with all its copies after the test."""
+    built = _Panel()
+    yield built
+    built.delete()
+
+
+def _compare_objects(objs: list) -> dict:
+    """`compare_elements` on `objs`, checking every diff list stays aligned with `elements`."""
+    TeklaModel.select_objects(objs)
+    sc = compare_elements(ignore_numbering=True).structured_content
+    assert sc["status"] == "success", sc
+    assert {e["guid"] for e in sc["elements"]} == {o.Identifier.GUID.ToString() for o in objs}
+    assert all(len(leaf) == len(objs) for leaf in _leaf_lists(sc.get("diff", {})))
+    return sc
+
+
+def _value_of(sc: dict, obj, *path: str):
+    """Diff value for `obj` at `path`, looked up through the `elements` legend."""
+    node = sc["diff"]
+    for key in path:
+        node = node[key]
+    return node[[e["guid"] for e in sc["elements"]].index(obj.Identifier.GUID.ToString())]
+
+
+def _changed_reinforcement(sc: dict) -> str:
+    """Position key of the single reinforcement that differs."""
+    keys = [k for k in sc["diff"]["reinforcements"] if k.startswith("#")]
+    assert len(keys) == 1, sc["diff"]["reinforcements"]
+    return keys[0]
+
+
+def test_compare_copy_is_identical(panel):
+    """A plain copy with its cut, mesh and strand compares as identical to the original."""
+    sc = _compare_objects([panel.wall, panel.copy()])
+    assert sc["identical"] is True, sc.get("diff")
+
+
+def test_compare_strand_pull_force_changed_on_copy(panel):
+    """A higher strand pull force on the copy is the only difference, on the copy's side."""
+    copy = panel.copy()
+    strand = panel.rebar(copy, "RebarStrand")
+    strand.PullPerStrand = strand.PullPerStrand + 50000.0
+    assert strand.Modify()
+    TeklaModel().commit_changes()
+
+    sc = _compare_objects([panel.wall, copy])
+    position = _changed_reinforcement(sc)
+    assert set(sc["diff"]) == {"reinforcements"}
+    assert set(sc["diff"]["reinforcements"][position]["report_properties"]) == {"STRAND_PULL_FORCE"}
+    path = ("reinforcements", position, "report_properties", "STRAND_PULL_FORCE")
+    assert _value_of(sc, copy, *path) > _value_of(sc, panel.wall, *path)
+
+
+def test_compare_mesh_spacing_changed_on_copy(panel):
+    """A wider mesh spacing on the copy shows as fewer bars and a different exact spacing in both directions."""
+    copy = panel.copy()
+    mesh = panel.rebar(copy, "RebarMesh")
+    mesh.LongitudinalDistances = to_array_list([200.0])
+    mesh.CrossDistances = to_array_list([200.0])
+    assert mesh.Modify()
+    TeklaModel().commit_changes()
+
+    sc = _compare_objects([panel.wall, copy])
+    position = _changed_reinforcement(sc)
+    props = sc["diff"]["reinforcements"][position]["report_properties"]
+    assert {"NUMBER_OF_BARS_IN_GROUP", "CC_EXACT_LONG", "CC_EXACT_CROSS"} <= set(props)
+    bars = ("reinforcements", position, "report_properties", "NUMBER_OF_BARS_IN_GROUP")
+    assert _value_of(sc, copy, *bars) < _value_of(sc, panel.wall, *bars)
+
+    # Comparing the two meshes directly reports the same difference
+    direct = _compare_objects([panel.rebar(panel.wall, "RebarMesh"), panel.rebar(copy, "RebarMesh")])
+    assert {"NUMBER_OF_BARS_IN_GROUP", "CC_EXACT_LONG", "CC_EXACT_CROSS"} <= set(direct["diff"]["report_properties"])
+
+
+def test_compare_strand_removed_on_copy(panel):
+    """With the strand deleted on the copy, the counts differ and only the original's strand is reported."""
+    copy = panel.copy()
+    assert panel.rebar(copy, "RebarStrand").Delete()
+    TeklaModel().commit_changes()
+
+    sc = _compare_objects([panel.wall, copy])
+    assert _value_of(sc, panel.wall, "reinforcements", "count") == 2
+    assert _value_of(sc, copy, "reinforcements", "count") == 1
+    missing = _value_of(sc, panel.wall, "reinforcements", "not_in_all")
+    assert [r["name"] for r in missing] == ["STRAND"]
+    assert _value_of(sc, copy, "reinforcements", "not_in_all") == []
+
+
+def test_compare_cut_moved_on_copy(panel):
+    """A cut moved 100 mm on the copy is reported under its position with the shifted offset."""
+    from tekla_mcp_server.tekla.loader import Operation, Vector
+
+    copy = panel.copy()
+    operative = next(iter(panel.model.get_object_by_guid(copy.Identifier.GUID.ToString()).GetBooleans())).OperativePart
+    assert Operation.MoveObject(operative, Vector(100, 0, 0))
+    TeklaModel().commit_changes()
+
+    sc = _compare_objects([panel.wall, copy])
+    dx = ("cutparts", "#1", "relative_pos", "dx")
+    assert round(_value_of(sc, copy, *dx) - _value_of(sc, panel.wall, *dx)) == 100
+
+
+def test_compare_three_way_one_copy_changed(panel):
+    """Original, an unchanged copy and a copy with a different strand grade: only the changed copy stands out."""
+    twin, odd = panel.copy(), panel.copy()
+    strand = panel.rebar(odd, "RebarStrand")
+    strand.Grade = "MCP_TEST_GRADE"
+    assert strand.Modify()
+    TeklaModel().commit_changes()
+
+    sc = _compare_objects([panel.wall, odd, twin])
+    grade = ("reinforcements", _changed_reinforcement(sc), "report_properties", "GRADE")
+    assert _value_of(sc, odd, *grade) == "MCP_TEST_GRADE"
+    assert _value_of(sc, panel.wall, *grade) == _value_of(sc, twin, *grade) == "Undefined_strand"
+
+
+def test_compare_strand_against_mesh(panel):
+    """A strand and a mesh are both reinforcement, so they compare instead of being rejected as mixed types."""
+    sc = _compare_objects([panel.rebar(panel.wall, "RebarStrand"), panel.rebar(panel.wall, "RebarMesh")])
+    assert sc["identical"] is False
 
 
 def test_compare_identical_has_no_diff_key(model_objects):
@@ -510,7 +876,7 @@ def test_compare_mixed_results(model_objects):
 
     sc = result.structured_content
     assert sc["status"] == "success"
-    assert len(sc["guids"]) == 3
+    assert len(sc["elements"]) == 3
     assert sc["identical"] is False
     assert "diff" in sc
 
@@ -545,22 +911,16 @@ def test_compare_diff_contains_only_differing_values(model_objects):
         assert_leaf_values_differ(value, field)
 
 
-def test_compare_content_excludes_raws_and_status(model_objects):
-    """content must only carry guids/identical/diff - not raws, status, or other structured_content fields."""
+def test_compare_content_mirrors_structured_content(model_objects):
+    """content is derived from structured_content, which carries no full snapshots."""
     import json
 
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall7"]])
     result = compare_elements(ignore_numbering=True)
 
-    # Parse the JSON text
-    content_text = result.content[0].text
-    content = json.loads(content_text)
-
-    assert "guids" in content
-    assert "identical" in content
-    assert "diff" in content
-    assert "raws" not in content
-    assert "status" not in content
+    sc = result.structured_content
+    assert set(sc) == {"status", "identical", "elements", "diff"}
+    assert json.loads(result.content[0].text) == sc
 
 
 def test_clear_elements_udas_all(model_objects):

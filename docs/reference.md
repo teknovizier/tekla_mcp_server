@@ -30,7 +30,7 @@ Type and default shown where relevant.
 | Properties | ⚠️ `clear_elements_udas` | Clear UDAs from selected parts and assemblies. Clears all UDAs if no names provided | `uda_names` (list[str], optional) |
 | Properties | 🔒 `get_elements_coordinates` | Get coordinates of selected elements: start/end points and offsets for beams, contour points for slabs | - |
 | Properties | 🔒 `get_elements_bounding_boxes` | Get axis-aligned bounding boxes for selected elements. Returns per element: `element_type` (Tekla C# class name), `min`/`max` corners `{x, y, z}`, `centroid` `{x, y, z}` (mm) | - |
-| Properties | 🔒 `compare_elements` | Compare two selected elements and return detailed differences (properties, UDAs, cut parts, welds, reinforcements) | `ignore_numbering` (bool, default: `false`) |
+| Properties | 🔒 `compare_elements` | Compare two or more selected elements and return only the fields that differ (properties, UDAs, cut parts, welds, reinforcements) | `ignore_numbering` (bool, default: `false`) |
 | Properties | ⚠️ `copy_properties_from_ifc` | Copy properties from IFC reference objects to matching Tekla elements by bounding-box overlap | **`user_properties`** (dict[str, str]): IFC property name → Tekla UDA name |
 | View | 🔒 `draw_elements_labels` | Draw temporary labels on selected elements. Parts show position, GUID, name, profile, material, finish, class, weight. Assemblies show position, GUID, name, weight. `custom_labels` draws several report properties/UDAs in one label per element, in the given order | `label` (str, optional), `custom_labels` (list[str], optional) |
 | View | 🔒 `zoom_to_selection` | Zoom the active rendered view to fit selected elements | - |

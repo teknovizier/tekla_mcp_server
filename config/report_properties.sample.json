@@ -36,6 +36,7 @@
         "WIDTH"
     ],
     "rebar_group": [
+        "CC_EXACT",
         "DIM_A",
         "DIM_B",
         "DIM_C",
@@ -65,7 +66,7 @@
         "LENGTH_MIN",
         "MATERIAL",
         "NAME",
-        "NUMBER",
+        "NUMBER_OF_BARS_IN_GROUP",
         "REBAR_POS",
         "SHAPE",
         "SHAPE_INTERNAL",
@@ -76,6 +77,8 @@
     "rebar_mesh": [
         "CC",
         "CC_CROSS",
+        "CC_EXACT_CROSS",
+        "CC_EXACT_LONG",
         "CC_LONG",
         "CC_MAX",
         "CC_MAX_CROSS",
@@ -89,7 +92,7 @@
         "MATERIAL_TYPE",
         "MESH_POS",
         "NAME",
-        "NUMBER",
+        "NUMBER_OF_BARS_IN_GROUP",
         "PREFIX",
         "SIZE",
         "WEIGHT"
@@ -103,7 +106,6 @@
         "MATERIAL",
         "MATERIAL_TYPE",
         "NAME",
-        "NUMBER",
         "PREFIX",
         "SIZE",
         "STRAND_N_PATTERN",

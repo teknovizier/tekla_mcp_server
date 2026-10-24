@@ -40,7 +40,7 @@ from tekla_mcp_server.tekla.loader import (
     Line,
     Polyline,
     Circle,
-    Polygon,
+    DrawingPolygon,
     Rectangle,
     PointList,
     Point,
@@ -97,7 +97,7 @@ CATEGORY_TYPES: dict[str, tuple[type, ...]] = {
         CurvedDimensionSetRadial,
     ),
     "text": (DrawingText,),
-    "graphics": (Arc, Line, Polyline, Circle, Polygon, Rectangle, Cloud),
+    "graphics": (Arc, Line, Polyline, Circle, DrawingPolygon, Rectangle, Cloud),
 }
 
 

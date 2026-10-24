@@ -4,6 +4,7 @@ Properties tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
+from collections import Counter
 from typing import Any, Annotated, Literal
 
 from fastmcp.server.providers import LocalProvider
@@ -466,8 +467,14 @@ def compare_elements(
 
     ## RULES
     - Only use information explicitly present in the diff. Do not infer or assume changes.
-    - Ignore `id` and `guid` fields - they are ALWAYS different (not actual differences).
+    - Each diff value is a list aligned by index with `elements`, so the first value belongs to the first element.
+      `elements` follows Tekla's selection order, not necessarily the order the user picked.
+      When reporting a difference, name the element by its `pos` mark and add the `guid` if marks repeat.
+    - With `ignore_numbering`, `pos` marks may be outdated or empty. Identify elements by `guid` then.
+    - `id` and `guid` fields are left out of the diff - they always differ and are not actual differences.
     - Ignore order of items in lists (cutparts, reinforcements, welds).
+      When all elements have the same number of items, the items are compared in sorted order and keyed by position (`#1`, `#2`, ...).
+      When the number differs, `count` gives each element's number of items and `not_in_all` only the items not every element has.
     - For reinforcement: `father_guid` is excluded from the diff - it is a relationship pointer,
       not a property of the rebar itself.
     """
@@ -549,8 +556,28 @@ def compare_elements(
             lengths = {len(v) for v in values}
             if len(lengths) == 1:  # same length - recurse positionally
                 n = next(iter(lengths))
-                items = [_diff_values([v[i] for v in values]) for i in range(n)]
-                return [item for item in items if item is not None]
+                # Keyed by position, not a list: every list left in the diff is then a per-element
+                # value list aligned with `elements`, and the differing item keeps its position
+                positions = {f"#{i + 1}": _diff_values([v[i] for v in values]) for i in range(n)}
+                return {pos: child for pos, child in positions.items() if child is not None} or None
+
+            # Different lengths: items every element has are left out, so ten shared
+            # cuts and one extra report only the extra one, not all eleven per element
+            keys = [[_canonical(item) for item in v] for v in values]
+            shared = Counter(keys[0])
+            for element_keys in keys[1:]:
+                shared &= Counter(element_keys)
+            not_in_all = []
+            for v, element_keys in zip(values, keys, strict=True):
+                remaining = shared.copy()
+                extra = []
+                for item, key in zip(v, element_keys, strict=True):
+                    if remaining[key] > 0:
+                        remaining[key] -= 1
+                    else:
+                        extra.append(item)
+                not_in_all.append(extra)
+            return {"count": [len(v) for v in values], "not_in_all": not_in_all}
 
         return values  # primitives or mismatched shapes - show raw values per element
 
@@ -566,32 +593,26 @@ def compare_elements(
                 diff[key] = d
         return diff if diff else None
 
-    guids: list[str] = []
+    # Legend the diff value lists are aligned with. `pos` is not unique (identical
+    # elements share a mark), so `guid` stays the identifier
+    elements: list[dict[str, str]] = []
     snap_views: list[dict] = []
-    raws: list[dict] = []
 
     for obj in wrapped_objects:
         snapshot = obj.to_snapshot().normalize(tolerance)
-        guids.append(obj.guid)
+        elements.append({"guid": obj.guid, "pos": snapshot.pos})
         snap_views.append(_strip_ignored(snapshot.to_diff_view()))
-        raws.append(snapshot.model_dump())
 
     diff = _compute_multi_diff(snap_views)
     identical = diff is None
 
-    logger.info("compare_elements: %d elements, identical=%s", len(guids), identical)
+    logger.info("compare_elements: %d elements, identical=%s", len(elements), identical)
 
-    # When not identical: guids for alignment + the diff (only fields that vary)
-    # When identical: minimal confirmation, no diff key.
-    if identical:
-        content_out: dict[str, Any] = {"guids": guids, "identical": True}
-    else:
-        content_out = {"guids": guids, "identical": False, "diff": diff}
-
-    sc_out: dict[str, Any] = {"status": "success", "guids": guids, "identical": identical, "raws": raws}
+    # When identical: minimal confirmation, no diff key
+    result: dict[str, Any] = {"status": "success", "identical": identical, "elements": elements}
     if diff is not None:
-        sc_out["diff"] = diff
-    return ToolResult(content=content_out, structured_content=sc_out)
+        result["diff"] = diff
+    return ToolResult(structured_content=result)
 
 
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": False, "destructiveHint": True})
