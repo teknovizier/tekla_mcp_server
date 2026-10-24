@@ -370,8 +370,10 @@ def get_components() -> ToolResult:
     Returns component information including:
     - Component name and number.
     - Whether the component is supported by config.
-    - Full schema with descriptions and types (if supported).
     - Actual attribute values from the component instance.
+
+    Attribute schemas with descriptions and types are returned once per component
+    type in `schemas`, keyed by the `config_key` each supported instance carries.
     """
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
@@ -389,6 +391,8 @@ def get_components() -> ToolResult:
             }
 
     elements_data: list[dict[str, Any]] = []
+    # One schema per component type found, instances reference it by `config_key`
+    schemas: dict[str, dict[str, Any]] = {}
     total_components = 0
 
     for selected_object in wrap_model_objects(selected_objects):
@@ -408,6 +412,7 @@ def get_components() -> ToolResult:
                 supported = True
                 config_key = config_match["config_key"]
                 schema = config_match["schema"]
+                schemas.setdefault(config_key, schema)
             else:
                 supported = False
                 config_key = None
@@ -427,7 +432,6 @@ def get_components() -> ToolResult:
                     "number": comp_number,
                     "supported": supported,
                     "config_key": config_key,
-                    "schema": schema,
                     "attributes": attributes,
                 }
             )
@@ -448,6 +452,7 @@ def get_components() -> ToolResult:
             "total_elements": len(elements_data),
             "total_components": total_components,
             "elements": elements_data,
+            "schemas": schemas,
         }
     )
 

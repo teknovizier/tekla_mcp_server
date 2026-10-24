@@ -20,7 +20,7 @@ Type and default shown where relevant.
 | Selection | 🔒 `select_elements_by_guid` | Select elements by GUID | **`guids`** (list[str]) |
 | Selection | 🔒 `select_elements_assemblies_or_main_parts` | Switch selection to assemblies or main parts for the currently selected elements | **`mode`** (str): `"Assembly"` \| `"Main Part"` |
 | Components | ✏️ `put_components` | Insert a Tekla component on selected elements. Supports semantic attribute mapping and intelligent defaults (e.g. anchor type by weight) | **`component_name`** (str), `properties_set` (str, default: `"standard"`), `custom_properties` (dict) |
-| Components | 🔒 `get_components` | Get all components attached to selected elements. Returns name, number, attribute schema and current values | - |
+| Components | 🔒 `get_components` | Get all components attached to selected elements. Returns name, number and current values per instance, plus each attribute schema once per component type | - |
 | Components | ⚠️ `modify_components` | Modify attributes of existing components on selected elements | **`component_name`** (str), **`custom_properties`** (dict) |
 | Components | ⚠️ `remove_components` | Remove all components with the given names from selected elements, including objects their handler created outside the component | **`component_names`** (list[str]) |
 | Components | ⚠️ `explode_components` | Explode components with the given names on selected elements, keeping the parts, bolts and reinforcement they created | **`component_names`** (list[str]) |

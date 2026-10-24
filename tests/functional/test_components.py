@@ -77,7 +77,8 @@ def test_get_components_returns_components(model_objects):
     assert comp["name"] == "MeshBars"
     assert comp["supported"] is True
     assert comp["config_key"] == "mesh_bars"
-    assert comp["schema"] is not None
+    assert "schema" not in comp
+    assert result.structured_content["schemas"]["mesh_bars"]
 
 
 def test_get_components_empty_selection(model_objects):
@@ -99,7 +100,7 @@ def test_get_components_supported_component(model_objects):
         comp = next(c for c in result.structured_content["elements"][0]["components"] if c["name"] == "MeshBars")
         assert comp["supported"] is True
         assert comp["config_key"] == "mesh_bars"
-        assert comp["schema"] is not None
+        assert result.structured_content["schemas"]["mesh_bars"]
 
 
 def test_modify_components_success(model_objects):
