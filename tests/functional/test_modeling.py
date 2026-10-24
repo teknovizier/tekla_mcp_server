@@ -7,6 +7,7 @@ Tests beam, column, and panel placement operations.
 import pytest
 
 from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, place_slabs, delete_elements, move_elements, copy_elements, place_grid, create_phase
+from tekla_mcp_server.providers.selection_provider import select_elements_by_guid
 from tekla_mcp_server.models import BeamInput, ColumnInput, PanelInput, SlabInput, PointInput, PositionInput
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly
@@ -296,25 +297,24 @@ def _place_panel_with_fitting(panel_input: PanelInput) -> tuple[str, str]:
     return panel_guid, fitting.Identifier.GUID.ToString()
 
 
-def test_delete_elements_by_guid(panel_input):
-    """Deletes a part by GUID without selecting it, repeated GUIDs are ignored, missing and malformed ones are reported."""
+def test_delete_elements_selected_part(panel_input):
+    """Deletes a part selected by GUID."""
     result_place = place_panels(panels=[panel_input])
     guid = result_place.structured_content["results"][0]["guid"]
-    missing_guid = "00000000-0000-0000-0000-000000000001"
-    TeklaModel.clear_selection()
-    result = delete_elements(guids=[guid, f" {guid} ", missing_guid, "not-a-guid"])
-    assert result.structured_content["status"] == "partial"
+    select_elements_by_guid(guids=[guid])
+    result = delete_elements()
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["total_selected"] == 1
     assert result.structured_content["total_deleted"] == 1
     assert result.structured_content["failed_count"] == 0
-    assert result.structured_content["missing_guids"] == [missing_guid]
-    assert result.structured_content["invalid_guids"] == ["not-a-guid"]
     assert TeklaModel().get_object_by_guid(guid) is None
 
 
 def test_delete_elements_fitting(panel_input):
-    """Deletes a fitting by GUID, the part it belongs to stays in the model."""
+    """Deletes a fitting selected by GUID, the part it belongs to stays in the model."""
     panel_guid, fitting_guid = _place_panel_with_fitting(panel_input)
-    result = delete_elements(guids=[fitting_guid])
+    select_elements_by_guid(guids=[fitting_guid])
+    result = delete_elements()
     assert result.structured_content["status"] == "success"
     assert result.structured_content["total_deleted"] == 1
     model = TeklaModel()
@@ -324,19 +324,14 @@ def test_delete_elements_fitting(panel_input):
 
 @pytest.mark.parametrize("parent_first", [True, False])
 def test_delete_elements_part_with_its_fitting(panel_input, parent_first):
-    """A part and its fitting in one call are both counted as deleted, whatever their order."""
+    """A selected part and its fitting are both counted as deleted, whatever their order."""
     panel_guid, fitting_guid = _place_panel_with_fitting(panel_input)
     guids = [panel_guid, fitting_guid] if parent_first else [fitting_guid, panel_guid]
-    result = delete_elements(guids=guids)
+    select_elements_by_guid(guids=guids)
+    result = delete_elements()
     assert result.structured_content["status"] == "success"
     assert result.structured_content["total_deleted"] == 2
     assert result.structured_content["failed_count"] == 0
-
-
-def test_delete_elements_unknown_guids():
-    """Tests delete_elements with only unknown or malformed GUIDs returns error."""
-    result = delete_elements(guids=["00000000-0000-0000-0000-000000000001", ""])
-    assert result.structured_content["status"] == "error"
 
 
 @pytest.fixture

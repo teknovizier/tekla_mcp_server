@@ -5,7 +5,6 @@ Provides tools for placing beams, columns, panels and managing elements.
 """
 
 from typing import Annotated, Any, Callable, TypeVar
-from uuid import UUID
 from pydantic import Field
 
 from fastmcp.server.providers import LocalProvider
@@ -513,39 +512,12 @@ def place_grid(
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
-def delete_elements(
-    guids: Annotated[
-        list[str],
-        Field(
-            description="GUIDs of the objects to delete"
-        ),
-    ] = [],
-) -> ToolResult:
+def delete_elements() -> ToolResult:
     """
-    Deletes objects by GUID or all currently selected elements if no GUIDs are given.
+    Deletes all currently selected objects, including cut parts, cut planes and fittings.
     """
     model = TeklaModel()
-    missing_guids: list[str] = []
-    invalid_guids: list[str] = []
-    if guids:
-        objects = []
-        # Strip and drop repeats so a duplicate GUID is not reported as a failed delete
-        for guid in dict.fromkeys(guid.strip() for guid in guids):
-            try:
-                UUID(guid)
-            except ValueError:
-                # A malformed GUID would make the Tekla Identifier lookup throw and abort the whole call
-                invalid_guids.append(guid)
-                continue
-            obj = model.get_object_by_guid(guid)
-            if obj is not None:
-                objects.append(obj)
-            else:
-                missing_guids.append(guid)
-        if not objects:
-            raise ValueError(f"None of the {len(guids)} GUIDs were found in the model (missing: {missing_guids}, invalid: {invalid_guids})")
-    else:
-        objects = list(model.get_selected_objects())
+    objects = list(model.get_selected_objects())
     count = len(objects)
 
     deleted = 0
@@ -570,21 +542,19 @@ def delete_elements(
         status = "error"
         # The deletions already ran in the open model, only saving them failed
         message = f"Deleted {deleted} of {count} objects but commit_changes() failed, the deletions may not be saved"
-    elif failed_count or missing_guids or invalid_guids:
+    elif failed_count:
         status = "partial"
         message = f"Deleted {deleted} of {count} objects"
     else:
         status = "success"
         message = f"Deleted {deleted} of {count} objects"
 
-    logger.info("Deleted %d of %d objects (commit: %s, missing GUIDs: %s, invalid GUIDs: %s)", deleted, count, commit_success, missing_guids, invalid_guids)
+    logger.info("Deleted %d of %d objects (commit: %s)", deleted, count, commit_success)
     result: dict[str, Any] = {
         "status": status,
-        "total_found": count,
+        "total_selected": count,
         "total_deleted": deleted,
         "failed_count": failed_count,
-        "missing_guids": missing_guids,
-        "invalid_guids": invalid_guids,
         "message": message,
     }
     if commit_success is not None:
