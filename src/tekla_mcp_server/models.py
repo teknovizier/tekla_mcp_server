@@ -37,11 +37,12 @@ class DrawingType(StrEnum):
 
 class SelectionMode(StrEnum):
     """
-    Controls whether selection is done to the assembly or the main part.
+    Controls whether selection is done to the assembly, its main part or all its parts.
     """
 
     ASSEMBLY = "Assembly"
     MAIN_PART = "Main Part"
+    PARTS = "Parts"
 
 
 class DrawingExportFormat(StrEnum):

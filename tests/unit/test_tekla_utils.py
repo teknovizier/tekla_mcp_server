@@ -12,9 +12,11 @@ if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
 from typing import Any
+from unittest.mock import MagicMock
 
 from tekla_mcp_server.tekla.loader import Beam, Position, Point
-from tekla_mcp_server.tekla.utils import get_wall_pairs
+from tekla_mcp_server.tekla.utils import expand_to_parts, get_wall_pairs
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, TeklaReinforcement
 
 
 created_elements: Any = []
@@ -98,3 +100,50 @@ def test_non_beam_objects_are_ignored():
     not_beam = object()
     result = get_wall_pairs([wall1, wall2, not_beam])
     assert result == [(wall1, wall2)]
+
+
+def _mock_part(guid: str) -> MagicMock:
+    """Helper for a mocked TeklaPart with a fixed GUID."""
+    part = MagicMock(spec=TeklaPart)
+    part.guid = guid
+    return part
+
+
+def test_expand_to_parts_replaces_assembly_with_its_parts():
+    """An assembly is replaced by all its parts."""
+    inner, insulation, outer = _mock_part("inner"), _mock_part("insulation"), _mock_part("outer")
+    assembly = MagicMock(spec=TeklaAssembly)
+    assembly.get_all_parts.return_value = [inner, insulation, outer]
+    assert expand_to_parts([assembly]) == ([inner, insulation, outer], [])
+
+
+@pytest.mark.parametrize("include_embeds", [True, False])
+def test_expand_to_parts_passes_include_embeds(include_embeds):
+    """The embed filter is passed to the assembly expansion."""
+    assembly = MagicMock(spec=TeklaAssembly)
+    assembly.get_all_parts.return_value = []
+    expand_to_parts([assembly], include_embeds=include_embeds)
+    assembly.get_all_parts.assert_called_once_with(include_embeds)
+
+
+def test_expand_to_parts_reports_skipped_objects():
+    """Reinforcement and other non-part objects are dropped and reported with their GUID."""
+    part = _mock_part("part")
+    rebar = MagicMock(spec=TeklaReinforcement)
+    rebar.guid = "rebar"
+    parts, skipped = expand_to_parts([rebar, part])
+    assert parts == [part]
+    assert [s["guid"] for s in skipped] == ["rebar"]
+
+
+def test_expand_to_parts_deduplicates_by_guid():
+    """A part selected directly and through its assembly is returned once, in first-seen order."""
+    main, secondary = _mock_part("main"), _mock_part("secondary")
+    assembly = MagicMock(spec=TeklaAssembly)
+    assembly.get_all_parts.return_value = [main, secondary]
+    assert expand_to_parts([secondary, assembly]) == ([secondary, main], [])
+
+
+def test_expand_to_parts_empty():
+    """No objects give no parts."""
+    assert expand_to_parts([]) == ([], [])

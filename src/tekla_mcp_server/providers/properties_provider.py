@@ -30,7 +30,7 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
 )
 from tekla_mcp_server.tekla.loader import BooleanPart, CutPlane, EdgeChamfer, Fitting, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
-from tekla_mcp_server.tekla.utils import iterate_boolean_parts
+from tekla_mcp_server.tekla.utils import expand_to_parts, iterate_boolean_parts
 
 properties_provider = LocalProvider()
 
@@ -366,9 +366,20 @@ def get_elements_properties(
 
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def get_elements_cut_parts() -> ToolResult:
+def get_elements_cut_parts(
+    include_embeds: Annotated[bool, Field(description="Also check embedded details inside selected assemblies. Directly selected parts are always checked")] = False,
+) -> ToolResult:
     """
     Find all boolean cut parts, fittings, cut planes and edge chamfers in the selected Tekla elements, grouped by parent part.
+
+    A selected assembly is expanded to all its parts, including those in subassemblies, so selecting
+    a cast unit such as a sandwich wall checks every layer. Reinforcement is skipped and listed in `skipped_objects`.
+    `processed_count` is the number of parts checked after this expansion.
+    Each part reports its `name`, `position`, `profile` and `material` so layers can be told apart.
+
+    One cutting part often cuts several parts, e.g. one window opening through all layers of a wall.
+    `cutting_parts` lists each cutting part once with the GUIDs of all parts it cuts.
+    To move or delete openings, act on `cutting_parts`, not on every cut entry, or a shared cutter is changed more than once.
 
     Coordinates of fitting and cut plane planes and of edge chamfer ends are in the current work plane.
     """
@@ -376,33 +387,35 @@ def get_elements_cut_parts() -> ToolResult:
 
     processed_count = 0
     parts_with_cuts: list[dict[str, Any]] = []
+    cutting_parts: dict[str, dict[str, Any]] = {}
     total_cut_parts = 0
     total_fittings = 0
     total_cut_planes = 0
     total_edge_chamfers = 0
 
-    for selected_object in wrap_model_objects(selected_objects):
-        if not isinstance(selected_object, TeklaPart):
-            logger.error("get_elements_cut_parts: Skipping non-part object: %s", type(selected_object).__name__)
-            continue
-
+    parts, skipped_objects = expand_to_parts(list(wrap_model_objects(selected_objects)), include_embeds)
+    for part in parts:
         cuts: list[dict[str, Any]] = []
-        for boolean in iterate_boolean_parts(selected_object.model_object, (BooleanPart, Fitting, CutPlane, EdgeChamfer)):
+        for boolean in iterate_boolean_parts(part.model_object, (BooleanPart, Fitting, CutPlane, EdgeChamfer)):
             if isinstance(boolean, BooleanPart):
                 if boolean.Type != BooleanPart.BooleanTypeEnum.BOOLEAN_CUT:
                     continue
                 cutting_part = wrap_model_object(boolean.OperativePart)
                 if cutting_part is None:
-                    logger.warning("get_elements_cut_parts: could not wrap OperativePart for boolean on %s, skipping", selected_object.guid)
+                    logger.warning("get_elements_cut_parts: could not wrap OperativePart for boolean on %s, skipping", part.guid)
                     continue
+                cutting_profile = cutting_part.profile if isinstance(cutting_part, TeklaPart) else "N/A"
                 cuts.append(
                     {
                         "type": "BOOLEAN_CUT",
                         "guid": boolean.Identifier.GUID.ToString(),
                         "cutting_part_guid": cutting_part.guid,
-                        "cutting_profile": cutting_part.profile if isinstance(cutting_part, TeklaPart) else "N/A",
+                        "cutting_profile": cutting_profile,
                     }
                 )
+                cutter = cutting_parts.setdefault(cutting_part.guid, {"guid": cutting_part.guid, "profile": cutting_profile, "cut_part_guids": []})
+                if part.guid not in cutter["cut_part_guids"]:
+                    cutter["cut_part_guids"].append(part.guid)
                 total_cut_parts += 1
             elif isinstance(boolean, Fitting):
                 cuts.append({"type": "FITTING", "guid": boolean.Identifier.GUID.ToString(), "plane": _plane_to_dict(boolean.Plane)})
@@ -426,7 +439,11 @@ def get_elements_cut_parts() -> ToolResult:
         if cuts:
             parts_with_cuts.append(
                 {
-                    "part_guid": selected_object.guid,
+                    "part_guid": part.guid,
+                    "name": part.name,
+                    "position": part.position,
+                    "profile": part.profile,
+                    "material": part.material,
                     "cut_count": len(cuts),
                     "cuts": cuts,
                 }
@@ -435,25 +452,29 @@ def get_elements_cut_parts() -> ToolResult:
         processed_count += 1
 
     logger.info(
-        "Found %s cut parts, %s fittings, %s cut planes and %s edge chamfers in %s elements with cuts",
+        "Found %s cut parts (%s unique cutting parts), %s fittings, %s cut planes and %s edge chamfers in %s elements with cuts",
         total_cut_parts,
+        len(cutting_parts),
         total_fittings,
         total_cut_planes,
         total_edge_chamfers,
         len(parts_with_cuts),
     )
-    return ToolResult(
-        structured_content={
-            "status": "success" if parts_with_cuts else "warning",
-            "selected_count": selected_objects.GetSize(),
-            "processed_count": processed_count,
-            "total_cut_parts_count": total_cut_parts,
-            "total_fittings_count": total_fittings,
-            "total_cut_planes_count": total_cut_planes,
-            "total_edge_chamfers_count": total_edge_chamfers,
-            "parts_with_cuts": parts_with_cuts,
-        },
-    )
+    result: dict[str, Any] = {
+        "status": "success" if parts_with_cuts else "warning",
+        "selected_count": selected_objects.GetSize(),
+        "processed_count": processed_count,
+        "total_cut_parts_count": total_cut_parts,
+        "total_fittings_count": total_fittings,
+        "total_cut_planes_count": total_cut_planes,
+        "total_edge_chamfers_count": total_edge_chamfers,
+        "cutting_parts": list(cutting_parts.values()),
+        "parts_with_cuts": parts_with_cuts,
+        "skipped_objects": skipped_objects,
+    }
+    if not parts:
+        result["message"] = "The selection contains no parts. Select parts or assemblies, reinforcement and cut parts are not checked."
+    return ToolResult(structured_content=result)
 
 
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})

@@ -964,13 +964,44 @@ class TeklaAssembly(TeklaModelObject):
                 parts.append(sec)
         return parts
 
+    def get_all_parts(self, include_embeds: bool = True) -> list[TeklaPart]:
+        """
+        Returns the parts of this assembly and of all its subassemblies.
+
+        Only `TeklaPart` objects are returned. Reinforcement, welds and boolean operations
+        are never included, also when a rebar subassembly holds them.
+
+        Args:
+            include_embeds: If False, embedded-detail subassemblies and parts of an
+                embedded-detail class are left out, e.g. to keep only the layers of a cast unit
+
+        Returns:
+            Parts of the main part, secondaries and subassemblies
+        """
+        parts = [part for part in self.get_top_level_parts() if include_embeds or part.tekla_class not in EMBEDDED_DETAILS_CLASSES]
+        for subassembly in wrap_model_objects(self.model_object.GetSubAssemblies()):
+            if not isinstance(subassembly, TeklaAssembly):
+                continue
+            if not include_embeds:
+                try:
+                    if subassembly.is_embedded_detail():
+                        continue
+                except ValueError:
+                    logger.debug("Subassembly %s has no main part, checking its children", subassembly.guid)
+            parts.extend(subassembly.get_all_parts(include_embeds))
+        return parts
+
     def get_all_children(self, include_all: bool = True) -> list[ModelObject]:
         """
         Returns all model objects belonging to this assembly.
 
         Args:
             include_all: If True, includes welds, reinforcements, secondaries, subassemblies.
+                If False, returns only the parts, see `get_all_parts`.
         """
+        if not include_all:
+            return [part.model_object for part in self.get_all_parts()]
+
         objects = []
         stack = [self._model_object]
 

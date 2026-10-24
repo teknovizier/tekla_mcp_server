@@ -12,10 +12,10 @@ if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from tekla_mcp_server.tekla.loader import Beam, Hashtable, Position, Point
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, BoundingBox, TeklaBoltGroup, TeklaPart
+from tekla_mcp_server.tekla.wrappers.model_object import EMBEDDED_DETAILS_CLASSES, wrap_model_object, BoundingBox, TeklaAssembly, TeklaBoltGroup, TeklaPart
 
 
 created_elements: Any = []
@@ -128,6 +128,50 @@ def test_get_top_level_parts(wall1):
     assert len(parts) >= 1
     for part in parts:
         assert isinstance(part, TeklaPart)
+
+
+def test_get_all_parts(wall1):
+    """Checks that get_all_parts of a single-part assembly returns that part."""
+    parts = wall1.get_top_level_assembly().get_all_parts()
+    assert [part.guid for part in parts] == [wall1.guid]
+
+
+def test_get_all_parts_recurses_into_subassemblies():
+    """Checks that get_all_parts collects parts of nested subassemblies and skips non-assembly children."""
+    root_part, sub_part, nested_part = MagicMock(spec=TeklaPart), MagicMock(spec=TeklaPart), MagicMock(spec=TeklaPart)
+    root, sub, nested = TeklaAssembly(MagicMock()), TeklaAssembly(MagicMock()), TeklaAssembly(MagicMock())
+    root.get_top_level_parts = lambda: [root_part]  # type: ignore[method-assign]
+    sub.get_top_level_parts = lambda: [sub_part]  # type: ignore[method-assign]
+    nested.get_top_level_parts = lambda: [nested_part]  # type: ignore[method-assign]
+    children = {id(root.model_object): [sub, MagicMock()], id(sub.model_object): [nested], id(nested.model_object): []}
+
+    def fake_wrap(enumerator):
+        # GetSubAssemblies() of each mock returns a distinct child mock, map it back to its owner
+        owner = next(a for a in (root, sub, nested) if a.model_object.GetSubAssemblies.return_value is enumerator)
+        return iter(children[id(owner.model_object)])
+
+    with patch("tekla_mcp_server.tekla.wrappers.model_object.wrap_model_objects", side_effect=fake_wrap):
+        assert root.get_all_parts() == [root_part, sub_part, nested_part]
+
+
+def test_get_all_parts_excludes_embeds():
+    """Checks that include_embeds=False drops embed subassemblies and secondaries of an embedded-detail class."""
+    embed_class = next(iter(EMBEDDED_DETAILS_CLASSES))
+    layer, embed_secondary, sub_layer = MagicMock(spec=TeklaPart), MagicMock(spec=TeklaPart), MagicMock(spec=TeklaPart)
+    layer.tekla_class, embed_secondary.tekla_class, sub_layer.tekla_class = 1, embed_class, 1
+    root, layer_sub, embed_sub = TeklaAssembly(MagicMock()), TeklaAssembly(MagicMock()), TeklaAssembly(MagicMock())
+    root.get_top_level_parts = lambda: [layer, embed_secondary]  # type: ignore[method-assign]
+    layer_sub.get_top_level_parts = lambda: [sub_layer]  # type: ignore[method-assign]
+    layer_sub.is_embedded_detail = lambda: False  # type: ignore[method-assign]
+    embed_sub.is_embedded_detail = lambda: True  # type: ignore[method-assign]
+    embed_sub.get_top_level_parts = lambda: [MagicMock(spec=TeklaPart)]  # type: ignore[method-assign]
+
+    def fake_wrap(enumerator):
+        return iter([layer_sub, embed_sub]) if enumerator is root.model_object.GetSubAssemblies.return_value else iter([])
+
+    with patch("tekla_mcp_server.tekla.wrappers.model_object.wrap_model_objects", side_effect=fake_wrap):
+        assert root.get_all_parts(include_embeds=False) == [layer, sub_layer]
+        assert len(root.get_all_parts(include_embeds=True)) == 4
 
 
 def test_get_report_property_weight_property(wall1):

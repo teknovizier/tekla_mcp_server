@@ -346,18 +346,24 @@ def select_elements_by_guid(
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
-def select_elements_assemblies_or_main_parts(
-    mode: Annotated[SelectionMode, Field(description="Selection mode: 'Assembly' or 'Main Part'")],
+def select_related_elements(
+    mode: Annotated[SelectionMode, Field(description="Selection mode: 'Assembly', 'Main Part' or 'Parts'")],
+    include_embeds: Annotated[bool, Field(description="Only for 'Parts' mode: also select embedded details inside the assembly")] = False,
 ) -> ToolResult:
     """
-    Selects assemblies or main parts for the selected elements.
+    Selects the top-level assemblies, their main parts or all their parts for the selected elements.
+
+    'Parts' selects every part of the top-level assembly, including parts in subassemblies, without reinforcement.
+    Embedded details are left out unless `include_embeds` is set. For example, selecting one layer or the
+    assembly of a sandwich wall selects its inner layer, insulation and outer layer.
     """
     selected_objects = TeklaModel().get_selected_objects()
 
     processed_count = 0
-    selected_object_types = "selected_assemblies" if mode == "Assembly" else "selected_main_parts"
+    selected_object_types = {"Assembly": "selected_assemblies", "Main Part": "selected_main_parts", "Parts": "selected_parts"}[mode]
 
     filtered_parts = ArrayList()
+    seen_part_guids: set[str] = set()
     for selected_object in wrap_model_objects(selected_objects):
         try:
             assembly = selected_object.get_top_level_assembly()
@@ -375,6 +381,12 @@ def select_elements_assemblies_or_main_parts(
             except ValueError:
                 logger.warning("Assembly %s has no main part, skipping", assembly.guid)
                 continue
+        elif mode == "Parts":
+            # Several selected elements can share one assembly, so add each part once
+            for part in assembly.get_all_parts(include_embeds):
+                if part.guid not in seen_part_guids:
+                    seen_part_guids.add(part.guid)
+                    filtered_parts.Add(part.model_object)
         processed_count += 1
 
     TeklaModel.select_objects(filtered_parts)

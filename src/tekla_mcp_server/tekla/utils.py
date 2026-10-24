@@ -339,6 +339,38 @@ def collect_children(selected_objects: ModelObjectEnumerator) -> List[ModelObjec
     return tekla_list
 
 
+def expand_to_parts(objects: list[TeklaModelObject], include_embeds: bool = True) -> tuple[list[TeklaPart], list[dict[str, str]]]:
+    """
+    Resolve wrapped objects to parts, replacing each assembly with all its parts.
+
+    Directly given parts are always kept, `include_embeds` only filters parts reached through an assembly.
+    Reinforcement and other non-part objects are dropped and reported back.
+    A part reached twice (given directly and through its assembly) is returned once.
+
+    Args:
+        objects: Wrapped model objects, e.g. the current selection
+        include_embeds: If False, embedded details inside assemblies are left out
+
+    Returns:
+        Unique parts in input order, and the dropped objects as `{"guid", "type"}` dicts
+    """
+    parts: dict[str, TeklaPart] = {}
+    skipped: list[dict[str, str]] = []
+    for obj in objects:
+        if isinstance(obj, TeklaAssembly):
+            candidates = obj.get_all_parts(include_embeds)
+        elif isinstance(obj, TeklaPart):
+            candidates = [obj]
+        else:
+            skipped.append({"guid": obj.guid, "type": type(obj).__name__})
+            continue
+        for part in candidates:
+            parts.setdefault(part.guid, part)
+    if skipped:
+        logger.warning("expand_to_parts: skipped %d non-part objects: %s", len(skipped), [s["type"] for s in skipped])
+    return list(parts.values()), skipped
+
+
 def get_candidates_in_bounding_box(element: TeklaModelObject, tolerance: float) -> list[TeklaModelObject]:
     """
     Find objects within element's bounding box.

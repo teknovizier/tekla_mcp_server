@@ -17,7 +17,7 @@ from tekla_mcp_server.providers.properties_provider import (
     get_elements_bounding_boxes,
     copy_properties_from_ifc,
 )
-from tekla_mcp_server.providers.selection_provider import select_elements_assemblies_or_main_parts, select_elements_by_guid
+from tekla_mcp_server.providers.selection_provider import select_related_elements, select_elements_by_guid
 from tekla_mcp_server.tekla.interop import to_array_list
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
@@ -61,7 +61,7 @@ def test_set_elements_properties_with_user_properties(model_objects):
 def test_get_elements_properties_contains_required_fields(model_objects):
     """Tests that get_elements_properties returns all required fields for parts."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Main Part")
+    select_related_elements(mode="Main Part")
     result = get_elements_properties()
 
     parts = result.structured_content["parts"]
@@ -83,7 +83,7 @@ def test_get_elements_properties_contains_required_fields(model_objects):
 def test_get_elements_properties_with_report_props_definitions(model_objects):
     """Tests get_elements_properties with custom report property definitions."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
 
     result = get_elements_properties(report_props_definitions=["ASSEMBLY_POS"])
 
@@ -116,7 +116,7 @@ def test_set_elements_properties_all_part_properties(model_objects):
     assert result.structured_content["changes_applied"]["phase"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Main Part")
+    select_related_elements(mode="Main Part")
     result = get_elements_properties()
     parts = result.structured_content["parts"]
     assert len(parts) >= 1
@@ -146,7 +146,7 @@ def test_set_elements_properties_all_assembly_properties(model_objects):
     assert result.structured_content["changes_applied"]["phase"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
     result = get_elements_properties()
     assemblies = result.structured_content["assemblies"]
     assert len(assemblies) >= 1
@@ -167,12 +167,12 @@ def test_parts_and_assemblies_have_different_properties(model_objects):
     )
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Main Part")
+    select_related_elements(mode="Main Part")
     result_parts = get_elements_properties()
     parts = result_parts.structured_content["parts"]
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
     result_assemblies = get_elements_properties()
     assemblies = result_assemblies.structured_content["assemblies"]
 
@@ -216,11 +216,11 @@ def test_set_elements_properties_empty_selection(model_objects):
 def test_get_elements_properties_parts_vs_assemblies(model_objects):
     """Tests that parts and assemblies are returned separately."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
     result_assemblies = get_elements_properties()
 
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    select_elements_assemblies_or_main_parts(mode="Main Part")
+    select_related_elements(mode="Main Part")
     result_parts = get_elements_properties()
 
     assemblies = result_assemblies.structured_content["assemblies"]
@@ -233,7 +233,7 @@ def test_get_elements_properties_parts_vs_assemblies(model_objects):
 def test_get_elements_properties_numbering_fields(model_objects):
     """Tests that get_elements_properties returns numbering fields for parts and assemblies."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Main Part")
+    select_related_elements(mode="Main Part")
     result_parts = get_elements_properties()
     parts = result_parts.structured_content["parts"]
 
@@ -245,7 +245,7 @@ def test_get_elements_properties_numbering_fields(model_objects):
     assert "phase" in parts[0]
 
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
     result_assemblies = get_elements_properties()
     assemblies = result_assemblies.structured_content["assemblies"]
 
@@ -271,7 +271,7 @@ def test_set_elements_properties_numbering(model_objects):
     assert result.structured_content["changes_applied"]["assembly_start_number"] == 1
 
     TeklaModel.select_objects([model_objects["test_wall7"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
     result = get_elements_properties()
     assemblies = result.structured_content["assemblies"]
     assert assemblies[0]["assembly_prefix"] == "TEST"
@@ -288,7 +288,7 @@ def test_get_elements_properties_user_properties(model_objects):
     assert result.structured_content["changes_applied"]["udas"] >= 1
 
     TeklaModel.select_objects([model_objects["test_wall7"]])
-    select_elements_assemblies_or_main_parts(mode="Main Part")
+    select_related_elements(mode="Main Part")
     result = get_elements_properties()
     parts = result.structured_content["parts"]
 
@@ -300,12 +300,12 @@ def test_get_elements_properties_both_assemblies_and_parts(model_objects):
     """Tests that selecting both assemblies and parts returns both lists in single call."""
     TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
 
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
     result_assemblies = get_elements_properties()
     assemblies = result_assemblies.structured_content["assemblies"]
 
     TeklaModel.select_objects([model_objects["test_wall3"], model_objects["test_wall4"]])
-    select_elements_assemblies_or_main_parts(mode="Main Part")
+    select_related_elements(mode="Main Part")
     result_parts = get_elements_properties()
     parts = result_parts.structured_content["parts"]
 
@@ -323,7 +323,7 @@ def test_get_elements_properties_basic_assembly_properties(model_objects):
             model_objects["test_slab1"],
         ]
     )
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
     result = get_elements_properties()
 
     assert result.structured_content["status"] == "success"
@@ -340,7 +340,7 @@ def test_get_elements_properties_known_values_for_assemblies(model_objects):
             model_objects["test_slab1"],
         ]
     )
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
     result = get_elements_properties()
 
     assemblies = result.structured_content["assemblies"]
@@ -353,7 +353,7 @@ def test_get_elements_properties_known_values_for_assemblies(model_objects):
 def test_get_elements_properties_valid_report_properties(model_objects):
     """Tests get_elements_properties: valid report properties with exact values."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
 
     result = get_elements_properties(report_props_definitions=["ASSEMBLY_POS"])
 
@@ -366,7 +366,7 @@ def test_get_elements_properties_valid_report_properties(model_objects):
 def test_get_elements_properties_invalid_and_missing_report_properties(model_objects):
     """Tests get_elements_properties: invalid report properties are tracked."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Assembly")
+    select_related_elements(mode="Assembly")
 
     result = get_elements_properties(report_props_definitions=["NON_EXISTENT_PROPERTY"])
 
@@ -388,9 +388,25 @@ def test_get_elements_cut_parts_with_cuts(model_objects):
 
     assert result.structured_content["status"] == "success"
     assert result.structured_content["selected_count"] == 1
-    cuts = result.structured_content["parts_with_cuts"][0]["cuts"]
+    part_with_cuts = result.structured_content["parts_with_cuts"][0]
+    assert part_with_cuts["name"] and part_with_cuts["profile"] and part_with_cuts["material"]
+    cuts = part_with_cuts["cuts"]
     assert any(cut["type"] == "BOOLEAN_CUT" for cut in cuts)
     assert all(cut["guid"] for cut in cuts)
+
+    # Each cutting part is listed once and points back to the part it cuts
+    cutting_parts = result.structured_content["cutting_parts"]
+    assert {c["guid"] for c in cutting_parts} == {cut["cutting_part_guid"] for cut in cuts if cut["type"] == "BOOLEAN_CUT"}
+    assert len(cutting_parts) == len({c["guid"] for c in cutting_parts})
+    assert all(c["cut_part_guids"] == [part_with_cuts["part_guid"]] for c in cutting_parts)
+
+    # A selected assembly is expanded to its parts, so the same cuts are found
+    select_related_elements(mode="Assembly")
+    result = get_elements_cut_parts()
+
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["processed_count"] == 1
+    assert result.structured_content["parts_with_cuts"][0]["cuts"] == cuts
 
 
 def test_get_elements_cut_parts_without_cuts(model_objects):
@@ -404,6 +420,8 @@ def test_get_elements_cut_parts_without_cuts(model_objects):
     assert result.structured_content["total_fittings_count"] == 0
     assert result.structured_content["total_cut_planes_count"] == 0
     assert result.structured_content["total_edge_chamfers_count"] == 0
+    assert result.structured_content["cutting_parts"] == []
+    assert result.structured_content["skipped_objects"] == []
 
 
 def test_compare_elements_numbering_not_up_to_date(model_objects):
@@ -1004,7 +1022,7 @@ def test_set_elements_properties_reports_property_errors_field(model_objects):
 def test_get_elements_properties_snapshot_mode(model_objects):
     """Snapshot mode returns parts/assemblies lists with full PartSnapshot / AssemblySnapshot dumps."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    select_elements_assemblies_or_main_parts(mode="Main Part")
+    select_related_elements(mode="Main Part")
     result = get_elements_properties(mode="snapshot")
 
     assert result.structured_content["status"] == "success"

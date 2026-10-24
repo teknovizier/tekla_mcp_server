@@ -10,7 +10,7 @@ from tekla_mcp_server.providers.selection_provider import (
     select_elements_by_filter,
     select_elements_by_filter_name,
     select_elements_by_guid,
-    select_elements_assemblies_or_main_parts,
+    select_related_elements,
 )
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
@@ -216,12 +216,23 @@ def test_select_elements_by_guid(model_objects):
     assert result.structured_content["selected_guids"] == [wall1_guid]
 
 
-@pytest.mark.parametrize("mode,expected_count", [("Assembly", 2), ("Main Part", 2)])
-def test_select_elements_assemblies(model_objects, mode, expected_count):
-    """Tests select_elements_assemblies_or_main_parts function."""
+@pytest.mark.parametrize(
+    "mode,mode_key,expected_count",
+    [("Assembly", "selected_assemblies_count", 2), ("Main Part", "selected_main_parts_count", 2), ("Parts", "selected_parts_count", 2)],
+)
+def test_select_elements_assemblies(model_objects, mode, mode_key, expected_count):
+    """Tests select_related_elements function."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    result = select_elements_assemblies_or_main_parts(mode=mode)
+    result = select_related_elements(mode=mode)
     assert result.structured_content["status"] == "success"
     assert result.structured_content["selected_count"] == expected_count
-    mode_key = "selected_assemblies_count" if mode == "Assembly" else "selected_main_parts_count"
     assert result.structured_content[mode_key] == expected_count
+
+
+def test_select_elements_parts_from_assembly(model_objects):
+    """Tests 'Parts' mode: a selected assembly is replaced by its parts."""
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    select_related_elements(mode="Assembly")
+    result = select_related_elements(mode="Parts")
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_parts_count"] == 1

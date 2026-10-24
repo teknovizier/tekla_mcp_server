@@ -24,7 +24,7 @@ from tekla_mcp_server.models import (
     NumberingSeries,
 )
 from tekla_mcp_server.utils import format_coordinate_string, mcp_handler
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_objects, wrap_model_object
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_objects
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import Grid, Connection, Operation, Phase, Point, Seam, Vector
 
@@ -47,11 +47,10 @@ def _collect_parts(obj: TeklaModelObject) -> list[TeklaPart]:
         return [obj]
 
     parts: list[TeklaPart] = []
-    for raw in obj.get_all_children(include_all=False):
-        wrapped = wrap_model_object(raw)
+    for part in obj.get_all_parts():
         # Skip Seam/Connection parts - the component moves them with its host parts.
-        if isinstance(wrapped, TeklaPart) and not isinstance(raw.GetFatherComponent(), (Seam, Connection)):
-            parts.append(wrapped)
+        if not isinstance(part.model_object.GetFatherComponent(), (Seam, Connection)):
+            parts.append(part)
     return parts
 
 
