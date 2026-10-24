@@ -14,6 +14,7 @@ from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, ReinforcementSnapshot, BeamType, OffsetInput, PointInput, PositionInput
 from tekla_mcp_server.utils import validate_property_type
+from tekla_mcp_server.tekla.interop import to_array_list
 
 from tekla_mcp_server.tekla.loader import (
     Assembly,
@@ -76,7 +77,7 @@ POSITION_ROTATION_MAP = {
 
 class BoundingBox:
     """
-    Bounding box calculated from Tekla report properties.
+    Bounding box calculated from Tekla report properties, or from a solid via `from_solid`.
 
     Extracts BOUNDING_BOX_MIN/MAX_X/Y/Z report properties from a Tekla model object
     and provides geometric analysis methods.
@@ -90,13 +91,40 @@ class BoundingBox:
         max_z: Maximum Z coordinate
     """
 
+    _PROPERTY_NAMES = ("BOUNDING_BOX_MIN_X", "BOUNDING_BOX_MAX_X", "BOUNDING_BOX_MIN_Y", "BOUNDING_BOX_MAX_Y", "BOUNDING_BOX_MIN_Z", "BOUNDING_BOX_MAX_Z")
+    _PROPERTY_LIST = to_array_list(_PROPERTY_NAMES)
+
     def __init__(self, model_object: TeklaModelObject):
-        self.min_x = float(model_object.get_report_property("BOUNDING_BOX_MIN_X"))
-        self.max_x = float(model_object.get_report_property("BOUNDING_BOX_MAX_X"))
-        self.min_y = float(model_object.get_report_property("BOUNDING_BOX_MIN_Y"))
-        self.max_y = float(model_object.get_report_property("BOUNDING_BOX_MAX_Y"))
-        self.min_z = float(model_object.get_report_property("BOUNDING_BOX_MIN_Z"))
-        self.max_z = float(model_object.get_report_property("BOUNDING_BOX_MAX_Z"))
+        """
+        Read all six coordinates in one batched call, about 3x faster than six single reads.
+
+        Raises:
+            ValueError: If any coordinate is unavailable for this object.
+        """
+        # Returns (ok, values). A property Tekla cannot read is left out of the table
+        _, values = model_object.model_object.GetDoubleReportProperties(BoundingBox._PROPERTY_LIST, Hashtable())
+        missing = [name for name in BoundingBox._PROPERTY_NAMES if not values.ContainsKey(name)]
+        if missing:
+            raise ValueError(f"Bounding box unavailable, missing {missing}")
+        self.min_x, self.max_x, self.min_y, self.max_y, self.min_z, self.max_z = (float(values[name]) for name in BoundingBox._PROPERTY_NAMES)
+
+    @classmethod
+    def from_solid(cls, solid: Solid | None) -> BoundingBox | None:
+        """
+        Build a box from a solid's axis-aligned extent, without report properties.
+
+        Args:
+            solid: Tekla solid, or None
+
+        Returns:
+            The solid's bounding box, or None when there is no solid
+        """
+        if not solid:
+            return None
+        box = cls.__new__(cls)
+        mn, mx = solid.MinimumPoint, solid.MaximumPoint
+        box.min_x, box.max_x, box.min_y, box.max_y, box.min_z, box.max_z = mn.X, mx.X, mn.Y, mx.Y, mn.Z, mx.Z
+        return box
 
     @property
     def centroid(self) -> tuple[float, float, float]:
@@ -1197,16 +1225,9 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         """
         Checks whether the bounding boxes of this Tekla part and another SolidGeometryMixin object intersect.
         """
-        solid_self = self.get_solid()
-        solid_other = other.get_solid()
-
-        if not (solid_self and solid_other):
-            return False
-
-        min_self, max_self = solid_self.MinimumPoint, solid_self.MaximumPoint
-        min_other, max_other = solid_other.MinimumPoint, solid_other.MaximumPoint
-
-        return min_self.X <= max_other.X and max_self.X >= min_other.X and min_self.Y <= max_other.Y and max_self.Y >= min_other.Y and min_self.Z <= max_other.Z and max_self.Z >= min_other.Z
+        box_self = BoundingBox.from_solid(self.get_solid())
+        box_other = BoundingBox.from_solid(other.get_solid())
+        return box_self is not None and box_other is not None and box_self.overlaps(box_other, 0.0)
 
     def add_cut(self, cutting_part: TeklaPart, delete_cutting_part: bool = False) -> bool:
         """

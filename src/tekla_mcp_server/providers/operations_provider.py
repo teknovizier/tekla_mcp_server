@@ -20,6 +20,7 @@ from tekla_mcp_server.utils import mcp_handler, build_report_filename, resolve_m
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import (
+    BoundingBox,
     wrap_model_objects,
     wrap_model_object,
     TeklaAssembly,
@@ -247,6 +248,39 @@ def _check_element_bounding_box_rebars(
     return orphaned, evaluated_guids
 
 
+def _solid_box(obj: Any) -> BoundingBox | None:
+    """
+    Box of the solid `has_spatial_overlap` uses, or None if there is no solid.
+
+    Args:
+        obj: Wrapped model object
+    """
+    try:
+        return BoundingBox.from_solid(obj.get_solid())
+    except Exception:
+        return None
+
+
+def _overlapping_cutters(target_box: BoundingBox | None, cutters: list[Any], cutter_boxes: list[BoundingBox | None]) -> list[Any]:
+    """
+    Keep the cutters whose box touches the target's, in their original order.
+
+    Zero tolerance gives the same test as `has_spatial_overlap`. An unknown box on
+    either side keeps the cutter, so `add_cut` makes the call as before.
+
+    Args:
+        target_box: Target box from `_solid_box`
+        cutters: Wrapped cutter parts
+        cutter_boxes: Boxes aligned with `cutters`
+
+    Returns:
+        Cutters that may overlap the target
+    """
+    if target_box is None:
+        return list(cutters)
+    return [cutter for cutter, box in zip(cutters, cutter_boxes, strict=True) if box is None or target_box.overlaps(box, 0.0)]
+
+
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def cut_elements_with_cutters(
@@ -279,12 +313,15 @@ def cut_elements_with_cutters(
     processed_count = 0
     performed_cuts = 0
     cutters = list(wrap_model_objects(raw_cutters))
+    # Read each cutter's AABB once
+    cutter_boxes = [_solid_box(cutter) for cutter in cutters]
     used_cutter_ids: set[int] = set()
     logger.debug("Processing %d selected objects with %d cutters (%s)", selected_objects.GetSize(), len(cutters), label)
     if cutters:
         for selected_object in wrap_model_objects(selected_objects):
             element_had_cut = False
-            for cutter in cutters:
+            target_box = _solid_box(selected_object)
+            for cutter in _overlapping_cutters(target_box, cutters, cutter_boxes):
                 # Never delete the cutter here: the same cutter may need to cut
                 # several selected targets. Deleting mid-loop would leave later
                 # targets with an invalid (deleted) cutter handle, silently

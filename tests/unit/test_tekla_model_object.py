@@ -14,8 +14,8 @@ if os.getenv("CI") == "true":
 from typing import Any
 from unittest.mock import MagicMock
 
-from tekla_mcp_server.tekla.loader import Beam, Position, Point
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaBoltGroup, TeklaPart
+from tekla_mcp_server.tekla.loader import Beam, Hashtable, Position, Point
+from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, BoundingBox, TeklaBoltGroup, TeklaPart
 
 
 created_elements: Any = []
@@ -561,3 +561,19 @@ def test_bounding_box_min_max_coordinates(wall1):
     assert bb.max_y == pytest.approx(100.0, abs=1.0)
     assert bb.min_z == pytest.approx(0.0, abs=1.0)
     assert bb.max_z == pytest.approx(3000.0, abs=1.0)
+
+
+def test_bounding_box_matches_single_property_reads(wall1):
+    """The batched read returns the same values as one `get_report_property` call per coordinate."""
+    bb = wall1.bounding_box
+    for attr, name in zip(("min_x", "max_x", "min_y", "max_y", "min_z", "max_z"), BoundingBox._PROPERTY_NAMES, strict=True):
+        assert getattr(bb, attr) == pytest.approx(float(wall1.get_report_property(name)))
+
+
+def test_bounding_box_none_when_a_coordinate_is_missing():
+    """Tekla leaves unreadable properties out of the batch result, which must yield no box."""
+    values = Hashtable()
+    values["BOUNDING_BOX_MIN_X"] = 0.0
+    model_object = MagicMock()
+    model_object.GetDoubleReportProperties.return_value = (True, values)
+    assert TeklaPart(model_object).bounding_box is None
