@@ -382,12 +382,11 @@ def get_drawings_properties(
     logger.info("Retrieved properties for %s drawings", len(drawings_data))
 
     return ToolResult(
-        content={"drawings": drawings_data},
         structured_content={
             "status": "success",
             "selected_count": len(drawings_data),
             "drawings": drawings_data,
-        },
+        }
     )
 
 
