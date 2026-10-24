@@ -5,6 +5,8 @@ Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
 from collections import Counter
+from collections.abc import Callable
+from functools import cache
 from typing import Any, Annotated, Literal
 
 from fastmcp.server.providers import LocalProvider
@@ -19,10 +21,12 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     BoundingBox,
     TeklaAssembly,
     TeklaBeam,
+    TeklaBoltGroup,
     TeklaBooleanPart,
     TeklaContourPlate,
     TeklaModelObject,
     TeklaPart,
+    TeklaReferenceModel,
     TeklaReferenceModelObject,
     TeklaReinforcement,
     wrap_model_object,
@@ -41,6 +45,118 @@ def _plane_to_dict(plane: Any) -> dict[str, dict[str, float]]:
         "origin": {"x": plane.Origin.X, "y": plane.Origin.Y, "z": plane.Origin.Z},
         "axis_x": {"x": plane.AxisX.X, "y": plane.AxisX.Y, "z": plane.AxisX.Z},
         "axis_y": {"x": plane.AxisY.X, "y": plane.AxisY.Y, "z": plane.AxisY.Z},
+    }
+
+
+def _compact_field_getters(obj: TeklaModelObject) -> dict[str, Callable[[], Any]]:
+    """
+    Map each `compact` mode field that applies to the object type to a function reading it.
+
+    Args:
+        obj: Wrapped model object
+
+    Returns:
+        dict of field name to a zero-argument getter. Fields missing from the dict do not apply to the type.
+    """
+    if isinstance(obj, TeklaPart):
+        return {"name": lambda: obj.name, "position": lambda: obj.position, "profile": lambda: obj.profile, "material": lambda: obj.material}
+    if isinstance(obj, TeklaAssembly):
+        # An assembly has no profile or material of its own, so take them from the main part
+        main_part = cache(lambda: obj.main_part)
+        return {
+            "name": lambda: obj.name,
+            "position": lambda: obj.position,
+            "profile": lambda: main_part().profile if isinstance(main_part(), TeklaPart) else None,
+            "material": lambda: main_part().material if isinstance(main_part(), TeklaPart) else None,
+        }
+    if isinstance(obj, TeklaReinforcement):
+        return {"name": lambda: obj.name, "position": lambda: obj.position, "material": lambda: obj.grade, "size": lambda: obj.size}
+    if isinstance(obj, TeklaBooleanPart):
+        # A cut part is identified by the part that shapes the cut
+        operative = cache(lambda: obj.operative_part)
+        return {
+            "name": lambda: operative().name if isinstance(operative(), TeklaPart) else None,
+            "profile": lambda: operative().profile if isinstance(operative(), TeklaPart) else None,
+            "material": lambda: operative().material if isinstance(operative(), TeklaPart) else None,
+        }
+    if isinstance(obj, TeklaBoltGroup):
+        return {"material": lambda: obj.bolt_standard, "size": lambda: obj.bolt_size}
+    if isinstance(obj, TeklaReferenceModelObject):
+        # IFC objects often lack these properties, so a missing one is None, not an error
+        ifc_props = cache(lambda: obj.get_report_properties(["NAME", "PROFILE", "MATERIAL"]))
+        return {
+            "ifc_guid": lambda: obj.get_report_property("GUID"),
+            "name": lambda: ifc_props()["NAME"],
+            "profile": lambda: ifc_props()["PROFILE"],
+            "material": lambda: ifc_props()["MATERIAL"],
+        }
+    if isinstance(obj, TeklaReferenceModel):
+        return {"name": lambda: obj.title}
+    return {}
+
+
+def _compact_row(obj: TeklaModelObject) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """
+    Build the identifying fields of one element for the `compact` mode.
+
+    Each field is read on its own, so a failing field is set to None and reported
+    instead of dropping the whole row.
+
+    Args:
+        obj: Wrapped model object
+
+    Returns:
+        Tuple of (row with GUID, Tekla type, name, position, profile, material and size, errors for fields that failed).
+        Fields that do not apply to the type are None.
+    """
+    row: dict[str, Any] = {"guid": obj.guid, "type": obj.element_type, "name": None, "position": None, "profile": None, "material": None, "size": None}
+    errors: list[dict[str, Any]] = []
+    for field, getter in _compact_field_getters(obj).items():
+        try:
+            row[field] = getter()
+        except Exception as e:
+            logger.warning("Failed to read `%s` of %s: %s", field, row["guid"], e)
+            row[field] = None
+            errors.append({"guid": row["guid"], "field": field, "error": str(e)})
+    return row, errors
+
+
+def _get_compact_properties(selected_objects: Any) -> dict[str, Any]:
+    """
+    Read the identifying fields of the selected objects for the `compact` mode.
+
+    Args:
+        selected_objects: Enumerator of the selected model objects
+
+    Returns:
+        dict with status, counts, element rows, field errors and the objects that could not be wrapped
+    """
+    elements: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    skipped_objects: list[dict[str, str]] = []
+    for raw in selected_objects:
+        obj = wrap_model_object(raw)
+        if obj is None:
+            skipped_objects.append({"guid": raw.Identifier.GUID.ToString(), "type": type(raw).__name__})
+            continue
+        row, row_errors = _compact_row(obj)
+        elements.append(row)
+        errors.extend(row_errors)
+
+    logger.info("Retrieved compact properties for %d elements, %d field errors, %d skipped", len(elements), len(errors), len(skipped_objects))
+    if not elements:
+        status = "warning"
+    elif errors:
+        status = "partial"
+    else:
+        status = "success"
+    return {
+        "status": status,
+        "selected_count": selected_objects.GetSize(),
+        "processed_count": len(elements),
+        "elements": elements,
+        "errors": errors,
+        "skipped_objects": skipped_objects,
     }
 
 
@@ -171,8 +287,8 @@ def set_elements_properties(
 def get_elements_properties(
     report_props_definitions: Annotated[list[str], Field(description="Additional report property names")] = [],
     mode: Annotated[
-        Literal["flat", "snapshot", "guids_only"],
-        Field(description="Output detail: 'flat' = key properties table, 'snapshot' = full element state, 'guids_only' = GUIDs only (skips property extraction)"),
+        Literal["flat", "snapshot", "compact"],
+        Field(description="Output detail: 'flat' = key properties table, 'snapshot' = full element state, 'compact' = GUID, type, name, position, profile, material and size only"),
     ] = "flat",
 ) -> ToolResult:
     """
@@ -181,75 +297,96 @@ def get_elements_properties(
     ## MODES (select via `mode`)
 
     ### `mode="flat"` (default)
-    Returns a flat table of key element properties, grouped by type.
+    Returns key element properties with UDAs, grouped by type.
     Optionally request extra columns via `report_props_definitions`.
     - Extract properties not in default columns; split multi-property phrases into separate items.
     - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
-    - Return each result table in Markdown format EXACTLY as provided. DO NOT reformat, truncate, or modify anything. ALWAYS show the full table.
 
     ### `mode="snapshot"`
     Returns full element snapshots for convention and QA checks, including basic element properties, UDAs, cutparts, welds and reinforcement.
     Directly selected reinforcement objects are returned in a dedicated `reinforcements` list.
 
-    ### `mode="guids_only"`
-    Returns only each selected element's GUID, with no property extraction. Use it as a lightweight probe
-    for large selections. The returned GUIDs feed straight into `select_elements_by_guid` and other
+    ### `mode="compact"`
+    Returns one row per selected element in `elements` with its GUID, type, name, position, profile, material
+    and size. Use it for large or mixed selections to tell the elements apart before requesting details.
+    `type` is the Tekla Open API class name, not the structural role. Insulation or a wall layer modeled as a
+    beam reports 'Beam', so use name and material to tell what an element is.
+    Fields that do not apply to the type are null. Assemblies report the profile and material of their main part.
+    Reinforcement reports its grade as material and its bar size as size. Bolt groups report their bolt standard
+    as material and their diameter as size. Cut parts report the name, profile and material of the cutting part.
+    IFC reference objects also report `ifc_guid`, while `guid` stays the Tekla GUID.
+    A field that fails to read is null and listed in `errors`. Selected objects of unsupported types are listed
+    in `skipped_objects`. The returned GUIDs feed straight into `select_elements_by_guid` and other
     GUID-consuming tools. `report_props_definitions` is ignored in this mode.
     """
     selected_objects = TeklaModel().get_selected_objects()
 
+    if mode == "compact":
+        structured_content = _get_compact_properties(selected_objects)
+    elif mode == "snapshot":
+        structured_content = _get_snapshot_properties(selected_objects)
+    else:
+        structured_content = _get_flat_properties(selected_objects, report_props_definitions)
+
+    return ToolResult(structured_content=structured_content)
+
+
+def _get_snapshot_properties(selected_objects: Any) -> dict[str, Any]:
+    """
+    Build full snapshots of the selected objects for the `snapshot` mode.
+
+    Args:
+        selected_objects: Enumerator of the selected model objects
+
+    Returns:
+        dict with status, counts, part, assembly and reinforcement snapshots and errors
+    """
     processed_count = 0
+    parts: list[dict[str, Any]] = []
+    assemblies: list[dict[str, Any]] = []
+    reinforcements: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
 
-    # GUIDs-only mode: lightweight probe, skips per-element property extraction
-    if mode == "guids_only":
-        guids = [obj.guid for obj in wrap_model_objects(selected_objects)]
-        logger.info("Retrieved %d GUIDs for %d selected elements", len(guids), selected_objects.GetSize())
-        return ToolResult(
-            structured_content={
-                "status": "success" if guids else "warning",
-                "selected_count": selected_objects.GetSize(),
-                "processed_count": len(guids),
-                "guids": guids,
-            }
-        )
+    for obj in wrap_model_objects(selected_objects):
+        try:
+            if isinstance(obj, TeklaPart):
+                parts.append(obj.to_snapshot().model_dump())
+                processed_count += 1
+            elif isinstance(obj, TeklaAssembly):
+                assemblies.append(obj.to_snapshot().model_dump())
+                processed_count += 1
+            elif isinstance(obj, TeklaReinforcement):
+                reinforcements.append(obj.to_snapshot().model_dump())
+                processed_count += 1
+        except Exception as e:
+            logger.exception("Failed to build snapshot for %s: %s", obj.guid, str(e))
+            errors.append({"guid": obj.guid, "error": str(e)})
 
-    # Snapshot mode
-    if mode == "snapshot":
-        parts: list[dict[str, Any]] = []
-        assemblies: list[dict[str, Any]] = []
-        reinforcements: list[dict[str, Any]] = []
-        errors: list[dict[str, Any]] = []
+    total = len(parts) + len(assemblies) + len(reinforcements)
+    logger.info("Snapshot mode: built snapshots for %d parts, %d assemblies, %d reinforcements", len(parts), len(assemblies), len(reinforcements))
+    return {
+        "status": "success" if total > 0 else "warning",
+        "selected_count": selected_objects.GetSize(),
+        "processed_count": processed_count,
+        "parts": parts,
+        "assemblies": assemblies,
+        "reinforcements": reinforcements,
+        "errors": errors,
+    }
 
-        for obj in wrap_model_objects(selected_objects):
-            try:
-                if isinstance(obj, TeklaPart):
-                    parts.append(obj.to_snapshot().model_dump())
-                    processed_count += 1
-                elif isinstance(obj, TeklaAssembly):
-                    assemblies.append(obj.to_snapshot().model_dump())
-                    processed_count += 1
-                elif isinstance(obj, TeklaReinforcement):
-                    reinforcements.append(obj.to_snapshot().model_dump())
-                    processed_count += 1
-            except Exception as e:
-                logger.exception("Failed to build snapshot for %s: %s", obj.guid, str(e))
-                errors.append({"guid": obj.guid, "error": str(e)})
 
-        total = len(parts) + len(assemblies) + len(reinforcements)
-        logger.info("Snapshot mode: built snapshots for %d parts, %d assemblies, %d reinforcements", len(parts), len(assemblies), len(reinforcements))
-        return ToolResult(
-            structured_content={
-                "status": "success" if total > 0 else "warning",
-                "selected_count": selected_objects.GetSize(),
-                "processed_count": processed_count,
-                "parts": parts,
-                "assemblies": assemblies,
-                "reinforcements": reinforcements,
-                "errors": errors,
-            }
-        )
+def _get_flat_properties(selected_objects: Any, report_props_definitions: list[str]) -> dict[str, Any]:
+    """
+    Read key properties of the selected objects for the `flat` mode.
 
-    # Default mode: flat property table
+    Args:
+        selected_objects: Enumerator of the selected model objects
+        report_props_definitions: Extra report property names requested by the caller
+
+    Returns:
+        dict with status, counts, properties grouped by object type and errors
+    """
+    processed_count = 0
     resolution_errors: list[dict[str, Any]] = []
     extraction_errors: list[dict[str, Any]] = []
     resolved_props: list[str] = []
@@ -296,72 +433,17 @@ def get_elements_properties(
         if extraction_errors:
             logger.warning("Failed to extract properties for %d elements: %s", len(extraction_errors), [e.get("guid") for e in extraction_errors])
 
-    def _flatten_props(props: dict[str, Any]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        result["GUID"] = props.get("guid", "")
-        standard_fields = ["position", "name", "profile", "material", "finish", "tekla_class", "part_prefix", "part_start_number", "assembly_prefix", "assembly_start_number"]
-        for field in standard_fields:
-            if field in props:
-                result[field.replace("_", " ").title()] = props[field]
-        result["Phase"] = props.get("phase", "")
-        return result
-
-    def _flatten_rebar_props(props: dict[str, Any]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        result["GUID"] = props.get("guid", "")
-        for field in ["position", "name", "rebar_type", "rebar_prefix", "rebar_start_number", "tekla_class"]:
-            if field in props:
-                result[field.replace("_", " ").title()] = props[field]
-        result["Phase"] = props.get("phase", "")
-        result["Father GUID"] = props.get("father_guid") or ""
-        return result
-
-    def _flatten(items: list[dict[str, Any]], row_fn=_flatten_props) -> list[dict[str, Any]]:
-        if not items:
-            return []
-        flat_items = []
-        for i, item in enumerate(items):
-            row = row_fn(item)
-            if user_props := item.get("user_properties"):
-                row.update(user_props)
-            if report_props := item.get("report_properties"):
-                for rp in report_props:
-                    name = rp.get("name", "")
-                    value = rp.get("value")
-                    unit = rp.get("unit", "")
-                    header = f"{name} ({unit})" if unit else name
-                    if value is not None:
-                        row[header] = round(value, 3) if isinstance(value, float) else value
-                    else:
-                        row[header] = "N/A"
-            flat_items.append({"No": i + 1, **row})
-        return flat_items
-
-    content_json = {
-        k: v
-        for k, v in (
-            ("assemblies", _flatten(flat_assemblies)),
-            ("parts", _flatten(flat_parts)),
-            ("reinforcements", _flatten(flat_reinforcements, _flatten_rebar_props)),
-            ("reference_objects", _flatten(reference_objects)),
-        )
-        if v
+    return {
+        "status": status,
+        "selected_count": selected_objects.GetSize(),
+        "processed_count": processed_count,
+        "assemblies": flat_assemblies,
+        "parts": flat_parts,
+        "reinforcements": flat_reinforcements,
+        "reference_objects": reference_objects,
+        "resolution_errors": resolution_errors,
+        "extraction_errors": extraction_errors,
     }
-
-    return ToolResult(
-        content=content_json,
-        structured_content={
-            "status": status,
-            "selected_count": selected_objects.GetSize(),
-            "processed_count": processed_count,
-            "assemblies": flat_assemblies,
-            "parts": flat_parts,
-            "reinforcements": flat_reinforcements,
-            "reference_objects": reference_objects,
-            "resolution_errors": resolution_errors,
-            "extraction_errors": extraction_errors,
-        },
-    )
 
 
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": True, "destructiveHint": False})

@@ -5,6 +5,8 @@ Tests getting and setting element properties, UDAs, numbering, cut parts, compar
 and IFC property copy operations.
 """
 
+import importlib
+
 import pytest
 
 from tekla_mcp_server.providers.properties_provider import (
@@ -20,6 +22,7 @@ from tekla_mcp_server.providers.properties_provider import (
 from tekla_mcp_server.providers.selection_provider import select_related_elements, select_elements_by_guid
 from tekla_mcp_server.tekla.interop import to_array_list
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaPart
 
 
 def test_set_elements_properties(model_objects):
@@ -1055,26 +1058,106 @@ def test_get_elements_properties_flat_mode_includes_reinforcements_key(model_obj
     assert isinstance(result.structured_content["reinforcements"], list)
 
 
-def test_get_elements_properties_guids_only_mode(model_objects):
-    """guids_only mode returns just the selection's GUIDs, with no property payload."""
-    TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    result = get_elements_properties(mode="guids_only")
+def test_get_elements_properties_compact_mode_parts(model_objects):
+    """Compact mode returns one row per part with its identifying fields and no property payload."""
+    TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_c"]])
+    result = get_elements_properties(mode="compact")
 
     assert result.structured_content["status"] == "success"
     assert result.structured_content["selected_count"] == 2
     assert result.structured_content["processed_count"] == 2
-    guids = result.structured_content["guids"]
-    assert len(guids) == 2
-    assert all(isinstance(g, str) and g for g in guids)
-    # Lightweight mode: no flat/snapshot property payload
+    assert result.structured_content["errors"] == []
+    assert result.structured_content["skipped_objects"] == []
+    elements = {e["name"]: e for e in result.structured_content["elements"]}
+    assert set(elements) == {"MCP_TEST_CLASH_WALL_A", "MCP_TEST_CLASH_WALL_C"}
+
+    wall_c_object = model_objects["test_clash_wall_c"]
+    _, expected_position = wall_c_object.GetReportProperty("PART_POS", str())
+    wall_c = elements["MCP_TEST_CLASH_WALL_C"]
+    assert set(wall_c) == {"guid", "type", "name", "position", "profile", "material", "size"}
+    assert wall_c["guid"] == wall_c_object.Identifier.GUID.ToString()
+    # `place_panels` models panels as beams
+    assert wall_c["type"] == "Beam"
+    assert wall_c["position"] == expected_position
+    assert wall_c["profile"] == "1000*100"
+    assert wall_c["material"] == "Concrete_Undefined"
+    assert wall_c["size"] is None
+    assert elements["MCP_TEST_CLASH_WALL_A"]["profile"] == "3000*200"
+
+    # Compact mode carries no flat/snapshot property payload
     assert "parts" not in result.structured_content
     assert "assemblies" not in result.structured_content
 
 
-def test_get_elements_properties_guids_only_round_trips_through_select_by_guid(model_objects):
-    """GUIDs from guids_only mode re-select the exact same objects (zero missing)."""
+def test_get_elements_properties_compact_mode_assembly_uses_main_part(model_objects):
+    """Compact mode reports a multi-part assembly with the profile and material of its main part, not a secondary."""
+    main_part = model_objects["test_clash_wall_c"]
+    secondary = model_objects["test_clash_wall_b"]
+    assembly = main_part.GetAssembly()
+    assert assembly.Add(secondary)
+    assert assembly.Modify()
+    TeklaModel().commit_changes()
+    assert assembly.GetMainPart().Identifier.GUID.ToString() == main_part.Identifier.GUID.ToString()
+
+    TeklaModel.select_objects([main_part])
+    select_related_elements(mode="Assembly")
+    result = get_elements_properties(mode="compact")
+
+    assert result.structured_content["status"] == "success"
+    elements = result.structured_content["elements"]
+    assert len(elements) == 1
+    row = elements[0]
+    _, expected_position = assembly.GetReportProperty("ASSEMBLY_POS", str())
+    assert row["type"] == "Assembly"
+    assert row["guid"] == assembly.Identifier.GUID.ToString()
+    assert row["position"] == expected_position
+    # Main part is 1000*100, the secondary is 3000*200
+    assert row["profile"] == "1000*100"
+    assert row["material"] == "Concrete_Undefined"
+    assert row["size"] is None
+
+
+def test_get_elements_properties_compact_mode_failing_field_keeps_row(model_objects, monkeypatch):
+    """A field that fails to read is null and reported, the rest of the row and the other rows are kept."""
+
+    def _failing_position(self):
+        raise RuntimeError("MCP_TEST position failure")
+
+    monkeypatch.setattr(TeklaPart, "position", property(_failing_position))
+    TeklaModel.select_objects([model_objects["test_clash_wall_a"], model_objects["test_clash_wall_c"]])
+    result = get_elements_properties(mode="compact")
+
+    assert result.structured_content["status"] == "partial"
+    assert result.structured_content["processed_count"] == 2
+    elements = result.structured_content["elements"]
+    assert len(elements) == 2
+    assert all(e["position"] is None for e in elements)
+    assert {e["profile"] for e in elements} == {"1000*100", "3000*200"}
+    errors = result.structured_content["errors"]
+    assert len(errors) == 2
+    assert all(e["field"] == "position" and "MCP_TEST position failure" in e["error"] for e in errors)
+    assert {e["guid"] for e in errors} == {e["guid"] for e in elements}
+
+
+def test_get_elements_properties_compact_mode_reports_skipped_objects(model_objects, monkeypatch):
+    """Objects of unsupported types are listed in `skipped_objects`, and a selection with no rows is a warning."""
+    # `tekla_mcp_server.providers` re-exports the `properties_provider` LocalProvider under the module's name, so patch the module itself
+    module = importlib.import_module("tekla_mcp_server.providers.properties_provider")
+    monkeypatch.setattr(module, "wrap_model_object", lambda raw: None)
+    TeklaModel.select_objects([model_objects["test_clash_wall_a"]])
+    result = get_elements_properties(mode="compact")
+
+    assert result.structured_content["status"] == "warning"
+    assert result.structured_content["selected_count"] == 1
+    assert result.structured_content["processed_count"] == 0
+    assert result.structured_content["elements"] == []
+    assert result.structured_content["skipped_objects"] == [{"guid": model_objects["test_clash_wall_a"].Identifier.GUID.ToString(), "type": "Beam"}]
+
+
+def test_get_elements_properties_compact_round_trips_through_select_by_guid(model_objects):
+    """GUIDs from compact mode re-select the exact same objects (zero missing)."""
     TeklaModel.select_objects([model_objects["test_wall1"], model_objects["test_wall2"]])
-    guids = get_elements_properties(mode="guids_only").structured_content["guids"]
+    guids = [e["guid"] for e in get_elements_properties(mode="compact").structured_content["elements"]]
 
     TeklaModel.clear_selection()
     result = select_elements_by_guid(guids=guids)

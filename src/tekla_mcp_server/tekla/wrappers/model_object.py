@@ -1760,6 +1760,20 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
         self._set_property("Name", value)
 
     @property
+    def grade(self) -> str:
+        """
+        Returns the grade of the reinforcement element.
+        """
+        return self.model_object.Grade
+
+    @property
+    def size(self) -> str | None:
+        """
+        Returns the bar size, or None for reinforcement types without one (e.g. 'RebarMesh').
+        """
+        return getattr(self.model_object, "Size", None)
+
+    @property
     def tekla_class(self) -> int:
         """
         Returns the Tekla class of the reinforcement element as an integer.
