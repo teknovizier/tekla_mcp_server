@@ -18,7 +18,7 @@ from tekla_mcp_server.providers.operations_provider import run_macro
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.component_handlers import HandlerRegistry
-from tekla_mcp_server.tekla.loader import Beam, CustomPart, Part
+from tekla_mcp_server.tekla.loader import Beam, CustomPart, Int32, Part
 from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_transformation_plane, get_wall_pairs, insert_component, insert_detail
 
 
@@ -179,6 +179,8 @@ def _put_single_component(model: TeklaModel, component: BaseComponent, selected_
 @ensure_transformation_plane
 def _modify_single_component(model: TeklaModel, component: BaseComponent, selected_object: Any, *args: Any) -> int:
     counter = 0
+    component_def = get_config().get_component_by_tekla_name(component.name)
+    has_schema = bool(component_def and component_def.get("custom_properties"))
 
     comp_enum = selected_object.GetComponents()
     while comp_enum.MoveNext():
@@ -186,7 +188,7 @@ def _modify_single_component(model: TeklaModel, component: BaseComponent, select
         if comp.Name == component.name:
             if component.properties:
                 for key, value in component.properties.items():
-                    if isinstance(value, int):
+                    if not has_schema and isinstance(value, int):
                         value = float(value)
                     comp.SetAttribute(key, value)
             if comp.Modify():
@@ -423,7 +425,15 @@ def get_components() -> ToolResult:
                 for attr_key, attr_def in schema.items():
                     attr_type = attr_def.get("type", "str")
                     default = TYPE_DEFAULTS.get(attr_type, str())
-                    is_ok, attr_value = comp.GetAttribute(attr_key, default)
+                    # A Python int placeholder selects the double overload, which fails on int attributes
+                    placeholder = Int32(0) if attr_type == "int" else default
+                    is_ok, attr_value = comp.GetAttribute(attr_key, placeholder)
+                    if not is_ok and attr_type == "int":
+                        # Standard settings files store some int attributes as text (e.g. numbering start '1')
+                        # until the component is first modified
+                        is_text, text = comp.GetAttribute(attr_key, "")
+                        is_ok = is_text and text.strip().lstrip("-").isdigit()
+                        attr_value = int(text) if is_ok else attr_value
                     attributes[attr_key] = attr_value if is_ok else default
 
             object_components.append(

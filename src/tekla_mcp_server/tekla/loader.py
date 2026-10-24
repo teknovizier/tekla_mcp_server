@@ -14,7 +14,7 @@ if not load_dlls():
     )
 
 
-from System import Type as SystemType, Array as SystemArray
+from System import Type as SystemType, Array as SystemArray, Int32
 from System.Reflection import BindingFlags
 from System.Collections import ArrayList, Hashtable
 from System.Collections.Generic import Dictionary, List
@@ -136,6 +136,7 @@ from Tekla.Structures.Drawing import (
 __all__ = [
     "SystemType",
     "SystemArray",
+    "Int32",
     "BindingFlags",
     "ArrayList",
     "Dictionary",
