@@ -25,13 +25,17 @@ from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 def reset_parser():
     """Reset the parser state before each test."""
     TemplateAttributeParser._cache = {}
+    TemplateAttributeParser._normalized_index = {}
     TemplateAttributeParser._loaded = False
-    TemplateAttributeParser._embeddings_cache = {}
+    TemplateAttributeParser._embedding_names = []
+    TemplateAttributeParser._embedding_matrix = None
     TemplateAttributeParser._semantic_loaded = False
     yield
     TemplateAttributeParser._cache = {}
+    TemplateAttributeParser._normalized_index = {}
     TemplateAttributeParser._loaded = False
-    TemplateAttributeParser._embeddings_cache = {}
+    TemplateAttributeParser._embedding_names = []
+    TemplateAttributeParser._embedding_matrix = None
     TemplateAttributeParser._semantic_loaded = False
 
 

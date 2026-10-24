@@ -238,25 +238,6 @@ def normalize_for_embedding(name: str) -> str:
     return name.lower().strip()
 
 
-def find_normalized_match(input_name: str, candidates: dict[str, Any]) -> str | None:
-    """
-    Find a normalized exact match for input_name in candidates.
-
-    Args:
-        input_name: User-provided attribute name
-        candidates: Dict of candidate attribute names to match against
-
-    Returns:
-        Matched key from candidates, or None if no match
-    """
-    input_normalized = normalize_attribute_name(input_name)
-    for attr_name in candidates.keys():
-        attr_normalized = normalize_attribute_name(attr_name)
-        if input_normalized == attr_normalized:
-            return attr_name
-    return None
-
-
 def log_function_call(func: Callable) -> Callable:
     """
     Decorator that logs function calls.

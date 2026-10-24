@@ -269,10 +269,12 @@ class TeklaModel:
             ArrayList containing the found model objects. Shorter than `guids` when
             some of them do not resolve.
         """
+        # Read the property once: each access runs a connection check
+        model = self.model
         objects_to_select = ArrayList()
         missing: list[str] = []
         for guid in guids:
-            obj = self.model.SelectModelObject(Identifier(guid))
+            obj = model.SelectModelObject(Identifier(guid))
             if obj is not None:
                 objects_to_select.Add(obj)
             else:

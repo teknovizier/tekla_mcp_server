@@ -4,7 +4,8 @@ View tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, Any
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
@@ -32,6 +33,23 @@ from tekla_mcp_server.tekla.loader import (
 
 
 view_provider = LocalProvider()
+
+# Label getters per element type. Only the requested one runs, so a 'Name' label
+# never pays for `weight`, which walks every rebar and secondary part
+_ASSEMBLY_LABEL_GETTERS: dict[ElementLabel, Callable[[Any], str]] = {
+    ElementLabel.POSITION: lambda o: o.position,
+    ElementLabel.GUID: lambda o: o.guid,
+    ElementLabel.NAME: lambda o: o.name,
+    ElementLabel.PHASE: lambda o: str(o.phase),
+    ElementLabel.WEIGHT: lambda o: f"{o.weight[0]:.1f} kg",
+}
+_PART_LABEL_GETTERS: dict[ElementLabel, Callable[[Any], str]] = {
+    **_ASSEMBLY_LABEL_GETTERS,
+    ElementLabel.PROFILE: lambda o: o.profile,
+    ElementLabel.MATERIAL: lambda o: o.material,
+    ElementLabel.FINISH: lambda o: o.finish,
+    ElementLabel.CLASS: lambda o: str(o.tekla_class),
+}
 
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -98,29 +116,12 @@ def draw_elements_labels(
                 text = " | ".join(f"{name} = {selected_object.get_report_property(name)}{unit}" for name, unit in resolved_labels.items())
             else:
                 if isinstance(selected_object, TeklaAssembly):
-                    assembly_labels = {
-                        ElementLabel.POSITION: selected_object.position,
-                        ElementLabel.GUID: selected_object.guid,
-                        ElementLabel.NAME: selected_object.name,
-                        ElementLabel.PHASE: str(selected_object.phase),
-                        ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
-                    }
-                    text = assembly_labels.get(label_enum, selected_object.name)
+                    getters = _ASSEMBLY_LABEL_GETTERS
                 elif isinstance(selected_object, TeklaPart):
-                    part_labels = {
-                        ElementLabel.POSITION: selected_object.position,
-                        ElementLabel.GUID: selected_object.guid,
-                        ElementLabel.NAME: selected_object.name,
-                        ElementLabel.PROFILE: selected_object.profile,
-                        ElementLabel.MATERIAL: selected_object.material,
-                        ElementLabel.FINISH: selected_object.finish,
-                        ElementLabel.CLASS: str(selected_object.tekla_class),
-                        ElementLabel.PHASE: str(selected_object.phase),
-                        ElementLabel.WEIGHT: f"{selected_object.weight[0]:.1f} kg",
-                    }
-                    text = part_labels.get(label_enum, selected_object.name)
+                    getters = _PART_LABEL_GETTERS
                 else:
                     continue
+                text = getters.get(label_enum, getters[ElementLabel.NAME])(selected_object)
             if drawer.DrawText(selected_object.cog, text, Color(*color_black)):
                 drawn_labels_count += 1
             processed_count += 1

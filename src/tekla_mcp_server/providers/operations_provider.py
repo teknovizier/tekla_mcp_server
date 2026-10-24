@@ -80,7 +80,7 @@ def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
     return guids
 
 
-def _is_inside_any_assembly_part(candidate: SolidGeometryMixin, parts: list[TeklaPart]) -> bool:
+def _is_inside_any_assembly_part(candidate: SolidGeometryMixin, parts: list[TeklaPart], solid_cache: dict[int, dict[str, Any]]) -> bool:
     """
     Check whether candidate lies within the solid geometry of any part in the list.
 
@@ -90,9 +90,13 @@ def _is_inside_any_assembly_part(candidate: SolidGeometryMixin, parts: list[Tekl
 
     Delegates to `is_inside` which handles the NORMAL → RAW fallback internally
     for TeklaPart containers and never propagates exceptions (conservative True).
+    `solid_cache` maps object ID to its solids and is shared across all candidates,
+    so each part's solids are built once instead of once per candidate, and the
+    candidate's own solid once instead of once per part.
     """
+    candidate_solids = solid_cache.setdefault(candidate.id, {})
     for part in parts:
-        if candidate.is_inside(part):
+        if candidate.is_inside(part, solid_cache.setdefault(part.id, {}), candidate_solids):
             return True
     return False
 
@@ -118,6 +122,7 @@ def _check_element_bounding_box_embeds(
 
     orphaned: list[CheckResult] = []
     processed_guids: set[str] = set()
+    part_solids: dict[int, dict[str, Any]] = {}
 
     for candidate in candidates:
         # Candidates may be parts belonging to a multi-part embed, promote to assembly
@@ -147,11 +152,11 @@ def _check_element_bounding_box_embeds(
             continue
 
         # Only embedded-detail classes are relevant, other nearby objects are ignored
-        if not wrapped_assembly.is_embedded_detail():
+        if not wrapped_assembly.is_embedded_detail(candidate_main):
             continue
 
         # Skip embeds that are in the bounding box but outside the element's actual solid
-        if not _is_inside_any_assembly_part(candidate_main, assembly_parts):
+        if not _is_inside_any_assembly_part(candidate_main, assembly_parts, part_solids):
             continue
 
         processed_guids.add(assembly_guid)
@@ -197,6 +202,7 @@ def _check_element_bounding_box_rebars(
 
     orphaned: list[CheckResult] = []
     evaluated_guids: set[str] = set()
+    part_solids: dict[int, dict[str, Any]] = {}
 
     for candidate in candidates:
         if not isinstance(candidate, TeklaReinforcement):
@@ -207,23 +213,26 @@ def _check_element_bounding_box_rebars(
         if reinforcement_class not in REINFORCEMENT_CLASSES:
             continue
 
-        # Skip rebars that are in the bounding box but outside the element's actual solid
-        if not _is_inside_any_assembly_part(candidate, assembly_parts):
-            continue
-
-        evaluated_guids.add(candidate.guid)
-
         # Rebar is correctly attached to this element - not orphaned
-        if candidate.guid in element_reinforcement_guids:
+        candidate_guid = candidate.guid
+        if candidate_guid in element_reinforcement_guids:
+            evaluated_guids.add(candidate_guid)
             continue
+
+        # Skip rebars that are in the bounding box but outside the element's actual solid
+        if not _is_inside_any_assembly_part(candidate, assembly_parts, part_solids):
+            continue
+
+        evaluated_guids.add(candidate_guid)
 
         # Starter bars: rebar belongs to a neighboring element and
         # legitimately reaches into this one. Recognised by the bar still lying
         # inside the solid of its actual father part.
         # We check only the father part, not the entire father assembly, because we
         # are verifying specific ownership.
+        # Neighbouring bars often share a father, so its solids go in the same per-part cache
         father = candidate.father
-        if father is not None and father.guid != ZERO_GUID and candidate.is_inside(father):
+        if father is not None and father.guid != ZERO_GUID and candidate.is_inside(father, part_solids.setdefault(father.id, {}), part_solids.setdefault(candidate.id, {})):
             continue
 
         orphaned.append(
@@ -431,6 +440,7 @@ def check_for_orphans(
     orphaned_guids: set[str] = set()
     skipped_elements: list[str] = []
     evaluated_guids: set[str] = set()
+    checked_assembly_guids: set[str] = set()
 
     for obj in wrap_model_objects(selected_objects):
         if not isinstance(obj, (TeklaPart, TeklaAssembly)):
@@ -444,6 +454,11 @@ def check_for_orphans(
             skipped_elements.append(obj.guid)
             logger.debug("No top-level assembly for %s, skipping", obj.guid)
             continue
+
+        # Selected parts of the same assembly would repeat the whole spatial check
+        if parent_assembly.guid in checked_assembly_guids:
+            continue
+        checked_assembly_guids.add(parent_assembly.guid)
 
         if mode == "subassemblies":
             orphans, ev_guids = _check_element_bounding_box_embeds(parent_assembly, {parent_assembly.guid}, tolerance)
@@ -685,6 +700,7 @@ def check_for_invalid_objects() -> ToolResult:
     invalid_reinforcements: list[CheckResult] = []
     invalid_assemblies: list[CheckResult] = []
     processed_guids: set[str] = set()
+    checked_assembly_guids: set[str] = set()
     total_evaluated = 0
 
     for model_obj in wrap_model_objects(selected_objects):
@@ -697,7 +713,11 @@ def check_for_invalid_objects() -> ToolResult:
         if parent_assembly is None:
             logger.debug("No assembly found for %s, checking object directly", model_obj.guid)
             objects_to_check = [model_obj]
+        elif parent_assembly.guid in checked_assembly_guids:
+            # Children and the bounding box search were already gathered for this assembly
+            continue
         else:
+            checked_assembly_guids.add(parent_assembly.guid)
             # Start with all structural children that belong to the assembly
             children = list(wrap_model_objects(parent_assembly.get_all_children()))
 

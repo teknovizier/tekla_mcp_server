@@ -116,12 +116,22 @@ class BoundingBox:
         """
         return math.sqrt((self.max_x - self.min_x) ** 2 + (self.max_y - self.min_y) ** 2 + (self.max_z - self.min_z) ** 2)
 
+    @staticmethod
+    def matching_tolerances() -> tuple[float, float]:
+        """
+        Read the configured matching tolerances, the single place their defaults live.
+
+        Returns:
+            (overlap tolerance in mm, centroid tolerance factor of the diagonal)
+        """
+        return get_tolerance("default", 20.0), get_tolerance("center_tolerance_factor", default=0.1)
+
     def overlaps(self, other: BoundingBox, tol: float | None = None) -> bool:
         """
         Check if bounding boxes overlap within tolerance.
         """
         if tol is None:
-            tol = get_tolerance("default", 20.0)
+            tol = BoundingBox.matching_tolerances()[0]
         return (
             self.min_x <= other.max_x + tol
             and self.max_x >= other.min_x - tol
@@ -135,10 +145,10 @@ class BoundingBox:
         """
         Match using spatial overlap + centroid distance.
         """
-        if tol is None:
-            tol = get_tolerance("default", 20.0)
-        if center_tol_factor is None:
-            center_tol_factor = get_tolerance("center_tolerance_factor", default=0.1)
+        if tol is None or center_tol_factor is None:
+            default_tol, default_factor = BoundingBox.matching_tolerances()
+            tol = default_tol if tol is None else tol
+            center_tol_factor = default_factor if center_tol_factor is None else center_tol_factor
         if not self.overlaps(other, tol):
             return False
 
@@ -199,9 +209,15 @@ class SolidGeometryMixin:
         """
         return self.model_object.GetSolid()
 
-    def is_inside(self, other: TeklaModelObject) -> bool:
+    def is_inside(self, other: TeklaModelObject, container_solids: dict[str, Solid] | None = None, self_solids: dict[str, Solid] | None = None) -> bool:
         """
         Return True if `self` object lies inside `other` using an odd/even ray-cast test.
+
+        Pass the same `container_solids` dict for repeated tests against one container
+        to build its NORMAL and RAW solids only once, and the same `self_solids` dict for
+        repeated tests of this object against several containers. Both use the key
+        'normal' for the same solid, so one object's dict serves either role. The model
+        must not change meanwhile.
 
         A ray is cast from the center of the overlapping AABB region in a non-axis-aligned
         direction to avoid grazing hits. Only forward-half-space intersections are counted.
@@ -222,20 +238,28 @@ class SolidGeometryMixin:
         - Near-tangent or very thin geometry may still produce false positives or negatives.
         - Any geometry/kernel failure conservatively returns True to avoid false negatives.
         """
+        if container_solids is None:
+            container_solids = {}
+        if self_solids is None:
+            self_solids = {}
         try:
             # Get solids - prefer NORMAL (includes cuts/booleans) for both sides.
             # Some Tekla types don't support SolidCreationTypeEnum, so fall back to GetSolid().
-            if isinstance(other, TeklaPart):
-                solid_other = other.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
+            if "normal" in container_solids:
+                solid_other = container_solids["normal"]
+            elif isinstance(other, TeklaPart):
+                solid_other = container_solids["normal"] = other.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
             elif isinstance(other, SolidGeometryMixin):
-                solid_other = other.get_solid()
+                solid_other = container_solids["normal"] = other.get_solid()
             else:
                 logger.warning("is_inside: unknown container type %s, defaulting to inside", type(other).__name__)
                 return True  # conservative
-            if isinstance(self, TeklaPart):
-                solid_self = self.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
+            if "normal" in self_solids:
+                solid_self = self_solids["normal"]
+            elif isinstance(self, TeklaPart):
+                solid_self = self_solids["normal"] = self.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
             elif isinstance(self, SolidGeometryMixin):
-                solid_self = self.get_solid()
+                solid_self = self_solids["normal"] = self.get_solid()
             if not solid_other or not solid_other.IsValid():
                 logger.warning("is_inside: container solid invalid (%s), defaulting to inside", "None" if not solid_other else "!IsValid()")
                 return True  # conservative
@@ -255,7 +279,9 @@ class SolidGeometryMixin:
             if not isinstance(other, TeklaPart):
                 return False
 
-            solid_raw = other.get_solid(Solid.SolidCreationTypeEnum.RAW)
+            if "raw" not in container_solids:
+                container_solids["raw"] = other.get_solid(Solid.SolidCreationTypeEnum.RAW)
+            solid_raw = container_solids["raw"]
             if not solid_raw or not solid_raw.IsValid():
                 return True  # conservative
 
@@ -491,7 +517,7 @@ class TeklaModelObject:
                 result[prop] = None
         return result
 
-    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+    def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
         """
         Gets element properties as dict.
         Override in subclasses to add type-specific properties.
@@ -500,28 +526,29 @@ class TeklaModelObject:
             "guid": self.guid,
             "phase": self.phase,
             "user_properties": self.get_all_user_properties(),
-            "report_properties": self._get_report_properties(report_props_definitions),
+            "report_properties": self._get_report_properties(resolved_report_props),
         }
 
-    def _get_report_properties(self, report_props_definitions: list[str] | None = None) -> list[dict[str, Any]]:
+    def _get_report_properties(self, resolved_report_props: list[str] | None = None) -> list[dict[str, Any]]:
         """
         Internal method to extract report properties.
+
+        Expects names already resolved by `TemplateAttributeParser.resolve_attributes`,
+        callers resolve once per tool call instead of once per element.
         """
-        if not report_props_definitions:
+        if not resolved_report_props:
             return []
 
-        resolution = TemplateAttributeParser.resolve_attributes(report_props_definitions)
-        resolved = resolution.get("resolved", [])
-
         result = []
-        for attr_name in resolved:
+        for attr_name in resolved_report_props:
             value = None
             parsed_prop = None
             try:
                 parsed_prop = TemplateAttributeParser.get_attribute(attr_name)
                 value = self.get_report_property(attr_name)
             except KeyError:
-                logger.debug("Attribute '%s' not found in cache", attr_name)
+                # Resolved names are always cached, so this means the caller passed a raw name
+                logger.warning("Attribute '%s' not found in cache - pass names resolved by `resolve_attributes`", attr_name)
             except Exception:
                 logger.debug("Property '%s' not available for this element", attr_name)
 
@@ -591,11 +618,11 @@ class TeklaReferenceModelObject(TeklaModelObject):
 
         return value
 
-    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+    def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
         """
         Gets element properties as dict for IFC reference objects.
         """
-        props = super().get_properties(report_props_definitions)
+        props = super().get_properties(resolved_report_props)
         props["guid"] = self.get_report_property("GUID")
         return props
 
@@ -785,15 +812,19 @@ class TeklaAssembly(TeklaModelObject):
             raise ValueError("Main part is not available")
         return main_part
 
-    def is_embedded_detail(self) -> bool:
+    def is_embedded_detail(self, main_part: TeklaModelObject | None = None) -> bool:
         """
         Return True if this assembly is an embedded detail,
         identified by its main part's `tekla_class`.
 
+        Args:
+            main_part: This assembly's main part if the caller already fetched it
+
         Raises:
             ValueError: If the main part is not available.
         """
-        main_part = self.main_part
+        if main_part is None:
+            main_part = self.main_part
         return isinstance(main_part, TeklaPart) and main_part.tekla_class in EMBEDDED_DETAILS_CLASSES
 
     @property
@@ -805,13 +836,14 @@ class TeklaAssembly(TeklaModelObject):
         - The total weight of the element, including its main part, secondary parts, and subassemblies.
         - The total weight of all reinforcement bars associated with the main part, secondary parts, and any rebar subassemblies.
         """
-        weight_main_part = float(self.main_part.get_report_property("WEIGHT"))
+        main_part = self.main_part
+        weight_main_part = float(main_part.get_report_property("WEIGHT"))
 
         weight_secondaries = 0.0
         weight_subassemblies = 0.0
         weight_rebars = 0.0
 
-        for rebar in wrap_model_objects(self.main_part.model_object.GetReinforcements()):
+        for rebar in wrap_model_objects(main_part.model_object.GetReinforcements()):
             weight_rebar = rebar.get_report_property("WEIGHT_TOTAL")
             weight_rebars += float(weight_rebar)
 
@@ -913,11 +945,11 @@ class TeklaAssembly(TeklaModelObject):
         """
         return SnapshotBuilder.build_assembly_snapshot(self)
 
-    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+    def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
         """
         Gets element properties for Assembly.
         """
-        props = super().get_properties(report_props_definitions)
+        props = super().get_properties(resolved_report_props)
         props["position"] = self.position
         props["name"] = self.name
         props["assembly_prefix"] = self.assembly_number.prefix
@@ -1142,21 +1174,23 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
             return None
         return _get_top_assembly(assembly)
 
-    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+    def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
         """
         Gets element properties including position for Part.
         """
-        props = super().get_properties(report_props_definitions)
+        props = super().get_properties(resolved_report_props)
         props["position"] = self.position
         props["name"] = self.name
         props["profile"] = self.profile
         props["material"] = self.material
         props["finish"] = self.finish
         props["tekla_class"] = self.tekla_class
-        props["part_prefix"] = self.part_number.prefix
-        props["part_start_number"] = self.part_number.start_number
-        props["assembly_prefix"] = self.assembly_number.prefix
-        props["assembly_start_number"] = self.assembly_number.start_number
+        part_number = self.part_number
+        assembly_number = self.assembly_number
+        props["part_prefix"] = part_number.prefix
+        props["part_start_number"] = part_number.start_number
+        props["assembly_prefix"] = assembly_number.prefix
+        props["assembly_start_number"] = assembly_number.start_number
         return props
 
     def has_spatial_overlap(self, other: SolidGeometryMixin) -> bool:
@@ -1693,11 +1727,11 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
             return None
         return host.get_top_level_assembly()
 
-    def get_properties(self, report_props_definitions: list[str] | None = None) -> dict[str, Any]:
+    def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
         """
         Gets element properties for Reinforcement.
         """
-        props = super().get_properties(report_props_definitions)
+        props = super().get_properties(resolved_report_props)
         props["position"] = self.position
         props["name"] = self.name
         props["tekla_class"] = self.tekla_class

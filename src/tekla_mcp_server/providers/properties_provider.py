@@ -15,6 +15,7 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import (
+    BoundingBox,
     TeklaAssembly,
     TeklaBeam,
     TeklaContourPlate,
@@ -832,6 +833,9 @@ def copy_properties_from_ifc(
     properties_copied = 0
     matches_made = 0
 
+    # Read once
+    match_tol, center_tol_factor = BoundingBox.matching_tolerances()
+
     # Match IFC to Tekla elements by bounding box and copy properties
     for i, (ifc_guid, ifc_object) in enumerate(ifc_sources):
         if ifc_guid not in ifc_bboxes:
@@ -849,7 +853,7 @@ def copy_properties_from_ifc(
                 continue
 
             tekla_bbox = tekla_bboxes[tekla_guid]
-            if ifc_bbox.matches(tekla_bbox):
+            if ifc_bbox.matches(tekla_bbox, match_tol, center_tol_factor):
                 for ifc_prop, uda_name in user_properties.items():
                     try:
                         value = ifc_object.get_report_property(ifc_prop)

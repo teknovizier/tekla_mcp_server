@@ -21,7 +21,7 @@ from tekla_mcp_server.embeddings import (
     get_embedding_model,
     is_embeddings_enabled,
 )
-from tekla_mcp_server.utils import find_normalized_match, normalize_for_embedding
+from tekla_mcp_server.utils import normalize_attribute_name, normalize_for_embedding
 
 if TYPE_CHECKING:
     import torch
@@ -31,8 +31,12 @@ class TemplateAttributeParser:
     """Parse Tekla template attributes and resolve queries with optional embeddings."""
 
     _cache: dict[str, ReportProperty] = {}
+    _normalized_index: dict[str, str] = {}  # Normalized name -> cached name, so exact matching is a dict lookup instead of a scan
     _loaded: bool = False
-    _embeddings_cache: dict[str, "torch.Tensor"] = {}
+    # Names and stacked embeddings aligned row by row, built once so queries skip re-stacking.
+    # `_embedding_matrix` stays None while embeddings are disabled or not loaded yet
+    _embedding_names: list[str] = []
+    _embedding_matrix: "torch.Tensor | None" = None
     _semantic_loaded: bool = False
 
     @classmethod
@@ -55,7 +59,9 @@ class TemplateAttributeParser:
 
         normalized_labels = [normalize_for_embedding(n) for n in names]
         embeddings = model.encode(normalized_labels, convert_to_tensor=True, device=device)
-        cls._embeddings_cache = {n: e for n, e in zip(names, embeddings, strict=True)}
+        # `encode` already returns one stacked tensor, keep it for similarity queries
+        cls._embedding_names = names
+        cls._embedding_matrix = embeddings
         cls._semantic_loaded = True
         logger.info("Generated embeddings for %d template attributes", len(names))
 
@@ -114,6 +120,9 @@ class TemplateAttributeParser:
                     dtype = rest_parts[0]
                     unit = rest_parts[6] if rest_parts[6] != "*" else None
                     cls._cache[name] = ReportProperty(name=name, data_type=ReportProperty.map_string_to_type(dtype), unit=unit)
+                    # Kept in step with `_cache` here so every loading path updates it.
+                    # setdefault keeps the first name when two names normalize alike
+                    cls._normalized_index.setdefault(normalize_attribute_name(name), name)
         except FileNotFoundError:
             logger.warning("Contentattributes file not found: %s", file_path)
 
@@ -141,10 +150,10 @@ class TemplateAttributeParser:
         resolved, errors = [], []
 
         for query in queries:
-            name = find_normalized_match(query, cls._cache)
+            name = cls._normalized_index.get(normalize_attribute_name(query))
             if not name:
                 name = cls._override_match(query)
-            if not name and cls._embeddings_cache:
+            if not name and cls._embedding_matrix is not None:
                 result = cls._get_candidates(query, spread_threshold=spread_threshold, min_threshold=min_threshold, top_k=top_k)
                 if isinstance(result, str):
                     resolved.append(result)
@@ -167,7 +176,7 @@ class TemplateAttributeParser:
             if failed_no_cands:
                 logger.warning("No candidates: %s", failed_no_cands)
             if failed_no_match:
-                log = logger.debug if not cls._embeddings_cache else logger.warning
+                log = logger.debug if cls._embedding_matrix is None else logger.warning
                 log("No match: %s", failed_no_match)
 
         return {"resolved": resolved, "errors": errors}
@@ -208,7 +217,7 @@ class TemplateAttributeParser:
         Returns:
             Tuple of (attribute_names, similarity_scores) sorted by score descending
         """
-        if not cls._embeddings_cache:
+        if cls._embedding_matrix is None or not cls._embedding_names:
             return [], []
 
         model = get_embedding_model()
@@ -217,13 +226,10 @@ class TemplateAttributeParser:
         user_embedding = model.encode(normalized_query, convert_to_tensor=True, device=device)
 
         from sentence_transformers import util
-        import torch
 
-        names = list(cls._embeddings_cache.keys())
-        embeddings = torch.stack(list(cls._embeddings_cache.values()))
-        scores = util.cos_sim(user_embedding, embeddings)[0]
+        scores = util.cos_sim(user_embedding, cls._embedding_matrix)[0]
 
-        return names, scores.tolist()
+        return cls._embedding_names, scores.tolist()
 
     @classmethod
     def _get_candidates(cls, query: str, spread_threshold: float, min_threshold: float, top_k: int = 10) -> str | list[str]:

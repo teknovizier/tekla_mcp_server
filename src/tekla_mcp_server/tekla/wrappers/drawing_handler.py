@@ -79,7 +79,8 @@ class TeklaDrawingHandler:
             if not marks:
                 raise ValueError("No drawings found or selected")
             all_drawings = self.get_all_drawings()
-            result = [d for d in all_drawings if d.mark in marks]
+            mark_set = set(marks)
+            result = [d for d in all_drawings if d.mark in mark_set]
         else:
             result = wrap_drawings(self._handler.GetDrawingSelector().GetSelected())
         if not result:

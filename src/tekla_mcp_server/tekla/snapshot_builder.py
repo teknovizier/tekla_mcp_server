@@ -24,9 +24,11 @@ class SnapshotBuilder:
     def build_part_snapshot(part: Any) -> PartSnapshot:
         report_properties = SnapshotBuilder._build_report_properties(part, get_config().get_report_props("part"))
         user_properties = SnapshotBuilder._build_sorted_user_properties(part)
-        cutparts = SnapshotBuilder._build_cutparts(part)
+        # Shared by cut parts and welds so the part's origin is read at most once
+        origin_cache: dict[str, tuple[float, float, float] | None] = {}
+        cutparts = SnapshotBuilder._build_cutparts(part, origin_cache)
         reinforcements = SnapshotBuilder._build_reinforcements(part)
-        welds = SnapshotBuilder._build_welds(part)
+        welds = SnapshotBuilder._build_welds(part, origin_cache)
 
         return PartSnapshot(
             guid=part.guid,
@@ -121,7 +123,7 @@ class SnapshotBuilder:
         return dict(sorted(props.items()))
 
     @staticmethod
-    def _build_cutparts(part: Any) -> list[dict[str, Any]]:
+    def _build_cutparts(part: Any, origin_cache: dict[str, tuple[float, float, float] | None]) -> list[dict[str, Any]]:
         cutparts = []
         boolean_enum = part.model_object.GetBooleans()
         while boolean_enum.MoveNext():
@@ -129,7 +131,7 @@ class SnapshotBuilder:
             if isinstance(boolean_part, BooleanPart):
                 operative_part = boolean_part.OperativePart
                 if operative_part:
-                    relative_pos = SnapshotBuilder._build_relative_position(operative_part, part.model_object)
+                    relative_pos = SnapshotBuilder._build_relative_position(operative_part, part.model_object, origin_cache)
                     cutparts.append(
                         {
                             "id": operative_part.Identifier.ID,
@@ -172,16 +174,17 @@ class SnapshotBuilder:
         return sorted(reinforcements, key=lambda r: (r["id"], r["name"]))
 
     @staticmethod
-    def _build_welds(part: Any) -> list[dict[str, Any]]:
+    def _build_welds(part: Any, origin_cache: dict[str, tuple[float, float, float] | None]) -> list[dict[str, Any]]:
         from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
         welds = []
+        weld_prop_names = get_config().get_report_props("weld")
         weld_enum = part.model_object.GetWelds()
         while weld_enum.MoveNext():
             weld = weld_enum.Current
             weld_wrapped = wrap_model_object(weld)
-            weld_props = weld_wrapped.get_multiple_report_properties(get_config().get_report_props("weld")) if weld_wrapped else {}
-            relative_pos = SnapshotBuilder._build_relative_position(weld, part.model_object)
+            weld_props = weld_wrapped.get_multiple_report_properties(weld_prop_names) if weld_wrapped else {}
+            relative_pos = SnapshotBuilder._build_relative_position(weld, part.model_object, origin_cache)
 
             welds.append(
                 {
@@ -194,16 +197,34 @@ class SnapshotBuilder:
         return sorted(welds, key=lambda w: w["id"])
 
     @staticmethod
-    def _build_relative_position(child: Any, parent: Any) -> dict[str, float] | None:
-        """Calculates the relative position of a child object to its parent."""
+    def _get_origin(obj: Any) -> tuple[float, float, float] | None:
+        """Reads an object's coordinate system origin, or None if unavailable."""
         try:
-            child_pos = child.GetCoordinateSystem().Origin
-            parent_pos = parent.GetCoordinateSystem().Origin
-            return {
-                "dx": float(child_pos.X - parent_pos.X),
-                "dy": float(child_pos.Y - parent_pos.Y),
-                "dz": float(child_pos.Z - parent_pos.Z),
-            }
-        except Exception:
-            logger.warning("Failed to calculate relative position for child %s", child.Identifier.ID)
+            origin = obj.GetCoordinateSystem().Origin
+            return (float(origin.X), float(origin.Y), float(origin.Z))
+        except Exception as e:
+            # Log the error, not the object: a broken object may fail on `Identifier` too
+            logger.warning("Failed to read coordinate system origin: %s", e)
             return None
+
+    @staticmethod
+    def _build_relative_position(child: Any, parent: Any, origin_cache: dict[str, tuple[float, float, float] | None]) -> dict[str, float] | None:
+        """
+        Calculates the relative position of a child object to its parent.
+
+        The parent's origin is read on first use and kept in `origin_cache`, so a part
+        without cut parts or welds never reads it and one with many reads it once.
+        """
+        if "origin" not in origin_cache:
+            origin_cache["origin"] = SnapshotBuilder._get_origin(parent)
+        parent_origin = origin_cache["origin"]
+        if parent_origin is None:
+            return None
+        child_origin = SnapshotBuilder._get_origin(child)
+        if child_origin is None:
+            return None
+        return {
+            "dx": child_origin[0] - parent_origin[0],
+            "dy": child_origin[1] - parent_origin[1],
+            "dz": child_origin[2] - parent_origin[2],
+        }

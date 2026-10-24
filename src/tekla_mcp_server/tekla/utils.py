@@ -67,16 +67,17 @@ def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
         # Determine the number of objects in args
         selected_object = args[0]  # Supports only the first element
 
-        current_plane = model.model.GetWorkPlaneHandler().GetCurrentTransformationPlane()
+        work_plane_handler = model.model.GetWorkPlaneHandler()
+        current_plane = work_plane_handler.GetCurrentTransformationPlane()
         local_plane = TransformationPlane(selected_object.GetCoordinateSystem())
 
         try:
-            model.model.GetWorkPlaneHandler().SetCurrentTransformationPlane(local_plane)
+            work_plane_handler.SetCurrentTransformationPlane(local_plane)
             # Call the actual function
             result = func(model, component, *args, **kwargs)
         finally:
             # Reset transformation plane after execution
-            model.model.GetWorkPlaneHandler().SetCurrentTransformationPlane(current_plane)
+            work_plane_handler.SetCurrentTransformationPlane(current_plane)
 
         return result
 
@@ -376,8 +377,9 @@ def iterate_boolean_parts(model_object: ModelObject, types: tuple[type, ...] = (
     boolean_parts: list[ModelObject] = []
     boolean_enum = model_object.GetBooleans()
     while boolean_enum.MoveNext():
-        if isinstance(boolean_enum.Current, types):
-            boolean_parts.append(boolean_enum.Current)
+        boolean_part = boolean_enum.Current
+        if isinstance(boolean_part, types):
+            boolean_parts.append(boolean_part)
     return boolean_parts
 
 
