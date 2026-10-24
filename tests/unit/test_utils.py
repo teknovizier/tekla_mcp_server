@@ -8,13 +8,39 @@ import pytest
 
 from tekla_mcp_server.utils import (
     build_report_filename,
+    dedupe_guids,
     normalize_attribute_name,
+    normalize_guid,
     format_coordinate_string,
     parse_coordinate_string,
     parse_label_string,
     resolve_model_relative_dir,
     sanitize_filename,
 )
+
+
+GUID = "c0ca35ee-b280-4e21-b61c-e47fea5c9a3b"
+
+
+class TestNormalizeGuid:
+    @pytest.mark.parametrize(
+        "raw",
+        [GUID, f" {GUID} ", GUID.upper(), f"{{{GUID}}}", f" {{ {GUID.upper()} }} "],
+    )
+    def test_spelling_variants_normalize_to_lowercase(self, raw):
+        assert normalize_guid(raw) == GUID
+
+    def test_empty_stays_empty(self):
+        assert normalize_guid("") == ""
+
+
+class TestDedupeGuids:
+    def test_drops_variants_and_keeps_first_seen_order(self):
+        other = "11111111-1111-1111-1111-111111111111"
+        assert dedupe_guids([GUID.upper(), other, f" {GUID} ", other]) == [GUID, other]
+
+    def test_empty_input(self):
+        assert dedupe_guids([]) == []
 
 
 class TestNormalizeAttributeName:

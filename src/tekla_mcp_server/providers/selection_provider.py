@@ -318,32 +318,25 @@ def select_elements_by_filter_name(
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def select_elements_by_guid(
-    guids: Annotated[list[str], Field(description="List of GUIDs to select (e.g. from `get_elements_properties`)")],
+    guids: Annotated[list[str], Field(description="List of GUIDs to select (e.g. from `get_elements_properties`)", min_length=1)],
 ) -> ToolResult:
     """
     Selects elements by their GUID.
+
+    GUIDs not in the model are reported in `missing_guids`. If none is found, the selection is
+    cleared so a later tool cannot act on a stale selection.
     """
     model = TeklaModel()
-    objects_to_select = ArrayList()
-    selected_guids: list[str] = []
-    missing_guids: list[str] = []
-
-    for guid in guids:
-        obj = model.get_object_by_guid(guid)
-        if obj is not None:
-            objects_to_select.Add(obj)
-            selected_guids.append(guid)
-        else:
-            missing_guids.append(guid)
+    objects_to_select, selected_guids, missing_guids = model.resolve_guids(guids)
 
     TeklaModel.select_objects(objects_to_select)
-    logger.info("Selected %s/%s elements by GUID (missing: %s)", len(selected_guids), len(guids), missing_guids)
+    logger.info("Selected %s elements by GUID (missing: %s)", len(selected_guids), missing_guids)
+    if not selected_guids:
+        raise ValueError(f"None of the GUIDs were found in the model: {missing_guids}")
 
-    status = "success" if selected_guids and not missing_guids else ("partial" if selected_guids else "warning")
     return ToolResult(
         structured_content={
-            "status": status,
-            "requested_count": len(guids),
+            "status": "partial" if missing_guids else "success",
             "selected_count": len(selected_guids),
             "selected_guids": selected_guids,
             "missing_guids": missing_guids,

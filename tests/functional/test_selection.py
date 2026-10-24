@@ -176,21 +176,17 @@ def test_select_elements_by_filter_invalid_combine_with(model_objects, invalid_l
 
 def test_select_elements_by_guid(model_objects):
     """Tests select_elements_by_guid function."""
-    result = select_elements_by_guid(guids=[])
-    assert result.structured_content["status"] == "warning"
-    assert result.structured_content["selected_guids"] == []
-    assert result.structured_content["missing_guids"] == []
-
     result = select_elements_by_guid(guids=[""])
-    assert result.structured_content["status"] == "warning"
-    assert result.structured_content["selected_guids"] == []
-    assert result.structured_content["missing_guids"] == [""]
+    assert result.structured_content["status"] == "error"
 
-    nonexistent = "MCP_TEST_WALL2"
+    # Nothing found clears the previous selection so no later tool acts on it
+    TeklaModel.select_objects([model_objects["test_wall1"]])
+    nonexistent = "mcp_test_wall2"
     result = select_elements_by_guid(guids=[nonexistent])
-    assert result.structured_content["status"] == "warning"
-    assert result.structured_content["selected_guids"] == []
-    assert result.structured_content["missing_guids"] == [nonexistent]
+    assert result.structured_content["status"] == "error"
+    assert nonexistent in result.structured_content["message"]
+    with pytest.raises(ValueError):
+        TeklaModel().get_selected_objects()
 
     wall2_guid = model_objects["test_wall2"].Identifier.GUID.ToString()
     result = select_elements_by_guid(guids=[wall2_guid])
@@ -212,6 +208,12 @@ def test_select_elements_by_guid(model_objects):
     assert result.structured_content["selected_count"] == 1
     assert result.structured_content["selected_guids"] == [wall1_guid]
     assert result.structured_content["missing_guids"] == [nonexistent]
+
+    # Spelling variants of one GUID select it once and are reported in normalized form
+    result = select_elements_by_guid(guids=[wall1_guid, f" {{{wall1_guid.upper()}}} "])
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["selected_count"] == 1
+    assert result.structured_content["selected_guids"] == [wall1_guid]
 
 
 @pytest.mark.parametrize("mode,expected_count", [("Assembly", 2), ("Main Part", 2)])

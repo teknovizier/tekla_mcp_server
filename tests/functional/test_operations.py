@@ -8,7 +8,8 @@ and report creation.
 from pathlib import Path
 
 from tekla_mcp_server.config import get_advanced_option_directories
-from tekla_mcp_server.models import AttachmentPair
+from tekla_mcp_server.models import AttachmentPair, BeamInput, PanelInput, PointInput
+from tekla_mcp_server.providers.modeling_provider import place_beams, place_panels
 from tekla_mcp_server.providers.operations_provider import (
     attach_rebars,
     attach_assemblies,
@@ -67,29 +68,23 @@ def test_check_for_orphans_pairs_shape(model_objects):
 
 
 def test_attach_assemblies_empty_pairs():
-    """Empty pairs is a structured no-op success - nothing to attach, no commit."""
+    """Empty pairs is an error, nothing to attach."""
     result = attach_assemblies(pairs=[])
-    assert result.structured_content["status"] == "success"
-    assert result.structured_content["attached_count"] == 0
-    assert result.structured_content["attached"] == []
-    assert result.structured_content["skipped"] == []
+    assert result.structured_content["status"] == "error"
 
 
 def test_attach_rebars_empty_pairs():
-    """Empty pairs is a structured no-op success for the rebars tool too."""
+    """Empty pairs is an error for the rebars tool too."""
     result = attach_rebars(pairs=[])
-    assert result.structured_content["status"] == "success"
-    assert result.structured_content["attached_count"] == 0
-    assert result.structured_content["attached"] == []
-    assert result.structured_content["skipped"] == []
+    assert result.structured_content["status"] == "error"
 
 
 def test_attach_assemblies_duplicate_pair():
-    """An exact duplicate pair is skipped 'duplicate_pair' so it can't be double-counted."""
+    """Repeated pairs, including spelling variants of the GUIDs, are processed once."""
     pair = AttachmentPair(object_guid=ZERO_GUID, target_guid=OTHER_GUID)
-    result = attach_assemblies(pairs=[pair, pair])
-    reasons = [s["reason"] for s in result.structured_content["skipped"]]
-    assert "duplicate_pair" in reasons
+    variant = AttachmentPair(object_guid=f" {{{ZERO_GUID.upper()}}} ", target_guid=OTHER_GUID)
+    result = attach_assemblies(pairs=[pair, pair, variant])
+    assert len(result.structured_content["skipped"]) == 1
     assert result.structured_content["attached_count"] == 0
 
 
@@ -99,6 +94,7 @@ def test_attach_assemblies_unresolvable_guid():
     assert result.structured_content["status"] == "error"
     assert result.structured_content["attached_count"] == 0
     assert result.structured_content["skipped"][0]["reason"] == "object_not_found"
+    assert result.structured_content["missing_guids"] == [ZERO_GUID]
 
 
 def test_attach_rebars_unresolvable_guid():
@@ -154,19 +150,40 @@ def test_cut_elements_with_cutters_by_guid(model_objects):
     """Tests cut_elements_with_cutters using cutter_guids."""
     cutter_guid = model_objects["void2"].Identifier.GUID.ToString()
     TeklaModel.select_objects([model_objects["test_wall4"]])
-    result = cut_elements_with_cutters(cutter_guids=[cutter_guid], delete_cutting_parts=False)
+    # The repeated spelling variant must not cut a second time
+    result = cut_elements_with_cutters(cutter_guids=[cutter_guid, cutter_guid.upper()], delete_cutting_parts=False)
     assert result.structured_content["status"] == "success"
     assert result.structured_content["selected_count"] == 1
-    assert result.structured_content["performed_cuts_count"] >= 1
+    assert result.structured_content["performed_cuts_count"] == 1
     assert result.structured_content["processed_count"] == 1
+    assert result.structured_content["missing_guids"] == []
+    assert result.structured_content["unsupported_guids"] == []
+
+
+def test_cut_elements_with_cutters_partly_missing_guids(model_objects):
+    """A missing cutter GUID is reported and the found cutter still cuts, giving 'partial'."""
+    # Own wall and cutter, so no fixture wall gets a cut that later tests do not expect
+    wall = PanelInput(
+        start_point=PointInput(x=20000, y=0, z=0), end_point=PointInput(x=22000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL_PARTIAL"
+    )
+    void = BeamInput(
+        start_point=PointInput(x=21000, y=0, z=1000), end_point=PointInput(x=21000, y=200, z=1000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_PARTIAL"
+    )
+    wall_guid = place_panels(panels=[wall]).structured_content["results"][0]["guid"]
+    cutter_guid = place_beams(beams=[void]).structured_content["results"][0]["guid"]
+    TeklaModel.select_objects([TeklaModel().get_object_by_guid(wall_guid)])
+    result = cut_elements_with_cutters(cutter_guids=[cutter_guid, OTHER_GUID])
+    assert result.structured_content["status"] == "partial"
+    assert result.structured_content["performed_cuts_count"] == 1
+    assert result.structured_content["missing_guids"] == [OTHER_GUID]
 
 
 def test_cut_elements_with_cutters_invalid_guid(model_objects):
-    """Tests cut_elements_with_cutters with a non-existent GUID returns warning."""
+    """Tests cut_elements_with_cutters with only a non-existent GUID returns error."""
     TeklaModel.select_objects([model_objects["test_wall3"]])
     result = cut_elements_with_cutters(cutter_guids=["00000000-0000-0000-0000-000000000000"])
-    assert result.structured_content["status"] == "warning"
-    assert result.structured_content["performed_cuts_count"] == 0
+    assert result.structured_content["status"] == "error"
+    assert "00000000-0000-0000-0000-000000000000" in result.structured_content["message"]
 
 
 def test_convert_cut_parts_to_real_parts_without_cuts(model_objects):

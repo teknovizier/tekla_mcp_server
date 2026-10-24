@@ -16,7 +16,7 @@ from fastmcp.tools import ToolResult
 from tekla_mcp_server.config import get_tolerance, get_advanced_option_directories, get_report_preview_max_chars, get_report_preview_timeout
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AttachmentPair
-from tekla_mcp_server.utils import mcp_handler, build_report_filename, resolve_model_relative_dir
+from tekla_mcp_server.utils import mcp_handler, build_report_filename, normalize_guid, resolve_model_relative_dir
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import (
@@ -303,16 +303,27 @@ def cut_elements_with_cutters(
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
 
+    missing_guids: list[str] = []
+    unsupported_guids: list[str] = []
     if cutter_class is not None:
-        raw_cutters = model.get_objects_by_class(cutter_class)
+        cutters = list(wrap_model_objects(model.get_objects_by_class(cutter_class)))
         label = f"class {cutter_class}"
     else:
-        raw_cutters = model.get_objects_by_guid(cutter_guids)
-        label = f"{len(cutter_guids)} GUIDs"
+        raw_cutters, found_guids, missing_guids = model.resolve_guids(cutter_guids)
+        cutters = []
+        for guid, raw_cutter in zip(found_guids, raw_cutters, strict=True):
+            cutter = wrap_model_object(raw_cutter)
+            # Only a part can be set as the operative part of a boolean cut
+            if isinstance(cutter, TeklaPart):
+                cutters.append(cutter)
+            else:
+                unsupported_guids.append(guid)
+        if not cutters:
+            raise ValueError(f"None of the cutter GUIDs is a part in the model (missing: {missing_guids}, not a part: {unsupported_guids})")
+        label = f"{len(cutters)} cutter GUIDs"
 
     processed_count = 0
     performed_cuts = 0
-    cutters = list(wrap_model_objects(raw_cutters))
     # Read each cutter's AABB once
     cutter_boxes = [_solid_box(cutter) for cutter in cutters]
     used_cutter_ids: set[int] = set()
@@ -349,7 +360,7 @@ def cut_elements_with_cutters(
             status = "error"
         else:
             logger.info("Performed %s cuts on %s elements", performed_cuts, processed_count)
-            status = "success"
+            status = "partial" if missing_guids or unsupported_guids else "success"
     else:
         logger.warning("cut_elements_with_cutters: No cuts performed (%s)", label)
         status = "warning"
@@ -360,6 +371,9 @@ def cut_elements_with_cutters(
         "processed_count": processed_count,
         "performed_cuts_count": performed_cuts,
     }
+    if cutter_guids:
+        result["missing_guids"] = missing_guids
+        result["unsupported_guids"] = unsupported_guids
     if delete_cutting_parts:
         result["deleted_cutters_count"] = deleted_cutters
     if commit_success is not None:
@@ -611,48 +625,51 @@ def _attach_rebar(obj: TeklaReinforcement, target: TeklaAssembly) -> str | None:
 
 
 def _batch_attach(mode: str, pairs: list[AttachmentPair], attach_fn, valid_fn) -> ToolResult:
-    """Attach each pair in one batch commit. Skip bad pairs and report. Empty input returns success with nothing done.
+    """Attach each pair in one batch commit. Skip bad pairs and report.
 
-    Items in `skipped` failed before changing the model. Only `attach_fn` returning a
-    reason means the model was never modified for that pair.
+    GUIDs are normalized and repeated pairs are attached once. Items in `skipped`
+    failed before changing the model. Only `attach_fn` returning a reason means the
+    model was never modified for that pair.
     """
+    if not pairs:
+        raise ValueError("No pairs given")
+
     model = TeklaModel()
     staged: list[str] = []
     skipped: list[dict] = []
-    seen: set[tuple[str, str]] = set()
+    missing_guids: list[str] = []
 
-    for pair in pairs:
-        # Drop exact duplicate pairs so a GUID can't be double-counted in `attached`
-        key = (pair.object_guid, pair.target_guid)
-        if key in seen:
-            skipped.append({"object_guid": pair.object_guid, "reason": "duplicate_pair"})
-            continue
-        seen.add(key)
-
+    # Spelling variants of one GUID resolve to the same object, so compare normalized pairs
+    unique_pairs = dict.fromkeys((normalize_guid(pair.object_guid), normalize_guid(pair.target_guid)) for pair in pairs)
+    for object_guid, target_guid in unique_pairs:
         # Same GUID means the object would attach to itself - always invalid
-        if pair.object_guid == pair.target_guid:
-            skipped.append({"object_guid": pair.object_guid, "reason": "self_attach"})
+        if object_guid == target_guid:
+            skipped.append({"object_guid": object_guid, "reason": "self_attach"})
             continue
 
-        obj, target, fail_reason = _resolve_pair(model, pair.object_guid, pair.target_guid)
+        obj, target, fail_reason = _resolve_pair(model, object_guid, target_guid)
         if fail_reason is not None:
-            skipped.append({"object_guid": pair.object_guid, "reason": fail_reason})
+            skipped.append({"object_guid": object_guid, "reason": fail_reason})
+            if fail_reason in ("object_not_found", "target_not_found"):
+                missing_guid = object_guid if fail_reason == "object_not_found" else target_guid
+                if missing_guid not in missing_guids:
+                    missing_guids.append(missing_guid)
             continue
 
         if not valid_fn(obj, target):
-            skipped.append({"object_guid": pair.object_guid, "reason": "wrong_type"})
+            skipped.append({"object_guid": object_guid, "reason": "wrong_type"})
             continue
 
         try:
             fail_reason = attach_fn(obj, target)
         except Exception:
-            logger.exception("Unexpected error attaching %s to %s", pair.object_guid, pair.target_guid)
+            logger.exception("Unexpected error attaching %s to %s", object_guid, target_guid)
             fail_reason = "attach_error"
 
         if fail_reason is None:
-            staged.append(pair.object_guid)
+            staged.append(object_guid)
         else:
-            skipped.append({"object_guid": pair.object_guid, "reason": fail_reason})
+            skipped.append({"object_guid": object_guid, "reason": fail_reason})
 
     # Only report as attached if the commit succeeds
     attached: list[str] = []
@@ -668,13 +685,13 @@ def _batch_attach(mode: str, pairs: list[AttachmentPair], attach_fn, valid_fn) -
     if commit_success is False:
         status = "error"
     elif attached and skipped:
-        status = "warning"
+        status = "partial"
     elif skipped:
         status = "error"
     else:
         status = "success"
 
-    logger.info("attach_%s: attached=%d, skipped=%d, commit=%s", mode, len(attached), len(skipped), commit_success)
+    logger.info("attach_%s: attached=%d, skipped=%d, missing GUIDs=%s, commit=%s", mode, len(attached), len(skipped), missing_guids, commit_success)
 
     result_content: dict = {
         "status": status,
@@ -682,6 +699,7 @@ def _batch_attach(mode: str, pairs: list[AttachmentPair], attach_fn, valid_fn) -
         "attached_count": len(attached),
         "attached": attached,
         "skipped": skipped,
+        "missing_guids": missing_guids,
     }
     if commit_success is not None:
         result_content["commit_success"] = commit_success

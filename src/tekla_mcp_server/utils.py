@@ -9,7 +9,7 @@ import math
 import re
 from functools import wraps
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any, Literal
 
 from fastmcp.resources import ResourceContent, ResourceResult
@@ -236,6 +236,35 @@ def normalize_for_embedding(name: str) -> str:
     name = re.sub(r"[_\-]+", " ", name)
     name = re.sub(r"[^a-zA-Z0-9 ]+", "", name)
     return name.lower().strip()
+
+
+def normalize_guid(guid: str) -> str:
+    """
+    Normalize a GUID string to the lowercase form Tekla reports.
+
+    Tekla resolves a GUID regardless of surrounding spaces, case and braces, so
+    these spelling variants must compare equal to be recognised as duplicates.
+
+    Args:
+        guid: GUID string as given by the caller
+
+    Returns:
+        Normalized GUID (e.g. ' {C0CA35EE-...} ' -> 'c0ca35ee-...')
+    """
+    return guid.strip().strip("{}").strip().lower()
+
+
+def dedupe_guids(guids: Iterable[str]) -> list[str]:
+    """
+    Normalize GUIDs and drop repeats, keeping the first-seen order.
+
+    Args:
+        guids: GUID strings as given by the caller
+
+    Returns:
+        Unique normalized GUIDs
+    """
+    return list(dict.fromkeys(normalize_guid(guid) for guid in guids))
 
 
 def log_function_call(func: Callable) -> Callable:

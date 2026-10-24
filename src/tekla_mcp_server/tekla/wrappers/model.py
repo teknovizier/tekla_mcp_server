@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from typing import ClassVar
 
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.utils import log_function_call
+from tekla_mcp_server.utils import dedupe_guids, log_function_call
 from tekla_mcp_server.tekla.filter_builder import add_filter
 from tekla_mcp_server.tekla.interop import to_array_list
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaReferenceModel
@@ -255,35 +255,52 @@ class TeklaModel:
         return self.get_objects_by_filter(filter_collection)
 
     @log_function_call
+    def resolve_guids(self, guids: Iterable[str]) -> tuple[ArrayList, list[str], list[str]]:
+        """
+        Resolve GUIDs to model objects, reporting the ones not in the model.
+
+        GUIDs are normalized and deduplicated first, so spelling variants of one
+        GUID resolve to a single object.
+
+        Args:
+            guids: GUID strings to resolve
+
+        Returns:
+            Tuple of (found model objects, their normalized GUIDs, normalized GUIDs not found)
+        """
+        # Read the property once: each access runs a connection check
+        model = self.model
+        objects = ArrayList()
+        found: list[str] = []
+        missing: list[str] = []
+        for guid in dedupe_guids(guids):
+            obj = model.SelectModelObject(Identifier(guid))
+            if obj is not None:
+                objects.Add(obj)
+                found.append(guid)
+            else:
+                missing.append(guid)
+
+        if missing:
+            logger.warning("resolve_guids: %d GUIDs not found in the model: %s", len(missing), missing)
+
+        return objects, found, missing
+
+    @log_function_call
     def get_objects_by_guid(self, guids: list[str]) -> ArrayList:
         """
         Returns model objects by their GUIDs.
 
-        GUIDs that are not in the model are skipped and logged - the returned
-        ArrayList carries no way to tell the caller which ones dropped out.
+        GUIDs that are not in the model are skipped and logged. Use `resolve_guids`
+        when the caller must report which ones dropped out.
 
         Args:
             guids: List of GUID strings to retrieve
 
         Returns:
-            ArrayList containing the found model objects. Shorter than `guids` when
-            some of them do not resolve.
+            ArrayList containing the found model objects
         """
-        # Read the property once: each access runs a connection check
-        model = self.model
-        objects_to_select = ArrayList()
-        missing: list[str] = []
-        for guid in guids:
-            obj = model.SelectModelObject(Identifier(guid))
-            if obj is not None:
-                objects_to_select.Add(obj)
-            else:
-                missing.append(guid)
-
-        if missing:
-            logger.warning("get_objects_by_guid: %d of %d GUIDs not found in the model: %s", len(missing), len(guids), missing)
-
-        return objects_to_select
+        return self.resolve_guids(guids)[0]
 
     @log_function_call
     def get_object_by_guid(self, guid: str) -> ModelObject | None:
