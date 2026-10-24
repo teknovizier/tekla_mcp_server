@@ -19,6 +19,7 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     BoundingBox,
     TeklaAssembly,
     TeklaBeam,
+    TeklaBooleanPart,
     TeklaContourPlate,
     TeklaModelObject,
     TeklaPart,
@@ -827,6 +828,9 @@ def copy_properties_from_ifc(
             continue
         if isinstance(selected_object, TeklaReferenceModelObject):
             ifc_sources.append((guid, selected_object))
+        elif isinstance(selected_object, TeklaBooleanPart):
+            # A cut part's box can match an IFC opening object better than the real part
+            continue
         else:
             tekla_targets.append((guid, selected_object))
 

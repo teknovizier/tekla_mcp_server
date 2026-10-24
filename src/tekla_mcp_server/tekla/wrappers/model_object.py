@@ -343,12 +343,15 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         - TeklaReferenceModel if the object is a ReferenceModel
         - TeklaReferenceModelObject if the object is a ReferenceModelObject
         - TeklaReinforcement if the object is a TeklaReinforcement
+        - TeklaBooleanPart if the object is a BooleanPart
         - TeklaModelObject for any other object types
     """
     if isinstance(model_object, Assembly):
         return TeklaAssembly(model_object)
     elif isinstance(model_object, BoltGroup):
         return TeklaBoltGroup(model_object)
+    elif isinstance(model_object, BooleanPart):
+        return TeklaBooleanPart(model_object)
     elif isinstance(model_object, Beam):
         return TeklaBeam(model_object)
     elif isinstance(model_object, ContourPlate):
@@ -709,6 +712,39 @@ class TeklaReferenceModel(TeklaModelObject):
             for revision in self.model_object.GetRevisions()
         ]
         return sorted(revisions, key=lambda revision: revision.time)
+
+
+class TeklaBooleanPart(TeklaModelObject):
+    """
+    A wrapper class around the Tekla Structures BooleanPart object.
+
+    Selection and GUID lookup return a cut part as its BooleanPart, which shares the
+    ID and GUID of the operative part. Moving or copying it carries the cut along.
+    """
+
+    @property
+    def operative_part(self) -> TeklaModelObject | None:
+        """
+        The part that defines the shape of the cut.
+        """
+        return wrap_model_object(self.model_object.OperativePart)
+
+    @property
+    def father(self) -> TeklaModelObject | None:
+        """
+        The part the cut is applied to.
+        """
+        raw = self.model_object.Father
+        if raw is None:
+            return None
+        return wrap_model_object(raw)
+
+    def get_top_level_assembly(self) -> TeklaAssembly | None:
+        """
+        Returns the top-level assembly of the cut part's father part.
+        """
+        father = self.father
+        return father.get_top_level_assembly() if father is not None else None
 
 
 @dataclass

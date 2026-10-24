@@ -330,6 +330,9 @@ def cut_elements_with_cutters(
     logger.debug("Processing %d selected objects with %d cutters (%s)", selected_objects.GetSize(), len(cutters), label)
     if cutters:
         for selected_object in wrap_model_objects(selected_objects):
+            # Only parts can be cut, skip cut parts, bolts and other selected objects
+            if not isinstance(selected_object, TeklaPart):
+                continue
             element_had_cut = False
             target_box = _solid_box(selected_object)
             for cutter in _overlapping_cutters(target_box, cutters, cutter_boxes):
