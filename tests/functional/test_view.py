@@ -85,6 +85,8 @@ def test_apply_view_filter():
     result = apply_view_filter(filter_name="standard")
     assert result.structured_content["status"] == "success"
     assert result.structured_content["filter_name"] == "standard"
+    assert result.structured_content["failed_views"] == []
+    assert len(result.structured_content["modified_views"]) == result.structured_content["views_modified"]
 
 
 def test_apply_view_filter_invalid_name():

@@ -38,7 +38,7 @@ Type and default shown where relevant.
 | View | 🔒 `show_only_selected` | Hide everything except selected elements in the active view | - |
 | View | 🔒 `hide_selected` | Hide selected elements in the active view | - |
 | View | 🔒 `color_selected` | Color selected elements with an RGB colour | **`red`** (int, 0–255), **`green`** (int, 0–255), **`blue`** (int, 0–255) |
-| View | 🔒 `apply_view_filter` | Apply a saved view filter to the active view | **`filter_name`** (str) |
+| View | 🔒 `apply_view_filter` | Apply a saved view filter to all visible views, reporting `partial` with `failed_views` if some views fail | **`filter_name`** (str) |
 | Operations | ⚠️ `cut_elements_with_cutters` | Boolean-cut selected elements using parts identified by class or GUID. With `cutter_guids`, reports `missing_guids` and `unsupported_guids` (not a part), returns `partial` if any were dropped and an error if no cutter is usable | `cutter_class` (int \| null), `cutter_guids` (list[str], default: `[]`) - exactly one required, `delete_cutting_parts` (bool, default: `false`) |
 | Operations | ⚠️ `convert_cut_parts_to_real_parts` | Convert all cut parts in selected elements into standalone model parts | - |
 | Operations | 🔒 `check_for_orphans` | Find orphaned embedded subassemblies or rebars inside the bounding box of selected elements. Returns `{object_guid, target_guid}` pairs to feed to the attach tools | **`mode`** (str): `"subassemblies"` \| `"rebars"` |

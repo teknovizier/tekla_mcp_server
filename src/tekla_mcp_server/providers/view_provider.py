@@ -237,14 +237,33 @@ def apply_view_filter(
     if filter_name not in available:
         raise ValueError(f"Invalid filter '{filter_name}'. Available: {available}")
 
-    views = get_active_views()
-    for view in views:
-        view.ViewFilter = filter_name
-        if not view.Modify():
-            raise RuntimeError(f"Failed to apply view filter '{filter_name}' to view '{view.Name}'")
+    # Try every view so a single failure does not leave the rest unreported
+    modified_views: list[str] = []
+    failed_views: list[dict[str, str]] = []
+    for view in get_active_views():
+        try:
+            view.ViewFilter = filter_name
+            if view.Modify():
+                modified_views.append(view.Name)
+            else:
+                failed_views.append({"view": view.Name, "message": "Modify() returned False"})
+        except Exception as e:
+            logger.error("Failed to apply view filter '%s' to view '%s': %s", filter_name, view.Name, e)
+            failed_views.append({"view": view.Name, "message": str(e)})
 
-    logger.info("Applied view filter '%s' to %d views", filter_name, len(views))
-    return ToolResult(structured_content={"status": "success", "filter_name": filter_name, "views_modified": len(views)})
+    if failed_views and not modified_views:
+        raise RuntimeError(f"Failed to apply view filter '{filter_name}' to any view: {failed_views}")
+
+    logger.info("Applied view filter '%s' to %d views, %d failed", filter_name, len(modified_views), len(failed_views))
+    return ToolResult(
+        structured_content={
+            "status": "partial" if failed_views else "success",
+            "filter_name": filter_name,
+            "views_modified": len(modified_views),
+            "modified_views": modified_views,
+            "failed_views": failed_views,
+        }
+    )
 
 
 @view_provider.tool(tags={"view"}, annotations={"readOnlyHint": True, "destructiveHint": False})
