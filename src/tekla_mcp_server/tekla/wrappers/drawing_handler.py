@@ -73,14 +73,42 @@ class TeklaDrawingHandler:
         """Return all drawings in the model."""
         return wrap_drawings(self._handler.GetDrawings())
 
+    def find_drawings_by_marks(self, marks: list[str]) -> tuple[list[TeklaDrawing], list[str]]:
+        """
+        Look up drawings by marks without failing on marks that have no drawing.
+
+        Args:
+            marks: Drawing marks to look up
+
+        Returns:
+            Tuple of (matching drawings, requested marks with no drawing, each once in request order)
+        """
+        mark_set = set(marks)
+        result = [d for d in self.get_all_drawings() if d.mark in mark_set]
+        found = {d.mark for d in result}
+        missing = [m for m in dict.fromkeys(marks) if m not in found]
+        return result, missing
+
     def get_drawings_by_marks(self, marks: list[str] | None = None) -> list[TeklaDrawing]:
-        """Get drawings by marks, or from the current selection if marks is None."""
+        """
+        Get drawings by marks, or from the current selection if marks is None.
+
+        Args:
+            marks: Drawing marks to look up, or None to use the Document Manager selection
+
+        Returns:
+            The matching drawings
+
+        Raises:
+            ValueError: If nothing is found or selected, or if any requested mark has no drawing
+        """
         if marks is not None:
             if not marks:
                 raise ValueError("No drawings found or selected")
-            all_drawings = self.get_all_drawings()
-            mark_set = set(marks)
-            result = [d for d in all_drawings if d.mark in mark_set]
+            result, missing = self.find_drawings_by_marks(marks)
+            # Refuse a partial match so a mistyped mark is never skipped silently
+            if missing:
+                raise ValueError(f"Drawing(s) not found: {missing}. Use `get_drawings` to list valid marks.")
         else:
             result = wrap_drawings(self._handler.GetDrawingSelector().GetSelected())
         if not result:

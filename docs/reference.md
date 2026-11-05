@@ -13,6 +13,8 @@ Parameter notation:
 **`param`** = required, `param` = optional.
 Type and default shown where relevant.
 
+Drawing tools that take `marks` act on all of them or none: if any mark has no drawing, the tool fails with an error naming the missing marks before changing anything. The exception is the read-only `get_drawings_properties`, which returns the drawings it found and lists the rest in `missing_marks`.
+
 | Category | Tool | Description | Parameters |
 |----------|------|-------------|------------|
 | Selection | 🔒 `select_elements_by_filter` | Select elements by type, Tekla class, name, profile, material, finish, phase, part/assembly prefix/number. Supports AND/OR logic | `element_type` (str), `tekla_classes` (int \| list[int]), `standard_string_filters` (dict), `standard_numeric_filters` (dict), `custom_string_filters` (dict), `custom_numeric_filters` (dict), `combine_with` (str, default: `"AND"`) - all optional |
@@ -50,7 +52,7 @@ Type and default shown where relevant.
 | Operations | ⚠️ `run_macro` | Run a Tekla macro by filename | **`macro_name`** (str) |
 | Operations | 🔒 `select_model_objects_from_drawings` | Select the model objects corresponding to the currently selected drawings | - |
 | Drawings | 🔒 `get_drawings` | Get drawings with optional filtering | `drawing_type` (str: `G`/`A`/`W`/`C`/`M`), `name_filter` (dict), `mark_filter` (dict), `title1_filter` (dict), `title2_filter` (dict), `title3_filter` (dict) - all optional |
-| Drawings | 🔒 `get_drawings_properties` | Get properties of drawings by mark list, or the currently selected drawings if omitted | `marks` (list[str], optional) |
+| Drawings | 🔒 `get_drawings_properties` | Get properties of drawings by mark list, or the currently selected drawings if omitted. Marks with no drawing are listed in `missing_marks` with status `partial`, and the call fails only when none of the marks match | `marks` (list[str], optional) |
 | Drawings | ⚠️ `set_drawings_properties` | Set name, titles and UDAs on drawings by mark list, or the currently selected drawings if omitted. Does not require any drawing to be open | `marks` (list[str], optional), `name` (str), `title1`/`title2`/`title3` (str), `user_properties` (dict) - all optional |
 | Drawings | ⚠️ `set_drawings_issue_state` | Issue or unissue drawings by mark list, or the currently selected drawings if omitted. Drawing-list level action, no drawing needs to be open | `marks` (list[str], optional), `action` (str: `"issue"`/`"unissue"`, default: `"issue"`) |
 | Drawings | ⚠️ `update_drawings` | Update drawings from the model by mark list, or the currently selected drawings if omitted. Already up-to-date drawings are skipped, not errors. None of the target drawings can be the active drawing | `marks` (list[str], optional) |

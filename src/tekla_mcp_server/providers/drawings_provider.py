@@ -369,6 +369,7 @@ def get_drawings_properties(
     Get properties of drawings by their marks.
 
     If marks are empty, gets properties of currently selected drawings in Tekla.
+    Marks that match no drawing are listed in `missing_marks` and the status is 'partial'.
 
     ## OUTPUT
     - Return the result table in Markdown format EXACTLY as provided by the tool.
@@ -376,16 +377,24 @@ def get_drawings_properties(
     - ALWAYS show the full table. DO NOT remove any rows or columns.
     """
     handler = TeklaDrawingHandler()
-    target_drawings = handler.get_drawings_by_marks(marks or None)
+    missing_marks: list[str] = []
+    if marks:
+        # Read-only, so return what was found instead of failing the whole call on one wrong mark
+        target_drawings, missing_marks = handler.find_drawings_by_marks(marks)
+        if not target_drawings:
+            raise ValueError(f"Drawing(s) not found: {missing_marks}. Use `get_drawings` to list valid marks.")
+    else:
+        target_drawings = handler.get_drawings_by_marks(None)
 
     drawings_data = [d.to_dict() for d in target_drawings]
-    logger.info("Retrieved properties for %s drawings", len(drawings_data))
+    logger.info("Retrieved properties for %s drawings, %d marks not found", len(drawings_data), len(missing_marks))
 
     return ToolResult(
         structured_content={
-            "status": "success",
+            "status": "partial" if missing_marks else "success",
             "selected_count": len(drawings_data),
             "drawings": drawings_data,
+            "missing_marks": missing_marks,
         }
     )
 
