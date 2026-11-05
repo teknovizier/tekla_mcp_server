@@ -206,8 +206,15 @@ def set_elements_properties(
     processed_count = 0
     modified_count = 0
     property_errors: list[dict] = []
+    skipped_objects: list[dict[str, str]] = []
 
     for selected_object in wrap_model_objects(selected_objects):
+        if not isinstance(selected_object, (TeklaAssembly, TeklaPart)):
+            logger.warning("set_elements_properties: Unsupported object type: %s", type(selected_object).__name__)
+            skipped_objects.append({"guid": selected_object.guid, "type": type(selected_object).__name__})
+            continue
+
+        processed_count += 1
         try:
             if isinstance(selected_object, TeklaAssembly):
                 changes = selected_object.set_properties(
@@ -217,7 +224,7 @@ def set_elements_properties(
                     phase=phase,
                     user_properties=user_properties,
                 )
-            elif isinstance(selected_object, TeklaPart):
+            else:
                 changes = selected_object.set_properties(
                     name=name,
                     profile=profile,
@@ -231,9 +238,6 @@ def set_elements_properties(
                     phase=phase,
                     user_properties=user_properties,
                 )
-            else:
-                logger.error("set_elements_properties: Unsupported object type: %s", type(selected_object).__name__)
-                continue
 
             elem_errors: list[dict] = changes.pop("errors", [])
             for key, value in changes.items():
@@ -244,9 +248,9 @@ def set_elements_properties(
             if elem_errors:
                 logger.warning("Property errors on %s: %s", selected_object.guid, elem_errors)
                 property_errors.append({"guid": selected_object.guid, "errors": elem_errors})
-        except Exception:
+        except Exception as e:
             logger.exception("Failed to set properties on %s", selected_object.guid)
-        processed_count += 1
+            property_errors.append({"guid": selected_object.guid, "errors": [str(e)]})
 
     commit_success: bool | None = None
     if modified_count > 0:
@@ -263,6 +267,9 @@ def set_elements_properties(
     elif modified_count > 0:
         status = "success"
         message = f"Successfully modified {modified_count} elements"
+    elif property_errors:
+        status = "error"
+        message = f"No elements were modified, {len(property_errors)} elements reported errors"
     else:
         status = "warning"
         message = "No elements were modified"
@@ -276,6 +283,7 @@ def set_elements_properties(
         "modified_count": modified_count,
         "changes_applied": total_changes,
         "property_errors": property_errors,
+        "skipped_objects": skipped_objects,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
@@ -410,8 +418,18 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
         try:
             props = selected_object.get_properties(resolved_props if resolved_props else None)
         except Exception as e:
-            extraction_errors.append({"guid": selected_object.guid, "error": str(e)})
-            props = selected_object.get_properties(None)
+            error = str(e)
+            props = None
+            # Retry without the extra report properties so the element still gets its core fields
+            if resolved_props:
+                try:
+                    props = selected_object.get_properties(None)
+                except Exception as core_error:
+                    error = f"{e}. Core properties also failed: {core_error}"
+            extraction_errors.append({"guid": selected_object.guid, "error": error})
+            # One element that cannot be read must not abort the whole call
+            if props is None:
+                continue
 
         if isinstance(selected_object, TeklaReferenceModelObject):
             reference_objects.append(props)
@@ -428,10 +446,10 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
 
     logger.info("Retrieved properties for %s elements", processed_count)
     status = "success" if flat_assemblies or flat_parts or flat_reinforcements or reference_objects else "error"
-    if resolution_errors or extraction_errors:
+    if status == "success" and (resolution_errors or extraction_errors):
         status = "partial"
-        if extraction_errors:
-            logger.warning("Failed to extract properties for %d elements: %s", len(extraction_errors), [e.get("guid") for e in extraction_errors])
+    if extraction_errors:
+        logger.warning("Failed to extract properties for %d elements: %s", len(extraction_errors), [e.get("guid") for e in extraction_errors])
 
     return {
         "status": status,
@@ -719,6 +737,29 @@ def compare_elements(
     return ToolResult(structured_content=result)
 
 
+def _empty_uda_value(value: Any) -> str | int | float | None:
+    """
+    Return the value that clears a UDA of the same type as `value`.
+
+    Tekla treats an empty string and the minimum 32-bit integer as an unset UDA.
+
+    Args:
+        value: Current UDA value
+
+    Returns:
+        The empty value for the UDA type, or None when the type is not supported
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        return ""
+    if isinstance(value, int):
+        return -2147483648
+    if isinstance(value, float):
+        return float(-2147483648)
+    return None
+
+
 @properties_provider.tool(tags={"properties"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def clear_elements_udas(
@@ -741,8 +782,10 @@ def clear_elements_udas(
     cleared_udas = 0
     modified_parts = 0
     modified_assemblies = 0
+    errors: list[dict[str, Any]] = []
 
     for selected_object in wrap_model_objects(selected_objects):
+        elem_errors: list[str] = []
         try:
             user_props = selected_object.get_all_user_properties()
             if not user_props:
@@ -752,24 +795,32 @@ def clear_elements_udas(
             if not target_keys:
                 continue
 
+            elem_cleared = 0
             for key in target_keys:
-                value = user_props[key]
-                if isinstance(value, str):
-                    selected_object.set_user_property(key, "")
-                elif isinstance(value, int):
-                    selected_object.set_user_property(key, -2147483648)
-                elif isinstance(value, float):
-                    selected_object.set_user_property(key, float(-2147483648))
-                cleared_udas += 1
+                empty_value = _empty_uda_value(user_props[key])
+                if empty_value is None:
+                    elem_errors.append(f"'{key}': unsupported UDA value type {type(user_props[key]).__name__}")
+                elif selected_object.set_user_property(key, empty_value):
+                    elem_cleared += 1
+                else:
+                    elem_errors.append(f"'{key}': SetUserProperty failed")
 
-            selected_object.modify()
-
-            if isinstance(selected_object, TeklaPart):
-                modified_parts += 1
-            elif isinstance(selected_object, TeklaAssembly):
-                modified_assemblies += 1
-        except Exception:
+            # Count the clears only once the element has been saved
+            if elem_cleared:
+                if selected_object.modify():
+                    cleared_udas += elem_cleared
+                    if isinstance(selected_object, TeklaPart):
+                        modified_parts += 1
+                    elif isinstance(selected_object, TeklaAssembly):
+                        modified_assemblies += 1
+                else:
+                    elem_errors.append("Modify() failed")
+        except Exception as e:
             logger.exception("Failed to clear UDAs on %s", selected_object.guid)
+            elem_errors.append(str(e))
+
+        if elem_errors:
+            errors.append({"guid": selected_object.guid, "errors": elem_errors})
 
     commit_success: bool | None = None
     if cleared_udas > 0:
@@ -780,16 +831,19 @@ def clear_elements_udas(
     if commit_success is False:
         status = "error"
     elif cleared_udas > 0:
-        status = "success"
+        status = "partial" if errors else "success"
+    elif errors:
+        status = "error"
     else:
         status = "warning"
-    logger.info("Cleared %s UDAs from %s parts and %s assemblies", cleared_udas, modified_parts, modified_assemblies)
+    logger.info("Cleared %s UDAs from %s parts and %s assemblies, %d elements with errors", cleared_udas, modified_parts, modified_assemblies, len(errors))
     result: dict = {
         "status": status,
         "selected_count": selected_objects.GetSize(),
         "cleared_udas_count": cleared_udas,
         "modified_parts_count": modified_parts,
         "modified_assemblies_count": modified_assemblies,
+        "errors": errors,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
