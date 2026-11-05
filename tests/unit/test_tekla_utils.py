@@ -12,10 +12,10 @@ if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from tekla_mcp_server.tekla.loader import Beam, Position, Point
-from tekla_mcp_server.tekla.utils import expand_to_parts, get_wall_pairs
+from tekla_mcp_server.tekla.utils import expand_to_parts, get_wall_pairs, wait_for_macro
 from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, TeklaReinforcement
 
 
@@ -147,3 +147,12 @@ def test_expand_to_parts_deduplicates_by_guid():
 def test_expand_to_parts_empty():
     """No objects give no parts."""
     assert expand_to_parts([]) == ([], [])
+
+
+def test_wait_for_macro_polls_until_finished():
+    """wait_for_macro returns only once IsMacroRunning() reports False."""
+    with patch("tekla_mcp_server.tekla.utils.Operation") as operation, patch("tekla_mcp_server.tekla.utils.time.sleep") as sleep:
+        operation.IsMacroRunning.side_effect = [True, True, False]
+        wait_for_macro("MCP_TEST.cs")
+    assert operation.IsMacroRunning.call_count == 3
+    assert sleep.call_count == 2

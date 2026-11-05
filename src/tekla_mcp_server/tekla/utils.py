@@ -7,6 +7,7 @@ from __future__ import annotations
 import filecmp
 import re
 import shutil
+import time
 from functools import wraps, lru_cache
 from typing import Any, Literal
 from collections.abc import Callable
@@ -42,6 +43,7 @@ from tekla_mcp_server.tekla.loader import (
     RebarItem,
     TeklaStructuresSettings,
     BooleanPart,
+    Operation,
 )
 
 from tekla_mcp_server.utils import log_function_call
@@ -553,6 +555,22 @@ def get_macros() -> list[str]:
                         seen.add(key)
 
     return sorted(macro_names)
+
+
+def wait_for_macro(macro_name: str, poll_interval: float = 1.0) -> None:
+    """
+    Block until Tekla reports that no macro is running.
+
+    `Operation.RunMacro` only starts the macro and returns, so a caller that relies on
+    the macro's effect must wait before touching the selection or checking the model.
+
+    Args:
+        macro_name: Macro file name, used in the log message
+        poll_interval: Seconds between `IsMacroRunning()` checks
+    """
+    while Operation.IsMacroRunning():
+        time.sleep(poll_interval)
+    logger.debug("Macro '%s' finished", macro_name)
 
 
 def ensure_macro_installed(macro_name: str, category: Literal["modeling", "drawings"]) -> bool:

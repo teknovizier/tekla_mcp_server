@@ -32,7 +32,15 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     REINFORCEMENT_CLASSES,
 )
 from tekla_mcp_server.tekla.loader import Operation
-from tekla_mcp_server.tekla.utils import iterate_boolean_parts, get_candidates_in_bounding_box, get_all_materials, get_all_rebar_items, get_available_attribute_files, ensure_macro_installed
+from tekla_mcp_server.tekla.utils import (
+    iterate_boolean_parts,
+    get_candidates_in_bounding_box,
+    get_all_materials,
+    get_all_rebar_items,
+    get_available_attribute_files,
+    ensure_macro_installed,
+    wait_for_macro,
+)
 
 
 operations_provider = LocalProvider()
@@ -480,6 +488,8 @@ def select_model_objects_from_drawings() -> ToolResult:
     macro_result = run_macro(macro_name=SELECT_MODEL_OBJECTS_MACRO)
     if macro_result.structured_content.get("status") != "success":
         raise RuntimeError("Select-in-model macro failed. Ensure Document Manager has drawings selected.")
+    # RunMacro only starts the macro, report success once the selection has actually been made
+    wait_for_macro(SELECT_MODEL_OBJECTS_MACRO)
 
     return ToolResult(structured_content={"status": "success"})
 

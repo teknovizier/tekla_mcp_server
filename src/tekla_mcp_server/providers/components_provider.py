@@ -19,7 +19,7 @@ from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.component_handlers import HandlerRegistry
 from tekla_mcp_server.tekla.loader import Beam, CustomPart, Int32, Part
-from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_transformation_plane, get_wall_pairs, insert_component, insert_detail
+from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_transformation_plane, get_wall_pairs, insert_component, insert_detail, wait_for_macro
 
 
 components_provider = LocalProvider()
@@ -326,6 +326,9 @@ def explode_components(
             macro_result = run_macro(macro_name=EXPLODE_COMPONENTS_MACRO)
             if macro_result.structured_content.get("status") != "success":
                 raise RuntimeError(f"Explode macro '{EXPLODE_COMPONENTS_MACRO}' failed.")
+            # RunMacro only starts the macro. Restoring the selection or checking the
+            # components before it finishes would explode the wrong objects or miscount
+            wait_for_macro(EXPLODE_COMPONENTS_MACRO)
         finally:
             TeklaModel.select_objects(selected_objects)
 
