@@ -5,6 +5,7 @@ Loads configuration from JSON files in the config/ directory.
 """
 
 import json
+import math
 import os
 import re
 import sys
@@ -496,9 +497,15 @@ def get_tolerance(name: str, default: float, group: str = "model") -> float:
 
     Returns:
         Tolerance value in mm (or unitless for factor)
+
+    Raises:
+        ValueError: If the configured value is not a finite, non-negative number
     """
     group_tolerances = _load_settings().get("tolerances", {}).get(group, {})
-    return group_tolerances.get(name, default)
+    value = group_tolerances.get(name, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise ValueError(f"Invalid tolerance '{group}.{name}' in settings.json: {value!r}. Expected a finite number >= 0.")
+    return float(value)
 
 
 @lru_cache

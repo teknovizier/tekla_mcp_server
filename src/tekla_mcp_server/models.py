@@ -4,8 +4,9 @@ This module defines core data structures, enumerations, and models used in the p
 
 import hashlib
 import json
+import math
 from enum import StrEnum
-from typing import Any, Self, Literal
+from typing import Annotated, Any, Self, Literal
 
 from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer, model_validator
 from pydantic_core import PydanticCustomError
@@ -15,6 +16,42 @@ from tekla_mcp_server.config import get_config
 
 TYPE_MAP = {"str": str, "int": int, "float": float}
 TYPE_DEFAULTS = {"str": str(), "int": int(), "float": float()}
+
+
+def _coerce_custom_property(value: Any, expected_type: str) -> Any:
+    """
+    Coerce a custom property value to its schema type without losing data.
+
+    Args:
+        value: Value supplied by the caller
+        expected_type: Schema type name, a key of `TYPE_MAP`
+
+    Returns:
+        The value converted to the schema type
+
+    Raises:
+        TypeError: If the value's type cannot represent the schema type
+        ValueError: If the conversion would lose data or the value is not finite
+    """
+    # bool is an int subclass, so it would otherwise pass as 1/0 silently
+    if value is None or isinstance(value, (bool, dict, list, tuple, set)):
+        raise TypeError(f"Unsupported value type {type(value).__name__}")
+
+    if expected_type == "str":
+        return value if isinstance(value, str) else str(value)
+
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"Non-finite value {value!r}")
+    if expected_type == "float":
+        return value if isinstance(value, float) else number
+    # int - keep real ints exact, reject fractions like 2.7 instead of truncating them to 2
+    if isinstance(value, int):
+        return value
+    if not number.is_integer():
+        raise ValueError(f"Non-integral value {value!r}")
+    return int(number)
+
 
 # Literals
 Plane = Literal["LEFT", "MIDDLE", "RIGHT"]
@@ -210,7 +247,7 @@ class StringFilterOption(BaseModel):
     Supports single condition or list of conditions with configurable logic.
     """
 
-    conditions: StringFilterCondition | list[StringFilterCondition]
+    conditions: StringFilterCondition | Annotated[list[StringFilterCondition], Field(min_length=1)]
     logic: str = "OR"
 
     @field_validator("logic", mode="before")
@@ -274,7 +311,7 @@ class NumericFilterOption(BaseModel):
     Supports single condition or list of conditions with configurable logic.
     """
 
-    conditions: NumericFilterCondition | list[NumericFilterCondition]
+    conditions: NumericFilterCondition | Annotated[list[NumericFilterCondition], Field(min_length=1)]
     logic: str = "AND"
 
     @field_validator("logic", mode="before")
@@ -392,7 +429,10 @@ class BaseComponent(BaseModel):
         if not isinstance(v, dict):
             raise ValueError("custom_properties must be a dictionary")
 
-        name = info.data.get("name")
+        # A failed 'name' is already reported by its own validator, don't add a misleading second error
+        if "name" not in info.data:
+            return v
+        name = info.data["name"]
         if not name:
             raise ValueError("'name' required for custom_properties validation")
 
@@ -402,24 +442,25 @@ class BaseComponent(BaseModel):
             return v
 
         errors = []
+        # Coerce into a copy so the caller's dict is never modified
+        coerced = dict(v)
 
         for key, value in v.items():
             if key not in schema:
                 errors.append(f"Unknown property: '{key}'")
-            else:
-                expected_type = schema[key].get("type")
-                if expected_type:
-                    expected_python_type = TYPE_MAP.get(expected_type)
-                    if expected_python_type and not isinstance(value, expected_python_type):
-                        try:
-                            v[key] = expected_python_type(value)
-                        except (ValueError, TypeError):
-                            errors.append(f"Invalid value for '{key}': expected {expected_type}, got {type(value).__name__}")
+                continue
+            expected_type = schema[key].get("type")
+            if expected_type not in TYPE_MAP:
+                continue
+            try:
+                coerced[key] = _coerce_custom_property(value, expected_type)
+            except (ValueError, TypeError):
+                errors.append(f"Invalid value for '{key}': expected {expected_type}, got {type(value).__name__} {value!r}")
 
         if errors:
             raise ValueError("; ".join(errors))
 
-        return v
+        return coerced
 
     def model_post_init(self, __context) -> None:
         """
@@ -554,6 +595,9 @@ class ModelObjectSnapshot(BaseModel):
         if value is None:
             return None
         if isinstance(value, float):
+            # A zero tolerance means exact comparison, and NaN/inf cannot be quantized
+            if tolerance <= 0 or not math.isfinite(value):
+                return value
             quantized = round(value / tolerance) * tolerance
             return float(f"{quantized:.10f}")
         elif isinstance(value, dict):
@@ -735,14 +779,7 @@ class ColumnInput(TeklaBeamInput):
     """Input model for a single column definition."""
 
     base_point: PointInput = Field(description="Base point coordinates")
-    height: float = Field(description="Column height in mm")
-
-    @field_validator("height", mode="before")
-    @classmethod
-    def validate_height(cls, v: float) -> float:
-        if v <= 0:
-            raise PydanticCustomError("invalid_height", f"Height must be > 0, got {v}")
-        return v
+    height: float = Field(gt=0, allow_inf_nan=False, description="Column height in mm")
 
 
 class PanelInput(TeklaBeamInput):

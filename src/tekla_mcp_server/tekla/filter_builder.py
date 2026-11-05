@@ -2,6 +2,7 @@
 Helpers for constructing Tekla `BinaryFilterExpressionCollection` objects.
 """
 
+import math
 from typing import Any
 
 from tekla_mcp_server.models import (
@@ -62,6 +63,29 @@ def to_filter_option(val: Any, model_class: type[StringFilterOption] | type[Nume
     return val
 
 
+def _parse_numeric_string(value: str) -> str | int | float:
+    """
+    Parse a string as an int or float for a numeric comparison.
+
+    Args:
+        value: String supplied as a filter value
+
+    Returns:
+        The parsed int or float, or `value` unchanged when it is not a finite
+        number (the caller then rejects the string with a numeric match type)
+    """
+    text = value.strip()
+    try:
+        return int(text)
+    except ValueError:
+        pass
+    try:
+        number = float(text)
+    except ValueError:
+        return value
+    return number if math.isfinite(number) else value
+
+
 def add_filter(
     filter_collection: BinaryFilterExpressionCollection,
     filter_expression: Any,
@@ -72,9 +96,9 @@ def add_filter(
     """
     Append one binary filter expression to a Tekla filter collection.
 
-    Numeric-looking strings are coerced to int/float unless `match_type` is
-    a `StringMatchType`. Non-scalar values (e.g. Tekla enums) get an `IS_EQUAL`
-    numeric comparison.
+    Strings are coerced to int/float only when `match_type` is numeric. Without
+    a `match_type`, strings get a string `IS_EQUAL` and numbers a numeric one.
+    Non-scalar values (e.g. Tekla enums) get an `IS_EQUAL` numeric comparison.
 
     Args:
         filter_collection: Collection to append to (mutated in place).
@@ -92,19 +116,13 @@ def add_filter(
         filter_collection.Add(BinaryFilterExpressionItem(expr, operator))
         return
 
-    is_string_filter = False
-    if match_type is not None:
-        if isinstance(match_type, StringMatchType):
-            is_string_filter = True
-        elif isinstance(match_type, NumericMatchType):
-            is_string_filter = False
-
-    if isinstance(value, str) and not is_string_filter:
-        try:
-            if value.replace(".", "").replace("-", "").isdigit():
-                value = float(value) if "." in value else int(value)
-        except ValueError:
-            pass
+    # Only an explicit numeric match type turns a string into a number. Without one,
+    # a value like "007" must stay a string so it still matches string attributes
+    if isinstance(value, str) and isinstance(match_type, (NumericMatchType, NumericOperatorType)):
+        value = _parse_numeric_string(value)
+        # Both match types are StrEnums, so 'Is Equal' would otherwise fall back to a string comparison
+        if isinstance(value, str):
+            raise TypeError(f"Match type '{match_type}' is numeric, but the value {value!r} is not a number")
 
     if isinstance(value, str):
         if match_type is None:

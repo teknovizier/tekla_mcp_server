@@ -18,6 +18,9 @@ from tekla_mcp_server.models import (
     PartSnapshot,
     AssemblySnapshot,
     ReinforcementSnapshot,
+    StringFilterOption,
+    NumericFilterOption,
+    _coerce_custom_property,
 )
 
 
@@ -403,6 +406,82 @@ class TestNormalizeEdgeCases:
         result = snapshot.normalize(100)
         assert result.report_properties["l1"]["l2"]["l3"] == 100.0
 
+    def test_zero_tolerance_keeps_values_exact(self):
+        snapshot = PartSnapshot(id=1, guid="g1", pos="P1", report_properties={"x": 123.456})
+        result = snapshot.normalize(0)
+        assert result.report_properties["x"] == 123.456
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_values_pass_through(self, value):
+        snapshot = PartSnapshot(id=1, guid="g1", pos="P1", report_properties={"x": value})
+        result = snapshot.normalize(0.1)
+        assert result.report_properties["x"] is value
+
+
+class TestFilterOptionEmptyConditions:
+    """Empty condition lists are rejected instead of failing later with IndexError."""
+
+    @pytest.mark.parametrize("model_class", [StringFilterOption, NumericFilterOption])
+    def test_empty_list_raises(self, model_class):
+        with pytest.raises(ValidationError):
+            model_class(conditions=[])
+
+    def test_single_item_list_accepted(self):
+        option = StringFilterOption(conditions=[{"match_type": "Is Equal", "value": "A"}])
+        assert option.get_match_type() == "Is Equal"
+        assert option.get_values() == ["A"]
+
+    def test_numeric_single_condition_accepted(self):
+        option = NumericFilterOption(conditions={"match_type": "Greater Than", "value": 5})
+        assert option.to_dict() == {"match_type": "Greater Than", "value": 5.0}
+
+
+class TestCoerceCustomProperty:
+    """Tests for lossless custom property coercion."""
+
+    @pytest.mark.parametrize(
+        "value,expected_type,expected",
+        [
+            (3, "int", 3),
+            ("3", "int", 3),
+            (3.0, "int", 3),
+            ("3.0", "int", 3),
+            (10**20, "int", 10**20),
+            (2, "float", 2.0),
+            ("2.5", "float", 2.5),
+            (2.5, "float", 2.5),
+            ("B500B", "str", "B500B"),
+            (12, "str", "12"),
+            (1.5, "str", "1.5"),
+        ],
+    )
+    def test_valid_values(self, value, expected_type, expected):
+        result = _coerce_custom_property(value, expected_type)
+        assert result == expected
+        assert type(result) is type(expected)
+
+    @pytest.mark.parametrize(
+        "value,expected_type",
+        [
+            (2.7, "int"),
+            ("2.7", "int"),
+            (True, "int"),
+            (False, "float"),
+            (True, "str"),
+            (None, "str"),
+            (None, "int"),
+            ({"a": 1}, "str"),
+            ([1], "int"),
+            ("abc", "int"),
+            ("abc", "float"),
+            (float("nan"), "float"),
+            ("inf", "int"),
+        ],
+    )
+    def test_invalid_values_raise(self, value, expected_type):
+        with pytest.raises((ValueError, TypeError)):
+            _coerce_custom_property(value, expected_type)
+
 
 class TestBaseComponentCustomPropertiesValidation:
     """Tests for custom_properties validation in BaseComponent."""
@@ -445,6 +524,32 @@ class TestBaseComponentCustomPropertiesValidation:
             custom_properties={"any_prop": "any_value"},
         )
         assert component.custom_properties == {"any_prop": "any_value"}
+
+    def test_coerces_without_mutating_input(self):
+        """Values are coerced into a copy, the caller's dict stays unchanged."""
+        props = {"TopAsBott": "1", "SpacBarsBottPri": "150"}
+        component = BaseComponent(name="MeshBars", custom_properties=props)
+        assert component.custom_properties == {"TopAsBott": 1, "SpacBarsBottPri": 150.0}
+        assert props == {"TopAsBott": "1", "SpacBarsBottPri": "150"}
+
+    def test_fractional_int_raises(self):
+        """A fraction for an int property is rejected instead of truncated."""
+        with pytest.raises(ValidationError) as exc_info:
+            BaseComponent(name="MeshBars", custom_properties={"TopAsBott": 2.7})
+        assert "Invalid value for 'TopAsBott'" in str(exc_info.value)
+
+    def test_none_for_str_raises(self):
+        """None is not silently turned into the string 'None'."""
+        with pytest.raises(ValidationError) as exc_info:
+            BaseComponent(name="MeshBars", custom_properties={"BottGradePri": None})
+        assert "Invalid value for 'BottGradePri'" in str(exc_info.value)
+
+    def test_invalid_name_reports_only_name_error(self):
+        """A failed 'name' does not add a misleading custom_properties error."""
+        with pytest.raises(ValidationError) as exc_info:
+            BaseComponent(name=123, custom_properties={"TopAsBott": 1})
+        errors = exc_info.value.errors()
+        assert [e["loc"] for e in errors] == [("name",)]
 
 
 class TestGetNumberingForClass:

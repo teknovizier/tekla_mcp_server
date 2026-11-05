@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from unittest.mock import patch
 
-from tekla_mcp_server.config import Config, get_config, get_report_preview_max_chars, get_report_preview_timeout, _load_json, _load_settings
+from tekla_mcp_server.config import Config, get_config, get_report_preview_max_chars, get_report_preview_timeout, get_tolerance, _load_json, _load_settings
 from tekla_mcp_server.models import ElementTypes
 
 
@@ -105,6 +105,31 @@ class TestReportPreviewConfig:
         with patch("tekla_mcp_server.config._load_settings") as mock_settings:
             mock_settings.return_value = {"tekla_path": "C:\\Tekla", "reports": {"preview_timeout": 120}}
             assert get_report_preview_timeout() == 120.0
+
+
+class TestGetTolerance:
+    """Test get_tolerance validation of configured values."""
+
+    def test_default_when_missing(self):
+        """Returns the default as float when the key is absent."""
+        with patch("tekla_mcp_server.config._load_settings") as mock_settings:
+            mock_settings.return_value = {}
+            assert get_tolerance("comparison", default=1) == 1.0
+
+    @pytest.mark.parametrize("value,expected", [(0, 0.0), (0.01, 0.01), (50, 50.0)])
+    def test_valid_values(self, value, expected):
+        """Finite non-negative numbers are returned as float."""
+        with patch("tekla_mcp_server.config._load_settings") as mock_settings:
+            mock_settings.return_value = {"tolerances": {"drawings": {"snap": value}}}
+            assert get_tolerance("snap", default=1.0, group="drawings") == expected
+
+    @pytest.mark.parametrize("value", [-1, float("nan"), float("inf"), "0.1", True, None])
+    def test_invalid_values_raise(self, value):
+        """Negative, non-finite, non-numeric and boolean values are rejected."""
+        with patch("tekla_mcp_server.config._load_settings") as mock_settings:
+            mock_settings.return_value = {"tolerances": {"model": {"comparison": value}}}
+            with pytest.raises(ValueError, match="model.comparison"):
+                get_tolerance("comparison", default=0.01)
 
 
 def _make_element_types() -> dict[str, Any]:

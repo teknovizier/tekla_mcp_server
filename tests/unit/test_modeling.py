@@ -163,9 +163,20 @@ class TestColumnInput:
                 tekla_class=10,
             )
 
-    @pytest.mark.parametrize("height", [-100, -0.1, -3000])
+    def test_string_height_coerced(self):
+        """A numeric string height is coerced instead of crashing the validator."""
+        col = ColumnInput(
+            base_point=PointInput(x=0, y=0, z=0),
+            height="3000",
+            profile="400*400",
+            material="C30/37",
+            tekla_class=10,
+        )
+        assert col.height == 3000.0
+
+    @pytest.mark.parametrize("height", [-100, -0.1, -3000, "0", None, "abc", float("nan"), float("inf")])
     def test_invalid_height_raises(self, height):
-        """Test negative height raises validation error."""
+        """Test non-positive, non-numeric and non-finite heights raise validation error."""
         with pytest.raises(ValidationError):
             ColumnInput(
                 base_point=PointInput(x=0, y=0, z=0),
