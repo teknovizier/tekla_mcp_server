@@ -604,6 +604,19 @@ class TestDeleteViews:
             pytest.skip("No sheet view found")
         result = delete_views(view_keys=[sheet_key])
         assert result.structured_content["status"] == "error"
+        assert result.structured_content["results"][0]["message"] == "Cannot delete the sheet view"
+        close_drawing(save=False)
+
+    def test_delete_duplicate_keys_deleted_once(self, cu_mark):
+        """A repeated view key is deleted once and not reported as a failure."""
+        open_drawing(mark=cu_mark)
+        keys = self._non_sheet_view_keys()
+        if not keys:
+            pytest.skip("No non-sheet view available to delete")
+        result = delete_views(view_keys=[keys[0], keys[0]])
+        assert result.structured_content["status"] == "success"
+        assert result.structured_content["total"] == 1
+        assert result.structured_content["succeeded"] == 1
         close_drawing(save=False)
 
 

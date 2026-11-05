@@ -1719,10 +1719,15 @@ def delete_views(
     results: list[dict[str, Any]] = []
     succeeded = 0
 
-    for view_key in view_keys:
+    # A repeated key would hit an already-deleted view and be reported as a failure
+    unique_keys = list(dict.fromkeys(view_keys))
+    for view_key in unique_keys:
         tekla_view = index.get(view_key)
         if tekla_view is None:
             results.append({"view_key": view_key, "status": "failed", "message": "View not found"})
+            continue
+        if tekla_view.is_sheet:
+            results.append({"view_key": view_key, "status": "failed", "message": "Cannot delete the sheet view"})
             continue
         try:
             if tekla_view.delete():
@@ -1734,7 +1739,7 @@ def delete_views(
             logger.error("Failed to delete view %s: %s", view_key, e)
             results.append({"view_key": view_key, "status": "error", "message": str(e)})
 
-    total = len(view_keys)
+    total = len(unique_keys)
     status = "success" if succeeded == total else "partial" if succeeded else "error"
     logger.info("delete_views: %d/%d deleted", succeeded, total)
 
