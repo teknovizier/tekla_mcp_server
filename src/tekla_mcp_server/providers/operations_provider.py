@@ -326,12 +326,19 @@ def cut_elements_with_cutters(
     performed_cuts = 0
     # Read each cutter's AABB once
     cutter_boxes = [_solid_box(cutter) for cutter in cutters]
+    cutter_ids = {cutter.id for cutter in cutters}
     used_cutter_ids: set[int] = set()
+    skipped_cutter_guids: list[str] = []
     logger.debug("Processing %d selected objects with %d cutters (%s)", selected_objects.GetSize(), len(cutters), label)
     if cutters:
         for selected_object in wrap_model_objects(selected_objects):
             # Only parts can be cut, skip cut parts, bolts and other selected objects
             if not isinstance(selected_object, TeklaPart):
+                continue
+            # A selected part that is also a cutter is never cut, otherwise cutters would cut
+            # themselves and each other, and `delete_cutting_parts` could delete the target
+            if selected_object.id in cutter_ids:
+                skipped_cutter_guids.append(selected_object.guid)
                 continue
             element_had_cut = False
             target_box = _solid_box(selected_object)
@@ -377,6 +384,8 @@ def cut_elements_with_cutters(
     if cutter_guids:
         result["missing_guids"] = missing_guids
         result["unsupported_guids"] = unsupported_guids
+    if skipped_cutter_guids:
+        result["skipped_cutter_guids"] = skipped_cutter_guids
     if delete_cutting_parts:
         result["deleted_cutters_count"] = deleted_cutters
     if commit_success is not None:

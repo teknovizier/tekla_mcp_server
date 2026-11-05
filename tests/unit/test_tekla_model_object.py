@@ -136,6 +136,45 @@ def test_get_all_parts(wall1):
     assert [part.guid for part in parts] == [wall1.guid]
 
 
+def _cut_pair(target_id: int, cutter_id: int, volumes: list[float]) -> tuple[TeklaPart, TeklaPart]:
+    """Build a target and cutter part with overlapping boxes and the given VOLUME readings."""
+    target, cutter = TeklaPart(MagicMock()), TeklaPart(MagicMock())
+    target.model_object.Identifier.ID = target_id
+    cutter.model_object.Identifier.ID = cutter_id
+    cutter.model_object.Class = "99"
+    target.has_spatial_overlap = lambda other: True  # type: ignore[method-assign]
+    target.get_report_property = MagicMock(side_effect=volumes)  # type: ignore[method-assign]
+    return target, cutter
+
+
+def test_add_cut_skips_self_cut_by_id():
+    """Two distinct proxies of the same model object are detected as a self-cut."""
+    target, cutter = _cut_pair(target_id=7, cutter_id=7, volumes=[])
+    with patch("tekla_mcp_server.tekla.wrappers.model_object.BooleanPart") as boolean_part:
+        assert target.add_cut(cutter) is False
+    boolean_part.assert_not_called()
+
+
+def test_add_cut_removes_ineffective_boolean():
+    """A boolean that does not reduce the volume is deleted again and the cutter class is restored."""
+    target, cutter = _cut_pair(target_id=1, cutter_id=2, volumes=[100.0, 100.0])
+    with patch("tekla_mcp_server.tekla.wrappers.model_object.BooleanPart") as boolean_part:
+        boolean_part.return_value.Insert.return_value = True
+        assert target.add_cut(cutter) is False
+    boolean_part.return_value.Delete.assert_called_once()
+    assert cutter.model_object.Class == "99"
+
+
+def test_add_cut_keeps_effective_boolean():
+    """A boolean that reduces the volume is kept, and the cutter class is restored."""
+    target, cutter = _cut_pair(target_id=1, cutter_id=2, volumes=[100.0, 80.0])
+    with patch("tekla_mcp_server.tekla.wrappers.model_object.BooleanPart") as boolean_part:
+        boolean_part.return_value.Insert.return_value = True
+        assert target.add_cut(cutter) is True
+    boolean_part.return_value.Delete.assert_not_called()
+    assert cutter.model_object.Class == "99"
+
+
 def test_get_all_parts_recurses_into_subassemblies():
     """Checks that get_all_parts collects parts of nested subassemblies and skips non-assembly children."""
     root_part, sub_part, nested_part = MagicMock(spec=TeklaPart), MagicMock(spec=TeklaPart), MagicMock(spec=TeklaPart)

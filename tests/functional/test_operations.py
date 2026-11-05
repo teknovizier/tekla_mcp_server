@@ -146,6 +146,15 @@ def test_cut_elements_with_cutters_by_class(model_objects):
     assert result.structured_content["processed_count"] >= 1
 
 
+def test_cut_elements_with_cutters_skips_selected_cutters(model_objects):
+    """A selected part that is also a cutter is skipped, not cut by itself or other cutters."""
+    void_guid = model_objects["void1"].Identifier.GUID.ToString()
+    TeklaModel.select_objects([model_objects["test_wall3"], model_objects["void1"]])
+    result = cut_elements_with_cutters(cutter_class=0, delete_cutting_parts=False)
+    assert result.structured_content["selected_count"] == 2
+    assert result.structured_content["skipped_cutter_guids"] == [void_guid]
+
+
 def test_cut_elements_with_cutters_by_guid(model_objects):
     """Tests cut_elements_with_cutters using cutter_guids."""
     cutter_guid = model_objects["void2"].Identifier.GUID.ToString()

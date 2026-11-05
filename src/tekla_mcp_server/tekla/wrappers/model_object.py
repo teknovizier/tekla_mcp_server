@@ -1302,13 +1302,14 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
 
         The method first checks for self-cutting and spatial overlap between the objects. If valid, it sets the cutting part
         as a Boolean operator and performs the cut. It then compares the volume before and after the operation to verify
-        that the cut had an effect. Optionally deletes the cutting part from the model if the cut was successful.
+        that the cut had an effect. A cut that did not reduce the volume is removed again, so a False result never leaves
+        a boolean behind. Optionally deletes the cutting part from the model if the cut was successful.
         """
         if self.model_object is None or cutting_part.model_object is None:
             logger.warning("Boolean cut skipped: one or both model objects are None")
             return False
 
-        if self.model_object is cutting_part.model_object:
+        if self.id == cutting_part.id:
             logger.warning("Boolean cut skipped: self-cutting detected")
             return False
 
@@ -1318,6 +1319,7 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
 
         volume_before = float(self.get_report_property("VOLUME"))
 
+        original_class = cutting_part.model_object.Class
         cutting_part.model_object.Class = BooleanPart.BooleanOperativeClassName
 
         boolean_cut = BooleanPart()
@@ -1325,20 +1327,30 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         boolean_cut.SetOperativePart(cutting_part.model_object)
         boolean_cut.Type = BooleanPart.BooleanTypeEnum.BOOLEAN_CUT
 
-        if boolean_cut.Insert():
-            volume_after = float(self.get_report_property("VOLUME"))
-            if volume_after < volume_before:
-                if delete_cutting_part:
-                    guid = cutting_part.guid
-                    if cutting_part.delete():
-                        logger.debug("Cutting part %s deleted after boolean cut", guid)
+        try:
+            inserted = boolean_cut.Insert()
+        finally:
+            cutting_part.model_object.Class = original_class
 
-                logger.debug("Boolean cut successful. Volume before: %s, after: %s", volume_before, volume_after)
-                return True
-        else:
+        if not inserted:
             logger.debug("Boolean cut insertion failed")
+            return False
 
-        return False
+        volume_after = float(self.get_report_property("VOLUME"))
+        if volume_after >= volume_before:
+            # The cut had no effect, remove it so the model matches the reported failure
+            if not boolean_cut.Delete():
+                logger.warning("Ineffective boolean cut on %s could not be removed", self.guid)
+            logger.debug("Boolean cut removed: volume did not drop (before: %s, after: %s)", volume_before, volume_after)
+            return False
+
+        if delete_cutting_part:
+            guid = cutting_part.guid
+            if cutting_part.delete():
+                logger.debug("Cutting part %s deleted after boolean cut", guid)
+
+        logger.debug("Boolean cut successful. Volume before: %s, after: %s", volume_before, volume_after)
+        return True
 
     def get_all_children(self, include_all: bool = True) -> list[ModelObject]:
         """
