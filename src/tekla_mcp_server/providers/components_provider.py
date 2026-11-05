@@ -209,8 +209,8 @@ def put_components(
     Inserts Tekla components into the selected objects.
 
     ## INSTRUCTIONS
-    - First read `component://schema` to discover available components.
-    - Then read `component://schema/{component_key}` to get custom properties for a specific component.
+    - First read `tekla://components` to discover available components.
+    - Then read `tekla://components/{component_key}` to get custom properties for a specific component.
     - Use Tekla config keys (e.g. `SpacBarsBottPri`, `BottGradePri`) as property names, NOT user-friendly descriptions.
     - Example: For 'MeshBars', read the schema to get: `SpacBarsBottPri` for 'bottom primary bars spacing', `BottGradePri` for 'bottom primary bars reinforcement grade'.
     """
