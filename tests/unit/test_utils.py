@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from tekla_mcp_server.utils import (
+    build_grid_axis,
     build_report_filename,
     dedupe_guids,
     normalize_attribute_name,
@@ -108,6 +109,25 @@ class TestParseLabelString:
     )
     def test_parse_label_string(self, label_str, expected):
         assert parse_label_string(label_str) == expected
+
+
+class TestBuildGridAxis:
+    @pytest.mark.parametrize(
+        "coord_str,label_str,expected",
+        [
+            # One label per line
+            ("0 2*6000", "A B C", {"coords": [0.0, 6000.0, 12000.0], "labels": ["A", "B", "C"]}),
+            # Unlabeled lines are kept with a None label instead of being dropped
+            ("0 3*6000", "A B", {"coords": [0.0, 6000.0, 12000.0, 18000.0], "labels": ["A", "B", None, None]}),
+            ("0 6000", "", {"coords": [0.0, 6000.0], "labels": [None, None]}),
+            # Labels beyond the last line name nothing and are dropped
+            ("0 6000", "A B C D", {"coords": [0.0, 6000.0], "labels": ["A", "B"]}),
+            ("", "A B", {"coords": [], "labels": []}),
+            ("", "", {"coords": [], "labels": []}),
+        ],
+    )
+    def test_build_grid_axis(self, coord_str, label_str, expected):
+        assert build_grid_axis(coord_str, label_str) == expected
 
 
 class TestSanitizeFilename:

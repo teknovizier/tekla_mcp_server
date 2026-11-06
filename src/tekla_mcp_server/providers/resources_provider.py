@@ -14,7 +14,7 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.tekla.loader import Grid
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.utils import get_all_materials, get_all_rebar_items, get_macros, get_available_attribute_files, get_report_templates
-from tekla_mcp_server.utils import json_resource, mcp_handler, parse_coordinate_string, parse_label_string
+from tekla_mcp_server.utils import build_grid_axis, json_resource, mcp_handler
 
 
 resources_provider = LocalProvider()
@@ -167,34 +167,15 @@ def get_grid_list() -> ResourceResult:
     while enumerator.MoveNext():
         grid = enumerator.Current
 
-        # Coordinates and labels are trimmed to the same length (min of the two).
-        # If Tekla has more labels than coordinates, the extra labels are dropped.
-        # If there are more coordinates than labels, the unlabeled axis lines are
-        # also dropped from the response.
-        x_coords = parse_coordinate_string(grid.CoordinateX)
-        x_labels = parse_label_string(grid.LabelX)
-        y_coords = parse_coordinate_string(grid.CoordinateY)
-        y_labels = parse_label_string(grid.LabelY)
-        z_coords = parse_coordinate_string(grid.CoordinateZ)
-        z_labels = parse_label_string(grid.LabelZ)
-
+        # Every grid line is returned. Unlabeled lines get a None label
         grid_data.append(
             {
                 "guid": grid.Identifier.GUID.ToString(),
                 "name": grid.Name,
                 "axes": {
-                    "x": {
-                        "coords": list(x_coords)[: len(x_labels)],
-                        "labels": list(x_labels)[: len(x_coords)],
-                    },
-                    "y": {
-                        "coords": list(y_coords)[: len(y_labels)],
-                        "labels": list(y_labels)[: len(y_coords)],
-                    },
-                    "z": {
-                        "coords": list(z_coords)[: len(z_labels)],
-                        "labels": list(z_labels)[: len(z_coords)],
-                    },
+                    "x": build_grid_axis(grid.CoordinateX, grid.LabelX),
+                    "y": build_grid_axis(grid.CoordinateY, grid.LabelY),
+                    "z": build_grid_axis(grid.CoordinateZ, grid.LabelZ),
                 },
             }
         )

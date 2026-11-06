@@ -467,6 +467,27 @@ def parse_label_string(label_str: str) -> list[str]:
     return [label.strip() for label in label_str.strip().split() if label.strip()]
 
 
+def build_grid_axis(coord_str: str, label_str: str) -> dict[str, list]:
+    """
+    Pair the coordinates of one grid axis with their labels.
+
+    Every grid line is kept, since dropping unlabeled lines would return wrong geometry.
+    Lines without a label get None. Labels beyond the last line have no line to name
+    and are dropped.
+
+    Args:
+        coord_str: Tekla coordinate string of the axis
+        label_str: Tekla label string of the axis
+
+    Returns:
+        dict with `coords` (all line positions) and `labels` (one entry per coordinate)
+    """
+    coords = parse_coordinate_string(coord_str)
+    labels: list[str | None] = list(parse_label_string(label_str)[: len(coords)])
+    labels.extend([None] * (len(coords) - len(labels)))
+    return {"coords": coords, "labels": labels}
+
+
 def validate_property_type(property_type: type) -> None:
     """
     Validates that the given type is one of the supported types: str, int, or float.
