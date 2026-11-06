@@ -14,9 +14,9 @@ from typing import Any
 import pytest
 
 from tekla_mcp_server.config import get_config
-from tekla_mcp_server.models import PanelInput, PointInput
+from tekla_mcp_server.models import PanelInput, PointInput, SlabInput
 from tekla_mcp_server.providers.components_provider import put_components, remove_components, get_components, modify_components, explode_components
-from tekla_mcp_server.providers.modeling_provider import place_panels
+from tekla_mcp_server.providers.modeling_provider import place_panels, place_slabs
 from tekla_mcp_server.tekla.loader import Int32
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
@@ -48,6 +48,50 @@ VALUE_CASES = [
     ("str", "MCP TEST 1", "MCP TEST 1"),
     ("str", 12, "12"),
 ]
+
+
+@pytest.fixture
+def contour_plate() -> Any:
+    """A fresh contour plate slab, deleted after the test."""
+    corners = [(40000, 0), (44000, 0), (44000, 3000), (40000, 3000)]
+    placed = place_slabs(slabs=[SlabInput(points=[PointInput(x=x, y=y, z=0) for x, y in corners], profile="200", material="Concrete_Undefined", tekla_class=4, name="MCP_TEST_COMPONENT_PLATE")])
+    plate = TeklaModel().get_objects_by_guid([placed.structured_content["results"][0]["guid"]])[0]
+    yield plate
+    plate.Delete()
+    TeklaModel().commit_changes()
+
+
+@pytest.mark.parametrize("component_name", SCHEMA_COMPONENTS)
+def test_put_components_on_contour_plate(contour_plate, component_name):
+    """A component is inserted on a contour plate, not only on beams, and creates its reinforcement."""
+    TeklaModel.select_objects([contour_plate])
+    result = put_components(component_name=component_name)
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["processed_count"] == 1
+    assert result.structured_content["skipped_objects"] == []
+    refreshed = TeklaModel().get_objects_by_guid([contour_plate.Identifier.GUID.ToString()])[0]
+    assert [c.Name for c in refreshed.GetComponents()] == [component_name]
+    assert refreshed.GetReinforcements().GetSize() > 0
+
+
+def test_modify_components_on_contour_plate(contour_plate):
+    """An existing component on a contour plate can be modified."""
+    TeklaModel.select_objects([contour_plate])
+    put_components(component_name="MeshBars")
+    TeklaModel.select_objects([contour_plate])
+    result = modify_components(component_name="MeshBars", custom_properties={"TopAsBott": 0})
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["processed_components_count"] == 1
+
+
+def test_put_components_skips_non_parts(model_objects):
+    """A selected assembly is not a part, so it is listed in `skipped_objects` instead of ignored silently."""
+    assembly = model_objects["test_wall1"].GetAssembly()
+    TeklaModel.select_objects([assembly])
+    result = put_components(component_name="MeshBars")
+    assert result.structured_content["status"] == "warning"
+    assert result.structured_content["processed_count"] == 0
+    assert result.structured_content["skipped_objects"] == [{"guid": assembly.Identifier.GUID.ToString(), "type": "Assembly"}]
 
 
 def test_put_lifting_anchors_walls(model_objects):

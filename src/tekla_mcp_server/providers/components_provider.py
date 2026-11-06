@@ -18,7 +18,7 @@ from tekla_mcp_server.providers.operations_provider import run_macro
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.component_handlers import HandlerRegistry
-from tekla_mcp_server.tekla.loader import Beam, CustomPart, Int32, Part
+from tekla_mcp_server.tekla.loader import CustomPart, Int32, Part
 from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_transformation_plane, get_wall_pairs, insert_component, insert_detail, wait_for_macro
 
 
@@ -53,20 +53,25 @@ def _process_detail_or_component(
     processed_count = 0
     processed_components_count = 0
     errors: list[dict[str, Any]] = []
+    skipped_objects: list[dict[str, str]] = []
     for selected_object in selected_objects:
-        if isinstance(selected_object, Beam):
-            # Isolate per-object failures so one bad element (e.g. a non-concrete
-            # beam rejected by a handler) does not abort the whole batch and discard
-            # the components already inserted for earlier elements.
-            try:
-                success = callback(model, component, selected_object, *args, **kwargs)
-                if success:
-                    processed_components_count += success
-            except Exception as e:
-                guid = selected_object.Identifier.GUID.ToString()
-                logger.exception("Failed to process component on %s", guid)
-                errors.append({"guid": guid, "error": str(e)})
-            processed_count += 1
+        # Any part can host a component.
+        # A component that needs a specific host, like the lifting anchor, rejects others in its handler
+        if not isinstance(selected_object, Part):
+            skipped_objects.append({"guid": selected_object.Identifier.GUID.ToString(), "type": type(selected_object).__name__})
+            continue
+        # Isolate per-object failures so one bad element (e.g. a non-concrete
+        # beam rejected by a handler) does not abort the whole batch and discard
+        # the components already inserted for earlier elements.
+        try:
+            success = callback(model, component, selected_object, *args, **kwargs)
+            if success:
+                processed_components_count += success
+        except Exception as e:
+            guid = selected_object.Identifier.GUID.ToString()
+            logger.exception("Failed to process component on %s", guid)
+            errors.append({"guid": guid, "error": str(e)})
+        processed_count += 1
 
     commit_success: bool | None = None
     if processed_components_count > 0:
@@ -83,13 +88,14 @@ def _process_detail_or_component(
     else:
         status = "warning"
 
-    logger.info("Processed %s elements, %s components", processed_count, processed_components_count)
+    logger.info("Processed %s elements, %s components, skipped %s non-part objects", processed_count, processed_components_count, len(skipped_objects))
     result: dict = {
         "status": status,
         "selected_count": selected_objects.GetSize(),
         "processed_count": processed_count,
         "processed_components_count": processed_components_count,
         "errors": errors,
+        "skipped_objects": skipped_objects,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
