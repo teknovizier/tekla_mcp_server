@@ -33,7 +33,10 @@ def _coerce_custom_property(value: Any, expected_type: str) -> Any:
         TypeError: If the value's type cannot represent the schema type
         ValueError: If the conversion would lose data or the value is not finite
     """
-    # bool is an int subclass, so it would otherwise pass as 1/0 silently
+    # Tekla stores a bool written to an int attribute as 1/0, so it is a valid on/off flag
+    if isinstance(value, bool) and expected_type == "int":
+        return int(value)
+    # For float or str a bool would be written as an int, which the component ignores
     if value is None or isinstance(value, (bool, dict, list, tuple, set)):
         raise TypeError(f"Unsupported value type {type(value).__name__}")
 

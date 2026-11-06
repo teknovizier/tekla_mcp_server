@@ -447,6 +447,9 @@ class TestCoerceCustomProperty:
             (3.0, "int", 3),
             ("3.0", "int", 3),
             (10**20, "int", 10**20),
+            # An on/off flag sent as a bool is stored by Tekla as 1/0
+            (True, "int", 1),
+            (False, "int", 0),
             (2, "float", 2.0),
             ("2.5", "float", 2.5),
             (2.5, "float", 2.5),
@@ -465,8 +468,8 @@ class TestCoerceCustomProperty:
         [
             (2.7, "int"),
             ("2.7", "int"),
-            (True, "int"),
             (False, "float"),
+            (True, "float"),
             (True, "str"),
             (None, "str"),
             (None, "int"),
