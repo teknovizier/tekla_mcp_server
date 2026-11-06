@@ -973,7 +973,27 @@ class TeklaAssembly(TeklaModelObject):
 
         Args:
             include_embeds: If False, embedded-detail subassemblies and parts of an
-                embedded-detail class are left out, e.g. to keep only the layers of a cast unit
+                embedded-detail class are left out, e.g. to keep only the layers of a cast unit.
+                An assembly that is itself an embedded detail always returns all its parts
+
+        Returns:
+            Parts of the main part, secondaries and subassemblies
+        """
+        if not include_embeds:
+            try:
+                # An embed the caller asked for directly is wanted, only embeds inside it are filtered
+                if self.is_embedded_detail():
+                    include_embeds = True
+            except ValueError:
+                logger.debug("Assembly %s has no main part, filtering embeds among its children", self.guid)
+        return self._collect_parts(include_embeds)
+
+    def _collect_parts(self, include_embeds: bool) -> list[TeklaPart]:
+        """
+        Collect the parts of this assembly and its subassemblies recursively.
+
+        Args:
+            include_embeds: If False, embedded-detail subassemblies and parts of an embedded-detail class are left out
 
         Returns:
             Parts of the main part, secondaries and subassemblies
@@ -988,7 +1008,7 @@ class TeklaAssembly(TeklaModelObject):
                         continue
                 except ValueError:
                     logger.debug("Subassembly %s has no main part, checking its children", subassembly.guid)
-            parts.extend(subassembly.get_all_parts(include_embeds))
+            parts.extend(subassembly._collect_parts(include_embeds))
         return parts
 
     def get_all_children(self, include_all: bool = True) -> list[ModelObject]:

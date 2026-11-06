@@ -200,6 +200,7 @@ def test_get_all_parts_excludes_embeds():
     layer.tekla_class, embed_secondary.tekla_class, sub_layer.tekla_class = 1, embed_class, 1
     root, layer_sub, embed_sub = TeklaAssembly(MagicMock()), TeklaAssembly(MagicMock()), TeklaAssembly(MagicMock())
     root.get_top_level_parts = lambda: [layer, embed_secondary]  # type: ignore[method-assign]
+    root.is_embedded_detail = lambda: False  # type: ignore[method-assign]
     layer_sub.get_top_level_parts = lambda: [sub_layer]  # type: ignore[method-assign]
     layer_sub.is_embedded_detail = lambda: False  # type: ignore[method-assign]
     embed_sub.is_embedded_detail = lambda: True  # type: ignore[method-assign]
@@ -211,6 +212,19 @@ def test_get_all_parts_excludes_embeds():
     with patch("tekla_mcp_server.tekla.wrappers.model_object.wrap_model_objects", side_effect=fake_wrap):
         assert root.get_all_parts(include_embeds=False) == [layer, sub_layer]
         assert len(root.get_all_parts(include_embeds=True)) == 4
+
+
+def test_get_all_parts_keeps_selected_embed():
+    """Checks that an embed assembly asked for directly keeps its embed-class parts, only nested embeds are filtered."""
+    embed_class = next(iter(EMBEDDED_DETAILS_CLASSES))
+    plate, anchor = MagicMock(spec=TeklaPart), MagicMock(spec=TeklaPart)
+    plate.tekla_class, anchor.tekla_class = embed_class, embed_class
+    embed = TeklaAssembly(MagicMock())
+    embed.get_top_level_parts = lambda: [plate, anchor]  # type: ignore[method-assign]
+    embed.is_embedded_detail = lambda: True  # type: ignore[method-assign]
+
+    with patch("tekla_mcp_server.tekla.wrappers.model_object.wrap_model_objects", return_value=iter([])):
+        assert embed.get_all_parts(include_embeds=False) == [plate, anchor]
 
 
 def test_get_report_property_weight_property(wall1):
