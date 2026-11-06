@@ -733,28 +733,28 @@ class AssemblySnapshot(ModelObjectSnapshot):
 class PointInput(BaseModel):
     """Input model for 3D point coordinates."""
 
-    x: float = Field(description="X coordinate of the point")
-    y: float = Field(description="Y coordinate of the point")
-    z: float = Field(description="Z coordinate of the point")
+    x: float = Field(allow_inf_nan=False, description="X coordinate of the point")
+    y: float = Field(allow_inf_nan=False, description="Y coordinate of the point")
+    z: float = Field(allow_inf_nan=False, description="Z coordinate of the point")
 
 
 class OffsetInput(BaseModel):
     """Input model for beam start/end point offsets."""
 
-    dx: float = Field(description="Offset in X direction in object's coordinate system")
-    dy: float = Field(description="Offset in Y direction in object's coordinate system")
-    dz: float = Field(description="Offset in Z direction in object's coordinate system")
+    dx: float = Field(allow_inf_nan=False, description="Offset in X direction in object's coordinate system")
+    dy: float = Field(allow_inf_nan=False, description="Offset in Y direction in object's coordinate system")
+    dz: float = Field(allow_inf_nan=False, description="Offset in Z direction in object's coordinate system")
 
 
 class PositionInput(BaseModel):
     """Input model for beam position settings."""
 
     plane: Plane = Field("MIDDLE", description="Plane position")
-    plane_offset: float = Field(default=0.0, description="Offset in mm along plane axis")
+    plane_offset: float = Field(default=0.0, allow_inf_nan=False, description="Offset in mm along plane axis")
     depth: Depth = Field("MIDDLE", description="Depth position")
-    depth_offset: float = Field(default=0.0, description="Offset in mm along depth axis")
+    depth_offset: float = Field(default=0.0, allow_inf_nan=False, description="Offset in mm along depth axis")
     rotation: Rotation = Field("FRONT", description="Rotation position")
-    rotation_offset: float = Field(0.0, description="Rotation offset in degrees")
+    rotation_offset: float = Field(0.0, allow_inf_nan=False, description="Rotation offset in degrees")
 
 
 class TeklaBeamInput(BaseModel):

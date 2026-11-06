@@ -20,6 +20,9 @@ from tekla_mcp_server.models import (
     ReinforcementSnapshot,
     StringFilterOption,
     NumericFilterOption,
+    OffsetInput,
+    PointInput,
+    PositionInput,
     _coerce_custom_property,
 )
 
@@ -958,3 +961,19 @@ class TestCompareElementsTypeHomogeneity:
 
         result = _run_compare([(MagicMock(), _as(TeklaReinforcement)), (MagicMock(), _as(TeklaReinforcement))])
         assert "mixed" not in result.structured_content.get("message", "").lower()
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize(
+    ("model", "fields", "field"),
+    [
+        (PointInput, {"x": 0, "y": 0, "z": 0}, "x"),
+        (OffsetInput, {"dx": 0, "dy": 0, "dz": 0}, "dz"),
+        (PositionInput, {}, "plane_offset"),
+        (PositionInput, {}, "rotation_offset"),
+    ],
+)
+def test_placement_inputs_reject_non_finite(model, fields, field, bad):
+    """Coordinates and offsets reject NaN and infinity, which would corrupt the placed geometry."""
+    with pytest.raises(ValidationError):
+        model(**{**fields, field: bad})

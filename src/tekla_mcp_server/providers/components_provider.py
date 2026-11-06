@@ -449,8 +449,11 @@ def get_components() -> ToolResult:
                         # Standard settings files store some int attributes as text (e.g. numbering start '1')
                         # until the component is first modified
                         is_text, text = comp.GetAttribute(attr_key, "")
-                        is_ok = is_text and text.strip().lstrip("-").isdigit()
-                        attr_value = int(text) if is_ok else attr_value
+                        if is_text:
+                            try:
+                                attr_value, is_ok = int(text), True
+                            except ValueError:
+                                pass
                     attributes[attr_key] = attr_value if is_ok else default
 
             object_components.append(

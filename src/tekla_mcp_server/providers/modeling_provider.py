@@ -409,9 +409,9 @@ def _move_or_copy_elements(dx: float, dy: float, dz: float, copy: bool) -> ToolR
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": True})
 @mcp_handler(scope="tool")
 def move_elements(
-    dx: Annotated[float, Field(description="Displacement in X direction (mm)")] = 0.0,
-    dy: Annotated[float, Field(description="Displacement in Y direction (mm)")] = 0.0,
-    dz: Annotated[float, Field(description="Displacement in Z direction (mm)")] = 0.0,
+    dx: Annotated[float, Field(allow_inf_nan=False, description="Displacement in X direction (mm)")] = 0.0,
+    dy: Annotated[float, Field(allow_inf_nan=False, description="Displacement in Y direction (mm)")] = 0.0,
+    dz: Annotated[float, Field(allow_inf_nan=False, description="Displacement in Z direction (mm)")] = 0.0,
 ) -> ToolResult:
     """
     Moves all selected elements by a displacement offset relative to their current positions.
@@ -430,9 +430,9 @@ def move_elements(
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def copy_elements(
-    dx: Annotated[float, Field(description="Displacement in X direction (mm)")] = 0.0,
-    dy: Annotated[float, Field(description="Displacement in Y direction (mm)")] = 0.0,
-    dz: Annotated[float, Field(description="Displacement in Z direction (mm)")] = 0.0,
+    dx: Annotated[float, Field(allow_inf_nan=False, description="Displacement in X direction (mm)")] = 0.0,
+    dy: Annotated[float, Field(allow_inf_nan=False, description="Displacement in Y direction (mm)")] = 0.0,
+    dz: Annotated[float, Field(allow_inf_nan=False, description="Displacement in Z direction (mm)")] = 0.0,
 ) -> ToolResult:
     """
     Copies all selected elements by a displacement offset relative to their current positions.
