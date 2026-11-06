@@ -238,14 +238,8 @@ def remove_components(
     selected_objects = list(model.get_selected_objects())
     wanted = {name.strip().lower(): name.strip() for name in component_names if name.strip()}
 
-    # Handlers clean up objects their component created outside itself (e.g. lifting anchor recess cuts)
-    cleaned_count = 0
-    for name in wanted.values():
-        handler = HandlerRegistry.get(name)
-        if handler and hasattr(handler, "pre_remove"):
-            cleaned_count += handler.pre_remove(selected_objects)
-
     matches: dict[str, Any] = {}  # component GUID -> component
+    hosts: dict[str, list[Any]] = {}  # component GUID -> selected parts that hold it
     for obj in selected_objects:
         # Only Part and CustomPart support GetComponents()
         if not isinstance(obj, (Part, CustomPart)):
@@ -253,22 +247,35 @@ def remove_components(
         for comp in obj.GetComponents():
             if comp.Name and comp.Name.lower() in wanted:
                 # A connection between two selected parts is returned by both, keep it once
-                matches.setdefault(str(comp.Identifier.GUID), comp)
+                guid = str(comp.Identifier.GUID)
+                matches.setdefault(guid, comp)
+                hosts.setdefault(guid, []).append(obj)
 
     found_names = {comp.Name.lower() for comp in matches.values()}
     not_found = [name for key, name in wanted.items() if key not in found_names]
 
     removed: dict[str, int] = {}
+    cleanup_hosts: dict[str, dict[int, Any]] = {}  # component name -> host part ID -> host part
     failed_count = 0
-    for comp in matches.values():
+    for guid, comp in matches.items():
         if comp.Delete():
             removed[comp.Name] = removed.get(comp.Name, 0) + 1
+            for host in hosts[guid]:
+                cleanup_hosts.setdefault(comp.Name, {})[host.Identifier.ID] = host
         else:
             failed_count += 1
             logger.warning("Failed to delete component '%s' (%s)", comp.Name, comp.Identifier.GUID)
 
+    # Handlers clean up objects their component created outside itself (e.g. lifting anchor recess cuts).
+    # Only parts whose component was deleted are cleaned, so a failed delete keeps its recesses
+    cleaned_count = 0
+    for name, parts in cleanup_hosts.items():
+        handler = HandlerRegistry.get(name)
+        if handler and hasattr(handler, "pre_remove"):
+            cleaned_count += handler.pre_remove(list(parts.values()))
+
     commit_success: bool | None = None
-    if removed or cleaned_count:
+    if removed:
         commit_success = model.commit_changes()
         if not commit_success:
             logger.error("commit_changes() failed after removing %s components", sum(removed.values()))
@@ -288,6 +295,7 @@ def remove_components(
         "removed": removed,
         "not_found": not_found,
         "failed_count": failed_count,
+        "cleaned_count": cleaned_count,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success

@@ -18,6 +18,7 @@ from tekla_mcp_server.models import PanelInput, PointInput, SlabInput
 from tekla_mcp_server.providers.components_provider import put_components, remove_components, get_components, modify_components, explode_components
 from tekla_mcp_server.providers.modeling_provider import place_panels, place_slabs
 from tekla_mcp_server.tekla.loader import Int32
+from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 # Components with an attribute schema
@@ -109,11 +110,24 @@ def test_put_lifting_anchors_sandwich(model_objects):
 
 
 def test_remove_lifting_anchors(model_objects):
-    """Tests remove_components for lifting anchors."""
-    TeklaModel.select_objects([model_objects["test_wall1"]])
+    """Tests remove_components for lifting anchors, given in lowercase, leaves no recess cuts behind."""
+    wall = model_objects["test_wall1"]
+    TeklaModel.select_objects([wall])
     put_components(component_name="Lifting Anchor")
-    result = remove_components(component_names=["Lifting Anchor"])
+    result = remove_components(component_names=["lifting anchor"])
     assert result.structured_content["status"] == "success"
+    assert result.structured_content["removed"].get("Lifting Anchor", 0) > 0
+    recesses = [b for b in iterate_boolean_parts(wall) if b.OperativePart.Name == "LIFTING_ANCHOR_RECESS"]
+    assert recesses == []
+
+
+def test_remove_components_no_match_keeps_handler_objects(model_objects):
+    """A name that matches no component on the selection runs no handler cleanup."""
+    TeklaModel.select_objects([model_objects["test_wall8"]])
+    result = remove_components(component_names=["Lifting Anchor"])
+    assert result.structured_content["status"] == "warning"
+    assert result.structured_content["cleaned_count"] == 0
+    assert "commit_success" not in result.structured_content
 
 
 def test_put_components_invalid_component(model_objects):
