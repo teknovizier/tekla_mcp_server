@@ -41,11 +41,13 @@ class HandlerRegistry:
     @classmethod
     def get(cls, tekla_name: str) -> Any | None:
         """
-        Get handler instance by Tekla component name.
+        Get handler instance by Tekla component name, ignoring case.
         """
+        # Keys are lowercased so the lookup matches components the way the tools do
+        key = tekla_name.strip().lower()
         # Return cached if already created
-        if tekla_name in cls._instances:
-            return cls._instances[tekla_name]
+        if key in cls._instances:
+            return cls._instances[key]
 
         # Find matching config and instantiate all handlers
         base_components = get_config().base_components
@@ -67,12 +69,12 @@ class HandlerRegistry:
 
             try:
                 instance = handler_cls(handler_config) if handler_config else handler_cls()
-                cls._instances[instance.tekla_name] = instance
+                cls._instances[instance.tekla_name.lower()] = instance
             except Exception as e:
                 logger.exception("Failed to instantiate handler '%s'", handler_name)
                 cls._failures[handler_name] = str(e)
 
-        return cls._instances.get(tekla_name)
+        return cls._instances.get(key)
 
     @classmethod
     def has_handler(cls, tekla_name: str) -> bool:

@@ -67,6 +67,10 @@ class TestHandlerRegistry:
         assert handler is not None
         assert isinstance(handler, LiftingAnchorsHandler)
 
+    @pytest.mark.parametrize("name", ["lifting anchor", "LIFTING ANCHOR", " Lifting Anchor "])
+    def test_get_ignores_case_and_surrounding_spaces(self, name):
+        assert isinstance(HandlerRegistry.get(name), LiftingAnchorsHandler)
+
     def test_has_handler(self):
         assert HandlerRegistry.has_handler("Lifting Anchor") is True
         assert HandlerRegistry.has_handler("NonExistent") is False
