@@ -10,6 +10,7 @@ from tekla_mcp_server.utils import (
     build_grid_axis,
     build_report_filename,
     dedupe_guids,
+    find_bolt_catalog_error,
     normalize_attribute_name,
     normalize_guid,
     format_coordinate_string,
@@ -222,3 +223,27 @@ class TestResolveModelRelativeDir:
         # No model path: relative paths fall back to the process working directory.
         result = resolve_model_relative_dir("reports", "")
         assert result == str((Path.cwd() / "reports").resolve())
+
+
+BOLT_CATALOG = [
+    {"standard": "7990", "size": 12.0},
+    {"standard": "7990", "size": 16.0},
+    {"standard": "NELSON", "size": 15.869999885559082},
+]
+
+
+class TestFindBoltCatalogError:
+    @pytest.mark.parametrize("standard,size", [("7990", 16.0), ("7990", 12), ("NELSON", 15.87)])
+    def test_known_combination_is_valid(self, standard, size):
+        assert find_bolt_catalog_error(standard, size, BOLT_CATALOG) is None
+
+    def test_unknown_standard_lists_standards(self):
+        error = find_bolt_catalog_error("NOPE", 16.0, BOLT_CATALOG)
+        assert error is not None
+        assert "'NOPE'" in error
+        assert "['7990', 'NELSON']" in error
+
+    def test_unknown_size_lists_sizes_of_the_standard(self):
+        error = find_bolt_catalog_error("7990", 17.0, BOLT_CATALOG)
+        assert error is not None
+        assert "[12.0, 16.0]" in error

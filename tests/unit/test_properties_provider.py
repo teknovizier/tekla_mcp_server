@@ -17,7 +17,7 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, TeklaReinforcement
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBoltGroup, TeklaPart, TeklaReinforcement
 
 pp = importlib.import_module("tekla_mcp_server.providers.properties_provider")
 
@@ -112,6 +112,48 @@ class TestSetElementsPropertiesFailures:
         assert result["status"] == "warning"
         assert result["property_errors"] == []
         assert result["skipped_objects"] == []
+
+    def test_bolt_gets_bolt_properties_and_catalog(self, model):
+        catalog = [{"standard": "7990", "size": 16.0}]
+        bolt = _obj(TeklaBoltGroup, "B", set_properties=MagicMock(return_value={"bolt_size": 1, "bolt_tolerance": 1}))
+
+        with patch.object(pp, "get_all_bolt_items", return_value=catalog):
+            result = _run(pp.set_elements_properties, [bolt], bolt_size=16.0, bolt_tolerance=3.0)
+
+        kwargs = bolt.set_properties.call_args.kwargs
+        assert kwargs["bolt_size"] == 16.0
+        assert kwargs["bolt_tolerance"] == 3.0
+        assert kwargs["bolt_catalog"] == catalog
+        assert result["status"] == "success"
+        assert result["changes_applied"]["bolt_size"] == 1
+        assert result["changes_applied"]["bolt_tolerance"] == 1
+
+    def test_catalog_not_read_without_standard_or_size(self, model):
+        bolt = _obj(TeklaBoltGroup, "B", set_properties=MagicMock(return_value={"bolt_tolerance": 1}))
+
+        with patch.object(pp, "get_all_bolt_items") as catalog:
+            _run(pp.set_elements_properties, [bolt], bolt_tolerance=3.0)
+
+        catalog.assert_not_called()
+
+
+class TestBoltProperties:
+    def test_flat_mode_returns_bolts(self, model):
+        bolt = _obj(TeklaBoltGroup, "B", get_properties=MagicMock(return_value={"guid": "B", "bolt_extra_length": 5.0}))
+
+        result = _run(pp.get_elements_properties, [bolt])
+
+        assert result["status"] == "success"
+        assert result["processed_count"] == 1
+        assert result["bolts"] == [{"guid": "B", "bolt_extra_length": 5.0}]
+
+    def test_snapshot_mode_returns_bolts(self, model):
+        bolt = _obj(TeklaBoltGroup, "B", get_properties=MagicMock(return_value={"guid": "B", "bolt_tolerance": 2.0}))
+
+        result = _run(pp.get_elements_properties, [bolt], mode="snapshot")
+
+        assert result["status"] == "success"
+        assert result["bolts"] == [{"guid": "B", "bolt_tolerance": 2.0}]
 
 
 class TestFlatPropertiesFailures:

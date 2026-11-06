@@ -6,14 +6,14 @@ from __future__ import annotations
 
 import math
 from collections.abc import Generator, Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import PureWindowsPath
-from typing import Any, overload
+from typing import Any, Literal, overload
 
 from tekla_mcp_server.config import get_config, get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, ReinforcementSnapshot, BeamType, OffsetInput, PointInput, PositionInput
-from tekla_mcp_server.utils import validate_property_type
+from tekla_mcp_server.utils import find_bolt_catalog_error, validate_property_type
 from tekla_mcp_server.tekla.interop import to_array_list
 
 from tekla_mcp_server.tekla.loader import (
@@ -789,11 +789,52 @@ class TeklaBoltGroup(TeklaModelObject):
         return self.model_object.BoltSize
 
     @property
-    def bolt_type(self) -> float:
+    def bolt_type(self) -> str:
         """
-        Returns the bolt type.
+        Returns where the bolts are fitted: 'site' or 'workshop'.
         """
-        return self.model_object.BoltType
+        return "workshop" if self.model_object.BoltType == BoltGroup.BoltTypeEnum.BOLT_TYPE_WORKSHOP else "site"
+
+    @property
+    def has_bolt(self) -> bool:
+        """
+        Returns False when the group makes only holes, with no bolt.
+        """
+        return bool(self.model_object.Bolt)
+
+    @property
+    def bolt_length(self) -> float | None:
+        """
+        Returns the bolt length in mm as calculated by Tekla, or None if unavailable.
+
+        The length is calculated from the connected parts plus the extra length,
+        so it is read only. A group with no bolt reports the hole depth.
+        """
+        try:
+            return float(self.get_report_property("LENGTH"))
+        except (AttributeError, KeyError):
+            return None
+
+    @property
+    def cut_length(self) -> float:
+        """
+        Returns the cut length in mm.
+        """
+        return self.model_object.CutLength
+
+    @property
+    def extra_length(self) -> float:
+        """
+        Returns the extra length in mm added to the calculated bolt length.
+        """
+        return self.model_object.ExtraLength
+
+    @property
+    def tolerance(self) -> float:
+        """
+        Returns the hole tolerance in mm.
+        """
+        return self.model_object.Tolerance
 
     @property
     def bolt_count(self) -> int:
@@ -821,6 +862,153 @@ class TeklaBoltGroup(TeklaModelObject):
             part_to_be_bolted=_connected_part(self.model_object.PartToBeBolted),
             part_to_bolt_to=_connected_part(self.model_object.PartToBoltTo),
         )
+
+    def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
+        """
+        Gets bolt group properties as dict.
+
+        The writable `bolt_*` keys match the arguments of `set_properties`, so a value
+        read here can be written back unchanged.
+
+        Args:
+            resolved_report_props: Extra report property names, already resolved
+
+        Returns:
+            dict with the base properties, the bolt properties and the connected parts
+        """
+        props = super().get_properties(resolved_report_props)
+        props.update(
+            {
+                "bolt_standard": self.bolt_standard,
+                "bolt_size": self.bolt_size,
+                "bolt_type": self.bolt_type,
+                "bolt_cut_length": self.cut_length,
+                "bolt_extra_length": self.extra_length,
+                "bolt_tolerance": self.tolerance,
+                "bolt_length": self.bolt_length,
+                "bolt_count": self.bolt_count,
+                "has_bolt": self.has_bolt,
+                "connected_parts": asdict(self.connected_parts),
+            }
+        )
+        return props
+
+    def set_properties(
+        self,
+        bolt_standard: str | None = None,
+        bolt_size: float | None = None,
+        bolt_cut_length: float | None = None,
+        bolt_extra_length: float | None = None,
+        bolt_tolerance: float | None = None,
+        bolt_type: Literal["site", "workshop"] | None = None,
+        phase: int | None = None,
+        user_properties: dict[str, Any] | None = None,
+        bolt_catalog: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Sets properties on the bolt group.
+
+        Args:
+            bolt_standard: Bolt standard (catalog identifier)
+            bolt_size: Bolt diameter in mm
+            bolt_cut_length: Length that defines how far the bolt cuts through parts, in mm
+            bolt_extra_length: Extra length added to the calculated bolt length, in mm
+            bolt_tolerance: Hole tolerance in mm
+            bolt_type: Where the bolts are fitted, 'site' or 'workshop'
+            phase: Phase number
+            user_properties: UDA names and values
+            bolt_catalog: Bolt catalog items to validate the standard and size against.
+                Validation is skipped when None or empty.
+
+        Returns:
+            Summary of changes made per property, plus a list of per-property errors
+        """
+        changes: dict[str, int] = {
+            "bolt_standard": 0,
+            "bolt_size": 0,
+            "bolt_cut_length": 0,
+            "bolt_extra_length": 0,
+            "bolt_tolerance": 0,
+            "bolt_type": 0,
+            "phase": 0,
+            "udas": 0,
+        }
+        errors: list[dict[str, str]] = []
+
+        if bolt_type is not None:
+            bolt_type_enum = {"site": BoltGroup.BoltTypeEnum.BOLT_TYPE_SITE, "workshop": BoltGroup.BoltTypeEnum.BOLT_TYPE_WORKSHOP}.get(bolt_type)
+            if bolt_type_enum is None:
+                errors.append({"property": "bolt_type", "reason": f"Must be 'site' or 'workshop', got '{bolt_type}'"})
+            else:
+                try:
+                    self.model_object.BoltType = bolt_type_enum
+                    if self.modify():
+                        changes["bolt_type"] = 1
+                    else:
+                        errors.append({"property": "bolt_type", "reason": "Modify() failed"})
+                except Exception as e:
+                    errors.append({"property": "bolt_type", "reason": str(e)})
+
+        # Standard and size form one catalog entry, so they are validated and written together
+        if bolt_standard is not None or bolt_size is not None:
+            keys = [key for key, value in (("bolt_standard", bolt_standard), ("bolt_size", bolt_size)) if value is not None]
+            standard = bolt_standard if bolt_standard is not None else self.bolt_standard
+            size = bolt_size if bolt_size is not None else self.bolt_size
+            reason = find_bolt_catalog_error(standard, size, bolt_catalog) if bolt_catalog else None
+            if reason is None:
+                try:
+                    self.model_object.BoltStandard = standard
+                    self.model_object.BoltSize = float(size)
+                    if self.modify():
+                        for key in keys:
+                            changes[key] = 1
+                    else:
+                        reason = "Modify() failed"
+                except Exception as e:
+                    reason = str(e)
+            if reason is not None:
+                errors.extend({"property": key, "reason": reason} for key in keys)
+
+        for key, attr, value, minimum in (
+            ("bolt_cut_length", "CutLength", bolt_cut_length, 0.0),
+            ("bolt_extra_length", "ExtraLength", bolt_extra_length, 0.0),
+            ("bolt_tolerance", "Tolerance", bolt_tolerance, 0.0),
+        ):
+            if value is None:
+                continue
+            if not math.isfinite(value) or value < minimum:
+                errors.append({"property": key, "reason": f"Must be a finite number >= {minimum}, got {value}"})
+                continue
+            try:
+                setattr(self.model_object, attr, float(value))
+                if self.modify():
+                    changes[key] = 1
+                else:
+                    errors.append({"property": key, "reason": "Modify() failed"})
+            except Exception as e:
+                errors.append({"property": key, "reason": str(e)})
+
+        if phase is not None:
+            try:
+                if self.model_object.SetPhase(Phase(phase)):
+                    self.modify()
+                    changes["phase"] = 1
+                else:
+                    errors.append({"property": "phase", "reason": "SetPhase returned False"})
+            except Exception as e:
+                errors.append({"property": "phase", "reason": str(e)})
+
+        if user_properties:
+            for key, value in user_properties.items():
+                try:
+                    if self.set_user_property(key, value):
+                        changes["udas"] += 1
+                    else:
+                        errors.append({"property": f"uda:{key}", "reason": "SetUserProperty returned False"})
+                except Exception as e:
+                    errors.append({"property": f"uda:{key}", "reason": str(e)})
+
+        return {**changes, "errors": errors}
 
 
 class TeklaAssembly(TeklaModelObject):

@@ -4,7 +4,7 @@ Selection tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
@@ -28,6 +28,7 @@ from tekla_mcp_server.tekla.loader import (
     BinaryFilterExpressionCollection,
     BinaryFilterExpressionItem,
     BinaryFilterOperatorType,
+    BoltFilterExpressions,
     NumericConstantFilterExpression,
     NumericOperatorType,
     ObjectFilterExpressions,
@@ -54,8 +55,63 @@ STANDARD_NUMERIC_EXPRESSION_MAP = {
     "assembly_start_number": TemplateFilterExpressions.CustomNumber("ASSEMBLY_START_NUMBER"),
 }
 
+BOLT_STRING_EXPRESSION_MAP = {
+    "bolt_standard": BoltFilterExpressions.Standard(),
+    "bolt_type": BoltFilterExpressions.SiteWorkshop(),
+}
+
+# Tekla's site/workshop filter matches the `BoltTypeEnum` value as a string
+BOLT_TYPE_FILTER_VALUES = {"site": "0", "workshop": "1"}
+
+BOLT_NUMERIC_EXPRESSION_MAP = {
+    "bolt_size": BoltFilterExpressions.Size(),
+    "bolt_length": BoltFilterExpressions.Length(),
+    "phase": BoltFilterExpressions.Phase(),
+}
+
+# Per object type: (database type, string map, numeric map, custom string factory, custom number factory)
+OBJECT_TYPE_FILTERS: dict[str, tuple[Any, dict[str, Any], dict[str, Any], Any, Any]] = {
+    "part": (
+        TeklaStructuresDatabaseTypeEnum.PART,
+        STANDARD_STRING_EXPRESSION_MAP,
+        STANDARD_NUMERIC_EXPRESSION_MAP,
+        TemplateFilterExpressions.CustomString,
+        TemplateFilterExpressions.CustomNumber,
+    ),
+    "bolt": (
+        TeklaStructuresDatabaseTypeEnum.BOLT,
+        BOLT_STRING_EXPRESSION_MAP,
+        BOLT_NUMERIC_EXPRESSION_MAP,
+        BoltFilterExpressions.CustomString,
+        BoltFilterExpressions.CustomNumber,
+    ),
+}
+
 
 selection_provider = LocalProvider()
+
+
+def _to_bolt_type_filter(filter_option: StringFilterOption) -> StringFilterOption:
+    """
+    Translate 'site' and 'workshop' in a `bolt_type` filter to the values Tekla matches.
+
+    Args:
+        filter_option: Filter option whose condition values are 'site' or 'workshop'
+
+    Returns:
+        A copy of the option with the values replaced
+
+    Raises:
+        ValueError: If a value is not 'site' or 'workshop'
+    """
+    conditions = filter_option.conditions if isinstance(filter_option.conditions, list) else [filter_option.conditions]
+    mapped = []
+    for condition in conditions:
+        value = BOLT_TYPE_FILTER_VALUES.get(condition.value.strip().lower())
+        if value is None:
+            raise ValueError(f"Invalid bolt_type filter value '{condition.value}'. Must be one of: {sorted(BOLT_TYPE_FILTER_VALUES)}")
+        mapped.append(condition.model_copy(update={"value": value}))
+    return filter_option.model_copy(update={"conditions": mapped})
 
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -68,9 +124,20 @@ def select_elements_by_filter(
     custom_string_filters: Annotated[dict[str, Any], Field(description="Dict of custom attribute names to StringFilterOption")] = {},
     custom_numeric_filters: Annotated[dict[str, Any], Field(description="Dict of custom property names to NumericFilterOption")] = {},
     combine_with: Annotated[str, Field(description="How to combine filter groups: 'AND' or 'OR'")] = "AND",
+    object_type: Annotated[
+        Literal["part", "bolt"],
+        Field(
+            description="Object type to select. 'bolt' accepts only `standard_string_filters` keys 'bolt_standard' and 'bolt_type' ('site' or 'workshop') and `standard_numeric_filters` keys 'bolt_size', 'bolt_length', 'phase'"
+        ),
+    ] = "part",
 ) -> ToolResult:
     """
     Selects elements in the Tekla model using standard properties, custom attributes and numeric ranges.
+
+    Parts are selected by default. Set `object_type` to 'bolt' to select bolt groups instead.
+    `element_type` and `tekla_classes` apply to parts only. Tekla cannot filter bolts by cut length, extra length
+    or tolerance. To find bolts by those, read them with `get_elements_properties` and select the matching GUIDs
+    with `select_elements_by_guid`.
 
     ### EXAMPLES
     # NAME = "Wall" OR PHASE = "2"
@@ -119,6 +186,17 @@ def select_elements_by_filter(
         "combine_with": "AND"
     }
 
+    # Bolts of standard '7990' with diameter 16
+    {
+        "object_type": "bolt",
+        "standard_string_filters": {
+            "bolt_standard": {"conditions": {"match_type": "Is Equal", "value": "7990"}}
+        },
+        "standard_numeric_filters": {
+            "bolt_size": {"conditions": {"match_type": "Is Equal", "value": 16}}
+        }
+    }
+
     At least one filter must be provided.
     """
     # Validate combine_with and ensure at least one filter provided
@@ -128,6 +206,13 @@ def select_elements_by_filter(
     if not any((element_type, tekla_classes, standard_string_filters, standard_numeric_filters, custom_string_filters, custom_numeric_filters)):
         raise ValueError("At least one filter must be provided.")
 
+    if object_type not in OBJECT_TYPE_FILTERS:
+        raise ValueError(f"Invalid object_type '{object_type}'. Must be one of: {sorted(OBJECT_TYPE_FILTERS)}")
+    database_type, string_expression_map, numeric_expression_map, custom_string_expression, custom_number_expression = OBJECT_TYPE_FILTERS[object_type]
+
+    if object_type != "part" and (element_type or tekla_classes):
+        raise ValueError("`element_type` and `tekla_classes` apply to parts only. Remove them or set `object_type` to 'part'.")
+
     if element_type:
         try:
             element_type_enum = ElementType(element_type.strip())
@@ -136,21 +221,21 @@ def select_elements_by_filter(
 
     model = TeklaModel()
 
-    # Base filter: always filter for parts only
+    # Base filter: always filter for the requested object type only
     filter_collection = BinaryFilterExpressionCollection()
     filter_collection.Add(
         BinaryFilterExpressionItem(
             BinaryFilterExpression(
                 ObjectFilterExpressions.Type(),
                 NumericOperatorType.IS_EQUAL,
-                NumericConstantFilterExpression(TeklaStructuresDatabaseTypeEnum.PART),
+                NumericConstantFilterExpression(database_type),
             )
         )
     )
 
     # Derive valid keys from expression maps
-    _VALID_STRING_KEYS = frozenset(STANDARD_STRING_EXPRESSION_MAP.keys())
-    _VALID_NUMERIC_KEYS = frozenset(STANDARD_NUMERIC_EXPRESSION_MAP.keys())
+    _VALID_STRING_KEYS = frozenset(string_expression_map.keys())
+    _VALID_NUMERIC_KEYS = frozenset(numeric_expression_map.keys())
 
     # Validate input keys
     if standard_string_filters:
@@ -185,19 +270,21 @@ def select_elements_by_filter(
             add_filter(type_sub, PartFilterExpressions.Class(), cls, NumericOperatorType.IS_EQUAL, operator=BinaryFilterOperatorType.BOOLEAN_OR)
         filter_groups.append(type_sub)
 
-    # Add standard string filters (name, profile, material, finish, phase, part_prefix, assembly_prefix)
+    # Add standard string filters (parts: name, profile, material, finish, phase, prefixes. Bolts: bolt_standard, bolt_type)
     if standard_string_filters:
         for key, filter_option in standard_string_filters.items():
-            expression = STANDARD_STRING_EXPRESSION_MAP[key]
+            expression = string_expression_map[key]
             filter_option = to_filter_option(filter_option, StringFilterOption)
+            if object_type == "bolt" and key == "bolt_type":
+                filter_option = _to_bolt_type_filter(filter_option)
             result = build_filter_group(expression, filter_option)
             if result is not None:
                 filter_groups.append(result)
 
-    # Add standard numeric filters (part_start_number, assembly_start_number)
+    # Add standard numeric filters (parts: start numbers. Bolts: bolt_size, bolt_length, phase)
     if standard_numeric_filters:
         for key, filter_option in standard_numeric_filters.items():
-            expression = STANDARD_NUMERIC_EXPRESSION_MAP[key]
+            expression = numeric_expression_map[key]
             filter_option = to_filter_option(filter_option, NumericFilterOption)
             result = build_filter_group(expression, filter_option, is_numeric=True)
             if result is not None:
@@ -227,7 +314,7 @@ def select_elements_by_filter(
         for field_name, filter_option in custom_string_filters.items():
             resolved_name = resolved_string_attrs.get(field_name)
             if resolved_name:
-                expression = TemplateFilterExpressions.CustomString(resolved_name)
+                expression = custom_string_expression(resolved_name)
                 filter_option = to_filter_option(filter_option, StringFilterOption)
                 result = build_filter_group(expression, filter_option)
                 if result is not None:
@@ -251,7 +338,7 @@ def select_elements_by_filter(
         for field_name, filter_option in custom_numeric_filters.items():
             resolved_name = resolved_numeric_attrs.get(field_name)
             if resolved_name:
-                expression = TemplateFilterExpressions.CustomNumber(resolved_name)
+                expression = custom_number_expression(resolved_name)
                 filter_option = to_filter_option(filter_option, NumericFilterOption)
                 result = build_filter_group(expression, filter_option, is_numeric=True)
                 if result is not None:
@@ -259,7 +346,7 @@ def select_elements_by_filter(
 
     # Drop empty groups - e.g. an element_type that matched no classes, or custom
     # attributes that all failed to resolve. If nothing meaningful remains, refuse
-    # rather than silently selecting every part via the bare PART-type filter.
+    # rather than silently selecting every object via the bare type filter.
     non_empty_groups = [fg for fg in filter_groups if fg is not None and fg.Count > 0]
     if not non_empty_groups:
         failed = [e.get("query") for e in (string_resolution_errors + numeric_resolution_errors)]

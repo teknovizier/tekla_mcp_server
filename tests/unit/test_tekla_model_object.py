@@ -11,11 +11,21 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
+import inspect
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from tekla_mcp_server.tekla.loader import ArrayList, Beam, ContourPoint, Hashtable, Position, Point
-from tekla_mcp_server.tekla.wrappers.model_object import EMBEDDED_DETAILS_CLASSES, wrap_model_object, BoundingBox, TeklaAssembly, TeklaBoltGroup, TeklaContourPlate, TeklaPart
+from tekla_mcp_server.tekla.loader import ArrayList, Beam, BoltGroup, ContourPoint, Hashtable, Position, Point
+from tekla_mcp_server.tekla.wrappers.model_object import (
+    EMBEDDED_DETAILS_CLASSES,
+    wrap_model_object,
+    BoundingBox,
+    TeklaAssembly,
+    TeklaBoltGroup,
+    TeklaContourPlate,
+    TeklaModelObject,
+    TeklaPart,
+)
 
 
 created_elements: Any = []
@@ -59,6 +69,98 @@ def test_bolt_count_reads_bolt_positions():
     model_object = MagicMock()
     model_object.BoltPositions.Count = 4
     assert TeklaBoltGroup(model_object).bolt_count == 4
+
+
+BOLT_CATALOG = [{"standard": "7990", "size": 16.0}, {"standard": "7990", "size": 20.0}, {"standard": "-4017_KL8.8", "size": 16.0}]
+
+
+def _bolt(standard: str = "7990", size: float = 16.0) -> MagicMock:
+    """Build a mocked BoltGroup whose Modify succeeds."""
+    model_object = MagicMock()
+    model_object.BoltStandard = standard
+    model_object.BoltSize = size
+    model_object.Modify.return_value = True
+    return model_object
+
+
+class TestBoltGroupSetProperties:
+    def test_lengths_and_tolerance_are_written(self):
+        model_object = _bolt()
+        changes = TeklaBoltGroup(model_object).set_properties(bolt_cut_length=120, bolt_extra_length=5, bolt_tolerance=3)
+        assert changes["errors"] == []
+        assert (changes["bolt_cut_length"], changes["bolt_extra_length"], changes["bolt_tolerance"]) == (1, 1, 1)
+        assert (model_object.CutLength, model_object.ExtraLength, model_object.Tolerance) == (120.0, 5.0, 3.0)
+
+    def test_size_only_is_checked_against_the_current_standard(self):
+        model_object = _bolt()
+        changes = TeklaBoltGroup(model_object).set_properties(bolt_size=20, bolt_catalog=BOLT_CATALOG)
+        assert changes["errors"] == []
+        assert changes["bolt_size"] == 1
+        assert (model_object.BoltStandard, model_object.BoltSize) == ("7990", 20.0)
+
+    def test_combination_missing_from_catalog_is_not_written(self):
+        model_object = _bolt()
+        changes = TeklaBoltGroup(model_object).set_properties(bolt_standard="-4017_KL8.8", bolt_size=20, bolt_catalog=BOLT_CATALOG)
+        assert [e["property"] for e in changes["errors"]] == ["bolt_standard", "bolt_size"]
+        assert changes["bolt_standard"] == changes["bolt_size"] == 0
+        assert (model_object.BoltStandard, model_object.BoltSize) == ("7990", 16.0)
+        model_object.Modify.assert_not_called()
+
+    def test_negative_tolerance_is_rejected(self):
+        model_object = _bolt()
+        changes = TeklaBoltGroup(model_object).set_properties(bolt_tolerance=-1)
+        assert changes["bolt_tolerance"] == 0
+        assert changes["errors"][0]["property"] == "bolt_tolerance"
+        model_object.Modify.assert_not_called()
+
+    def test_bolt_type_is_written(self):
+        model_object = _bolt()
+        changes = TeklaBoltGroup(model_object).set_properties(bolt_type="workshop")
+        assert changes["bolt_type"] == 1
+        assert model_object.BoltType == BoltGroup.BoltTypeEnum.BOLT_TYPE_WORKSHOP
+
+    def test_invalid_bolt_type_is_rejected(self):
+        model_object = _bolt()
+        changes = TeklaBoltGroup(model_object).set_properties(bolt_type="factory")  # type: ignore[arg-type]
+        assert changes["bolt_type"] == 0
+        assert changes["errors"][0]["property"] == "bolt_type"
+        model_object.Modify.assert_not_called()
+
+    def test_failed_modify_is_reported(self):
+        model_object = _bolt()
+        model_object.Modify.return_value = False
+        changes = TeklaBoltGroup(model_object).set_properties(bolt_extra_length=5)
+        assert changes["bolt_extra_length"] == 0
+        assert changes["errors"] == [{"property": "bolt_extra_length", "reason": "Modify() failed"}]
+
+
+class TestBoltGroupGetProperties:
+    @pytest.fixture
+    def props(self) -> dict[str, Any]:
+        model_object = _bolt()
+        model_object.BoltType = BoltGroup.BoltTypeEnum.BOLT_TYPE_SITE
+        model_object.CutLength, model_object.ExtraLength, model_object.Tolerance = 100.0, 5.0, 2.0
+        model_object.Bolt = True
+        model_object.BoltPositions.Count = 4
+        model_object.PartToBeBolted = model_object.PartToBoltTo = None
+        with (
+            patch.object(TeklaModelObject, "get_properties", return_value={"guid": "B"}),
+            patch.object(TeklaBoltGroup, "get_report_property", return_value=50.0),
+        ):
+            return TeklaBoltGroup(model_object).get_properties()
+
+    def test_reports_bolt_fields(self, props):
+        assert props["bolt_standard"] == "7990"
+        assert props["bolt_size"] == 16.0
+        assert props["bolt_type"] == "site"
+        assert (props["bolt_cut_length"], props["bolt_extra_length"], props["bolt_tolerance"]) == (100.0, 5.0, 2.0)
+        assert (props["bolt_length"], props["bolt_count"], props["has_bolt"]) == (50.0, 4, True)
+        assert props["connected_parts"]["part_to_be_bolted"]["guid"] is None
+
+    def test_every_writable_bolt_property_can_be_read(self, props):
+        writable = [name for name in inspect.signature(TeklaBoltGroup.set_properties).parameters if name.startswith("bolt_") and name != "bolt_catalog"]
+        assert writable
+        assert [name for name in writable if name not in props] == []
 
 
 def test_position_property(wall1):

@@ -34,7 +34,7 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
 )
 from tekla_mcp_server.tekla.loader import BooleanPart, CutPlane, EdgeChamfer, Fitting, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
-from tekla_mcp_server.tekla.utils import expand_to_parts, iterate_boolean_parts
+from tekla_mcp_server.tekla.utils import expand_to_parts, get_all_bolt_items, iterate_boolean_parts
 
 properties_provider = LocalProvider()
 
@@ -181,14 +181,28 @@ def set_elements_properties(
     assembly_start_number: Annotated[int | None, Field(description="Assembly start number")] = None,
     phase: Annotated[int | None, Field(description="Phase number (1, 2, 3, etc.)")] = None,
     user_properties: Annotated[dict[str, Any], Field(description="Dictionary of user-defined attribute names and values")] = {},
+    bolt_standard: Annotated[str | None, Field(description="Bolts only: bolt standard from the bolt catalog (e.g. '7990')")] = None,
+    bolt_size: Annotated[float | None, Field(description="Bolts only: bolt diameter in mm, must exist for the bolt standard in the catalog")] = None,
+    bolt_cut_length: Annotated[float | None, Field(description="Bolts only: cut length in mm, how far the bolt reaches to find the parts it connects", ge=0)] = None,
+    bolt_extra_length: Annotated[float | None, Field(description="Bolts only: extra length in mm added to the calculated bolt length", ge=0)] = None,
+    bolt_tolerance: Annotated[float | None, Field(description="Bolts only: hole tolerance in mm", ge=0)] = None,
+    bolt_type: Annotated[Literal["site", "workshop"] | None, Field(description="Bolts only: where the bolts are fitted")] = None,
 ) -> ToolResult:
     """
-    Sets properties and user-defined attributes (UDAs) on selected Tekla elements (assemblies or parts).
+    Sets properties and user-defined attributes (UDAs) on selected Tekla elements (assemblies, parts or bolts).
 
     Assemblies do not have `profile`, `material`, `finish`, `tekla_class`, `part_prefix`, `part_start_number`.
     These properties will only affect parts, not assemblies.
+    Bolt groups accept only the `bolt_*` properties, `phase` and `user_properties`. The bolt length itself is
+    calculated by Tekla from the connected parts, so change it with `bolt_extra_length`. The standard and size
+    are checked against the bolt catalog, because Tekla silently accepts combinations that do not exist.
     """
     selected_objects = TeklaModel().get_selected_objects()
+    bolt_values_given = any(v is not None for v in (bolt_standard, bolt_size))
+    # Read once per call, only when a catalog check is needed
+    bolt_catalog = get_all_bolt_items() if bolt_values_given else []
+    if bolt_values_given and not bolt_catalog:
+        logger.warning("set_elements_properties: bolt catalog unavailable, bolt standard/size are not validated")
 
     total_changes: dict[str, int] = {
         "name": 0,
@@ -202,6 +216,12 @@ def set_elements_properties(
         "assembly_start_number": 0,
         "phase": 0,
         "udas": 0,
+        "bolt_standard": 0,
+        "bolt_size": 0,
+        "bolt_cut_length": 0,
+        "bolt_extra_length": 0,
+        "bolt_tolerance": 0,
+        "bolt_type": 0,
     }
     processed_count = 0
     modified_count = 0
@@ -209,14 +229,26 @@ def set_elements_properties(
     skipped_objects: list[dict[str, str]] = []
 
     for selected_object in wrap_model_objects(selected_objects):
-        if not isinstance(selected_object, (TeklaAssembly, TeklaPart)):
+        if not isinstance(selected_object, (TeklaAssembly, TeklaPart, TeklaBoltGroup)):
             logger.warning("set_elements_properties: Unsupported object type: %s", type(selected_object).__name__)
             skipped_objects.append({"guid": selected_object.guid, "type": type(selected_object).__name__})
             continue
 
         processed_count += 1
         try:
-            if isinstance(selected_object, TeklaAssembly):
+            if isinstance(selected_object, TeklaBoltGroup):
+                changes = selected_object.set_properties(
+                    bolt_standard=bolt_standard,
+                    bolt_size=bolt_size,
+                    bolt_cut_length=bolt_cut_length,
+                    bolt_extra_length=bolt_extra_length,
+                    bolt_tolerance=bolt_tolerance,
+                    bolt_type=bolt_type,
+                    phase=phase,
+                    user_properties=user_properties,
+                    bolt_catalog=bolt_catalog,
+                )
+            elif isinstance(selected_object, TeklaAssembly):
                 changes = selected_object.set_properties(
                     name=name,
                     assembly_prefix=assembly_prefix,
@@ -300,7 +332,7 @@ def get_elements_properties(
     ] = "flat",
 ) -> ToolResult:
     """
-    Retrieve properties for selected Tekla model objects - parts, assemblies, reinforcement or IFC reference objects.
+    Retrieve properties for selected Tekla model objects - parts, assemblies, reinforcement, bolt groups or IFC reference objects.
 
     ## MODES (select via `mode`)
 
@@ -310,9 +342,15 @@ def get_elements_properties(
     - Extract properties not in default columns; split multi-property phrases into separate items.
     - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
 
+    Bolt groups are returned in `bolts` with `bolt_standard`, `bolt_size`, `bolt_type`, `bolt_cut_length`,
+    `bolt_extra_length` and `bolt_tolerance`, the same names `set_elements_properties` accepts. They also report
+    the read only `bolt_length` calculated by Tekla, `bolt_count`, `has_bolt` (False for a group of holes only)
+    and `connected_parts`.
+
     ### `mode="snapshot"`
     Returns full element snapshots for convention and QA checks, including basic element properties, UDAs, cutparts, welds and reinforcement.
-    Directly selected reinforcement objects are returned in a dedicated `reinforcements` list.
+    Directly selected reinforcement objects are returned in a dedicated `reinforcements` list, bolt groups in `bolts`
+    with the same fields as in `flat` mode.
 
     ### `mode="compact"`
     Returns one row per selected element in `elements` with its GUID, type, name, position, profile, material
@@ -353,6 +391,7 @@ def _get_snapshot_properties(selected_objects: Any) -> dict[str, Any]:
     parts: list[dict[str, Any]] = []
     assemblies: list[dict[str, Any]] = []
     reinforcements: list[dict[str, Any]] = []
+    bolts: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
 
     for obj in wrap_model_objects(selected_objects):
@@ -366,12 +405,16 @@ def _get_snapshot_properties(selected_objects: Any) -> dict[str, Any]:
             elif isinstance(obj, TeklaReinforcement):
                 reinforcements.append(obj.to_snapshot().model_dump())
                 processed_count += 1
+            elif isinstance(obj, TeklaBoltGroup):
+                # A bolt group has no cuts, welds or reinforcement, so its full state is its properties
+                bolts.append(obj.get_properties())
+                processed_count += 1
         except Exception as e:
             logger.exception("Failed to build snapshot for %s: %s", obj.guid, str(e))
             errors.append({"guid": obj.guid, "error": str(e)})
 
-    total = len(parts) + len(assemblies) + len(reinforcements)
-    logger.info("Snapshot mode: built snapshots for %d parts, %d assemblies, %d reinforcements", len(parts), len(assemblies), len(reinforcements))
+    total = len(parts) + len(assemblies) + len(reinforcements) + len(bolts)
+    logger.info("Snapshot mode: built snapshots for %d parts, %d assemblies, %d reinforcements, %d bolt groups", len(parts), len(assemblies), len(reinforcements), len(bolts))
     return {
         "status": "success" if total > 0 else "warning",
         "selected_count": selected_objects.GetSize(),
@@ -379,6 +422,7 @@ def _get_snapshot_properties(selected_objects: Any) -> dict[str, Any]:
         "parts": parts,
         "assemblies": assemblies,
         "reinforcements": reinforcements,
+        "bolts": bolts,
         "errors": errors,
     }
 
@@ -412,6 +456,7 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
     flat_assemblies: list[dict[str, Any]] = []
     flat_parts: list[dict[str, Any]] = []
     flat_reinforcements: list[dict[str, Any]] = []
+    flat_bolts: list[dict[str, Any]] = []
     reference_objects: list[dict[str, Any]] = []
 
     for selected_object in wrap_model_objects(selected_objects):
@@ -443,9 +488,12 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
         elif isinstance(selected_object, TeklaReinforcement):
             flat_reinforcements.append(props)
             processed_count += 1
+        elif isinstance(selected_object, TeklaBoltGroup):
+            flat_bolts.append(props)
+            processed_count += 1
 
     logger.info("Retrieved properties for %s elements", processed_count)
-    status = "success" if flat_assemblies or flat_parts or flat_reinforcements or reference_objects else "error"
+    status = "success" if flat_assemblies or flat_parts or flat_reinforcements or flat_bolts or reference_objects else "error"
     if status == "success" and (resolution_errors or extraction_errors):
         status = "partial"
     if extraction_errors:
@@ -458,6 +506,7 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
         "assemblies": flat_assemblies,
         "parts": flat_parts,
         "reinforcements": flat_reinforcements,
+        "bolts": flat_bolts,
         "reference_objects": reference_objects,
         "resolution_errors": resolution_errors,
         "extraction_errors": extraction_errors,

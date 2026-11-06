@@ -488,6 +488,31 @@ def build_grid_axis(coord_str: str, label_str: str) -> dict[str, list]:
     return {"coords": coords, "labels": labels}
 
 
+def find_bolt_catalog_error(standard: str, size: float, catalog: list[dict[str, Any]]) -> str | None:
+    """
+    Check a bolt standard and size combination against the bolt catalog.
+
+    Tekla accepts any standard and size on `Modify()` without complaint, so an
+    unknown combination has to be caught before it is written.
+
+    Args:
+        standard: Bolt standard (catalog identifier)
+        size: Bolt diameter in mm
+        catalog: Catalog items with 'standard' and 'size' keys, as returned by `get_all_bolt_items`
+
+    Returns:
+        An error message if the combination is not in the catalog, else None
+    """
+    sizes = sorted({float(item["size"]) for item in catalog if item["standard"] == standard})
+    if not sizes:
+        standards = sorted({item["standard"] for item in catalog})
+        return f"Bolt standard '{standard}' is not in the bolt catalog. Available standards: {standards}"
+    # Catalog sizes are single precision, e.g. 15.869999885559082 for a 5/8 inch bolt
+    if not any(math.isclose(size, s, abs_tol=0.01) for s in sizes):
+        return f"Bolt size {size} is not available for standard '{standard}'. Available sizes: {[round(s, 2) for s in sizes]}"
+    return None
+
+
 def validate_property_type(property_type: type) -> None:
     """
     Validates that the given type is one of the supported types: str, int, or float.

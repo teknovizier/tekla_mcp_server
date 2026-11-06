@@ -37,6 +37,7 @@ from tekla_mcp_server.tekla.loader import (
     View,
     TeklaStructuresInfo,
     List,
+    BoltItem,
     CatalogHandler,
     ProfileItem,
     MaterialItem,
@@ -522,6 +523,35 @@ def _read_all_rebar_items() -> list[dict[str, str]]:
                 }
             )
 
+    return result
+
+
+def get_all_bolt_items() -> list[dict[str, Any]]:
+    """
+    Get all bolt standard/size combinations from the Tekla bolt catalog.
+
+    The connection check stays outside the cache (see `get_all_profiles`) so a
+    disconnected catalog is not cached as an empty list.
+
+    Returns:
+        List of bolt dicts with 'standard' and 'size' keys, or an empty list when the
+        catalog is unavailable.
+    """
+    if not CatalogHandler().GetConnectionStatus():
+        return []
+    return _read_all_bolt_items()
+
+
+@lru_cache
+def _read_all_bolt_items() -> list[dict[str, Any]]:
+    """Read every bolt item from the catalog. Cached, assumes the catalog is connected."""
+    catalog = CatalogHandler()
+    bolts = catalog.GetBoltItems()
+    result = []
+    while bolts.MoveNext():
+        item = bolts.Current
+        if isinstance(item, BoltItem):
+            result.append({"standard": item.Standard, "size": item.Size})
     return result
 
 

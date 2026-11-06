@@ -77,8 +77,8 @@ from Tekla.Structures.Filtering import (
     StringOperatorType,
     FilterExpression,
 )
-from Tekla.Structures.Filtering.Categories import PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
-from Tekla.Structures.Catalogs import CatalogHandler, MaterialItem, MaterialItemEnumerator, ProfileItem, ProfileItemEnumerator, RebarItem
+from Tekla.Structures.Filtering.Categories import BoltFilterExpressions, PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
+from Tekla.Structures.Catalogs import BoltItem, CatalogHandler, MaterialItem, MaterialItemEnumerator, ProfileItem, ProfileItemEnumerator, RebarItem
 from Tekla.Structures.Drawing import (
     Drawing,
     DrawingEnumerator,
@@ -206,9 +206,11 @@ __all__ = [
     "BinaryFilterExpression",
     "StringOperatorType",
     "FilterExpression",
+    "BoltFilterExpressions",
     "PartFilterExpressions",
     "ObjectFilterExpressions",
     "TemplateFilterExpressions",
+    "BoltItem",
     "CatalogHandler",
     "MaterialItem",
     "MaterialItemEnumerator",
