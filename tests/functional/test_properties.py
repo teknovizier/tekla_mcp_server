@@ -19,6 +19,8 @@ from tekla_mcp_server.providers.properties_provider import (
     get_elements_bounding_boxes,
     copy_properties_from_ifc,
 )
+from tekla_mcp_server.models import PointInput, SlabInput
+from tekla_mcp_server.providers.modeling_provider import place_slabs
 from tekla_mcp_server.providers.selection_provider import select_related_elements, select_elements_by_guid
 from tekla_mcp_server.tekla.interop import to_array_list
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -982,6 +984,25 @@ def test_get_elements_coordinates_beam(model_objects):
     assert {"x", "y", "z"} <= set(elements[0]["start_point"].keys())
     assert "start_point_offset" in elements[0]
     assert "end_point_offset" in elements[0]
+
+
+def test_get_elements_coordinates_slab():
+    """Get the contour points of a contour plate slab."""
+    corners = [(20000, 0), (24000, 0), (24000, 3000), (20000, 3000)]
+    placed = place_slabs(slabs=[SlabInput(points=[PointInput(x=x, y=y, z=0) for x, y in corners], profile="200", material="Concrete_Undefined", tekla_class=4, name="MCP_TEST_SLAB_CONTOUR")])
+    guid = placed.structured_content["results"][0]["guid"]
+    slab = list(TeklaModel().get_objects_by_guid([guid]))[0]
+    try:
+        TeklaModel.select_objects([slab])
+        result = get_elements_coordinates()
+
+        assert result.structured_content["status"] == "success"
+        element = result.structured_content["elements"][0]
+        assert element["type"] == "Slab"
+        assert [(round(p["x"]), round(p["y"]), round(p["z"])) for p in element["contour_points"]] == [(x, y, 0) for x, y in corners]
+    finally:
+        slab.Delete()
+        TeklaModel().commit_changes()
 
 
 def test_get_elements_coordinates_empty_selection():

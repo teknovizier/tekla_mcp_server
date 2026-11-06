@@ -1673,12 +1673,7 @@ class TeklaContourPlate(TeklaPart):
     @property
     def contour_points(self) -> list[Point]:
         """Returns the contour points of the slab."""
-        contour = self.model_object.Contour
-        points = []
-        enum = contour.ContourPoints
-        while enum.MoveNext():
-            points.append(enum.Current)
-        return points
+        return list(self.model_object.Contour.ContourPoints)
 
     @contour_points.setter
     def contour_points(self, points: list[Point]) -> None:

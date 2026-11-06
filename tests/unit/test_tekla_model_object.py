@@ -14,8 +14,8 @@ if os.getenv("CI") == "true":
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from tekla_mcp_server.tekla.loader import Beam, Hashtable, Position, Point
-from tekla_mcp_server.tekla.wrappers.model_object import EMBEDDED_DETAILS_CLASSES, wrap_model_object, BoundingBox, TeklaAssembly, TeklaBoltGroup, TeklaPart
+from tekla_mcp_server.tekla.loader import ArrayList, Beam, ContourPoint, Hashtable, Position, Point
+from tekla_mcp_server.tekla.wrappers.model_object import EMBEDDED_DETAILS_CLASSES, wrap_model_object, BoundingBox, TeklaAssembly, TeklaBoltGroup, TeklaContourPlate, TeklaPart
 
 
 created_elements: Any = []
@@ -660,3 +660,20 @@ def test_bounding_box_none_when_a_coordinate_is_missing():
     model_object = MagicMock()
     model_object.GetDoubleReportProperties.return_value = (True, values)
     assert TeklaPart(model_object).bounding_box is None
+
+
+def test_contour_points_reads_the_contour_arraylist():
+    """Tekla returns ContourPoints as an ArrayList, which has no MoveNext() and must be iterated."""
+    points = ArrayList()
+    for x, y in [(0, 0), (4000, 0), (4000, 3000)]:
+        points.Add(ContourPoint(Point(x, y, 0), None))
+    slab = MagicMock()
+    slab.Contour.ContourPoints = points
+    result = TeklaContourPlate(slab).contour_points
+    assert [(p.X, p.Y, p.Z) for p in result] == [(0, 0, 0), (4000, 0, 0), (4000, 3000, 0)]
+
+
+def test_contour_points_empty_contour():
+    slab = MagicMock()
+    slab.Contour.ContourPoints = ArrayList()
+    assert TeklaContourPlate(slab).contour_points == []
