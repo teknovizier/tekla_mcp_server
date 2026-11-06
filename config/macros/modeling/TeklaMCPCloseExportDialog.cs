@@ -8,7 +8,12 @@ namespace UserMacros {
         [Tekla.Macros.Runtime.MacroEntryPointAttribute()]
         public static void Run(Tekla.Macros.Runtime.IMacroRuntime runtime) {
             Tekla.Macros.Wpf.Runtime.IWpfMacroHost wpf = runtime.Get<Tekla.Macros.Wpf.Runtime.IWpfMacroHost>();
-            wpf.View("DrawingDWGExport.MainWindow", "").As.Window.Close();
+            try {
+                wpf.View("DrawingDWGExport.MainWindow", "").As.Window.Close();
+            } catch (System.Exception) {
+                // The dialog never opened (the export macro failed early), and an uncaught
+                // error here would show a modal Tekla dialog that blocks later macros
+            }
         }
     }
 }

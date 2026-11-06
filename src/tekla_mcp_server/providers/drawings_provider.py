@@ -45,7 +45,7 @@ from tekla_mcp_server.drawing_export import (
     pdf_print_options_outputs_single_file,
 )
 from tekla_mcp_server.tekla.filter_builder import to_filter_option
-from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_export_settings_installed, get_available_attribute_files
+from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_export_settings_installed, get_available_attribute_files, wait_for_macro
 from tekla_mcp_server.providers.operations_provider import run_macro
 from tekla_mcp_server.tekla.drawing_utils import (
     matches_string_filter,
@@ -633,11 +633,35 @@ def _wait_for_new_files(directory: Path, pattern: str, before: set[Path], expect
     return produced
 
 
+def _check_macro_result(result_file: Path, macro_name: str) -> None:
+    """
+    Raise if a Document Manager macro did not report success in its result file.
+
+    The print and export macros write 'OK' or 'ERROR: <reason>' once they finish,
+    because a macro has no other way to hand a failure back to the caller.
+
+    Args:
+        result_file: Result file the macro writes next to its `.tmp` input.
+        macro_name: Macro file name, used in the error message.
+
+    Raises:
+        RuntimeError: If the result file is missing or does not say 'OK'.
+    """
+    if not result_file.exists():
+        raise RuntimeError(f"Macro '{macro_name}' finished without writing '{result_file.name}'.")
+    result = result_file.read_text(encoding="utf-8-sig").strip()
+    if result != "OK":
+        raise RuntimeError(f"Macro '{macro_name}' failed: {result.removeprefix('ERROR: ')}")
+
+
 def _close_print_dialog() -> None:
     """Close the Document Manager print dialog after a print, logging on failure."""
     close_result = run_macro(macro_name="TeklaMCPClosePrintDialog.cs")
     if close_result.structured_content.get("status") != "success":
         logger.warning("Failed to close print dialog after print")
+        return
+    # Wait so the next tool call does not find Tekla still busy with this macro
+    wait_for_macro("TeklaMCPClosePrintDialog.cs")
 
 
 def _run_print_macro(model_path: str, setting_name: str, marks: list[str], poll: Callable[[], _T]) -> _T:
@@ -645,9 +669,10 @@ def _run_print_macro(model_path: str, setting_name: str, marks: list[str], poll:
     Run the shared print macro for `marks` using the named print setting.
 
     Writes `print.tmp` (a `SETTING=<name>` line plus one mark per line) for the
-    macro to consume, runs the macro, then calls `poll` to verify the output.
-    Closes the print dialog after `poll` returns (closing earlier would cancel
-    the print) so the next call doesn't hit an already-open dialog.
+    macro to consume, runs the macro and waits for it to finish, then calls
+    `poll` to verify the output. Always closes the print dialog afterwards,
+    after `poll` returns (closing earlier would cancel the print) or fails, so
+    the next call doesn't hit an already-open dialog.
 
     Args:
         model_path: Path to the open Tekla model.
@@ -664,17 +689,26 @@ def _run_print_macro(model_path: str, setting_name: str, marks: list[str], poll:
 
     data_dir = get_mcp_data_dir(model_path)
     print_file = data_dir / "print.tmp"
+    result_file = data_dir / "print.result"
+    result_file.unlink(missing_ok=True)
     print_file.write_text(f"SETTING={setting_name}\n" + "\n".join(marks), encoding="utf-8")
 
+    macro_started = False
     try:
         macro_result = run_macro(macro_name="TeklaMCPPrintDrawings.cs")
         if macro_result.structured_content.get("status") != "success":
             raise RuntimeError("Print macro failed. Ensure the print setting exists in Document Manager.")
-        result = poll()
-        _close_print_dialog()
-        return result
+        macro_started = True
+        # RunMacro only starts the macro. It reads `print.tmp` and drives the dialog up to
+        # the Print click, so deleting the file or closing the dialog before it ends breaks it
+        wait_for_macro("TeklaMCPPrintDrawings.cs")
+        _check_macro_result(result_file, "TeklaMCPPrintDrawings.cs")
+        return poll()
     finally:
         print_file.unlink(missing_ok=True)
+        result_file.unlink(missing_ok=True)
+        if macro_started:
+            _close_print_dialog()
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -845,6 +879,9 @@ def _close_export_dialog() -> None:
     close_result = run_macro(macro_name="TeklaMCPCloseExportDialog.cs")
     if close_result.structured_content.get("status") != "success":
         logger.warning("Failed to close export dialog after export")
+        return
+    # Wait so the next tool call does not find Tekla still busy with this macro
+    wait_for_macro("TeklaMCPCloseExportDialog.cs")
 
 
 def _run_export_macro(model_path: str, setting_name: str, marks: list[str], poll: Callable[[], _T]) -> _T:
@@ -852,9 +889,10 @@ def _run_export_macro(model_path: str, setting_name: str, marks: list[str], poll
     Run the shared export macro for `marks` using the named export setting.
 
     Writes `export.tmp` (a `SETTING=<name>` line plus one mark per line) for the
-    macro to consume, runs the macro, then calls `poll` to verify the output.
-    Closes the export dialog after `poll` returns (closing earlier would cancel
-    the export).
+    macro to consume, runs the macro and waits for it to finish, then calls
+    `poll` to verify the output. Always closes the export dialog afterwards,
+    after `poll` returns (closing earlier would cancel the export) or fails, so
+    the next call doesn't hit an already-open dialog.
 
     Args:
         model_path: Path to the open Tekla model.
@@ -871,17 +909,26 @@ def _run_export_macro(model_path: str, setting_name: str, marks: list[str], poll
 
     data_dir = get_mcp_data_dir(model_path)
     export_file = data_dir / "export.tmp"
+    result_file = data_dir / "export.result"
+    result_file.unlink(missing_ok=True)
     export_file.write_text(f"SETTING={setting_name}\n" + "\n".join(marks), encoding="utf-8")
 
+    macro_started = False
     try:
         macro_result = run_macro(macro_name="TeklaMCPExportDrawings.cs")
         if macro_result.structured_content.get("status") != "success":
             raise RuntimeError("Export macro failed. Ensure the export setting exists in Document Manager.")
-        result = poll()
-        _close_export_dialog()
-        return result
+        macro_started = True
+        # RunMacro only starts the macro. It reads `export.tmp` and drives the dialog up to
+        # the Export click, so deleting the file or closing the dialog before it ends breaks it
+        wait_for_macro("TeklaMCPExportDrawings.cs")
+        _check_macro_result(result_file, "TeklaMCPExportDrawings.cs")
+        return poll()
     finally:
         export_file.unlink(missing_ok=True)
+        result_file.unlink(missing_ok=True)
+        if macro_started:
+            _close_export_dialog()
 
 
 @drawings_provider.tool(tags={"drawings"}, annotations={"readOnlyHint": True, "destructiveHint": False})

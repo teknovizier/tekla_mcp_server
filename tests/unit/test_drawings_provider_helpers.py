@@ -14,7 +14,14 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_mcp_server.providers.drawings_provider import _classify_unmarked_category, _describe_wrapped_object, _dimension_lost_all_anchors, _wait_for_new_files
+from tekla_mcp_server.providers.drawings_provider import (
+    _classify_unmarked_category,
+    _describe_wrapped_object,
+    _dimension_lost_all_anchors,
+    _run_export_macro,
+    _run_print_macro,
+    _wait_for_new_files,
+)
 from tekla_mcp_server.tekla.loader import BoltArray, BoltXYList
 from tekla_mcp_server.tekla.wrappers.model_object import BoltedParts, PartReference, TeklaBoltGroup
 
@@ -125,6 +132,109 @@ def test_wait_message_logged_only_when_waiting(tmp_path, caplog):
     with caplog.at_level("INFO"):
         _wait_for_new_files(tmp_path, "*.pdf", set(), expected_count=5, timeout=0, wait_message="waiting now")
     assert "waiting now" in caplog.text
+
+
+# (runner, main macro, close macro, tmp file name)
+_DOCUMENT_MANAGER_RUNNERS = [
+    (_run_export_macro, "TeklaMCPExportDrawings.cs", "TeklaMCPCloseExportDialog.cs", "export.tmp"),
+    (_run_print_macro, "TeklaMCPPrintDrawings.cs", "TeklaMCPClosePrintDialog.cs", "print.tmp"),
+]
+
+
+def _patch_document_manager(tmp_path, calls: list[str], start_status: str = "success", macro_result: str | None = "OK"):
+    """
+    Patch the macro plumbing of `drawings_provider`, recording every call in order.
+
+    The main macro writes `macro_result` to its result file like the real macro does,
+    or writes nothing when `macro_result` is None.
+    """
+
+    def _run_macro(macro_name):
+        calls.append(f"run:{macro_name}")
+        if "Close" in macro_name:
+            return MagicMock(structured_content={"status": "success"})
+        if start_status == "success" and macro_result is not None:
+            result_name = "export.result" if "Export" in macro_name else "print.result"
+            (tmp_path / result_name).write_text(macro_result, encoding="utf-8")
+        return MagicMock(structured_content={"status": start_status})
+
+    module = "tekla_mcp_server.providers.drawings_provider"
+    return (
+        patch(f"{module}.ensure_macro_installed"),
+        patch(f"{module}.get_mcp_data_dir", return_value=tmp_path),
+        patch(f"{module}.run_macro", side_effect=_run_macro),
+        patch(f"{module}.wait_for_macro", side_effect=lambda name: calls.append(f"wait:{name}")),
+    )
+
+
+@pytest.mark.parametrize("runner,macro,close_macro,tmp_name", _DOCUMENT_MANAGER_RUNNERS)
+def test_document_manager_macro_waits_before_poll_and_closes_after(tmp_path, runner, macro, close_macro, tmp_name):
+    """The macro is awaited before polling, and the tmp file lives until it has finished."""
+    calls: list[str] = []
+
+    def _poll():
+        # The macro must have finished, and its input file must still be there for it
+        assert (tmp_path / tmp_name).exists()
+        calls.append("poll")
+        return "result"
+
+    p1, p2, p3, p4 = _patch_document_manager(tmp_path, calls)
+    with p1, p2, p3, p4:
+        assert runner("C:\\Model", "SETTING", ["A1"], _poll) == "result"
+
+    assert calls == [f"run:{macro}", f"wait:{macro}", "poll", f"run:{close_macro}", f"wait:{close_macro}"]
+    assert not (tmp_path / tmp_name).exists()
+
+
+@pytest.mark.parametrize("runner,macro,close_macro,tmp_name", _DOCUMENT_MANAGER_RUNNERS)
+def test_document_manager_dialog_closed_when_poll_fails(tmp_path, runner, macro, close_macro, tmp_name):
+    """A failing poll still closes the dialog and removes the tmp file."""
+    calls: list[str] = []
+
+    def _poll():
+        raise RuntimeError("no file appeared")
+
+    p1, p2, p3, p4 = _patch_document_manager(tmp_path, calls)
+    with p1, p2, p3, p4, pytest.raises(RuntimeError, match="no file appeared"):
+        runner("C:\\Model", "SETTING", ["A1"], _poll)
+
+    assert calls[-2:] == [f"run:{close_macro}", f"wait:{close_macro}"]
+    assert not (tmp_path / tmp_name).exists()
+
+
+@pytest.mark.parametrize("runner,macro,close_macro,tmp_name", _DOCUMENT_MANAGER_RUNNERS)
+def test_document_manager_no_close_when_macro_did_not_start(tmp_path, runner, macro, close_macro, tmp_name):
+    """A macro that failed to start opened no dialog, so nothing is waited on or closed."""
+    calls: list[str] = []
+    p1, p2, p3, p4 = _patch_document_manager(tmp_path, calls, start_status="error")
+    with p1, p2, p3, p4, pytest.raises(RuntimeError):
+        runner("C:\\Model", "SETTING", ["A1"], lambda: None)
+
+    assert calls == [f"run:{macro}"]
+    assert not (tmp_path / tmp_name).exists()
+
+
+@pytest.mark.parametrize("runner,macro,close_macro,tmp_name", _DOCUMENT_MANAGER_RUNNERS)
+def test_document_manager_macro_error_raises_without_polling(tmp_path, runner, macro, close_macro, tmp_name):
+    """An 'ERROR:' result (e.g. a mark missing from Document Manager) raises, skips the poll and still closes the dialog."""
+    calls: list[str] = []
+    poll = MagicMock()
+    p1, p2, p3, p4 = _patch_document_manager(tmp_path, calls, macro_result="ERROR: drawings not found in Document Manager: [10]")
+    with p1, p2, p3, p4, pytest.raises(RuntimeError, match=r"drawings not found in Document Manager: \[10\]"):
+        runner("C:\\Model", "SETTING", ["[10]"], poll)
+
+    poll.assert_not_called()
+    assert calls[-2:] == [f"run:{close_macro}", f"wait:{close_macro}"]
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("runner,macro,close_macro,tmp_name", _DOCUMENT_MANAGER_RUNNERS)
+def test_document_manager_missing_result_raises(tmp_path, runner, macro, close_macro, tmp_name):
+    """A macro that wrote no result file, e.g. an outdated installed copy, is reported as a failure."""
+    calls: list[str] = []
+    p1, p2, p3, p4 = _patch_document_manager(tmp_path, calls, macro_result=None)
+    with p1, p2, p3, p4, pytest.raises(RuntimeError, match="without writing"):
+        runner("C:\\Model", "SETTING", ["A1"], MagicMock())
 
 
 class _WrappedStub:
