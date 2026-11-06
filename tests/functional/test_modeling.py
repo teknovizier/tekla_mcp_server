@@ -486,6 +486,31 @@ def test_copy_assembly(panel_input):
     assert result.structured_content["succeeded"] == 1
 
 
+def test_move_part_selected_with_its_assembly(panel_input):
+    """A part selected together with its own assembly is moved once, not twice."""
+    result_place = place_panels(panels=[panel_input])
+    guid = result_place.structured_content["results"][0]["guid"]
+    obj = TeklaModel().get_objects_by_guid([guid])[0]
+    start_z = obj.StartPoint.Z
+    TeklaModel.select_objects([obj, obj.GetAssembly()])
+    result = move_elements(dz=6000.0)
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
+    moved = TeklaModel().get_objects_by_guid([guid])[0]
+    assert moved.StartPoint.Z - start_z == pytest.approx(6000.0)
+
+
+def test_copy_part_selected_with_its_assembly(panel_input):
+    """A part selected together with its own assembly is copied once, not twice."""
+    result_place = place_panels(panels=[panel_input])
+    guid = result_place.structured_content["results"][0]["guid"]
+    obj = TeklaModel().get_objects_by_guid([guid])[0]
+    TeklaModel.select_objects([obj, obj.GetAssembly()])
+    result = copy_elements(dz=6000.0)
+    assert result.structured_content["success"] is True
+    assert result.structured_content["succeeded"] == 1
+
+
 def test_move_zero_displacement():
     """All-zero displacement must be rejected before touching the model."""
     result = move_elements()

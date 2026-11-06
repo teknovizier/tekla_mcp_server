@@ -371,9 +371,15 @@ def _move_or_copy_elements(dx: float, dy: float, dz: float, copy: bool) -> ToolR
     move_vec = Vector(dx, dy, dz)
     results: list[PlacementResult] = []
     succeeded = 0
+    # A part reached through several selected objects (e.g. a part selected together with
+    # its assembly) must be moved or copied only once, otherwise it is displaced twice
+    handled_ids: set[int] = set()
 
     for obj in wrap_model_objects(selected_objects):
         for part in _collect_parts(obj):
+            if part.id in handled_ids:
+                continue
+            handled_ids.add(part.id)
             try:
                 if copy:
                     Operation.CopyObject(part.model_object, move_vec)
