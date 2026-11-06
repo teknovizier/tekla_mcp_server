@@ -83,7 +83,7 @@ def _compact_field_getters(obj: TeklaModelObject) -> dict[str, Callable[[], Any]
         return {"material": lambda: obj.bolt_standard, "size": lambda: obj.bolt_size}
     if isinstance(obj, TeklaReferenceModelObject):
         # IFC objects often lack these properties, so a missing one is None, not an error
-        ifc_props = cache(lambda: obj.get_report_properties(["NAME", "PROFILE", "MATERIAL"]))
+        ifc_props = cache(lambda: obj.get_multiple_report_properties(["NAME", "PROFILE", "MATERIAL"]))
         return {
             "ifc_guid": lambda: obj.get_report_property("GUID"),
             "name": lambda: ifc_props()["NAME"],
