@@ -15,7 +15,7 @@ import inspect
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from tekla_mcp_server.tekla.loader import ArrayList, Beam, BoltGroup, ContourPoint, Hashtable, Position, Point
+from tekla_mcp_server.tekla.loader import ArrayList, BaseWeld, Beam, BoltGroup, ContourPoint, Hashtable, Position, Point
 from tekla_mcp_server.tekla.wrappers.model_object import (
     EMBEDDED_DETAILS_CLASSES,
     wrap_model_object,
@@ -25,6 +25,7 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     TeklaContourPlate,
     TeklaModelObject,
     TeklaPart,
+    TeklaWeld,
 )
 
 
@@ -159,6 +160,101 @@ class TestBoltGroupGetProperties:
 
     def test_every_writable_bolt_property_can_be_read(self, props):
         writable = [name for name in inspect.signature(TeklaBoltGroup.set_properties).parameters if name.startswith("bolt_") and name != "bolt_catalog"]
+        assert writable
+        assert [name for name in writable if name not in props] == []
+
+
+class TestWeldGetProperties:
+    @pytest.mark.parametrize(
+        "around,shop,edge_around,workshop_site",
+        [(True, True, "around", "workshop"), (False, False, "edge", "site")],
+    )
+    def test_reports_weld_fields(self, around, shop, edge_around, workshop_site):
+        model_object = MagicMock()
+        model_object.TypeAbove, model_object.TypeBelow = BaseWeld.WeldTypeEnum.WELD_TYPE_FILLET, BaseWeld.WeldTypeEnum.WELD_TYPE_NONE
+        model_object.PrefixAboveLine, model_object.PrefixBelowLine = "a", None
+        model_object.SizeAbove, model_object.SizeBelow = 5.0, 3.0
+        model_object.LengthAbove, model_object.LengthBelow = 0.0, 100.0
+        model_object.AroundWeld, model_object.ShopWeld = around, shop
+        with patch.object(TeklaModelObject, "get_properties", return_value={"guid": "W"}):
+            props = TeklaWeld(model_object).get_properties()
+        assert props == {
+            "guid": "W",
+            "weld_type_above": "fillet",
+            "weld_prefix_above": "a",
+            "weld_size_above": 5.0,
+            "weld_length_above": 0.0,
+            "weld_type_below": "none",
+            "weld_prefix_below": "",
+            "weld_size_below": 3.0,
+            "weld_length_below": 100.0,
+            "weld_edge_around": edge_around,
+            "weld_workshop_site": workshop_site,
+        }
+
+
+def _weld() -> MagicMock:
+    """Build a mocked weld whose Modify succeeds."""
+    model_object = MagicMock()
+    model_object.Modify.return_value = True
+    return model_object
+
+
+class TestWeldSetProperties:
+    def test_values_are_written(self):
+        model_object = _weld()
+        changes = TeklaWeld(model_object).set_properties(
+            weld_type_above="fillet",
+            weld_type_below="None",
+            weld_prefix_above="a",
+            weld_size_above=5,
+            weld_size_below=3,
+            weld_length_above=0,
+            weld_length_below=100,
+            weld_edge_around="around",
+            weld_workshop_site="site",
+        )
+        assert changes["errors"] == []
+        assert changes["weld_type_above"] == changes["weld_type_below"] == changes["weld_edge_around"] == changes["weld_workshop_site"] == 1
+        assert (model_object.TypeAbove, model_object.TypeBelow) == (BaseWeld.WeldTypeEnum.WELD_TYPE_FILLET, BaseWeld.WeldTypeEnum.WELD_TYPE_NONE)
+        assert (model_object.PrefixAboveLine, model_object.SizeAbove, model_object.SizeBelow) == ("a", 5.0, 3.0)
+        assert (model_object.LengthAbove, model_object.LengthBelow) == (0.0, 100.0)
+        assert (model_object.AroundWeld, model_object.ShopWeld) == (True, False)
+
+    def test_unknown_weld_type_is_rejected(self):
+        model_object = _weld()
+        changes = TeklaWeld(model_object).set_properties(weld_type_above="zigzag")
+        assert changes["weld_type_above"] == 0
+        assert changes["errors"] == [{"property": "weld_type_above", "reason": "Unknown weld type 'zigzag'"}]
+        model_object.Modify.assert_not_called()
+
+    @pytest.mark.parametrize("size", [-1, float("nan"), float("inf")])
+    def test_invalid_size_is_rejected(self, size):
+        model_object = _weld()
+        changes = TeklaWeld(model_object).set_properties(weld_size_above=size)
+        assert changes["weld_size_above"] == 0
+        assert changes["errors"][0]["property"] == "weld_size_above"
+        model_object.Modify.assert_not_called()
+
+    def test_invalid_flags_are_rejected(self):
+        model_object = _weld()
+        changes = TeklaWeld(model_object).set_properties(weld_edge_around="corner", weld_workshop_site="yard")  # type: ignore[arg-type]
+        assert [e["property"] for e in changes["errors"]] == ["weld_edge_around", "weld_workshop_site"]
+        model_object.Modify.assert_not_called()
+
+    def test_failed_modify_is_reported(self):
+        model_object = _weld()
+        model_object.Modify.return_value = False
+        changes = TeklaWeld(model_object).set_properties(weld_size_below=4)
+        assert changes["weld_size_below"] == 0
+        assert changes["errors"] == [{"property": "weld_size_below", "reason": "Modify() failed"}]
+
+    def test_every_writable_weld_property_can_be_read(self):
+        model_object = MagicMock()
+        model_object.TypeAbove = model_object.TypeBelow = BaseWeld.WeldTypeEnum.WELD_TYPE_NONE
+        with patch.object(TeklaModelObject, "get_properties", return_value={}):
+            props = TeklaWeld(model_object).get_properties()
+        writable = [name for name in inspect.signature(TeklaWeld.set_properties).parameters if name.startswith("weld_")]
         assert writable
         assert [name for name in writable if name not in props] == []
 

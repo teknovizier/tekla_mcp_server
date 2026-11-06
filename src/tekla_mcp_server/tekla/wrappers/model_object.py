@@ -344,7 +344,7 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         - TeklaReferenceModelObject if the object is a ReferenceModelObject
         - TeklaReinforcement if the object is a TeklaReinforcement
         - TeklaBooleanPart if the object is a BooleanPart
-        - TeklaModelObject if the object is a weld
+        - TeklaWeld if the object is a weld
         - None for any other object types (e.g. components, grids), which callers report as skipped
     """
     if isinstance(model_object, Assembly):
@@ -366,7 +366,7 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
     elif isinstance(model_object, Reinforcement):
         return TeklaReinforcement(model_object)
     elif isinstance(model_object, BaseWeld):
-        return TeklaModelObject(model_object)
+        return TeklaWeld(model_object)
     else:
         return None
 
@@ -987,6 +987,237 @@ class TeklaBoltGroup(TeklaModelObject):
                     errors.append({"property": key, "reason": "Modify() failed"})
             except Exception as e:
                 errors.append({"property": key, "reason": str(e)})
+
+        if phase is not None:
+            try:
+                if self.model_object.SetPhase(Phase(phase)):
+                    self.modify()
+                    changes["phase"] = 1
+                else:
+                    errors.append({"property": "phase", "reason": "SetPhase returned False"})
+            except Exception as e:
+                errors.append({"property": "phase", "reason": str(e)})
+
+        if user_properties:
+            for key, value in user_properties.items():
+                try:
+                    if self.set_user_property(key, value):
+                        changes["udas"] += 1
+                    else:
+                        errors.append({"property": f"uda:{key}", "reason": "SetUserProperty returned False"})
+                except Exception as e:
+                    errors.append({"property": f"uda:{key}", "reason": str(e)})
+
+        return {**changes, "errors": errors}
+
+
+def _weld_type_name(weld_type: Any) -> str:
+    """
+    Turn a `WeldTypeEnum` value into a readable name, e.g. 'WELD_TYPE_FILLET' into 'fillet'.
+
+    Args:
+        weld_type: `BaseWeld.WeldTypeEnum` value
+
+    Returns:
+        Lowercase type name without the 'WELD_TYPE_' prefix
+    """
+    return str(weld_type).removeprefix("WELD_TYPE_").lower()
+
+
+class TeklaWeld(TeklaModelObject):
+    """
+    A wrapper class around the Tekla Structures weld objects (`Weld` and `PolygonWeld`).
+    """
+
+    @property
+    def size_above(self) -> float:
+        """
+        Returns the weld size above the line in mm.
+        """
+        return self.model_object.SizeAbove
+
+    @property
+    def size_below(self) -> float:
+        """
+        Returns the weld size below the line in mm.
+        """
+        return self.model_object.SizeBelow
+
+    @property
+    def prefix_above(self) -> str:
+        """
+        Returns the size prefix above the line (e.g. 'a' for throat thickness), or '' if none.
+        """
+        return self.model_object.PrefixAboveLine or ""
+
+    @property
+    def prefix_below(self) -> str:
+        """
+        Returns the size prefix below the line, or '' if none.
+        """
+        return self.model_object.PrefixBelowLine or ""
+
+    @property
+    def type_above(self) -> str:
+        """
+        Returns the weld type above the line, e.g. 'fillet' or 'none'.
+        """
+        return _weld_type_name(self.model_object.TypeAbove)
+
+    @property
+    def type_below(self) -> str:
+        """
+        Returns the weld type below the line, e.g. 'fillet' or 'none'.
+        """
+        return _weld_type_name(self.model_object.TypeBelow)
+
+    @property
+    def length_above(self) -> float:
+        """
+        Returns the weld length above the line in mm as set in the weld properties, 0 for the full length.
+        """
+        return self.model_object.LengthAbove
+
+    @property
+    def length_below(self) -> float:
+        """
+        Returns the weld length below the line in mm as set in the weld properties, 0 for the full length.
+        """
+        return self.model_object.LengthBelow
+
+    @property
+    def edge_around(self) -> str:
+        """
+        Returns 'around' for a weld all around the connected part, otherwise 'edge'.
+        """
+        return "around" if self.model_object.AroundWeld else "edge"
+
+    @property
+    def workshop_site(self) -> str:
+        """
+        Returns where the weld is made: 'workshop' or 'site'.
+        """
+        return "workshop" if self.model_object.ShopWeld else "site"
+
+    def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
+        """
+        Gets weld properties as dict.
+
+        Args:
+            resolved_report_props: Extra report property names, already resolved
+
+        Returns:
+            dict with the base properties and the weld type, size prefix, size and length per line side,
+            plus edge/around and workshop/site
+        """
+        props = super().get_properties(resolved_report_props)
+        props.update(
+            {
+                "weld_type_above": self.type_above,
+                "weld_prefix_above": self.prefix_above,
+                "weld_size_above": self.size_above,
+                "weld_length_above": self.length_above,
+                "weld_type_below": self.type_below,
+                "weld_prefix_below": self.prefix_below,
+                "weld_size_below": self.size_below,
+                "weld_length_below": self.length_below,
+                "weld_edge_around": self.edge_around,
+                "weld_workshop_site": self.workshop_site,
+            }
+        )
+        return props
+
+    def set_properties(
+        self,
+        weld_type_above: str | None = None,
+        weld_type_below: str | None = None,
+        weld_prefix_above: str | None = None,
+        weld_prefix_below: str | None = None,
+        weld_size_above: float | None = None,
+        weld_size_below: float | None = None,
+        weld_length_above: float | None = None,
+        weld_length_below: float | None = None,
+        weld_edge_around: Literal["edge", "around"] | None = None,
+        weld_workshop_site: Literal["workshop", "site"] | None = None,
+        phase: int | None = None,
+        user_properties: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Sets properties on the weld.
+
+        Args:
+            weld_type_above: Weld type above the line, a name `get_properties` returns (e.g. 'fillet', 'none')
+            weld_type_below: Weld type below the line
+            weld_prefix_above: Size prefix above the line (e.g. 'a' for throat thickness)
+            weld_prefix_below: Size prefix below the line
+            weld_size_above: Weld size above the line in mm
+            weld_size_below: Weld size below the line in mm
+            weld_length_above: Weld length above the line in mm, 0 for the full length
+            weld_length_below: Weld length below the line in mm, 0 for the full length
+            weld_edge_around: 'around' for a weld all around the connected part, otherwise 'edge'
+            weld_workshop_site: Where the weld is made, 'workshop' or 'site'
+            phase: Phase number
+            user_properties: UDA names and values
+
+        Returns:
+            Summary of changes made per property, plus a list of per-property errors
+        """
+        changes: dict[str, int] = {
+            "weld_type_above": 0,
+            "weld_type_below": 0,
+            "weld_prefix_above": 0,
+            "weld_prefix_below": 0,
+            "weld_size_above": 0,
+            "weld_size_below": 0,
+            "weld_length_above": 0,
+            "weld_length_below": 0,
+            "weld_edge_around": 0,
+            "weld_workshop_site": 0,
+            "phase": 0,
+            "udas": 0,
+        }
+        errors: list[dict[str, str]] = []
+
+        # (property name, Tekla attribute, value to write or None when not given, error text if the value is invalid)
+        writes: list[tuple[str, str, Any, str | None]] = []
+        for key, attr, type_name in (("weld_type_above", "TypeAbove", weld_type_above), ("weld_type_below", "TypeBelow", weld_type_below)):
+            if type_name is not None:
+                # Two enum members lack the 'WELD_TYPE_' prefix, and a None check is needed because the 'none' member may be falsy
+                weld_type = getattr(BaseWeld.WeldTypeEnum, f"WELD_TYPE_{type_name.upper()}", None)
+                if weld_type is None:
+                    weld_type = getattr(BaseWeld.WeldTypeEnum, type_name.upper(), None)
+                writes.append((key, attr, weld_type, None if weld_type is not None else f"Unknown weld type '{type_name}'"))
+        for key, attr, prefix in (("weld_prefix_above", "PrefixAboveLine", weld_prefix_above), ("weld_prefix_below", "PrefixBelowLine", weld_prefix_below)):
+            if prefix is not None:
+                writes.append((key, attr, prefix, None))
+        for key, attr, number in (
+            ("weld_size_above", "SizeAbove", weld_size_above),
+            ("weld_size_below", "SizeBelow", weld_size_below),
+            ("weld_length_above", "LengthAbove", weld_length_above),
+            ("weld_length_below", "LengthBelow", weld_length_below),
+        ):
+            if number is not None:
+                reason = None if math.isfinite(number) and number >= 0 else f"Must be a finite number >= 0, got {number}"
+                writes.append((key, attr, None if reason else float(number), reason))
+        if weld_edge_around is not None:
+            reason = None if weld_edge_around in ("edge", "around") else f"Must be 'edge' or 'around', got '{weld_edge_around}'"
+            writes.append(("weld_edge_around", "AroundWeld", weld_edge_around == "around", reason))
+        if weld_workshop_site is not None:
+            reason = None if weld_workshop_site in ("workshop", "site") else f"Must be 'workshop' or 'site', got '{weld_workshop_site}'"
+            writes.append(("weld_workshop_site", "ShopWeld", weld_workshop_site == "workshop", reason))
+
+        for key, attr, value, reason in writes:
+            if reason is None:
+                try:
+                    setattr(self.model_object, attr, value)
+                    if self.modify():
+                        changes[key] = 1
+                    else:
+                        reason = "Modify() failed"
+                except Exception as e:
+                    reason = str(e)
+            if reason is not None:
+                errors.append({"property": key, "reason": reason})
 
         if phase is not None:
             try:

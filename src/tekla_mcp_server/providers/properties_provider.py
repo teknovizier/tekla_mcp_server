@@ -29,6 +29,7 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     TeklaReferenceModel,
     TeklaReferenceModelObject,
     TeklaReinforcement,
+    TeklaWeld,
     wrap_model_object,
     wrap_model_objects,
 )
@@ -187,15 +188,27 @@ def set_elements_properties(
     bolt_extra_length: Annotated[float | None, Field(description="Bolts only: extra length in mm added to the calculated bolt length", ge=0)] = None,
     bolt_tolerance: Annotated[float | None, Field(description="Bolts only: hole tolerance in mm", ge=0)] = None,
     bolt_type: Annotated[Literal["site", "workshop"] | None, Field(description="Bolts only: where the bolts are fitted")] = None,
+    weld_type_above: Annotated[str | None, Field(description="Welds only: weld type above the line, as `get_elements_properties` reports it (e.g. 'fillet', 'none')")] = None,
+    weld_type_below: Annotated[str | None, Field(description="Welds only: weld type below the line (e.g. 'fillet', 'none')")] = None,
+    weld_prefix_above: Annotated[str | None, Field(description="Welds only: size prefix above the line (e.g. 'a' for throat thickness)")] = None,
+    weld_prefix_below: Annotated[str | None, Field(description="Welds only: size prefix below the line")] = None,
+    weld_size_above: Annotated[float | None, Field(description="Welds only: weld size above the line in mm", ge=0)] = None,
+    weld_size_below: Annotated[float | None, Field(description="Welds only: weld size below the line in mm", ge=0)] = None,
+    weld_length_above: Annotated[float | None, Field(description="Welds only: weld length above the line in mm, 0 for the full length", ge=0)] = None,
+    weld_length_below: Annotated[float | None, Field(description="Welds only: weld length below the line in mm, 0 for the full length", ge=0)] = None,
+    weld_edge_around: Annotated[Literal["edge", "around"] | None, Field(description="Welds only: 'around' for a weld all around the connected part")] = None,
+    weld_workshop_site: Annotated[Literal["workshop", "site"] | None, Field(description="Welds only: where the weld is made")] = None,
 ) -> ToolResult:
     """
-    Sets properties and user-defined attributes (UDAs) on selected Tekla elements (assemblies, parts or bolts).
+    Sets properties and user-defined attributes (UDAs) on selected Tekla elements (assemblies, parts, bolts or welds).
 
     Assemblies do not have `profile`, `material`, `finish`, `tekla_class`, `part_prefix`, `part_start_number`.
     These properties will only affect parts, not assemblies.
     Bolt groups accept only the `bolt_*` properties, `phase` and `user_properties`. The bolt length itself is
     calculated by Tekla from the connected parts, so change it with `bolt_extra_length`. The standard and size
     are checked against the bolt catalog, because Tekla silently accepts combinations that do not exist.
+    Welds accept only the `weld_*` properties, `phase` and `user_properties`. Use the same names and values
+    `get_elements_properties` returns for welds.
     """
     selected_objects = TeklaModel().get_selected_objects()
     bolt_values_given = any(v is not None for v in (bolt_standard, bolt_size))
@@ -222,6 +235,16 @@ def set_elements_properties(
         "bolt_extra_length": 0,
         "bolt_tolerance": 0,
         "bolt_type": 0,
+        "weld_type_above": 0,
+        "weld_type_below": 0,
+        "weld_prefix_above": 0,
+        "weld_prefix_below": 0,
+        "weld_size_above": 0,
+        "weld_size_below": 0,
+        "weld_length_above": 0,
+        "weld_length_below": 0,
+        "weld_edge_around": 0,
+        "weld_workshop_site": 0,
     }
     processed_count = 0
     modified_count = 0
@@ -229,7 +252,7 @@ def set_elements_properties(
     skipped_objects: list[dict[str, str]] = []
 
     for selected_object in wrap_model_objects(selected_objects):
-        if not isinstance(selected_object, (TeklaAssembly, TeklaPart, TeklaBoltGroup)):
+        if not isinstance(selected_object, (TeklaAssembly, TeklaPart, TeklaBoltGroup, TeklaWeld)):
             logger.warning("set_elements_properties: Unsupported object type: %s", type(selected_object).__name__)
             skipped_objects.append({"guid": selected_object.guid, "type": type(selected_object).__name__})
             continue
@@ -247,6 +270,21 @@ def set_elements_properties(
                     phase=phase,
                     user_properties=user_properties,
                     bolt_catalog=bolt_catalog,
+                )
+            elif isinstance(selected_object, TeklaWeld):
+                changes = selected_object.set_properties(
+                    weld_type_above=weld_type_above,
+                    weld_type_below=weld_type_below,
+                    weld_prefix_above=weld_prefix_above,
+                    weld_prefix_below=weld_prefix_below,
+                    weld_size_above=weld_size_above,
+                    weld_size_below=weld_size_below,
+                    weld_length_above=weld_length_above,
+                    weld_length_below=weld_length_below,
+                    weld_edge_around=weld_edge_around,
+                    weld_workshop_site=weld_workshop_site,
+                    phase=phase,
+                    user_properties=user_properties,
                 )
             elif isinstance(selected_object, TeklaAssembly):
                 changes = selected_object.set_properties(
@@ -332,7 +370,7 @@ def get_elements_properties(
     ] = "flat",
 ) -> ToolResult:
     """
-    Retrieve properties for selected Tekla model objects - parts, assemblies, reinforcement, bolt groups or IFC reference objects.
+    Retrieve properties for selected Tekla model objects - parts, assemblies, reinforcement, bolt groups, welds or IFC reference objects.
 
     ## MODES (select via `mode`)
 
@@ -347,10 +385,15 @@ def get_elements_properties(
     the read only `bolt_length` calculated by Tekla, `bolt_count`, `has_bolt` (False for a group of holes only)
     and `connected_parts`.
 
+    Welds are returned in `welds` with, for each side of the weld line, `weld_type_above`/`weld_type_below`
+    (e.g. 'fillet', 'none'), `weld_prefix_above`/`weld_prefix_below`, `weld_size_above`/`weld_size_below` and
+    `weld_length_above`/`weld_length_below` (0 means the full length). They also report `weld_edge_around`
+    ('edge' or 'around') and `weld_workshop_site` ('workshop' or 'site').
+
     ### `mode="snapshot"`
     Returns full element snapshots for convention and QA checks, including basic element properties, UDAs, cutparts, welds and reinforcement.
     Directly selected reinforcement objects are returned in a dedicated `reinforcements` list, bolt groups in `bolts`
-    with the same fields as in `flat` mode.
+    and welds in `welds` with the same fields as in `flat` mode.
 
     ### `mode="compact"`
     Returns one row per selected element in `elements` with its GUID, type, name, position, profile, material
@@ -392,6 +435,7 @@ def _get_snapshot_properties(selected_objects: Any) -> dict[str, Any]:
     assemblies: list[dict[str, Any]] = []
     reinforcements: list[dict[str, Any]] = []
     bolts: list[dict[str, Any]] = []
+    welds: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
 
     for obj in wrap_model_objects(selected_objects):
@@ -409,12 +453,22 @@ def _get_snapshot_properties(selected_objects: Any) -> dict[str, Any]:
                 # A bolt group has no cuts, welds or reinforcement, so its full state is its properties
                 bolts.append(obj.get_properties())
                 processed_count += 1
+            elif isinstance(obj, TeklaWeld):
+                welds.append(obj.get_properties())
+                processed_count += 1
         except Exception as e:
             logger.exception("Failed to build snapshot for %s: %s", obj.guid, str(e))
             errors.append({"guid": obj.guid, "error": str(e)})
 
-    total = len(parts) + len(assemblies) + len(reinforcements) + len(bolts)
-    logger.info("Snapshot mode: built snapshots for %d parts, %d assemblies, %d reinforcements, %d bolt groups", len(parts), len(assemblies), len(reinforcements), len(bolts))
+    total = len(parts) + len(assemblies) + len(reinforcements) + len(bolts) + len(welds)
+    logger.info(
+        "Snapshot mode: built snapshots for %d parts, %d assemblies, %d reinforcements, %d bolt groups, %d welds",
+        len(parts),
+        len(assemblies),
+        len(reinforcements),
+        len(bolts),
+        len(welds),
+    )
     return {
         "status": "success" if total > 0 else "warning",
         "selected_count": selected_objects.GetSize(),
@@ -423,6 +477,7 @@ def _get_snapshot_properties(selected_objects: Any) -> dict[str, Any]:
         "assemblies": assemblies,
         "reinforcements": reinforcements,
         "bolts": bolts,
+        "welds": welds,
         "errors": errors,
     }
 
@@ -457,6 +512,7 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
     flat_parts: list[dict[str, Any]] = []
     flat_reinforcements: list[dict[str, Any]] = []
     flat_bolts: list[dict[str, Any]] = []
+    flat_welds: list[dict[str, Any]] = []
     reference_objects: list[dict[str, Any]] = []
 
     for selected_object in wrap_model_objects(selected_objects):
@@ -491,9 +547,12 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
         elif isinstance(selected_object, TeklaBoltGroup):
             flat_bolts.append(props)
             processed_count += 1
+        elif isinstance(selected_object, TeklaWeld):
+            flat_welds.append(props)
+            processed_count += 1
 
     logger.info("Retrieved properties for %s elements", processed_count)
-    status = "success" if flat_assemblies or flat_parts or flat_reinforcements or flat_bolts or reference_objects else "error"
+    status = "success" if flat_assemblies or flat_parts or flat_reinforcements or flat_bolts or flat_welds or reference_objects else "error"
     if status == "success" and (resolution_errors or extraction_errors):
         status = "partial"
     if extraction_errors:
@@ -507,6 +566,7 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
         "parts": flat_parts,
         "reinforcements": flat_reinforcements,
         "bolts": flat_bolts,
+        "welds": flat_welds,
         "reference_objects": reference_objects,
         "resolution_errors": resolution_errors,
         "extraction_errors": extraction_errors,

@@ -17,7 +17,7 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBoltGroup, TeklaPart, TeklaReinforcement
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBoltGroup, TeklaPart, TeklaReinforcement, TeklaWeld
 
 pp = importlib.import_module("tekla_mcp_server.providers.properties_provider")
 
@@ -154,6 +154,18 @@ class TestBoltProperties:
 
         assert result["status"] == "success"
         assert result["bolts"] == [{"guid": "B", "bolt_tolerance": 2.0}]
+
+
+class TestWeldProperties:
+    @pytest.mark.parametrize("mode", ["flat", "snapshot"])
+    def test_welds_are_returned(self, model, mode):
+        weld = _obj(TeklaWeld, "W", get_properties=MagicMock(return_value={"guid": "W", "weld_size_above": 5.0}))
+
+        result = _run(pp.get_elements_properties, [weld], mode=mode)
+
+        assert result["status"] == "success"
+        assert result["processed_count"] == 1
+        assert result["welds"] == [{"guid": "W", "weld_size_above": 5.0}]
 
 
 class TestFlatPropertiesFailures:
