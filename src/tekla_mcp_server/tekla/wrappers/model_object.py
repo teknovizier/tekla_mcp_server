@@ -344,7 +344,8 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
         - TeklaReferenceModelObject if the object is a ReferenceModelObject
         - TeklaReinforcement if the object is a TeklaReinforcement
         - TeklaBooleanPart if the object is a BooleanPart
-        - TeklaModelObject for any other object types
+        - TeklaModelObject if the object is a weld
+        - None for any other object types (e.g. components, grids), which callers report as skipped
     """
     if isinstance(model_object, Assembly):
         return TeklaAssembly(model_object)
