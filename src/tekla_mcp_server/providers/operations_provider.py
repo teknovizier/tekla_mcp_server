@@ -24,6 +24,7 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     wrap_model_objects,
     wrap_model_object,
     TeklaAssembly,
+    TeklaBooleanPart,
     TeklaModelObject,
     TeklaPart,
     TeklaReinforcement,
@@ -321,6 +322,10 @@ def cut_elements_with_cutters(
         cutters = []
         for guid, raw_cutter in zip(found_guids, raw_cutters, strict=True):
             cutter = wrap_model_object(raw_cutter)
+            # The GUID of a cut part (e.g. `cutting_part_guid` from `get_elements_cut_parts`) resolves
+            # to its BooleanPart, the part that shapes the cut is the operative part
+            if isinstance(cutter, TeklaBooleanPart):
+                cutter = cutter.operative_part
             # Only a part can be set as the operative part of a boolean cut
             if isinstance(cutter, TeklaPart):
                 cutters.append(cutter)

@@ -10,6 +10,7 @@ from pathlib import Path
 from tekla_mcp_server.config import get_advanced_option_directories
 from tekla_mcp_server.models import AttachmentPair, BeamInput, PanelInput, PointInput
 from tekla_mcp_server.providers.modeling_provider import place_beams, place_panels
+from tekla_mcp_server.providers.properties_provider import get_elements_cut_parts
 from tekla_mcp_server.providers.operations_provider import (
     attach_rebars,
     attach_assemblies,
@@ -185,6 +186,30 @@ def test_cut_elements_with_cutters_partly_missing_guids(model_objects):
     assert result.structured_content["status"] == "partial"
     assert result.structured_content["performed_cuts_count"] == 1
     assert result.structured_content["missing_guids"] == [OTHER_GUID]
+
+
+def test_cut_elements_with_cutters_by_cut_part_guid():
+    """A cut part GUID from `get_elements_cut_parts` is accepted as a cutter for another part."""
+    # Two walls in the same place and an own cutter, so no fixture wall gets a cut that later tests do not expect
+    wall = PanelInput(
+        start_point=PointInput(x=24000, y=0, z=0), end_point=PointInput(x=26000, y=0, z=0), profile="3000*200", material="Concrete_Undefined", tekla_class=1, name="MCP_TEST_WALL_CUT_PART"
+    )
+    void = BeamInput(
+        start_point=PointInput(x=25000, y=0, z=1000), end_point=PointInput(x=25000, y=200, z=1000), profile="D400", material="Concrete_Undefined", tekla_class=0, name="MCP_TEST_VOID_CUT_PART"
+    )
+    first_guid, second_guid = (r["guid"] for r in place_panels(panels=[wall, wall]).structured_content["results"])
+    place_beams(beams=[void])
+    model = TeklaModel()
+    TeklaModel.select_objects([model.get_object_by_guid(first_guid)])
+    assert cut_elements_with_cutters(cutter_class=0, delete_cutting_parts=True).structured_content["performed_cuts_count"] >= 1
+
+    cut_parts = get_elements_cut_parts().structured_content
+    cut_part_guid = cut_parts["cutting_parts"][0]["guid"]
+    TeklaModel.select_objects([model.get_object_by_guid(second_guid)])
+    result = cut_elements_with_cutters(cutter_guids=[cut_part_guid])
+    assert result.structured_content["status"] == "success"
+    assert result.structured_content["performed_cuts_count"] == 1
+    assert result.structured_content["unsupported_guids"] == []
 
 
 def test_cut_elements_with_cutters_invalid_guid(model_objects):
