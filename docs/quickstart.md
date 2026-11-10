@@ -18,14 +18,14 @@ uv pip install -r requirements-dev.txt
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `tekla_path` | `C:\Program Files\Tekla Structures\2022.0\bin` | Tekla Structures binary directory |
+| `tekla_path` | **required** | Tekla Structures binary directory, e.g. `C:\Program Files\Tekla Structures\2022.0\bin` |
 | `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
 | `read_only` | `false` | When `true`, exposes only read-only tools, everything that writes the model is hidden. Selection, view, and query tools remain available |
 | `excluded_tags` | `[]` | List of tool tags to hide from the LLM. See [configuration guide](configuration.md#tool-visibility) |
 | `embeddings.enabled` | `false` | Enable semantic attribute search |
-| `embeddings.embedding_model` | `teknovizier/minilm-tekla-attr-embed-v1` | HuggingFace model or local path |
+| `embeddings.embedding_model` | none, **required** when `enabled` | HuggingFace model or local path. The sample uses `teknovizier/minilm-tekla-attr-embed-v1` |
 
-See the [configuration guide](configuration.md#settings-settingsjson) for the full list of settings (embeddings thresholds, tolerances, reports).
+See the [configuration guide](configuration.md#settings-settingsjson) for the full list of settings (embeddings thresholds, tolerances, reports, drawings).
 
 2. **element_types.json**: Copy `config/element_types.sample.json` to `config/element_types.json` and set Tekla classes and numbering prefixes.
 3. **semantic_overrides.json**: Copy `config/semantic_overrides.sample.json` to `config/semantic_overrides.json` for attribute name overrides.
@@ -74,4 +74,4 @@ You may experience a naming conflict with the `clr` package. Solution: rename or
 ### Embedding Model Issues
 - Embeddings are disabled by default. Set `"embeddings": { "enabled": true }` in `settings.json` to resolve fuzzy attribute names semantically
 - The embedding model downloads automatically on first use (~120 MB)
-- If the download hangs, manually download `teknovizier/minilm-tekla-attr-embed-v1` from HuggingFace and set `embedding_model` to the local path
+- If the download hangs, manually download `teknovizier/minilm-tekla-attr-embed-v1` from HuggingFace and set `embeddings.embedding_model` to the local path

@@ -4,7 +4,7 @@
     "read_only": false,
     "excluded_tags": [],
     "embeddings": {
-        "enabled": true,
+        "enabled": false,
         "embedding_model": "teknovizier/minilm-tekla-attr-embed-v1",
         "embedding_spread_threshold": 0.1,
         "embedding_minimum_threshold": 0.8

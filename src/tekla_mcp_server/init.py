@@ -127,5 +127,5 @@ def load_dlls() -> bool:
             return True
 
         except System.IO.FileNotFoundException:
-            logger.exception("Tekla Structures DLLs not found. Check the TEKLA_PATH environment variable or settings.json")
+            logger.exception("Tekla Structures DLLs not found. Check 'tekla_path' in settings.json")
             raise

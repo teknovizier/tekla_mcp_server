@@ -6,7 +6,7 @@ This guide covers all configuration files and environment variables.
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `tekla_path` | `C:\Program Files\Tekla Structures\2022.0\bin` | Tekla Structures binary directory |
+| `tekla_path` | **required** | Tekla Structures binary directory, e.g. `C:\Program Files\Tekla Structures\2022.0\bin`. The server fails to start without it. |
 | `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
 | `excluded_tags` | `[]` | List of tool tags to hide from the LLM. Leave empty to expose all tools. See [Tool Visibility](#tool-visibility) below. |
 | `read_only` | `false` | When `true`, shows only tools marked as read-only. Query, selection, and view/navigation tools remain available, anything that writes the model is hidden. |
@@ -21,16 +21,18 @@ When set to `true`, exposes **only** tools annotated with `readOnlyHint=true` (a
 
 #### `excluded_tags`
 
-| Tag | Tools covered | Notes |
-|-----|--------------|-------|
-| `resources` | MCP resources (project context, component definitions, etc.) | |
-| `selection` | Select, filter, and inspect model objects | |
-| `view` | Camera, views, and visibility controls | |
-| `properties` | Read and write element properties and UDAs | |
-| `operations` | Numbering, clash detection, and other model operations | |
-| `components` | Place and manage Tekla components | |
-| `drawings` | Drawing creation and management | |
-| `modeling` | Create and modify model objects | |
+| Tag | Tools covered |
+|-----|--------------|
+| `selection` | Select, filter, and inspect model objects |
+| `view` | Camera, views, and visibility controls |
+| `properties` | Read and write element properties and UDAs |
+| `operations` | Cuts, clash checks, orphan and invalid-object checks, attaching, macros, reports, and other model operations |
+| `components` | Place and manage Tekla components |
+| `drawings` | Open, edit, print, export, and check existing drawings |
+| `modeling` | Create and modify model objects |
+
+MCP resources have no tags and cannot be hidden with `excluded_tags`.
+
 **Example:** hide modeling tools:
 ```json
 { "excluded_tags": ["modeling"] }
@@ -44,7 +46,7 @@ Both settings compose: `excluded_tags` and `read_only` can be active simultaneou
 | Property | Default | Description |
 |----------|---------|-------------|
 | `embeddings.enabled` | `false` | Enable semantic search |
-| `embeddings.embedding_model` | `teknovizier/minilm-tekla-attr-embed-v1` | HuggingFace model ID or local path |
+| `embeddings.embedding_model` | none, **required** when `enabled` | HuggingFace model ID or local path. The sample settings use `teknovizier/minilm-tekla-attr-embed-v1`. |
 | `embeddings.embedding_spread_threshold` | `0.1` | Min stddev for auto-resolution (0-1) |
 | `embeddings.embedding_minimum_threshold` | `0.8` | Min confidence score (0-1) |
 
@@ -82,7 +84,7 @@ Tolerances are grouped by domain: `model` for model operations and `drawings` fo
 | `tolerances.model.comparison` | `0.01` | Numeric tolerance used in `compare_elements`. Values within this tolerance are treated as equal. |
 | `tolerances.drawings.snap_tolerance` | `0.1` | Snap tolerance in mm for `align_section_views`. Section views already within this distance of their projection are treated as aligned and left untouched. |
 | `tolerances.drawings.sheet_size` | `1.0` | Tolerance in mm for matching sheet dimensions to standard paper sizes and multi-sheet tilings in `get_drawing_views`. |
-| `tolerances.drawings.dimension_snap` | `0.1` | Tolerance in sheet mm for `check_for_unattached_dimensions`. A dimension point within this distance of a part corner or edge midpoint, bolt/hole centre, or grid/centre line is treated as attached/snapped. |
+| `tolerances.drawings.dimension_snap` | `0.5` | Tolerance in sheet mm for `check_for_unattached_dimensions`. A dimension point within this distance of a part corner or edge midpoint, bolt/hole centre, or grid/centre line is treated as attached/snapped. |
 
 ### Reports
 
@@ -274,8 +276,8 @@ MCP servers receive environment variables from the client. The Tekla MCP Server 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TEKLA_MCP_LOG_LEVEL` | Logging level | `INFO` |
-| `TEKLA_MCP_LOG_FILE_PATH` | Log file path | `C:\path\to\mcp_server.log` |
-| `TEKLA_MCP_CONFIG_DIR` | Config directory | `C:\path\to\tekla_mcp_server\config` |
+| `TEKLA_MCP_LOG_FILE_PATH` | Log file path | `mcp_server.log` in the current working directory |
+| `TEKLA_MCP_CONFIG_DIR` | Config directory, used as given even if it does not exist | First existing of: `config` next to the executable (PyInstaller build), `config` at the repository root, `config` in the current working directory |
 
 For example, in Claude Desktop:
 
