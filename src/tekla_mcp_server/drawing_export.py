@@ -15,7 +15,20 @@ PDF_PRINT_OPTIONS_EXTENSION = ".PdfPrintOptions.xml"
 
 
 def _require_element(parent: ET.Element, path: str, *, file_kind: str) -> ET.Element:
-    """Find `path` under `parent`, raising ValueError with a clear message if missing."""
+    """
+    Find `path` under `parent`, raising ValueError with a clear message if missing.
+
+    Args:
+        parent: Element to search under
+        path: ElementTree path
+        file_kind: File kind for the error message
+
+    Returns:
+        Matching element
+
+    Raises:
+        ValueError: If no element matches `path`.
+    """
     element = parent.find(path)
     if element is None:
         raise ValueError(f"{file_kind} XML missing {path} element")
@@ -35,6 +48,9 @@ def patch_dwgsetting_xml(base_xml: str, *, file_extension: str, file_version: st
         file_extension: Output extension, e.g. '.dxf', '.dwg' or '.dgn'.
         file_version: Tekla DwgFileVersion token, e.g. 'Dwg.UI.DwgFileVersion.vAC24'.
         output_dir: Target export directory.
+
+    Returns:
+        Patched XML text
 
     Raises:
         ValueError: If the FileAttributes or Preferences element is missing.
@@ -68,6 +84,9 @@ def patch_pdf_print_options_xml(base_xml: str, *, paper_size: str, orientation: 
         multi_sheet_order: Tekla multi-sheet order token, e.g. 'LeftToRightTopToBottom'.
         output_dir: Target export directory.
 
+    Returns:
+        Patched XML text
+
     Raises:
         ValueError: If the Options element or one of the patched children is missing.
     """
@@ -75,6 +94,13 @@ def patch_pdf_print_options_xml(base_xml: str, *, paper_size: str, orientation: 
     options = _require_element(root, "Options", file_kind="PdfPrintOptions")
 
     def _set_text(tag: str, value: str) -> None:
+        """
+        Set the text of a required `Options` child.
+
+        Args:
+            tag: Child element tag
+            value: Text to set
+        """
         _require_element(options, tag, file_kind="PdfPrintOptions").text = value
 
     _set_text("PaperSize", paper_size)
@@ -120,6 +146,11 @@ def install_export_settings_content(model_path: str, setting_name: str, content:
     Mirrors `ensure_export_settings_installed` but takes ready content rather than
     copying a file, so a Python-patched .dwgsetting can be installed. Compares
     bytes and only rewrites on difference, keeping re-installs cheap.
+
+    Args:
+        model_path: Tekla model folder
+        setting_name: Setting file name
+        content: Setting file content
 
     Returns:
         Path to the installed setting file.

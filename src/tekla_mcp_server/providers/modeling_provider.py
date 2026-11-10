@@ -35,13 +35,20 @@ T = TypeVar("T", BeamInput, ColumnInput, PanelInput)
 
 
 def _collect_parts(obj: TeklaModelObject) -> list[TeklaPart]:
-    """Return the child Part objects to move/copy for *obj*.
+    """
+    Return the child Part objects to move/copy for *obj*.
 
     For an assembly this is the main part, secondaries, single-part-component parts
     and real sub-assembly parts. Parts created by a Seam or Connection - components
     that span two or more parts - are skipped: such a component is associative to all
     its host parts and moves its created parts (e.g. pipes) along when those parts
     move, so displacing them explicitly as well would put them in the wrong place.
+
+    Args:
+        obj: Part or assembly
+
+    Returns:
+        Parts to move or copy
     """
     if not isinstance(obj, TeklaAssembly):
         return [obj]
@@ -57,7 +64,15 @@ def _collect_parts(obj: TeklaModelObject) -> list[TeklaPart]:
 def _resolve_numbering_and_name(
     input_object: BeamInput | ColumnInput | PanelInput | SlabInput,
 ) -> tuple[NumberingSeries | None, NumberingSeries | None, str | None]:
-    """Resolve part/assembly numbering and name from input or defaults."""
+    """
+    Resolve part/assembly numbering and name from input or defaults.
+
+    Args:
+        input_object: Element input
+
+    Returns:
+        Tuple of (part number, assembly number, name)
+    """
     part_number: NumberingSeries | None = getattr(input_object, "part_number", None)
     assembly_number: NumberingSeries | None = getattr(input_object, "assembly_number", None)
     name: str | None = getattr(input_object, "name", None)
@@ -81,7 +96,17 @@ def _place_beam_element(
     input_to_points: Callable[[T], tuple[PointInput, PointInput]],
     beam_type: BeamType,
 ) -> tuple[bool, PlacementResult]:
-    """Place a single beam-type element and return success flag and result."""
+    """
+    Place a single beam-type element and return success flag and result.
+
+    Args:
+        input_object: Element input
+        input_to_points: Maps input to start and end points
+        beam_type: Tekla beam type
+
+    Returns:
+        Tuple of (success, placement result)
+    """
     start, end = input_to_points(input_object)
     part_number, assembly_number, name = _resolve_numbering_and_name(input_object)
 
@@ -110,7 +135,18 @@ def _commit_or_fail(
     commit_success: bool,
     action_description: str,
 ) -> tuple[list[PlacementResult], int, bool]:
-    """Replace all results with failure records when commit fails, return (results, succeeded, commit_success)."""
+    """
+    Replace all results with failure records when commit fails, return (results, succeeded, commit_success).
+
+    Args:
+        results: Placement results
+        succeeded: Success count
+        commit_success: Commit outcome
+        action_description: Action text for the log
+
+    Returns:
+        Tuple of (results, succeeded, commit_success)
+    """
     if not commit_success:
         logger.error("commit_changes() failed after %s", action_description)
         results = [PlacementResult(success=False, message="Commit failed: changes not persisted") for _ in results]
@@ -124,7 +160,18 @@ def _to_tool_result(
     succeeded: int,
     item_type: str,
 ) -> ToolResult:
-    """Convert batch placement results to ToolResult."""
+    """
+    Convert batch placement results to ToolResult.
+
+    Args:
+        results: Placement results
+        total: Total element count
+        succeeded: Success count
+        item_type: Element type for the message
+
+    Returns:
+        Batch placement tool result
+    """
     return ToolResult(
         structured_content=BatchPlacementResult(
             success=succeeded == total and total > 0,
@@ -358,6 +405,21 @@ def place_slabs(slabs: Annotated[list[SlabInput], Field(description="List of sla
 
 
 def _move_or_copy_elements(dx: float, dy: float, dz: float, copy: bool) -> ToolResult:
+    """
+    Move or copy the selected elements by a displacement.
+
+    Args:
+        dx: X displacement
+        dy: Y displacement
+        dz: Z displacement
+        copy: Copy instead of move
+
+    Returns:
+        Batch placement tool result
+
+    Raises:
+        ValueError: If all displacements are zero
+    """
     action = "Copied" if copy else "Moved"
     verb = "copying" if copy else "moving"
     op = "copy" if copy else "move"

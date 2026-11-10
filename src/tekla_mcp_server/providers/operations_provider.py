@@ -59,7 +59,15 @@ class CheckResult:
 
 
 def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
-    """Return GUIDs of all reinforcement attached to element, across main part and all secondaries."""
+    """
+    Return GUIDs of all reinforcement attached to element, across main part and all secondaries.
+
+    Args:
+        element: Assembly to inspect
+
+    Returns:
+        Reinforcement GUIDs
+    """
     guids: set[str] = set()
 
     try:
@@ -94,15 +102,21 @@ def _is_inside_any_assembly_part(candidate: SolidGeometryMixin, parts: list[Tekl
     """
     Check whether candidate lies within the solid geometry of any part in the list.
 
-    Returns True when any part's solid contains the candidate.
-    Returns False when no part contained the candidate, or when the list is empty
-    (degenerate/no-geometry elements are skipped to avoid false-positive orphans).
+    Degenerate/no-geometry elements are skipped to avoid false-positive orphans.
 
     Delegates to `is_inside` which handles the NORMAL → RAW fallback internally
     for TeklaPart containers and never propagates exceptions (conservative True).
     `solid_cache` maps object ID to its solids and is shared across all candidates,
     so each part's solids are built once instead of once per candidate, and the
     candidate's own solid once instead of once per part.
+
+    Args:
+        candidate: Object to test
+        parts: Container parts
+        solid_cache: Shared solids by object ID
+
+    Returns:
+        True if any part contains the candidate, False otherwise or for an empty list
     """
     candidate_solids = solid_cache.setdefault(candidate.id, {})
     for part in parts:
@@ -121,7 +135,13 @@ def _check_element_bounding_box_embeds(
 
     Uses bounding box to find candidates, then checks containment and parent assembly.
 
-    Returns (orphaned, evaluated_guids) with deduplicated GUIDs.
+    Args:
+        element: Host assembly
+        target_assembly_guids: Assemblies counted as attached
+        tolerance: Bounding box tolerance
+
+    Returns:
+        Tuple of (orphaned embeds, evaluated GUIDs) with deduplicated GUIDs
     """
     # Pre-compute assembly parts once (not per-candidate) for containment checks
     assembly_parts = element.get_top_level_parts()
@@ -199,7 +219,13 @@ def _check_element_bounding_box_rebars(
 
     Uses bounding box to find candidates, then checks containment and attachment status.
 
-    Returns (orphaned, evaluated_guids) with deduplicated GUIDs.
+    Args:
+        element: Host assembly
+        element_reinforcement_guids: Rebars attached to the element
+        tolerance: Bounding box tolerance
+
+    Returns:
+        Tuple of (orphaned rebars, evaluated GUIDs) with deduplicated GUIDs
     """
     # Pre-compute assembly parts once (not per-candidate) for containment checks
     assembly_parts = element.get_top_level_parts()
@@ -263,6 +289,9 @@ def _solid_box(obj: Any) -> BoundingBox | None:
 
     Args:
         obj: Wrapped model object
+
+    Returns:
+        Solid box or None
     """
     try:
         return BoundingBox.from_solid(obj.get_solid())
@@ -577,7 +606,17 @@ def check_for_orphans(
 
 
 def _resolve_pair(model: TeklaModel, object_guid: str, target_guid: str) -> tuple[TeklaModelObject, TeklaModelObject, None] | tuple[None, None, str]:
-    """Look up both GUIDs. Returns (obj, target, None) or (None, None, reason)."""
+    """
+    Look up both GUIDs.
+
+    Args:
+        model: Tekla model
+        object_guid: Object GUID
+        target_guid: Target GUID
+
+    Returns:
+        (obj, target, None) on success, or (None, None, reason)
+    """
     raw_orphan = model.get_object_by_guid(object_guid)
     if raw_orphan is None:
         return None, None, "object_not_found"
@@ -594,21 +633,46 @@ def _resolve_pair(model: TeklaModel, object_guid: str, target_guid: str) -> tupl
 
 
 def _is_valid_assembly_pair(obj, target) -> bool:
-    """Object and target must both be assemblies."""
+    """
+    Object and target must both be assemblies.
+
+    Args:
+        obj: Wrapped object
+        target: Wrapped target
+
+    Returns:
+        True if the pair is valid
+    """
     return isinstance(obj, TeklaAssembly) and isinstance(target, TeklaAssembly)
 
 
 def _is_valid_rebar_pair(obj, target) -> bool:
-    """Object must be reinforcement and the target an assembly."""
+    """
+    Object must be reinforcement and the target an assembly.
+
+    Args:
+        obj: Wrapped object
+        target: Wrapped target
+
+    Returns:
+        True if the pair is valid
+    """
     return isinstance(obj, TeklaReinforcement) and isinstance(target, TeklaAssembly)
 
 
 def _attach_assembly(obj: TeklaAssembly, target: TeklaAssembly) -> str | None:
-    """Add object assembly into target assembly.
+    """
+    Add object assembly into target assembly.
 
-    Returns None on success. Returns a reason string if adding the assembly failed.
     If `Add` succeeds but `modify()` fails later, we log a warning but still return
     None - the change is already in the transaction and will be committed.
+
+    Args:
+        obj: Assembly to add
+        target: Target assembly
+
+    Returns:
+        None on success, or a reason string if adding the assembly failed
     """
     try:
         added = target.model_object.Add(obj.model_object)
@@ -627,11 +691,18 @@ def _attach_assembly(obj: TeklaAssembly, target: TeklaAssembly) -> str | None:
 
 
 def _attach_rebar(obj: TeklaReinforcement, target: TeklaAssembly) -> str | None:
-    """Set rebar father to target's main part.
+    """
+    Set rebar father to target's main part.
 
-    Returns None on success. Returns a reason string if the target has no main part
-    or if setting the father fails. If the father is set but `modify()` fails later,
-    we log a warning but still return None - the change is already in the transaction.
+    If the father is set but `modify()` fails later, we log a warning but still
+    return None - the change is already in the transaction.
+
+    Args:
+        obj: Rebar to re-parent
+        target: Target assembly
+
+    Returns:
+        None on success, or a reason string if there is no main part or setting the father fails
     """
     try:
         main_part = target.main_part
@@ -652,11 +723,24 @@ def _attach_rebar(obj: TeklaReinforcement, target: TeklaAssembly) -> str | None:
 
 
 def _batch_attach(mode: str, pairs: list[AttachmentPair], attach_fn, valid_fn) -> ToolResult:
-    """Attach each pair in one batch commit. Skip bad pairs and report.
+    """
+    Attach each pair in one batch commit. Skip bad pairs and report.
 
     GUIDs are normalized and repeated pairs are attached once. Items in `skipped`
     failed before changing the model. Only `attach_fn` returning a reason means the
     model was never modified for that pair.
+
+    Args:
+        mode: Attachment mode label
+        pairs: Object and target GUID pairs
+        attach_fn: Attaches one pair
+        valid_fn: Validates one pair
+
+    Returns:
+        Batch attach tool result
+
+    Raises:
+        ValueError: If `pairs` is empty.
     """
     if not pairs:
         raise ValueError("No pairs given")
@@ -1042,7 +1126,15 @@ def clash_check(
 
 
 def _report_format(path: Path) -> tuple[str, bool]:
-    """Return (format_label, is_readable_as_text) based on file extension."""
+    """
+    Return (format_label, is_readable_as_text) based on file extension.
+
+    Args:
+        path: Report file path
+
+    Returns:
+        Tuple of (format label, readable as text)
+    """
     suffix = path.suffix.lower()
     if suffix in {".xlsx", ".xls", ".xlsm", ".xlsb"}:
         return "excel", False
@@ -1081,7 +1173,7 @@ def create_report(
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
 
-    # The template directory is a Tekla environment setting; a missing one is a
+    # The template directory is a Tekla environment setting. A missing one is a
     # configuration problem, not a bad request - surface it explicitly so the
     # caller does not retry with different arguments.
     if not get_advanced_option_directories("XS_TEMPLATE_DIRECTORY"):
@@ -1201,7 +1293,7 @@ def create_report(
         result["status"] = "warning"
         result["message"] = "Report was submitted but the file did not appear on disk within the timeout period."
 
-    # Always include the folder when the caller provided one, or on warnings — the
+    # Always include the folder when the caller provided one, or on warnings - the
     # caller needs it to locate the file once it eventually lands on disk.
     if user_provided_folder or result["status"] == "warning":
         result["output_folder"] = output_folder

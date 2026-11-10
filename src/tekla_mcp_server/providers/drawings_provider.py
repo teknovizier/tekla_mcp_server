@@ -123,6 +123,13 @@ def _describe_wrapped_object(wrapped: Any, attr_names: tuple[str, ...]) -> dict[
     and appends the bolt sub-object for a `TeklaBoltGroup`. Shared by
     `_describe_model_object` and `_find_unmarked_in_view` so both describe an
     object the same way (omit-when-None policy, identical bolt fields).
+
+    Args:
+        wrapped: Wrapped model object
+        attr_names: Attributes to read
+
+    Returns:
+        Descriptor fields
     """
     entry: dict[str, Any] = {}
     for attr in attr_names:
@@ -148,6 +155,13 @@ def _describe_model_object(guid: str, model_obj: ModelObject) -> dict[str, Any]:
     type is supported (parts, assemblies, reinforcement). Bolts additionally
     report their standard, size, count and connected parts. Types with no wrapper
     fall back to the raw object's name so nothing is dropped.
+
+    Args:
+        guid: Object GUID
+        model_obj: Tekla model object
+
+    Returns:
+        Object record
     """
     # Use .NET type name (Beam, Column, etc.) as element_type identifier
     entry: dict[str, Any] = {"guid": guid, "element_type": type(model_obj).__name__}
@@ -185,7 +199,16 @@ class EmbeddedDetail:
 
 
 def _describe_embedded_detail(guid: str, assembly: TeklaAssembly) -> EmbeddedDetail:
-    """Build an `EmbeddedDetail` record from an embedded detail subassembly."""
+    """
+    Build an `EmbeddedDetail` record from an embedded detail subassembly.
+
+    Args:
+        guid: Assembly GUID
+        assembly: Embedded detail assembly
+
+    Returns:
+        Embedded detail record
+    """
     return EmbeddedDetail(guid=guid, name=assembly.name or None, position=assembly.position or None)
 
 
@@ -223,6 +246,9 @@ def _resolve_view_model_objects(view: TeklaDrawingView, model: TeklaModel, promo
         Tuple of (resolved items, total_count, unresolved_count). `total_count`
         excludes `DrawingConnection` objects, `unresolved_count` counts objects
         whose model object could not be resolved.
+
+    Raises:
+        RuntimeError: If the view's model objects cannot be enumerated.
     """
     # Sheet view aggregates model objects from all child views - it has none of its own
     if view.is_sheet:
@@ -620,6 +646,12 @@ def _wait_for_new_files(directory: Path, pattern: str, before: set[Path], expect
     """
 
     def _scan() -> list[Path]:
+        """
+        List new files matching the pattern.
+
+        Returns:
+            New files, sorted
+        """
         return sorted(set(directory.glob(pattern)) - before) if directory.is_dir() else []
 
     produced = _scan()
@@ -683,6 +715,9 @@ def _run_print_macro(model_path: str, setting_name: str, marks: list[str], poll:
 
     Returns:
         Whatever `poll` returns.
+
+    Raises:
+        RuntimeError: If the print macro fails.
     """
     ensure_macro_installed("TeklaMCPPrintDrawings.cs", category="modeling")
     ensure_macro_installed("TeklaMCPClosePrintDialog.cs", category="modeling")
@@ -903,6 +938,9 @@ def _run_export_macro(model_path: str, setting_name: str, marks: list[str], poll
 
     Returns:
         Whatever `poll` returns.
+
+    Raises:
+        RuntimeError: If the export macro fails.
     """
     ensure_macro_installed("TeklaMCPExportDrawings.cs", category="modeling")
     ensure_macro_installed("TeklaMCPCloseExportDialog.cs", category="modeling")
@@ -1003,6 +1041,15 @@ def export_drawings(
         before_files = set(Path(output_dir).glob(f"*{ext}"))
 
     def _poll() -> list[Path]:
+        """
+        Wait for the exported files to appear.
+
+        Returns:
+            New export files
+
+        Raises:
+            RuntimeError: If the output directory is missing
+        """
         # Named-setting mode: the customer setting owns the output dir and naming,
         # which we cannot predict, so there is nothing to verify.
         if output_dir is None or not ext:
@@ -1101,6 +1148,13 @@ def _resolve_drawing_views(handler: TeklaDrawingHandler, active: TeklaDrawing) -
 
     Shared by `get_drawing_views` and `check_drawing_collisions` so both reuse
     one Tekla API enumeration instead of each doing their own.
+
+    Args:
+        handler: Drawing handler
+        active: Active drawing
+
+    Returns:
+        Tuple of (Tekla views, view dicts, sheet count)
     """
     # Authoritative source for sheet_count/tiling math below - not guaranteed
     # identical to the sheet view's own width/height in the dict representation
@@ -1302,7 +1356,15 @@ _REINFORCEMENT_TYPES = (BaseRebarGroup, RebarMesh, RebarStrand, SingleRebar)
 
 
 def _classify_unmarked_category(model_obj: ModelObject) -> str | None:
-    """Bucket a resolved model object into `parts`/`reinforcement`/`bolts`, or None if it is none of those."""
+    """
+    Bucket a resolved model object into `parts`/`reinforcement`/`bolts`, or None if it is none of those.
+
+    Args:
+        model_obj: Tekla model object
+
+    Returns:
+        Category name or None
+    """
     # BoltGroup covers every bolt arrangement (BoltArray, BoltXYList, BoltCircle)
     if isinstance(model_obj, BoltGroup):
         return "bolts"
@@ -1317,11 +1379,19 @@ def _find_unmarked_in_view(view: TeklaDrawingView, model: TeklaModel, wanted_cat
     """
     Diff one view's model objects against its marks, scoped to `wanted_categories`.
 
+    Args:
+        view: Drawing view
+        model: Tekla model
+        wanted_categories: Categories to check
+
     Returns:
         Tuple of (every checked unit, the subset with no mark, count of view
         objects that could not be resolved to a model object). The unresolved
         count is surfaced so a checker that quietly dropped objects does not
         report a clean result.
+
+    Raises:
+        RuntimeError: If the view's marks cannot be enumerated.
     """
     # Sheet view aggregates objects from all child views - it has none of its own
     if view.is_sheet:
@@ -1817,6 +1887,14 @@ def _export_one_drawing_to_dxf(model_path: str, plotfiles_dir: Path, mark: str) 
     file by snapshotting Plotfiles/ before and after, so the single new file is
     unambiguously this mark's DXF.
 
+    Args:
+        model_path: Open model path
+        plotfiles_dir: Model Plotfiles directory
+        mark: Drawing mark
+
+    Returns:
+        Exported DXF path
+
     Raises:
         RuntimeError: If zero or more than one new DXF appears within the
             configured timeout (`get_export_timeout`, default 120s).
@@ -1825,6 +1903,15 @@ def _export_one_drawing_to_dxf(model_path: str, plotfiles_dir: Path, mark: str) 
     timeout = get_export_timeout()
 
     def _poll() -> Path:
+        """
+        Wait for the single new DXF of this mark.
+
+        Returns:
+            New DXF path
+
+        Raises:
+            RuntimeError: If not exactly one new DXF appears
+        """
         produced = _wait_for_new_files(plotfiles_dir, "TEKLA_MCP_*.dxf", before, 1, timeout, wait_message=f"Waiting for DXF to appear in Plotfiles/ for mark '{mark}'...")
         if not produced:
             raise RuntimeError(f"No DXF appeared in Plotfiles/ after {timeout:g}s for mark '{mark}'. Check the {COLLISION_EXPORT_SETTING} export setting output directory.")
@@ -1850,6 +1937,9 @@ def _export_drawings_to_dxf(
         model_path: Path to the open Tekla model.
         plotfiles_dir: The model's Plotfiles/ directory.
         expected_marks: Marks of all drawings being exported.
+
+    Returns:
+        DXF paths by mark
 
     Raises:
         RuntimeError: If any mark's export does not produce exactly one new
@@ -1921,6 +2011,13 @@ def _run_dxf_drawing_check(
     per_drawing_results: list[dict[str, Any]] = []
 
     def _fail(mark: str, message: str) -> None:
+        """
+        Record and log a per-drawing error.
+
+        Args:
+            mark: Drawing mark
+            message: Error message
+        """
         per_drawing_results.append({"mark": mark, "status": "error", "message": message})
         logger.warning("%s: %s", log_prefix, message)
 
@@ -1987,6 +2084,17 @@ def check_drawing_collisions(
     # Per drawing: read its DXF, run collision checks, draw a colored revision
     # cloud per issue in the sheet view, then commit
     def _process(handler: TeklaDrawingHandler, drawing: TeklaDrawing, dxf_path: Path) -> dict[str, Any]:
+        """
+        Check one drawing DXF for collisions.
+
+        Args:
+            handler: Drawing handler
+            drawing: Drawing to check
+            dxf_path: Exported DXF path
+
+        Returns:
+            Per-drawing result
+        """
         nonlocal total_clouds_drawn, total_cloud_failures
         mark = drawing.mark
         # Read the DXF, flatten block inserts to sheet coordinates
@@ -2088,11 +2196,15 @@ def _dimension_lost_all_anchors(dim: Any) -> bool | None:
     A non-empty list must never rescue a geometrically unattached point,
     since Tekla keeps associativity for dimensions pointing at nothing.
 
-    Returns True if all anchors are gone, False if at least one remains, and
-    None if the anchor state could not be determined (API error). Callers
-    treat None as fail-open (fall back to the geometric test) but should count
-    it as a degraded check so a dangling dimension whose enumeration throws is
-    not silently reported as fine.
+    Callers treat None as fail-open (fall back to the geometric test) but
+    should count it as a degraded check so a dangling dimension whose
+    enumeration throws is not silently reported as fine.
+
+    Args:
+        dim: Drawing dimension
+
+    Returns:
+        True if all anchors are gone, False if one remains, None on API error
     """
     try:
         enum = dim.GetRelatedObjects()
@@ -2203,6 +2315,17 @@ def check_for_unattached_dimensions(
     # Per drawing: read its DXF, collect attach targets, find unattached
     # dimension points, cloud each in the sheet view, then commit
     def _process(handler: TeklaDrawingHandler, drawing: TeklaDrawing, dxf_path: Path) -> dict[str, Any]:
+        """
+        Check one drawing DXF for unattached dimensions.
+
+        Args:
+            handler: Drawing handler
+            drawing: Drawing to check
+            dxf_path: Exported DXF path
+
+        Returns:
+            Per-drawing result
+        """
         nonlocal total_unattached, total_checked, total_degraded, total_clouds_drawn, total_cloud_failures
         mark = drawing.mark
         doc = ezdxf.readfile(str(dxf_path))

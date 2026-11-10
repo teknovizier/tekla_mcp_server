@@ -22,6 +22,15 @@ class SnapshotBuilder:
 
     @staticmethod
     def build_part_snapshot(part: Any) -> PartSnapshot:
+        """
+        Build a snapshot of a part.
+
+        Args:
+            part: Wrapped Tekla part
+
+        Returns:
+            Part snapshot
+        """
         report_properties = SnapshotBuilder._build_report_properties(part, get_config().get_report_props("part"))
         user_properties = SnapshotBuilder._build_sorted_user_properties(part)
         # Shared by cut parts and welds so the part's origin is read at most once
@@ -43,6 +52,15 @@ class SnapshotBuilder:
 
     @staticmethod
     def build_assembly_snapshot(assembly: Any) -> AssemblySnapshot:
+        """
+        Build a snapshot of an assembly and its parts.
+
+        Args:
+            assembly: Wrapped Tekla assembly
+
+        Returns:
+            Assembly snapshot
+        """
         from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaPart, wrap_model_objects
 
         report_properties = SnapshotBuilder._build_report_properties(assembly, get_config().get_report_props("assembly"))
@@ -81,6 +99,15 @@ class SnapshotBuilder:
 
     @staticmethod
     def _get_rebar_prop_names(raw_rebar: Any) -> list[str]:
+        """
+        Return report property names for a rebar type.
+
+        Args:
+            raw_rebar: Raw Tekla rebar object
+
+        Returns:
+            Report property names
+        """
         if isinstance(raw_rebar, (BaseRebarGroup, SingleRebar)):
             return get_config().get_report_props("rebar_group")
         elif isinstance(raw_rebar, RebarMesh):
@@ -91,6 +118,15 @@ class SnapshotBuilder:
 
     @staticmethod
     def build_reinforcement_snapshot(rebar: Any) -> ReinforcementSnapshot:
+        """
+        Build a snapshot of a reinforcement object.
+
+        Args:
+            rebar: Wrapped Tekla reinforcement
+
+        Returns:
+            Reinforcement snapshot
+        """
         raw = rebar.model_object
         rebar_type = type(raw).__name__
 
@@ -114,16 +150,45 @@ class SnapshotBuilder:
 
     @staticmethod
     def _build_report_properties(obj: Any, prop_names: list[str]) -> dict[str, Any]:
+        """
+        Read report properties sorted by name.
+
+        Args:
+            obj: Wrapped Tekla object
+            prop_names: Report property names
+
+        Returns:
+            Sorted report properties
+        """
         props = obj.get_multiple_report_properties(prop_names)
         return dict(sorted(props.items()))
 
     @staticmethod
     def _build_sorted_user_properties(obj: Any) -> dict[str, Any]:
+        """
+        Read user properties sorted by name.
+
+        Args:
+            obj: Wrapped Tekla object
+
+        Returns:
+            Sorted user properties
+        """
         props = obj.get_all_user_properties()
         return dict(sorted(props.items()))
 
     @staticmethod
     def _build_cutparts(part: Any, origin_cache: dict[str, tuple[float, float, float] | None]) -> list[dict[str, Any]]:
+        """
+        Collect cut part data for a part.
+
+        Args:
+            part: Wrapped Tekla part
+            origin_cache: Cached part origin
+
+        Returns:
+            Sorted cut part dicts
+        """
         cutparts = []
         boolean_enum = part.model_object.GetBooleans()
         while boolean_enum.MoveNext():
@@ -146,6 +211,15 @@ class SnapshotBuilder:
 
     @staticmethod
     def _build_reinforcements(part: Any) -> list[dict[str, Any]]:
+        """
+        Collect reinforcement data for a part.
+
+        Args:
+            part: Wrapped Tekla part
+
+        Returns:
+            Sorted reinforcement dicts
+        """
         from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
         reinforcements = []
@@ -175,6 +249,16 @@ class SnapshotBuilder:
 
     @staticmethod
     def _build_welds(part: Any, origin_cache: dict[str, tuple[float, float, float] | None]) -> list[dict[str, Any]]:
+        """
+        Collect weld data for a part.
+
+        Args:
+            part: Wrapped Tekla part
+            origin_cache: Cached part origin
+
+        Returns:
+            Sorted weld dicts
+        """
         from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
         welds = []
@@ -198,7 +282,15 @@ class SnapshotBuilder:
 
     @staticmethod
     def _get_origin(obj: Any) -> tuple[float, float, float] | None:
-        """Reads an object's coordinate system origin, or None if unavailable."""
+        """
+        Reads an object's coordinate system origin, or None if unavailable.
+
+        Args:
+            obj: Raw Tekla object
+
+        Returns:
+            Origin coordinates or `None`
+        """
         try:
             origin = obj.GetCoordinateSystem().Origin
             return (float(origin.X), float(origin.Y), float(origin.Z))
@@ -214,6 +306,14 @@ class SnapshotBuilder:
 
         The parent's origin is read on first use and kept in `origin_cache`, so a part
         without cut parts or welds never reads it and one with many reads it once.
+
+        Args:
+            child: Raw child object
+            parent: Raw parent object
+            origin_cache: Cached parent origin
+
+        Returns:
+            Offsets 'dx', 'dy', 'dz' or `None`
         """
         if "origin" not in origin_cache:
             origin_cache["origin"] = SnapshotBuilder._get_origin(parent)

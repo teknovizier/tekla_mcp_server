@@ -32,6 +32,22 @@ def _manage_components_on_selected_objects(
     *args: Any,
     **kwargs: Any,
 ) -> ToolResult:
+    """
+    Apply a component callback to the selected objects.
+
+    Args:
+        callback: Per-object component action
+        component: Component to apply
+        custom_properties_errors: Custom property errors
+        *args: Extra callback args
+        **kwargs: Extra callback kwargs
+
+    Returns:
+        Tool result with counts
+
+    Raises:
+        ValueError: If the component type is unsupported
+    """
     model = TeklaModel()
     selected_objects = model.get_selected_objects()
     if component.component_type in [ComponentType.DETAIL, ComponentType.COMPONENT]:
@@ -50,6 +66,21 @@ def _process_detail_or_component(
     *args: Any,
     **kwargs: Any,
 ) -> ToolResult:
+    """
+    Apply a detail or component callback to each selected part.
+
+    Args:
+        selected_objects: Selected model objects
+        callback: Per-object component action
+        model: Tekla model
+        component: Component to apply
+        custom_properties_errors: Custom property errors
+        *args: Extra callback args
+        **kwargs: Extra callback kwargs
+
+    Returns:
+        Tool result with counts
+    """
     processed_count = 0
     processed_components_count = 0
     errors: list[dict[str, Any]] = []
@@ -111,6 +142,24 @@ def _process_seam_or_connection(
     *args: Any,
     **kwargs: Any,
 ) -> ToolResult:
+    """
+    Apply a seam or connection callback to a selected wall pair.
+
+    Args:
+        selected_objects: Selected model objects
+        callback: Per-pair component action
+        model: Tekla model
+        component: Component to apply
+        custom_properties_errors: Custom property errors
+        *args: Extra callback args
+        **kwargs: Extra callback kwargs
+
+    Returns:
+        Tool result with counts
+
+    Raises:
+        ValueError: If not exactly two elements are selected
+    """
     count = selected_objects.GetSize()
     if count == 1:
         raise ValueError("Only one element selected. Please select two elements.")
@@ -163,6 +212,18 @@ def _process_seam_or_connection(
 
 @ensure_transformation_plane
 def _put_single_component(model: TeklaModel, component: BaseComponent, selected_object: Any, *args: Any) -> int:
+    """
+    Insert a component into one object.
+
+    Args:
+        model: Tekla model
+        component: Component to insert
+        selected_object: Host object
+        *args: Unused extra args
+
+    Returns:
+        Number of inserted components
+    """
     handler = HandlerRegistry.get(component.name)
 
     context = {}
@@ -184,6 +245,18 @@ def _put_single_component(model: TeklaModel, component: BaseComponent, selected_
 
 @ensure_transformation_plane
 def _modify_single_component(model: TeklaModel, component: BaseComponent, selected_object: Any, *args: Any) -> int:
+    """
+    Modify matching components on one object.
+
+    Args:
+        model: Tekla model
+        component: Component with new properties
+        selected_object: Host object
+        *args: Unused extra args
+
+    Returns:
+        Number of modified components
+    """
     counter = 0
     component_def = get_config().get_component_by_tekla_name(component.name)
     has_schema = bool(component_def and component_def.get("custom_properties"))
@@ -500,7 +573,7 @@ def modify_components(
     - First call `get_components` to see current component values
     - Then call this tool with only the properties the user wants to change
     - Use Tekla config keys (e.g. `RecessLength`, `RecessHeight`), NOT user-friendly descriptions
-    - Only properties in `custom_properties` will be modified; all others remain unchanged
+    - Only properties in `custom_properties` will be modified, all others remain unchanged
     """
     component = BaseComponent(name=component_name, custom_properties=custom_properties)
 

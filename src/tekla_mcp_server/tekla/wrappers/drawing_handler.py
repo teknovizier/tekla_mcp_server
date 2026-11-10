@@ -20,6 +20,12 @@ class TeklaDrawingHandler:
     """
 
     def __init__(self) -> None:
+        """
+        Create a `DrawingHandler` and check the connection.
+
+        Raises:
+            ConnectionError: If not connected to Tekla
+        """
         self._handler = DrawingHandler()
         if not self._handler.GetConnectionStatus():
             raise ConnectionError("Not connected to Tekla")
@@ -30,47 +36,115 @@ class TeklaDrawingHandler:
         return self._handler
 
     def get_connection_status(self) -> bool:
-        """Check if the connection to Tekla is still active."""
+        """
+        Check if the connection to Tekla is still active.
+
+        Returns:
+            True if connected
+        """
         return self._handler.GetConnectionStatus()
 
     def get_active_drawing(self) -> TeklaDrawing | None:
-        """Return the active drawing, or None if none is open."""
+        """
+        Return the active drawing, or None if none is open.
+
+        Returns:
+            Active drawing or None
+        """
         drawing = self._handler.GetActiveDrawing()
         return TeklaDrawing(drawing) if drawing is not None else None
 
     def require_active_drawing(self) -> TeklaDrawing:
-        """Return the active drawing, or raise RuntimeError if none is open."""
+        """
+        Return the active drawing, or raise RuntimeError if none is open.
+
+        Returns:
+            Active drawing
+
+        Raises:
+            RuntimeError: If no drawing is open.
+        """
         drawing = self.get_active_drawing()
         if drawing is None:
             raise RuntimeError("No drawing is currently open.")
         return drawing
 
     def set_active_drawing(self, drawing: TeklaDrawing) -> bool:
-        """Open a drawing in the drawing editor. Returns True on success."""
+        """
+        Open a drawing in the drawing editor.
+
+        Args:
+            drawing: Drawing to open
+
+        Returns:
+            True on success
+        """
         return self._handler.SetActiveDrawing(drawing.drawing)
 
     def close_active_drawing(self, save: bool = True) -> bool:
-        """Close the active drawing. Returns True on success."""
+        """
+        Close the active drawing.
+
+        Args:
+            save: Save before closing
+
+        Returns:
+            True on success
+        """
         return self._handler.CloseActiveDrawing(save)
 
     def save_active_drawing(self) -> bool:
-        """Save the active drawing. Returns True on success."""
+        """
+        Save the active drawing.
+
+        Returns:
+            True on success
+        """
         return self._handler.SaveActiveDrawing()
 
     def issue_drawing(self, drawing: TeklaDrawing) -> bool:
-        """Issue the drawing. Returns True on success."""
+        """
+        Issue the drawing.
+
+        Args:
+            drawing: Target drawing
+
+        Returns:
+            True on success
+        """
         return self._handler.IssueDrawing(drawing.drawing)
 
     def unissue_drawing(self, drawing: TeklaDrawing) -> bool:
-        """Unissue the drawing. Returns True on success."""
+        """
+        Unissue the drawing.
+
+        Args:
+            drawing: Target drawing
+
+        Returns:
+            True on success
+        """
         return self._handler.UnissueDrawing(drawing.drawing)
 
     def update_drawing(self, drawing: TeklaDrawing) -> bool:
-        """Update the drawing. Returns True on success."""
+        """
+        Update the drawing.
+
+        Args:
+            drawing: Target drawing
+
+        Returns:
+            True on success
+        """
         return self._handler.UpdateDrawing(drawing.drawing)
 
     def get_all_drawings(self) -> list[TeklaDrawing]:
-        """Return all drawings in the model."""
+        """
+        Return all drawings in the model.
+
+        Returns:
+            All drawings
+        """
         return wrap_drawings(self._handler.GetDrawings())
 
     def find_drawings_by_marks(self, marks: list[str]) -> tuple[list[TeklaDrawing], list[str]]:
@@ -146,20 +220,52 @@ class TeklaDrawingHandler:
         return result
 
     def index_views_by_key(self) -> dict[str, TeklaDrawingView]:
-        """Return {view_key: TeklaDrawingView} for all views in the active drawing."""
+        """
+        Return {view_key: TeklaDrawingView} for all views in the active drawing.
+
+        Returns:
+            Views keyed by `view_key`
+        """
         return {v.view_key: v for v in self.get_drawing_views()}
 
     def get_view_by_key(self, view_key: str) -> TeklaDrawingView:
-        """Return the TeklaDrawingView matching view_key, or raise ValueError."""
+        """
+        Return the TeklaDrawingView matching view_key, or raise ValueError.
+
+        Args:
+            view_key: Key of the view
+
+        Returns:
+            Matching view
+
+        Raises:
+            ValueError: If no view in the active drawing has `view_key`.
+        """
         view = self.index_views_by_key().get(view_key)
         if view is None:
             raise ValueError(f"No view found with key '{view_key}'. Use `get_drawing_views` to list available keys.")
         return view
 
     def select_drawing_objects(self, objects: list[DrawingObject]) -> bool:
-        """Select the given drawing objects in the active drawing. Returns True on success."""
+        """
+        Select the given drawing objects in the active drawing.
+
+        Args:
+            objects: Drawing objects to select
+
+        Returns:
+            True on success
+        """
         return self._handler.GetDrawingObjectSelector().SelectObjects(to_array_list(objects), False)
 
     def unselect_drawing_objects(self, objects: list[DrawingObject]) -> bool:
-        """Unselect the given drawing objects in the active drawing. Returns True on success."""
+        """
+        Unselect the given drawing objects in the active drawing.
+
+        Args:
+            objects: Drawing objects to unselect
+
+        Returns:
+            True on success
+        """
         return self._handler.GetDrawingObjectSelector().UnselectObjects(to_array_list(objects))

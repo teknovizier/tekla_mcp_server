@@ -22,7 +22,12 @@ HANDLERS: dict[str, type] = {}
 
 
 def register_handler(cls: type) -> type:
-    """Decorator to register a handler class."""
+    """
+    Decorator to register a handler class.
+
+    Returns:
+        The same class
+    """
     HANDLERS[cls.__name__] = cls
     return cls
 
@@ -42,6 +47,12 @@ class HandlerRegistry:
     def get(cls, tekla_name: str) -> Any | None:
         """
         Get handler instance by Tekla component name, ignoring case.
+
+        Args:
+            tekla_name: Tekla component name
+
+        Returns:
+            Handler instance or `None`
         """
         # Keys are lowercased so the lookup matches components the way the tools do
         key = tekla_name.strip().lower()
@@ -80,6 +91,12 @@ class HandlerRegistry:
     def has_handler(cls, tekla_name: str) -> bool:
         """
         Check if a handler exists for the given Tekla component name.
+
+        Args:
+            tekla_name: Tekla component name
+
+        Returns:
+            Whether a handler exists
         """
         return cls.get(tekla_name) is not None
 
@@ -99,6 +116,12 @@ class LiftingAnchorsHandler:
     """
 
     def __init__(self, config: dict[str, Any] | None = None):
+        """
+        Create the handler from its config.
+
+        Args:
+            config: Handler config from `base_components.json`
+        """
         if config:
             self.safety_margin = config.get("safety_margin", 5)
             self.anchor_types = config.get("anchor_types", {})
@@ -109,6 +132,7 @@ class LiftingAnchorsHandler:
 
     @property
     def tekla_name(self) -> str:
+        """Return the Tekla component name."""
         return "Lifting Anchor"
 
     @property
@@ -129,6 +153,9 @@ class LiftingAnchorsHandler:
 
         Returns:
             Context dict with processing data (number_of_anchors, etc.)
+
+        Raises:
+            ValueError: If the element is not concrete or its assembly cannot be wrapped.
         """
         from tekla_mcp_server.models import ElementTypes
         from tekla_mcp_server.tekla.loader import Solid, TransformationPlane
@@ -254,13 +281,27 @@ class LiftingAnchorsHandler:
         return counter
 
     def _iterate_boolean_parts(self, selected_object: "ModelObject") -> list["BooleanPart"]:
-        """Iterates through boolean parts of an object."""
+        """
+        Iterates through boolean parts of an object.
+
+        Args:
+            selected_object: Object to scan
+
+        Returns:
+            Boolean parts of the object
+        """
         from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 
         return list(iterate_boolean_parts(selected_object))
 
     def _process_recesses(self, selected_object: "ModelObject", local_cog: Any) -> None:
-        """Creates boolean cuts for lifting anchor recesses."""
+        """
+        Creates boolean cuts for lifting anchor recesses.
+
+        Args:
+            selected_object: Object to cut
+            local_cog: Center of gravity in local coordinates
+        """
         from tekla_mcp_server.tekla.loader import BooleanPart, Solid
 
         default_offset = 0.0
@@ -291,7 +332,23 @@ class LiftingAnchorsHandler:
         depth_offset: float,
         cut_length: float,
     ) -> bool:
-        """Creates a boolean cut on the selected object."""
+        """
+        Creates a boolean cut on the selected object.
+
+        Args:
+            selected_object: Object to cut
+            x_position: Cut X position
+            y_position: Cut Y position
+            cut_height: Cut profile height
+            depth_offset: Cut depth offset
+            cut_length: Cut profile length
+
+        Returns:
+            Whether the cut was added
+
+        Raises:
+            ValueError: If the target object or the cutting part cannot be wrapped.
+        """
         from tekla_mcp_server.tekla.loader import Beam, Point, Position, Solid
         from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object
 
@@ -332,6 +389,17 @@ class LiftingAnchorsHandler:
         This function iteratively tries to find suitable lifting anchors, starting with 2 and increasing to 4
         if necessary. It adjusts the required lifting capacity by applying the specified safety margin and
         selects anchors from the provided anchor types that meet the capacity requirement.
+
+        Args:
+            element_type: Element type name
+            element_weight: Element weight in kg
+            anchor_types: Anchor types to choose from
+
+        Returns:
+            Anchor count and valid anchor types
+
+        Raises:
+            ValueError: If no anchor type can carry the element weight.
         """
         kg_to_ton = 1000
         percent = 100
@@ -373,6 +441,18 @@ class LiftingAnchorsHandler:
         It ensures that the distances are multiples of 5 and adjusts them dynamically to meet
         the minimum edge distance constraints. Additionally, it verifies that the required anchor distances
         do not exceed the total element length.
+
+        Args:
+            min_edge_distance: Minimum anchor edge distance
+            element_length: Element length
+            cog_x: COG X in local coordinates
+            number_of_anchors: Number of anchors
+
+        Returns:
+            Start distance, end distance and double anchor spacing
+
+        Raises:
+            ValueError: If the element is too short to keep the required distances.
         """
         double_anchor_spacing_long_wall = 1000.0
         double_anchor_spacing_shorter_wall = 500.0

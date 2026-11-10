@@ -46,7 +46,15 @@ ZERO_GUID = "00000000-0000-0000-0000-000000000000"
 
 
 def get_tekla_classes(material_key: str) -> set[int]:
-    """Get all tekla_classes for a material group from the config."""
+    """
+    Get all tekla_classes for a material group from the config.
+
+    Args:
+        material_key: Material group key
+
+    Returns:
+        Tekla class numbers
+    """
     material = get_config().element_types.get(material_key, {})
     return {tekla_class for type_config in material.values() for tekla_class in type_config.get("tekla_classes", [])}
 
@@ -97,6 +105,9 @@ class BoundingBox:
     def __init__(self, model_object: TeklaModelObject):
         """
         Read all six coordinates in one batched call, about 3x faster than six single reads.
+
+        Args:
+            model_object: Wrapped object to measure
 
         Raises:
             ValueError: If any coordinate is unavailable for this object.
@@ -157,6 +168,13 @@ class BoundingBox:
     def overlaps(self, other: BoundingBox, tol: float | None = None) -> bool:
         """
         Check if bounding boxes overlap within tolerance.
+
+        Args:
+            other: Box to compare with
+            tol: Overlap tolerance in mm
+
+        Returns:
+            True if the boxes overlap
         """
         if tol is None:
             tol = BoundingBox.matching_tolerances()[0]
@@ -172,6 +190,14 @@ class BoundingBox:
     def matches(self, other: BoundingBox, tol: float | None = None, center_tol_factor: float | None = None) -> bool:
         """
         Match using spatial overlap + centroid distance.
+
+        Args:
+            other: Box to compare with
+            tol: Overlap tolerance in mm
+            center_tol_factor: Centroid tolerance as diagonal fraction
+
+        Returns:
+            True if the boxes match
         """
         if tol is None or center_tol_factor is None:
             default_tol, default_factor = BoundingBox.matching_tolerances()
@@ -197,6 +223,13 @@ def _ray_cast_inside(solid_self: Solid, solid_other: Solid) -> bool:
     Casts a ray in a non-axis-aligned direction to avoid grazing hits, counts
     only forward-half-space intersections. An odd count means inside.
     Does not handle invalid solids. Callers must validate before calling.
+
+    Args:
+        solid_self: Candidate solid
+        solid_other: Container solid
+
+    Returns:
+        True if the overlap center is inside `solid_other`
     """
     cmin, cmax = solid_self.MinimumPoint, solid_self.MaximumPoint
     emin, emax = solid_other.MinimumPoint, solid_other.MaximumPoint
@@ -229,11 +262,20 @@ class SolidGeometryMixin:
 
     @property
     def model_object(self) -> ModelObject:
+        """
+        Return the wrapped model object, provided by the host class.
+
+        Raises:
+            NotImplementedError: If the host class does not override it.
+        """
         raise NotImplementedError
 
     def get_solid(self) -> Solid:
         """
         Returns the solid of the model object.
+
+        Returns:
+            The object's solid
         """
         return self.model_object.GetSolid()
 
@@ -265,6 +307,14 @@ class SolidGeometryMixin:
           ray exits and re-enters through the concavity, yielding an even parity count.
         - Near-tangent or very thin geometry may still produce false positives or negatives.
         - Any geometry/kernel failure conservatively returns True to avoid false negatives.
+
+        Args:
+            other: Container object
+            container_solids: Solid cache for `other`
+            self_solids: Solid cache for this object
+
+        Returns:
+            True if this object is inside `other`
         """
         if container_solids is None:
             container_solids = {}
@@ -334,6 +384,9 @@ def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:
     """
     Wraps a Tekla ModelObject in the appropriate wrapper class.
 
+    Args:
+        model_object: Tekla object to wrap
+
     Returns:
         - TeklaAssembly if the object is an Assembly
         - TeklaBoltGroup if the object is a BoltGroup
@@ -376,6 +429,12 @@ def wrap_model_objects(model_objects: Iterable) -> Generator[TeklaModelObject, N
     Wraps each Tekla ModelObject in the appropriate wrapper class.
 
     Currently only some of the objects are supported, the other object types will be ignored.
+
+    Args:
+        model_objects: Tekla objects to wrap
+
+    Yields:
+        TeklaModelObject: The wrapper for each supported object.
     """
     for model_object in model_objects:
         wrapped = wrap_model_object(model_object)
@@ -386,6 +445,12 @@ def wrap_model_objects(model_objects: Iterable) -> Generator[TeklaModelObject, N
 def _get_top_assembly(assembly: ModelObject) -> "TeklaAssembly":
     """
     Walks up the object tree and returns the topmost Assembly wrapper.
+
+    Args:
+        assembly: Starting assembly
+
+    Returns:
+        Wrapped top-level assembly
     """
     parent = assembly.GetAssembly()
     while parent is not None:
@@ -400,6 +465,12 @@ class TeklaModelObject:
     """
 
     def __init__(self, model_object: ModelObject):
+        """
+        Wrap a Tekla model object.
+
+        Args:
+            model_object: Tekla object to wrap
+        """
         self._model_object = model_object
 
     @property
@@ -434,6 +505,9 @@ class TeklaModelObject:
     def phase(self) -> int:
         """
         Returns the phase number of the Tekla model object.
+
+        Raises:
+            AttributeError: If Tekla cannot return the phase.
         """
         is_ok, phase = self.model_object.GetPhase()
         if not is_ok:
@@ -465,20 +539,27 @@ class TeklaModelObject:
     def modify(self) -> bool:
         """
         Commits pending property changes to the model.
-        Returns True if successful.
+
+        Returns:
+            True if modified
         """
         return self.model_object.Modify()
 
     def delete(self) -> bool:
         """
         Deletes the object from the model.
-        Returns True if successful.
+
+        Returns:
+            True if deleted
         """
         return self.model_object.Delete()
 
     def get_top_level_assembly(self) -> "TeklaAssembly | None":
         """
         Gets top level assembly.
+
+        Returns:
+            Top-level assembly, or None
         """
         try:
             assembly = self._model_object.GetAssembly()
@@ -492,6 +573,12 @@ class TeklaModelObject:
         """
         Retrieves a report property for a given Tekla model object.
         Uses TemplateAttributeParser to determine the data type.
+
+        Args:
+            property_name: Report property name
+
+        Returns:
+            Property value
 
         Raises:
             KeyError: If the property is not found in Tekla's attribute definitions.
@@ -508,6 +595,13 @@ class TeklaModelObject:
         """
         Retrieves a user property for a given Tekla model object.
 
+        Args:
+            property_name: UDA name
+            property_type: Expected value type
+
+        Returns:
+            Property value
+
         Raises:
             TypeError: If the provided property type is not str, int, or float.
             AttributeError: If the property retrieval fails for the given element.
@@ -523,6 +617,13 @@ class TeklaModelObject:
         """
         Sets a user property for a given Tekla model object.
 
+        Args:
+            property_name: UDA name
+            property_value: Value to set
+
+        Returns:
+            True if set
+
         Raises:
             TypeError: If the provided property type is not str, int, or float.
         """
@@ -532,6 +633,9 @@ class TeklaModelObject:
     def get_all_user_properties(self) -> dict[str, str | int | float]:
         """
         Gets all user properties for a given Tekla model object.
+
+        Returns:
+            UDA names mapped to values
         """
         hash_table = Hashtable()
         self.model_object.GetAllUserProperties(hash_table)
@@ -540,6 +644,12 @@ class TeklaModelObject:
     def get_multiple_report_properties(self, prop_names: list[str]) -> dict[str, str | int | float | None]:
         """
         Fetches multiple report properties.
+
+        Args:
+            prop_names: Report property names
+
+        Returns:
+            Names mapped to values, None if unavailable
         """
         result: dict[str, str | int | float | None] = {}
         for prop in prop_names:
@@ -553,6 +663,12 @@ class TeklaModelObject:
         """
         Gets element properties as dict.
         Override in subclasses to add type-specific properties.
+
+        Args:
+            resolved_report_props: Resolved report property names
+
+        Returns:
+            Element properties
         """
         return {
             "guid": self.guid,
@@ -567,6 +683,12 @@ class TeklaModelObject:
 
         Expects names already resolved by `TemplateAttributeParser.resolve_attributes`,
         callers resolve once per tool call instead of once per element.
+
+        Args:
+            resolved_report_props: Resolved report property names
+
+        Returns:
+            Report property entries with name, type, unit and value
         """
         if not resolved_report_props:
             return []
@@ -653,6 +775,12 @@ class TeklaReferenceModelObject(TeklaModelObject):
     def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
         """
         Gets element properties as dict for IFC reference objects.
+
+        Args:
+            resolved_report_props: Resolved report property names
+
+        Returns:
+            Element properties
         """
         props = super().get_properties(resolved_report_props)
         props["guid"] = self.get_report_property("GUID")
@@ -743,6 +871,9 @@ class TeklaBooleanPart(TeklaModelObject):
     def get_top_level_assembly(self) -> TeklaAssembly | None:
         """
         Returns the top-level assembly of the cut part's father part.
+
+        Returns:
+            Top-level assembly, or None
         """
         father = self.father
         return father.get_top_level_assembly() if father is not None else None
@@ -850,7 +981,15 @@ class TeklaBoltGroup(TeklaModelObject):
         """
 
         def _connected_part(part: Part | None) -> PartReference:
-            """Build a `PartReference` from a connected part, if it is one."""
+            """
+            Build a `PartReference` from a connected part, if it is one.
+
+            Args:
+                part: Connected part, or None
+
+            Returns:
+                Part reference, empty if not a part
+            """
             if not isinstance(part, Part):
                 return PartReference(guid=None, name=None, position=None)
             wrapped = wrap_model_object(part)
@@ -1304,6 +1443,9 @@ class TeklaAssembly(TeklaModelObject):
         Args:
             main_part: This assembly's main part if the caller already fetched it
 
+        Returns:
+            True if an embedded detail
+
         Raises:
             ValueError: If the main part is not available.
         """
@@ -1357,6 +1499,9 @@ class TeklaAssembly(TeklaModelObject):
     def get_top_level_assembly(self) -> "TeklaAssembly":
         """
         Gets the top assembly for the given assembly.
+
+        Returns:
+            Top-level assembly
         """
         return _get_top_assembly(self._model_object)
 
@@ -1366,6 +1511,9 @@ class TeklaAssembly(TeklaModelObject):
 
         Does not recurse into subassemblies - only the parts directly owned
         by this assembly are returned.
+
+        Returns:
+            Main and secondary parts
         """
         parts: list[TeklaPart] = []
         try:
@@ -1438,6 +1586,9 @@ class TeklaAssembly(TeklaModelObject):
         Args:
             include_all: If True, includes welds, reinforcements, secondaries, subassemblies.
                 If False, returns only the parts, see `get_all_parts`.
+
+        Returns:
+            Child model objects
         """
         if not include_all:
             return [part.model_object for part in self.get_all_parts()]
@@ -1477,12 +1628,21 @@ class TeklaAssembly(TeklaModelObject):
         - Main part
         - Secondaries
         - Subassemblies
+
+        Returns:
+            Assembly snapshot
         """
         return SnapshotBuilder.build_assembly_snapshot(self)
 
     def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
         """
         Gets element properties for Assembly.
+
+        Args:
+            resolved_report_props: Resolved report property names
+
+        Returns:
+            Element properties
         """
         props = super().get_properties(resolved_report_props)
         props["position"] = self.position
@@ -1501,7 +1661,16 @@ class TeklaAssembly(TeklaModelObject):
     ) -> dict[str, Any]:
         """
         Sets properties on the assembly.
-        Returns a summary of changes made, including a list of per-property errors.
+
+        Args:
+            name: Assembly name
+            assembly_prefix: Assembly number prefix
+            assembly_start_number: Assembly start number
+            phase: Phase number
+            user_properties: UDA names mapped to values
+
+        Returns:
+            Change counts and per-property errors
         """
         changes: dict[str, int] = {
             "name": 0,
@@ -1572,6 +1741,12 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         """
         Returns the solid of the part.
         Pass a SolidCreationTypeEnum for a specific solid type.
+
+        Args:
+            creation_type: Solid type, default if None
+
+        Returns:
+            The part's solid
         """
         if creation_type is None:
             return self.model_object.GetSolid()
@@ -1702,6 +1877,9 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
     def get_top_level_assembly(self) -> TeklaAssembly | None:
         """
         Gets the part's containing assembly and walk up to the top.
+
+        Returns:
+            Top-level assembly, or None
         """
         assembly = self._model_object.GetAssembly()
         if assembly is None:
@@ -1712,6 +1890,12 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
     def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
         """
         Gets element properties including position for Part.
+
+        Args:
+            resolved_report_props: Resolved report property names
+
+        Returns:
+            Element properties
         """
         props = super().get_properties(resolved_report_props)
         props["position"] = self.position
@@ -1731,6 +1915,12 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
     def has_spatial_overlap(self, other: SolidGeometryMixin) -> bool:
         """
         Checks whether the bounding boxes of this Tekla part and another SolidGeometryMixin object intersect.
+
+        Args:
+            other: Object to test against
+
+        Returns:
+            True if the boxes intersect
         """
         box_self = BoundingBox.from_solid(self.get_solid())
         box_other = BoundingBox.from_solid(other.get_solid())
@@ -1744,6 +1934,13 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         as a Boolean operator and performs the cut. It then compares the volume before and after the operation to verify
         that the cut had an effect. A cut that did not reduce the volume is removed again, so a False result never leaves
         a boolean behind. Optionally deletes the cutting part from the model if the cut was successful.
+
+        Args:
+            cutting_part: Part to cut with
+            delete_cutting_part: Delete the cutter after a successful cut
+
+        Returns:
+            True if the cut reduced the volume
         """
         if self.model_object is None or cutting_part.model_object is None:
             logger.warning("Boolean cut skipped: one or both model objects are None")
@@ -1798,6 +1995,9 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
 
         Args:
             include_all: If True, includes welds and reinforcements.
+
+        Returns:
+            The part and its child objects
         """
         objects = [self._model_object]
 
@@ -1820,6 +2020,9 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         - Cutparts (boolean operations)
         - Reinforcements (rebar groups, meshes, strands)
         - Welds
+
+        Returns:
+            Part snapshot
         """
         return SnapshotBuilder.build_part_snapshot(self)
 
@@ -1839,7 +2042,22 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
     ) -> dict[str, Any]:
         """
         Sets properties on the part.
-        Returns a summary of changes made, including a list of per-property errors.
+
+        Args:
+            name: Part name
+            profile: Profile string
+            material: Material grade
+            tekla_class: Tekla class number
+            finish: Finish name
+            phase: Phase number
+            part_prefix: Part number prefix
+            part_start_number: Part start number
+            assembly_prefix: Assembly number prefix
+            assembly_start_number: Assembly start number
+            user_properties: UDA names mapped to values
+
+        Returns:
+            Change counts and per-property errors
         """
         changes: dict[str, int] = {
             "name": 0,
@@ -1946,6 +2164,15 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         return {**changes, "errors": errors}
 
     def apply_position(self, position: PositionInput | None):
+        """
+        Apply position settings to the part.
+
+        Args:
+            position: Position settings, or None
+
+        Returns:
+            This part
+        """
         if not position:
             return self
 
@@ -1960,6 +2187,16 @@ class TeklaPart(TeklaModelObject, SolidGeometryMixin):
         return self
 
     def finalize_placement(self, part_number, assembly_number):
+        """
+        Insert the part and apply its numbering series.
+
+        Args:
+            part_number: Part numbering series
+            assembly_number: Assembly numbering series
+
+        Returns:
+            This part, or None if the insert failed
+        """
         if self.model_object.Insert():
             if assembly_number:
                 self.assembly_number = assembly_number
@@ -1977,6 +2214,12 @@ class TeklaBeam(TeklaPart):
     """
 
     def __init__(self, beam: Beam | None = None):
+        """
+        Wrap a Tekla beam.
+
+        Args:
+            beam: Tekla beam to wrap
+        """
         super().__init__(beam)
         self._beam = beam
 
@@ -2029,7 +2272,15 @@ class TeklaBeam(TeklaPart):
         self.modify()
 
     def apply_defaults(self, beam_type: BeamType) -> "TeklaBeam":
-        """Apply default position settings based on beam type."""
+        """
+        Apply default position settings based on beam type.
+
+        Args:
+            beam_type: Beam, column or panel
+
+        Returns:
+            This beam
+        """
         if beam_type == BeamType.COLUMN:
             self.model_object.Position.Depth = Position.DepthEnum.MIDDLE
             self.model_object.Position.Rotation = Position.RotationEnum.FRONT
@@ -2059,8 +2310,8 @@ class TeklaBeam(TeklaPart):
         Create and insert a new beam.
 
         Args:
-            start: Start point
-            end: End point
+            start_point: Start point
+            end_point: End point
             profile: Profile name
             material: Material grade
             tekla_class: Tekla class number
@@ -2073,7 +2324,7 @@ class TeklaBeam(TeklaPart):
             assembly_number: NumberingSeries for assembly numbering (optional)
 
         Returns:
-            TeklaBeam: The created beam wrapper
+            TeklaBeam: The created beam wrapper, or None if the insert failed
         """
         beam = Beam()
         beam.StartPoint = Point(start_point.x, start_point.y, start_point.z)
@@ -2107,6 +2358,12 @@ class TeklaContourPlate(TeklaPart):
     """
 
     def __init__(self, slab: ContourPlate | None = None):
+        """
+        Wrap a Tekla contour plate.
+
+        Args:
+            slab: Tekla contour plate to wrap
+        """
         super().__init__(slab)
         self._slab = slab
 
@@ -2128,7 +2385,12 @@ class TeklaContourPlate(TeklaPart):
         self.modify()
 
     def apply_defaults(self) -> "TeklaContourPlate":
-        """Apply default position settings for a slab."""
+        """
+        Apply default position settings for a slab.
+
+        Returns:
+            This plate
+        """
         self.model_object.Position.Depth = Position.DepthEnum.MIDDLE
         self.model_object.Position.Rotation = Position.RotationEnum.TOP
         self.model_object.Position.Plane = Position.PlaneEnum.MIDDLE
@@ -2269,6 +2531,9 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
     def get_top_level_assembly(self) -> TeklaAssembly | None:
         """
         Returns the top-level assembly of the reinforcement's father part.
+
+        Returns:
+            Top-level assembly, or None
         """
         host = self.father
         if host is None:
@@ -2279,6 +2544,12 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
     def get_properties(self, resolved_report_props: list[str] | None = None) -> dict[str, Any]:
         """
         Gets element properties for Reinforcement.
+
+        Args:
+            resolved_report_props: Resolved report property names
+
+        Returns:
+            Element properties
         """
         props = super().get_properties(resolved_report_props)
         props["position"] = self.position
@@ -2295,6 +2566,8 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
     def to_snapshot(self) -> ReinforcementSnapshot:
         """
         Creates a typed snapshot of this reinforcement object.
-        Returns a ReinforcementSnapshot with report properties, UDAs, father GUID, and rebar type.
+
+        Returns:
+            Snapshot with report properties, UDAs, father GUID and rebar type
         """
         return SnapshotBuilder.build_reinforcement_snapshot(self)

@@ -219,7 +219,15 @@ def check_connection_status() -> ResourceResult:
 
 
 def _parse_context_meta(path) -> dict:
-    """Extract name (# H1) and description (## H2) from a context file."""
+    """
+    Extract name (# H1) and description (## H2) from a context file.
+
+    Args:
+        path: Context file path
+
+    Returns:
+        Name, description and file stem
+    """
     name = path.stem
     description = ""
     for line in path.read_text(encoding="utf-8").splitlines():

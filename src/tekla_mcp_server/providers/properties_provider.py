@@ -41,7 +41,15 @@ properties_provider = LocalProvider()
 
 
 def _plane_to_dict(plane: Any) -> dict[str, dict[str, float]]:
-    """Convert the `Plane` of a fitting or cut plane to its origin and axes, in the current work plane."""
+    """
+    Convert the `Plane` of a fitting or cut plane to its origin and axes, in the current work plane.
+
+    Args:
+        plane: Tekla `Plane` object
+
+    Returns:
+        Origin and axis vectors
+    """
     return {
         "origin": {"x": plane.Origin.X, "y": plane.Origin.Y, "z": plane.Origin.Z},
         "axis_x": {"x": plane.AxisX.X, "y": plane.AxisX.Y, "z": plane.AxisX.Z},
@@ -162,6 +170,15 @@ def _get_compact_properties(selected_objects: Any) -> dict[str, Any]:
 
 
 def _validate_at_least_two_selected(count: int) -> None:
+    """
+    Check that at least two elements are selected.
+
+    Args:
+        count: Selected element count
+
+    Raises:
+        ValueError: If fewer than two are selected
+    """
     if count == 0:
         raise ValueError("No elements selected. Please select at least two elements.")
     if count == 1:
@@ -377,7 +394,7 @@ def get_elements_properties(
     ### `mode="flat"` (default)
     Returns key element properties with UDAs, grouped by type.
     Optionally request extra columns via `report_props_definitions`.
-    - Extract properties not in default columns; split multi-property phrases into separate items.
+    - Extract properties not in default columns. Split multi-property phrases into separate items.
     - Example: ["gross weight", "assembly top and bottom level", "length"] → ["gross weight", "assembly top level", "assembly bottom level", "length"]
 
     Bolt groups are returned in `bolts` with `bolt_standard`, `bolt_size`, `bolt_type`, `bolt_cut_length`,
@@ -733,6 +750,15 @@ def compare_elements(
     # Enforce type homogeneity - mixing Part snapshots with Reinforcement snapshots
     # produces meaningless diffs (completely different diff-view schemas).
     def _comparison_category(obj: TeklaModelObject) -> str:
+        """
+        Return the comparison category of an object.
+
+        Args:
+            obj: Wrapped model object
+
+        Returns:
+            'reinforcement', 'assembly' or 'part'
+        """
         if isinstance(obj, TeklaReinforcement):
             return "reinforcement"
         if isinstance(obj, TeklaAssembly):
@@ -750,6 +776,15 @@ def compare_elements(
     IGNORED_KEYS = {"id", "guid"}
 
     def _canonical(value: Any) -> Any:
+        """
+        Return a hashable form of a value without ignored keys.
+
+        Args:
+            value: Snapshot value
+
+        Returns:
+            Hashable value
+        """
         if isinstance(value, dict):
             return tuple((k, _canonical(v)) for k, v in sorted(value.items()) if k.lower() not in IGNORED_KEYS)
         if isinstance(value, list):
@@ -757,6 +792,15 @@ def compare_elements(
         return value
 
     def _strip_ignored(value: Any) -> Any:
+        """
+        Remove ignored keys from a value recursively.
+
+        Args:
+            value: Snapshot value
+
+        Returns:
+            Value without ignored keys
+        """
         if isinstance(value, dict):
             return {k: _strip_ignored(v) for k, v in value.items() if k.lower() not in IGNORED_KEYS}
         if isinstance(value, list):
@@ -767,7 +811,11 @@ def compare_elements(
         """
         Recursively compute a diff across N per-element values, stripping identical sub-values.
 
-        Returns None when all values are identical.
+        Args:
+            values: Per-element values
+
+        Returns:
+            Diff, or None when all values are identical
         """
         if len({_canonical(v) for v in values}) == 1:
             return None  # all identical - strip entirely
@@ -813,7 +861,15 @@ def compare_elements(
         return values  # primitives or mismatched shapes - show raw values per element
 
     def _compute_multi_diff(snap_views: list[dict]) -> dict[str, Any] | None:
-        """Top-level diff: for each field that differs across any element, recurse into it."""
+        """
+        Top-level diff: for each field that differs across any element, recurse into it.
+
+        Args:
+            snap_views: Per-element snapshot views
+
+        Returns:
+            Diff by field or None
+        """
         all_keys: set[str] = set()
         for snap in snap_views:
             all_keys.update(snap.keys())

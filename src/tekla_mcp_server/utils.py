@@ -29,6 +29,18 @@ class BBox(tuple):
     """
 
     def __new__(cls, xmin: float, ymin: float, xmax: float, ymax: float) -> BBox:
+        """
+        Create a bounding box from its extents.
+
+        Args:
+            xmin: Minimum X
+            ymin: Minimum Y
+            xmax: Maximum X
+            ymax: Maximum Y
+
+        Returns:
+            New `BBox`
+        """
         return tuple.__new__(cls, (xmin, ymin, xmax, ymax))
 
     @property
@@ -180,13 +192,11 @@ class BBox(tuple):
         """
         Euclidean gap between two bounding boxes.
 
-        Returns 0.0 if they overlap or touch.
-
         Args:
             other: Another bounding box.
 
         Returns:
-            Distance between the boxes.
+            Distance between the boxes, 0.0 if they overlap or touch.
         """
         dx = max(other.xmin - self.xmax, self.xmin - other.xmax, 0.0)
         dy = max(other.ymin - self.ymax, self.ymin - other.ymax, 0.0)
@@ -201,6 +211,18 @@ class Segment(tuple):
     """
 
     def __new__(cls, x0: float, y0: float, x1: float, y1: float) -> Segment:
+        """
+        Create a segment from its endpoints.
+
+        Args:
+            x0: Start X
+            y0: Start Y
+            x1: End X
+            y1: End Y
+
+        Returns:
+            New `Segment`
+        """
         return tuple.__new__(cls, ((x0, y0), (x1, y1)))
 
 
@@ -280,6 +302,16 @@ def log_function_call(func: Callable) -> Callable:
 
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
+        """
+        Log the call and invoke the wrapped function.
+
+        Args:
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+
+        Returns:
+            Wrapped function result
+        """
         logger.debug("[%s] called with args=%s, kwargs=%s", func.__name__, args, kwargs)
         return func(*args, **kwargs)
 
@@ -298,8 +330,28 @@ def mcp_handler(scope: Literal["tool", "resource"] = "tool") -> Callable:
     """
 
     def decorator(func: Callable) -> Callable:
+        """
+        Wrap `func` with logging and error handling.
+
+        Args:
+            func: Tool or resource function
+
+        Returns:
+            Wrapped function
+        """
+
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """
+            Invoke `func` and convert exceptions to error results.
+
+            Args:
+                *args: Positional arguments
+                **kwargs: Keyword arguments
+
+            Returns:
+                Function result or error result
+            """
             logger.info("[%s] called with args=%s, kwargs=%s", func.__name__, args, kwargs)
             try:
                 return func(*args, **kwargs)
@@ -412,6 +464,15 @@ def parse_coordinate_string(coord_str: str) -> list[float]:
         return []
 
     def expand_parts(coord_str: str) -> list[float]:
+        """
+        Expand 'N*value' shorthand into a list of floats.
+
+        Args:
+            coord_str: Space-separated coordinate values
+
+        Returns:
+            Expanded values
+        """
         parts = coord_str.strip().split()
         result = []
         for part in parts:
@@ -516,6 +577,9 @@ def find_bolt_catalog_error(standard: str, size: float, catalog: list[dict[str, 
 def validate_property_type(property_type: type) -> None:
     """
     Validates that the given type is one of the supported types: str, int, or float.
+
+    Args:
+        property_type: Type to validate
 
     Raises:
         TypeError: If the type is not supported.

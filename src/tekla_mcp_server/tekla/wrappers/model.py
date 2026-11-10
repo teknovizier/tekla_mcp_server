@@ -55,6 +55,12 @@ class TeklaModel:
     _initialized: bool
 
     def __new__(cls):
+        """
+        Create or return the singleton instance.
+
+        Returns:
+            The shared `TeklaModel` instance
+        """
         if cls._instance is None:
             with cls._instance_lock:
                 if cls._instance is None:
@@ -66,13 +72,22 @@ class TeklaModel:
         return cls._instance
 
     def __init__(self):
+        """Connect to the Tekla model on first use."""
         with self._connect_lock:
             if self._initialized:
                 return
             self._connect()
 
     def _connect(self, retries: int | None = None) -> None:
-        """Connect to Tekla model with retry logic. Caller must hold ``_connect_lock``."""
+        """
+        Connect to Tekla model with retry logic. Caller must hold ``_connect_lock``.
+
+        Args:
+            retries: Attempt count, defaults to `_max_retries`
+
+        Raises:
+            Exception: The last connection error (usually `ConnectionError`) if every retry fails.
+        """
         max_retries = retries if retries is not None else self._max_retries
         last_exception = None
 
@@ -109,10 +124,14 @@ class TeklaModel:
         raise ConnectionError("Failed to connect to Tekla model")
 
     def is_connected(self) -> bool:
-        """Check if the connection to Tekla model is still active.
+        """
+        Check if the connection to Tekla model is still active.
 
         GetConnectionStatus() reads a local cached flag, it does not do a
         network round-trip, so it fast-fails when Tekla is gone.
+
+        Returns:
+            True if connected
         """
         if self._model is None:
             return False
@@ -226,6 +245,9 @@ class TeklaModel:
         """
         Returns currently selected objects in the model.
 
+        Returns:
+            Enumerator of selected objects
+
         Raises:
             ValueError: If no objects are selected.
         """
@@ -306,6 +328,12 @@ class TeklaModel:
     def get_object_by_guid(self, guid: str) -> ModelObject | None:
         """
         Return a single model object by GUID, or None if not found.
+
+        Args:
+            guid: Object GUID
+
+        Returns:
+            The model object, or None
         """
         return self.model.SelectModelObject(Identifier(guid))
 
@@ -316,6 +344,12 @@ class TeklaModel:
 
         Needed because drawing-side ModelIdentifiers carry a zero GUID and only
         expose an integer ID. get_object_by_guid() cannot resolve those.
+
+        Args:
+            object_id: Integer object ID
+
+        Returns:
+            The model object, or None
         """
         return self.model.SelectModelObject(Identifier(object_id))
 
@@ -350,12 +384,22 @@ class TeklaModel:
 
     @log_function_call
     def get_phases(self) -> PhaseCollection:
-        """Return all phases defined in the model."""
+        """
+        Return all phases defined in the model.
+
+        Returns:
+            Phase collection
+        """
         return self.model.GetPhases()
 
     @log_function_call
     def get_reference_models(self) -> list[TeklaReferenceModel]:
-        """Return all reference models inserted in the model."""
+        """
+        Return all reference models inserted in the model.
+
+        Returns:
+            Wrapped reference models
+        """
         enumerator = self.model.GetModelObjectSelector().GetAllObjectsWithType(ReferenceModel.ModelObjectEnum.REFERENCE_MODEL)
         reference_models = []
         while enumerator.MoveNext():

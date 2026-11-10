@@ -15,6 +15,12 @@ class TeklaDrawing:
     """
 
     def __init__(self, drawing: Drawing):
+        """
+        Wrap a Tekla drawing.
+
+        Args:
+            drawing: Tekla `Drawing` object
+        """
         self._drawing = drawing
 
     @property
@@ -191,19 +197,32 @@ class TeklaDrawing:
 
     def modify(self) -> bool:
         """
-        Modifies the drawing in the database. Returns True on success.
+        Modifies the drawing in the database.
+
+        Returns:
+            True on success
         """
         return self.drawing.Modify()
 
     def commit_changes(self) -> bool:
         """
-        Commits drawing changes. Returns True on success.
+        Commits drawing changes.
+
+        Returns:
+            True on success
         """
         return self.drawing.CommitChanges()
 
     def get_user_property(self, property_name: str, property_type: type) -> str | int | float:
         """
         Retrieves a user property of the drawing.
+
+        Args:
+            property_name: UDA name
+            property_type: Expected value type
+
+        Returns:
+            Property value
 
         Raises:
             TypeError: If the provided property type is not str, int, or float.
@@ -219,6 +238,13 @@ class TeklaDrawing:
         """
         Sets a user property of the drawing.
 
+        Args:
+            property_name: UDA name
+            property_value: Value to set
+
+        Returns:
+            True on success
+
         Raises:
             TypeError: If the provided property type is not str, int, or float.
         """
@@ -231,6 +257,9 @@ class TeklaDrawing:
 
         Unlike `Tekla.Structures.Model.ModelObject`, `Drawing` has no single
         `GetAllUserProperties` - string, double, and integer UDAs are retrieved separately.
+
+        Returns:
+            UDA values by name
         """
         properties: dict[str, str | int | float] = {}
         try:
@@ -254,7 +283,16 @@ class TeklaDrawing:
     ) -> dict[str, Any]:
         """
         Sets properties and user-defined attributes (UDAs) on the drawing.
-        Returns a summary of changes made, including a list of per-property errors.
+
+        Args:
+            name: New drawing name
+            title1: New first title
+            title2: New second title
+            title3: New third title
+            user_properties: UDAs to set
+
+        Returns:
+            Change counts and per-property errors
         """
         changes: dict[str, int] = {
             "name": 0,
@@ -308,6 +346,12 @@ class TeklaDrawing:
     def _format_date(self, dt: Any) -> str | None:
         """
         Format date, returning None if it's a zero date.
+
+        Args:
+            dt: Tekla date value
+
+        Returns:
+            Date string or None
         """
         if dt is None:
             return None
@@ -318,6 +362,9 @@ class TeklaDrawing:
     def to_dict(self) -> dict[str, Any]:
         """
         Converts the drawing to a dictionary.
+
+        Returns:
+            Drawing metadata
         """
         return {
             "drawing_type": self.drawing_type,

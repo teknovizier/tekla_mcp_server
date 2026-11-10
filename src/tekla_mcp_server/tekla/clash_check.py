@@ -42,6 +42,13 @@ class TeklaClashCheckData:
     """
 
     def __init__(self, raw: Any, cache: dict[str, Any]) -> None:
+        """
+        Wrap a raw clash record.
+
+        Args:
+            raw: Raw `ClashCheckData` record
+            cache: Wrapped objects by GUID
+        """
         self._raw = raw
         # Built on the main thread after the engine finishes
         self.object1: ClashCheckObject = self._build(raw.Object1, cache)
@@ -49,6 +56,16 @@ class TeklaClashCheckData:
 
     @staticmethod
     def _build(obj: Any, cache: dict[str, Any]) -> ClashCheckObject:
+        """
+        Build a clash object summary from a raw object.
+
+        Args:
+            obj: Raw clashing object
+            cache: Wrapped objects by GUID
+
+        Returns:
+            Clash object summary
+        """
         _na = "N/A"
         ref = wrap_model_object(obj)
         if ref is None:
@@ -70,15 +87,23 @@ class TeklaClashCheckData:
 
     @property
     def clash_type(self) -> str:
+        """Return the clash type name."""
         return str(self._raw.Type)
 
     @property
     def overlap(self) -> float | None:
+        """Return the overlap for a real clash, else `None`."""
         if self.clash_type == "CLASH_TYPE_CLASH":
             return float(self._raw.Overlap)
         return None
 
     def to_dict(self) -> dict[str, Any]:
+        """
+        Serialize the clash record.
+
+        Returns:
+            Clash record dict
+        """
         d: dict[str, Any] = {
             "object1": asdict(self.object1),
             "object2": asdict(self.object2),
@@ -99,6 +124,12 @@ class TeklaClashCheckHandler:
     """
 
     def __init__(self, timeout_seconds: float = _DEFAULT_TIMEOUT):
+        """
+        Create the clash check handler.
+
+        Args:
+            timeout_seconds: Completion wait timeout
+        """
         self._handler = ClashCheckHandler()
         self._events = Events()
         self._timeout_seconds = timeout_seconds
@@ -119,13 +150,31 @@ class TeklaClashCheckHandler:
         return self._timeout_seconds
 
     def _on_clash_detected(self, clash_data: Any) -> None:
+        """
+        Collect a detected clash record.
+
+        Args:
+            clash_data: Raw clash record
+        """
         self._raw_records.append(clash_data)  # Store raw records only
 
     def _on_clash_check_done(self, count: int) -> None:
+        """
+        Mark the clash check as finished.
+
+        Args:
+            count: Number of clashes found
+        """
         self._last_count = int(count)
         self._done.set()
 
     def _subscribe(self) -> None:
+        """
+        Reset state and register clash check events.
+
+        Raises:
+            RuntimeError: If already subscribed
+        """
         if self._subscribed:
             raise RuntimeError("Clash check is already running on this handler. Create a new TeklaClashCheckHandler per run.")
 
@@ -139,6 +188,7 @@ class TeklaClashCheckHandler:
         self._events.Register()
 
     def _unsubscribe(self) -> None:
+        """Unregister clash check events."""
         if not self._subscribed:
             logger.debug("Not currently subscribed to clash check events")
             return
@@ -157,11 +207,25 @@ class TeklaClashCheckHandler:
             self._subscribed = False
 
     def stop(self) -> bool:
-        """Forwards to ClashCheckHandler.StopClashCheck."""
+        """
+        Forwards to ClashCheckHandler.StopClashCheck.
+
+        Returns:
+            Whether the stop succeeded
+        """
         return bool(self._handler.StopClashCheck())
 
     def get_intersection_bounding_boxes(self, id1: Any, id2: Any) -> Any:
-        """Forwards to ClashCheckHandler.GetIntersectionBoundingBoxes."""
+        """
+        Forwards to ClashCheckHandler.GetIntersectionBoundingBoxes.
+
+        Args:
+            id1: First object identifier
+            id2: Second object identifier
+
+        Returns:
+            Intersection bounding boxes
+        """
         return self._handler.GetIntersectionBoundingBoxes(id1, id2)
 
     def run(
@@ -174,7 +238,17 @@ class TeklaClashCheckHandler:
         """
         Runs the Tekla clash check against the current selection.
 
-        Returns the list of ClashCheckData records collected via the ClashDetected event.
+        Args:
+            between_parts: Check clashes between parts
+            between_reference_models: Check clashes between reference models
+            objects_inside_reference_models: Check objects inside reference models
+            min_distance: Minimum clearance distance
+
+        Returns:
+            Clash records collected via the `ClashDetected` event
+
+        Raises:
+            RuntimeError: If Tekla fails to start the clash check.
         """
         self._subscribe()
         try:

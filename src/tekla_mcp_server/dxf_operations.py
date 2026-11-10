@@ -71,6 +71,17 @@ class WorldEntity:
         parent: str = "",
         view_key: str = "",
     ):
+        """
+        Create a world-space entity.
+
+        Args:
+            layer: DXF layer name
+            bbox: World-space bounding box
+            segments: World-space line segments
+            kind: DXF entity type
+            parent: Parent block name
+            view_key: Owning view key
+        """
         self.layer = layer
         self.bbox = bbox
         self.segments = segments
@@ -115,6 +126,9 @@ class CollisionIssue:
             label: Human-readable label.
             view_keys: View keys this issue spans.
             margin: Cloud padding, defaults to (CLOUD_MARGIN, CLOUD_MARGIN).
+
+        Returns:
+            New `CollisionIssue`
         """
         m = margin if margin is not None else (CLOUD_MARGIN, CLOUD_MARGIN)
         return cls(
@@ -127,7 +141,12 @@ class CollisionIssue:
         )
 
     def merge(self, other: CollisionIssue) -> None:
-        """Absorb another issue into this merged group."""
+        """
+        Absorb another issue into this merged group.
+
+        Args:
+            other: Issue to absorb
+        """
         self.bbox = self.bbox.union(other.bbox)
         self.views.update(other.views)
         self.types.update(other.types)
@@ -137,12 +156,20 @@ class CollisionIssue:
 
 
 def _view_frame_bbox(v: dict, *, padded: bool = False) -> BBox:
-    """Build a view's frame bbox from its dict fields.
+    """
+    Build a view's frame bbox from its dict fields.
 
     `padded=True` insets by `FRAME_CONTENT_PADDING` - the empty space
     inside a frame edge, so a crossing within it is never a real
     content collision. Use padded for boundary/furniture/content checks,
     unpadded where the frame's true outer extent matters (overlaps, clouds).
+
+    Args:
+        v: View dict
+        padded: Inset by `FRAME_CONTENT_PADDING`
+
+    Returns:
+        View frame bbox
     """
     fx, fy = v["frame_origin_x"], v["frame_origin_y"]
     bbox = BBox(fx, fy, fx + v["width"], fy + v["height"])
@@ -150,12 +177,32 @@ def _view_frame_bbox(v: dict, *, padded: bool = False) -> BBox:
 
 
 def entity_in_view(entity: WorldEntity, frame_bbox: BBox) -> bool:
-    """Return True if the entity's centroid lies inside the given view frame."""
+    """
+    Return True if the entity's centroid lies inside the given view frame.
+
+    Args:
+        entity: Entity to test
+        frame_bbox: View frame bbox
+
+    Returns:
+        True if inside the frame
+    """
     return frame_bbox.contains_point(entity.bbox.cx, entity.bbox.cy)
 
 
 def segment_intersection_point(p1, p2, p3, p4) -> tuple[float, float] | None:
-    """Return the intersection point of line segments (p1-p2) and (p3-p4), or None."""
+    """
+    Return the intersection point of line segments (p1-p2) and (p3-p4), or None.
+
+    Args:
+        p1: First segment start
+        p2: First segment end
+        p3: Second segment start
+        p4: Second segment end
+
+    Returns:
+        Intersection point, or None
+    """
     x1, y1 = p1
     x2, y2 = p2
     x3, y3 = p3
@@ -172,7 +219,16 @@ def segment_intersection_point(p1, p2, p3, p4) -> tuple[float, float] | None:
 
 
 def _segment_intersects_bbox(seg: Segment, bbox: BBox) -> bool:
-    """Check if a line segment enters the given axis-aligned bounding box."""
+    """
+    Check if a line segment enters the given axis-aligned bounding box.
+
+    Args:
+        seg: Line segment
+        bbox: Bounding box
+
+    Returns:
+        True if the segment enters the bbox
+    """
     p1, p2 = seg
     if bbox.contains_point(p1[0], p1[1]):
         return True
@@ -197,6 +253,13 @@ def collision_bbox(a: WorldEntity, b: WorldEntity) -> BBox | None:
     Uses segment-level intersection when both entities have geometry.
     Checks segment-vs-bbox when only one has segments.
     Falls back to bbox-vs-bbox otherwise.
+
+    Args:
+        a: First entity
+        b: Second entity
+
+    Returns:
+        Overlap bbox, or None
     """
     if not a.bbox.overlaps(b.bbox):
         return None
@@ -234,6 +297,9 @@ def resolve_entities(doc, msp, include_hatches: bool = False) -> list[WorldEntit
         include_hatches: Also resolve HATCH entities (bbox only, no
             segments). Off by default for collision checks. The
             dimension-attach check turns it on for rebar/bolt dots.
+
+    Returns:
+        World-space entities
     """
     entities: list[WorldEntity] = []
     for insert in msp.query("INSERT"):
@@ -311,7 +377,12 @@ def sheet_alignment_offset(entities: list[WorldEntity]) -> tuple[float, float]:
     Tekla's DXF export origin depends on last-used options, so the
     export can be translated. The drawing frame's outer border sits on
     the paper edge, so the min corner of frame geometry is paper (0, 0).
-    Returns (0, 0) when no frame geometry exists.
+
+    Args:
+        entities: World-space DXF entities
+
+    Returns:
+        Paper origin as (x, y), or (0, 0) without frame geometry
     """
     xs: list[float] = []
     ys: list[float] = []
@@ -330,6 +401,9 @@ def align_entities_to_sheet(entities: list[WorldEntity]) -> None:
 
     Uses `sheet_alignment_offset` to detect a translated export.
     No-op for exports that are already aligned.
+
+    Args:
+        entities: World-space DXF entities
     """
     dx, dy = sheet_alignment_offset(entities)
     if dx == 0.0 and dy == 0.0:
@@ -342,6 +416,10 @@ def align_entities_to_sheet(entities: list[WorldEntity]) -> None:
 def assign_entity_views(entities: list[WorldEntity], views: list[dict]) -> None:
     """
     Tag each entity with a view_key, using parent block suffix then centroid fallback.
+
+    Args:
+        entities: World-space DXF entities
+        views: Drawing view dicts
     """
     # Build suffix -> view_key lookup (e.g. '9470' -> 'SectionView_9470')
     suffix_to_view: dict[str, str] = {}
@@ -375,6 +453,13 @@ def check_out_of_grid_with_content(views: list[dict], entities: list[WorldEntity
     Views with `sheet_number` None are off the tiled grid (see
     `assign_sheet_number`). Their content would never print and
     no other check catches it.
+
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+
+    Returns:
+        Out-of-grid issues
     """
     issues: list[CollisionIssue] = []
     for v in views:
@@ -407,8 +492,15 @@ def _inset_frame_boundary(entities: list[WorldEntity], sheet_w: float, sheet_h: 
     inset border (the real print boundary), and short fold ticks.
     Finds long lines not touching the paper edge whose combined bbox
     spans most of the sheet - this rules out ticks and small furniture.
-    Returns None if no such geometry exists; callers fall back to
-    the sheet's nominal size.
+    Callers fall back to the sheet's nominal size when there is none.
+
+    Args:
+        entities: World-space DXF entities
+        sheet_w: Sheet width
+        sheet_h: Sheet height
+
+    Returns:
+        Inset boundary, or None if no such geometry exists
     """
     frame_entities = [e for e in entities if e.layer == "TEKLA_MCP_DRAWING_FRAME"]
     if not frame_entities:
@@ -435,7 +527,14 @@ def _sheet_boundary(views: list[dict], entities: list[WorldEntity]) -> BBox | No
 
     Uses the real inset frame geometry when present (see
     `_inset_frame_boundary`), otherwise the sheet's nominal
-    width/height. Returns None if there is no sheet view.
+    width/height.
+
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+
+    Returns:
+        Sheet boundary, or None if there is no sheet view
     """
     sheet = next((v for v in views if v.get("is_sheet")), None)
     if sheet is None:
@@ -448,8 +547,15 @@ def _straddling_view_keys(views: list[dict], boundary: BBox) -> set[str]:
     """
     View keys whose padded frame partially overlaps the boundary.
 
-    Straddling views already get a cloud from `check_content_out_of_sheet`;
-    other checks skip them to avoid redundant clouds.
+    Straddling views already get a cloud from `check_content_out_of_sheet`.
+    Other checks skip them to avoid redundant clouds.
+
+    Args:
+        views: Drawing view dicts
+        boundary: Sheet print boundary
+
+    Returns:
+        Straddling view keys
     """
     bx0, by0, bx1, by1 = boundary
     straddling: set[str] = set()
@@ -472,6 +578,13 @@ def check_collides_with_sheet(views: list[dict], entities: list[WorldEntity]) ->
     Skips views with no non-furniture content. Straddling views are NOT
     skipped - a view can cross one boundary edge while hitting furniture
     elsewhere, which is a separate issue from content_out_of_sheet.
+
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+
+    Returns:
+        Sheet collision issues
     """
     issues: list[CollisionIssue] = []
     sheet_entities = [e for e in entities if e.layer in SHEET_FURNITURE_LAYERS]
@@ -514,6 +627,14 @@ def _collide_content_pairs(content_a: list[WorldEntity], content_b: list[WorldEn
     `check_cross_view_same_sheet_collision`. `seen_pairs` is shared
     across the whole scan so each pair is reported once even when
     reachable through multiple overlapping frame pairs.
+
+    Args:
+        content_a: First view content
+        content_b: Second view content
+        seen_pairs: Already reported pair ids
+
+    Yields:
+        Tuple of (entity_a, entity_b, hit_bbox) for each new colliding pair.
     """
     for entity_a in content_a:
         for entity_b in content_b:
@@ -539,6 +660,13 @@ def check_cross_sheet_collision(views: list[dict], entities: list[WorldEntity]) 
     intersection region. Different-sheet frames are tiled apart and
     rarely overlap, making this a handful of small local checks
     rather than a global O(n^2) scan.
+
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+
+    Returns:
+        Cross-sheet issues
     """
     issues: list[CollisionIssue] = []
     seen_pairs: set[tuple[int, int]] = set()
@@ -562,6 +690,13 @@ def check_cross_view_same_sheet_collision(views: list[dict], entities: list[Worl
 
     One issue per colliding entity pair, not one per view pair.
     Mark-vs-mark pairs are skipped (handled by check_marks_* checks).
+
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+
+    Returns:
+        Cross-view issues
     """
     issues: list[CollisionIssue] = []
     seen_pairs: set[tuple[int, int]] = set()
@@ -584,33 +719,86 @@ LEADER_KINDS = {"LINE", "LWPOLYLINE"}
 
 
 def _mark_texts(entities: list[WorldEntity]) -> list[WorldEntity]:
-    """Mark label entities (text-like) across the drawing."""
+    """
+    Mark label entities (text-like) across the drawing.
+
+    Args:
+        entities: World-space DXF entities
+
+    Returns:
+        Mark text entities
+    """
     return [e for e in entities if e.layer in MARK_LAYERS and e.kind in TEXT_KINDS]
 
 
 def _mark_leaders(entities: list[WorldEntity]) -> list[WorldEntity]:
-    """Mark leader-line entities across the drawing."""
+    """
+    Mark leader-line entities across the drawing.
+
+    Args:
+        entities: World-space DXF entities
+
+    Returns:
+        Mark leader entities
+    """
     return [e for e in entities if e.layer in MARK_LAYERS and e.kind in LEADER_KINDS]
 
 
 def check_marks_text_overlap(views: list[dict], entities: list[WorldEntity]) -> list[CollisionIssue]:
-    """Two mark labels whose bounding boxes overlap."""
+    """
+    Two mark labels whose bounding boxes overlap.
+
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+
+    Returns:
+        Mark text overlap issues
+    """
     texts = _mark_texts(entities)
     return _collisions(texts, texts, "marks_text_overlap", "text", margin=(MARK_CLOUD_MARGIN, MARK_CLOUD_MARGIN))
 
 
 def check_marks_leader_overlap(views: list[dict], entities: list[WorldEntity]) -> list[CollisionIssue]:
-    """Two mark leader lines that cross each other."""
+    """
+    Two mark leader lines that cross each other.
+
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+
+    Returns:
+        Mark leader overlap issues
+    """
     leaders = _mark_leaders(entities)
     return _collisions(leaders, leaders, "marks_leader_overlap", "leader", margin=(CLOUD_MARGIN, CLOUD_MARGIN))
 
 
 def check_marks_text_leader_overlap(views: list[dict], entities: list[WorldEntity]) -> list[CollisionIssue]:
-    """A mark's leader passing through a different mark's label text."""
+    """
+    A mark's leader passing through a different mark's label text.
+
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+
+    Returns:
+        Text-leader overlap issues
+    """
     return _collisions(_mark_texts(entities), _mark_leaders(entities), "marks_text_leader_overlap", "text+leader", margin=(CLOUD_MARGIN, CLOUD_MARGIN))
 
 
 def _out_of_sheet_issue(view_key: str, bbox: BBox) -> CollisionIssue:
+    """
+    Build a content-out-of-sheet issue.
+
+    Args:
+        view_key: View key
+        bbox: Crossing region
+
+    Returns:
+        New `CollisionIssue`
+    """
     return CollisionIssue.create(
         type_="content_out_of_sheet",
         view=view_key,
@@ -634,6 +822,13 @@ def check_content_out_of_sheet(views: list[dict], entities: list[WorldEntity]) -
     out_of_grid check). Multiple crossed edges merge into one cloud per
     view. The boundary-side coordinate is nudged inward by `CLOUD_MARGIN`
     so the cloud visibly overlaps the crossing.
+
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+
+    Returns:
+        Out-of-sheet issues
     """
     boundary = _sheet_boundary(views, entities)
     if boundary is None:
@@ -678,7 +873,7 @@ CHECKS = [
 ]
 
 
-def _overlapping_view_pairs(views: list[dict], entities: list[WorldEntity], same_sheet: bool):
+def _overlapping_view_pairs(views: list[dict], entities: list[WorldEntity], same_sheet: bool) -> Iterator[tuple[int, str, int, str, list[WorldEntity], list[WorldEntity]]]:
     """
     Yield overlapping view-frame pairs with content clipped to the intersection.
 
@@ -686,7 +881,13 @@ def _overlapping_view_pairs(views: list[dict], entities: list[WorldEntity], same
     Marks are in content_a/content_b - callers skip mark-vs-mark
     but still need mark-vs-part crossings.
 
-    Yields (sheet_a, view_a, sheet_b, view_b, content_a, content_b).
+    Args:
+        views: Drawing view dicts
+        entities: World-space DXF entities
+        same_sheet: Pair views on the same sheet
+
+    Yields:
+        Tuple of (sheet_a, view_a, sheet_b, view_b, content_a, content_b).
     """
     # Collect non-sheet view frames with their sheet number and bbox
     frames = []
@@ -722,7 +923,16 @@ def _overlapping_view_pairs(views: list[dict], entities: list[WorldEntity], same
 
 
 def _entity_view_keys(a: WorldEntity, b: WorldEntity) -> list[str]:
-    """Sorted non-empty view keys from two entities."""
+    """
+    Sorted non-empty view keys from two entities.
+
+    Args:
+        a: First entity
+        b: Second entity
+
+    Returns:
+        Sorted view keys
+    """
     return sorted({k for k in (a.view_key, b.view_key) if k})
 
 
@@ -733,6 +943,16 @@ def _collisions(items_a: list[WorldEntity], items_b: list[WorldEntity], issue_ty
     Pass the same list twice for an all-pairs scan. `seen_pairs`
     removes symmetric (a, b)/(b, a) duplicates. The reported bbox
     is the union of both bboxes, padded by `margin`.
+
+    Args:
+        items_a: First entity list
+        items_b: Second entity list
+        issue_type: Check type identifier
+        label: Issue label
+        margin: Cloud padding
+
+    Returns:
+        Collision issues
 
     Note:
         Runtime is O(len(items_a) * len(items_b)) - slow for
@@ -770,6 +990,12 @@ def merge_issues(issues: list[CollisionIssue]) -> list[CollisionIssue]:
     Two issues merge if the gap between their bboxes is within
     `MERGE_DISTANCE` (0 if they overlap). Merged entries accumulate
     types, labels, views, and view_keys.
+
+    Args:
+        issues: Raw collision issues
+
+    Returns:
+        Merged issues
 
     Note:
         Runtime is O(len(issues) * len(merged)) - slow only with
@@ -811,6 +1037,12 @@ def _capped_face_midpoints(lines: list[Segment]) -> list[tuple[float, float]]:
     points are bare (collinear neighbours do not cap). Fragments with
     perpendicular geometry at their split points look like real faces
     and still contribute their midpoint.
+
+    Args:
+        lines: Edge segments
+
+    Returns:
+        Capped face midpoints
     """
     # Endpoint grid: rounded cell -> unit directions of edges ending
     # there. Segments shorter than 0.1mm are ignored: they cannot be
@@ -818,6 +1050,16 @@ def _capped_face_midpoints(lines: list[Segment]) -> list[tuple[float, float]]:
     grid: dict[tuple[int, int], list[tuple[float, float]]] = {}
 
     def key(x: float, y: float) -> tuple[int, int]:
+        """
+        Return the 0.1mm grid cell of a point.
+
+        Args:
+            x: Point X
+            y: Point Y
+
+        Returns:
+            Grid cell
+        """
         return (round(x * 10.0), round(y * 10.0))
 
     # (cell_a, cell_b, ux, uy, midpoint) per usable segment
@@ -833,6 +1075,17 @@ def _capped_face_midpoints(lines: list[Segment]) -> list[tuple[float, float]]:
         entries.append((cell_a, cell_b, ux, uy, ((ax + bx) / 2.0, (ay + by) / 2.0)))
 
     def capped(cell: tuple[int, int], ux: float, uy: float) -> bool:
+        """
+        Return whether a non-parallel edge ends in `cell`.
+
+        Args:
+            cell: Grid cell
+            ux: Edge direction X
+            uy: Edge direction Y
+
+        Returns:
+            True if capped
+        """
         # Cross product above ~6 degrees = non-parallel. A segment's
         # own direction (or its reverse) gives exactly 0, never caps
         return any(abs(ux * gy - uy * gx) > 0.1 for gx, gy in grid.get(cell, []))
@@ -854,6 +1107,12 @@ def collect_attach_targets(entities: list[WorldEntity]) -> AttachTargets:
     hole centres), centres of small rebar/bolt cross-section hatches
     (requires `resolve_entities` with `include_hatches=True`), and
     midpoints of corner-capped faces. All in sheet coordinates.
+
+    Args:
+        entities: World-space DXF entities
+
+    Returns:
+        Attach targets
     """
     lines: list[Segment] = []
     centers: list[tuple[float, float]] = []
@@ -882,6 +1141,16 @@ def view_local_to_sheet(x: float, y: float, origin_x: float, origin_y: float, sc
     Sheet position = view origin + local offset / scale.
     Valid for unrotated views without part shortening.
     For shortened views use `shortened_axis_to_sheet` per axis.
+
+    Args:
+        x: View-local X
+        y: View-local Y
+        origin_x: View origin X
+        origin_y: View origin Y
+        scale: View scale
+
+    Returns:
+        Sheet point as (x, y)
     """
     return (origin_x + x / scale, origin_y + y / scale)
 
@@ -904,6 +1173,15 @@ def shortening_gaps_from_boxes(boxes: list[tuple[float, float, float, float]]) -
     """
 
     def axis_gaps(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        """
+        Return the gaps between merged intervals.
+
+        Args:
+            intervals: Axis intervals
+
+        Returns:
+            Gap intervals
+        """
         merged: list[list[float]] = []
         for lo, hi in sorted(intervals):
             if merged and lo <= merged[-1][1]:
@@ -931,6 +1209,9 @@ def shortened_axis_to_sheet(local: float, origin: float, scale: float, gaps: lis
         scale: View scale.
         gaps: Sorted removed intervals from `shortening_gaps_from_boxes`.
         gap_offset: Sheet-mm spacing at each cut (view's `Shortening.Offset`).
+
+    Returns:
+        Sheet coordinate
     """
     removed = 0.0
     crossed = 0
@@ -946,7 +1227,17 @@ def shortened_axis_to_sheet(local: float, origin: float, scale: float, gaps: lis
 
 
 def _point_to_segment_distance(px: float, py: float, seg: Segment) -> float:
-    """Shortest distance from a point to a line segment."""
+    """
+    Shortest distance from a point to a line segment.
+
+    Args:
+        px: Point X
+        py: Point Y
+        seg: Line segment
+
+    Returns:
+        Distance
+    """
     (ax, ay), (bx, by) = seg
     dx, dy = bx - ax, by - ay
     if dx == 0.0 and dy == 0.0:
@@ -958,7 +1249,18 @@ def _point_to_segment_distance(px: float, py: float, seg: Segment) -> float:
 
 
 def on_any_horizontal_edge(x: float, y: float, targets: AttachTargets, tol: float) -> bool:
-    """True if point lies on any predominantly horizontal edge segment."""
+    """
+    True if point lies on any predominantly horizontal edge segment.
+
+    Args:
+        x: Point X
+        y: Point Y
+        targets: Attach targets
+        tol: Distance tolerance
+
+    Returns:
+        True if on a horizontal edge
+    """
     for (ax, ay), (bx, by) in targets.lines:
         if abs(by - ay) < abs(bx - ax):
             if _point_to_segment_distance(x, y, ((ax, ay), (bx, by))) <= tol:
@@ -967,7 +1269,18 @@ def on_any_horizontal_edge(x: float, y: float, targets: AttachTargets, tol: floa
 
 
 def on_any_vertical_edge(x: float, y: float, targets: AttachTargets, tol: float) -> bool:
-    """True if point lies on any predominantly vertical edge segment."""
+    """
+    True if point lies on any predominantly vertical edge segment.
+
+    Args:
+        x: Point X
+        y: Point Y
+        targets: Attach targets
+        tol: Distance tolerance
+
+    Returns:
+        True if on a vertical edge
+    """
     for (ax, ay), (bx, by) in targets.lines:
         if abs(bx - ax) < abs(by - ay):
             if _point_to_segment_distance(x, y, ((ax, ay), (bx, by))) <= tol:
@@ -985,6 +1298,15 @@ def point_is_attached(x: float, y: float, targets: AttachTargets, tol: float) ->
     `dimension_point_is_attached`, and for parallel edges a midpoint
     is as arbitrary as any other mid-span point - fragment midpoints
     of split lines sit where a dangling point would be.
+
+    Args:
+        x: Point X
+        y: Point Y
+        targets: Attach targets
+        tol: Distance tolerance
+
+    Returns:
+        True if attached
     """
     tol_sq = tol * tol
     for qx, qy in targets.centers:
@@ -1010,6 +1332,16 @@ def dimension_point_is_attached(x: float, y: float, targets: AttachTargets, tol:
     An endpoint mid-span on a PARALLEL edge is NOT attached: nothing
     fixes the measured coordinate there, exactly like a point left
     by a deleted object on a part face.
+
+    Args:
+        x: Point X
+        y: Point Y
+        targets: Attach targets
+        tol: Distance tolerance
+        dim_is_vertical: Dimension is vertical
+
+    Returns:
+        True if attached
     """
     if point_is_attached(x, y, targets, tol):
         return True
@@ -1031,7 +1363,7 @@ def run_collision_checks(views: list[dict], entities: list[WorldEntity]) -> list
 
     Note:
         The mark-vs-mark checks and `merge_issues` are quadratic in marks/issues
-        (see their own docstrings); view-pair checks are quadratic in views but
+        (see their own docstrings). View-pair checks are quadratic in views but
         gate on frame overlap first. Slower on drawings with hundreds of marks
         or views.
     """

@@ -18,7 +18,15 @@ from tekla_mcp_server.tekla.loader import ArrayList
 
 
 def to_array_list(objects: Iterable[Any]) -> ArrayList:
-    """Convert a Python iterable to a .NET ArrayList."""
+    """
+    Convert a Python iterable to a .NET ArrayList.
+
+    Args:
+        objects: Items to add
+
+    Returns:
+        .NET `ArrayList` with the items
+    """
     array_list = ArrayList()
     for obj in objects:
         array_list.Add(obj)

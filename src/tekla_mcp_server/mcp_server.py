@@ -30,6 +30,15 @@ class ReadOnlyToolFilter(Transform):
     """
 
     async def list_tools(self, tools):
+        """
+        Keep only tools annotated as read-only.
+
+        Args:
+            tools: Tools to filter
+
+        Returns:
+            Read-only tools
+        """
         return [t for t in tools if t.annotations and t.annotations.readOnlyHint]
 
 

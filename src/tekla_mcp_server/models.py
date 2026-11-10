@@ -235,6 +235,18 @@ class StringFilterCondition(BaseModel):
     @field_validator("match_type", mode="before")
     @classmethod
     def validate_match_type(cls, v: str) -> str:
+        """
+        Ensure `match_type` is a valid string match type.
+
+        Args:
+            v: Match type
+
+        Returns:
+            The validated match type
+
+        Raises:
+            PydanticCustomError: If the match type is invalid
+        """
         valid_values = {e.value for e in StringMatchType}
         if v not in valid_values:
             raise PydanticCustomError(
@@ -256,6 +268,18 @@ class StringFilterOption(BaseModel):
     @field_validator("logic", mode="before")
     @classmethod
     def validate_logic(cls, v: str) -> str:
+        """
+        Ensure `logic` is 'AND' or 'OR'.
+
+        Args:
+            v: Logic mode
+
+        Returns:
+            The validated logic mode
+
+        Raises:
+            PydanticCustomError: If the logic is invalid
+        """
         valid_values = {"AND", "OR"}
         if v not in valid_values:
             raise PydanticCustomError(
@@ -265,25 +289,45 @@ class StringFilterOption(BaseModel):
         return v
 
     def to_dict(self) -> dict[str, str] | list[dict[str, str]]:
-        """Converts conditions to dict format for tool function."""
+        """
+        Converts conditions to dict format for tool function.
+
+        Returns:
+            Condition dict or list of dicts
+        """
         if isinstance(self.conditions, list):
             return [{"match_type": cond.match_type, "value": cond.value} for cond in self.conditions]
         return {"match_type": self.conditions.match_type, "value": self.conditions.value}
 
     def get_values(self) -> str | list[str]:
-        """Extracts value(s) from conditions."""
+        """
+        Extracts value(s) from conditions.
+
+        Returns:
+            Value or list of values
+        """
         if isinstance(self.conditions, list):
             return [c.value for c in self.conditions]
         return self.conditions.value
 
     def get_match_type(self) -> str:
-        """Extracts match_type from first condition."""
+        """
+        Extracts match_type from first condition.
+
+        Returns:
+            Match type
+        """
         if isinstance(self.conditions, list):
             return self.conditions[0].match_type
         return self.conditions.match_type
 
     def get_logic(self) -> str:
-        """Returns the logic mode (AND/OR)."""
+        """
+        Returns the logic mode (AND/OR).
+
+        Returns:
+            'AND' or 'OR'
+        """
         return self.logic
 
 
@@ -299,6 +343,18 @@ class NumericFilterCondition(BaseModel):
     @field_validator("match_type", mode="before")
     @classmethod
     def validate_match_type(cls, v: str) -> str:
+        """
+        Ensure `match_type` is a valid numeric match type.
+
+        Args:
+            v: Match type
+
+        Returns:
+            The validated match type
+
+        Raises:
+            PydanticCustomError: If the match type is invalid
+        """
         valid_values = {e.value for e in NumericMatchType}
         if v not in valid_values:
             raise PydanticCustomError(
@@ -320,6 +376,18 @@ class NumericFilterOption(BaseModel):
     @field_validator("logic", mode="before")
     @classmethod
     def validate_logic(cls, v: str) -> str:
+        """
+        Ensure `logic` is 'AND' or 'OR'.
+
+        Args:
+            v: Logic mode
+
+        Returns:
+            The validated logic mode
+
+        Raises:
+            PydanticCustomError: If the logic is invalid
+        """
         valid_values = {"AND", "OR"}
         if v not in valid_values:
             raise PydanticCustomError(
@@ -329,13 +397,23 @@ class NumericFilterOption(BaseModel):
         return v
 
     def to_dict(self) -> dict[str, Any] | list[dict[str, Any]]:
-        """Converts conditions to dict format for tool function."""
+        """
+        Converts conditions to dict format for tool function.
+
+        Returns:
+            Condition dict or list of dicts
+        """
         if isinstance(self.conditions, list):
             return [{"match_type": cond.match_type, "value": cond.value} for cond in self.conditions]
         return {"match_type": self.conditions.match_type, "value": self.conditions.value}
 
     def get_logic(self) -> str:
-        """Returns the logic mode (AND/OR)."""
+        """
+        Returns the logic mode (AND/OR).
+
+        Returns:
+            'AND' or 'OR'
+        """
         return self.logic
 
 
@@ -353,6 +431,9 @@ class ElementTypes:
         13 is both a concrete column and a reinforcement mesh), the first occurrence
         wins. element_types.json lists structural groups (concrete, steel) before
         reinforcement/embedded, so a shared class resolves to its structural type.
+
+        Returns:
+            Class to (material, type name) mapping
         """
         mapping: dict[int, tuple[str, str]] = {}
         for material, types in get_config().element_types.items():
@@ -365,6 +446,15 @@ class ElementTypes:
     def get_element_type_by_class(tekla_class: str | int) -> tuple[str, str]:
         """
         Returns (material, element type name) for a given class number using the mapping.
+
+        Args:
+            tekla_class: Tekla class number
+
+        Returns:
+            Material and element type name
+
+        Raises:
+            ValueError: If the class number is not in any element type mapping.
         """
         if isinstance(tekla_class, str):
             tekla_class = int(tekla_class)
@@ -377,6 +467,12 @@ class ElementTypes:
     def get_default_numbering(tekla_class: int) -> dict[str, "NumberingSeries"] | None:
         """
         Returns numbering configuration for a given class number.
+
+        Args:
+            tekla_class: Tekla class number
+
+        Returns:
+            Numbering series by key or `None`
         """
         config = get_config().get_element_types_flat().get(tekla_class)
         if not config:
@@ -398,6 +494,12 @@ class ElementTypes:
     def get_default_name(tekla_class: int) -> str | None:
         """
         Returns default name for a given class number.
+
+        Args:
+            tekla_class: Tekla class number
+
+        Returns:
+            Default name or `None`
         """
         config = get_config().get_element_types_flat().get(tekla_class)
         return config.get("name") if config else None
@@ -420,6 +522,19 @@ class BaseComponent(BaseModel):
     @field_validator("custom_properties", mode="before")
     @classmethod
     def validate_custom_properties(cls, v, info):
+        """
+        Parse and type-check custom properties against the schema.
+
+        Args:
+            v: Custom properties dict or JSON string
+            info: Validation info
+
+        Returns:
+            Coerced custom properties
+
+        Raises:
+            ValueError: If properties are invalid
+        """
         if v is None:
             return v
 
@@ -468,6 +583,9 @@ class BaseComponent(BaseModel):
     def model_post_init(self, __context) -> None:
         """
         Initializes private attributes after model creation.
+
+        Args:
+            __context: Pydantic validation context
         """
         component_def = get_config().get_component_by_tekla_name(self.name)
 
@@ -487,23 +605,23 @@ class BaseComponent(BaseModel):
     # Getters
     @property
     def number(self) -> int:
-        """Returns `_number`"""
         return self._number
 
     @property
     def component_type(self) -> ComponentType:
-        """Returns `_component_type`"""
         return self._component_type
 
     @property
     def properties(self) -> dict[str, Any] | None:
-        """Returns `_properties`"""
         return self._properties
 
     # Setters
     def set_properties(self, properties: dict[str, Any]) -> None:
         """
         Replaces the entire properties dictionary.
+
+        Args:
+            properties: New properties dict
         """
         self._properties = properties
 
@@ -511,6 +629,9 @@ class BaseComponent(BaseModel):
         """
         Adds or updates multiple properties at once.
         Creates the dictionary if the dictionary doesn't exist yet.
+
+        Args:
+            updates: Properties to add or update
         """
         if self._properties is None:
             self._properties = {}
@@ -541,6 +662,15 @@ class ReportProperty(BaseModel):
     def map_string_to_type(cls, v: str) -> type:
         """
         Converts a string like `FLOAT` to the corresponding Python type.
+
+        Args:
+            v: Type name or type
+
+        Returns:
+            Python type
+
+        Raises:
+            TypeError: If the string does not name a supported type.
         """
         if isinstance(v, type):
             return v  # already a Python type
@@ -550,9 +680,16 @@ class ReportProperty(BaseModel):
         raise TypeError(f"Cannot convert {v!r} to a Python type")
 
     @field_serializer("data_type")
-    def serialize_type(self, v: type, _info):
+    def serialize_type(self, v: type, _info) -> str:
         """
         Converts the data_type class object to its name string for JSON output.
+
+        Args:
+            v: Data type class
+            _info: Serialization info
+
+        Returns:
+            Type name
         """
         return v.__name__
 
@@ -570,7 +707,15 @@ class ModelObjectSnapshot(BaseModel):
 
     @staticmethod
     def _sort_key_for_comparison(value: Any) -> tuple:
-        """Generate a stable sort key for comparison, excluding id and guid fields."""
+        """
+        Generate a stable sort key for comparison, excluding id and guid fields.
+
+        Args:
+            value: Value to build the key for
+
+        Returns:
+            Tagged sort key tuple
+        """
         # Tag every branch with a discriminator so heterogeneous lists sort without TypeError.
         if isinstance(value, dict):
             return ("d", tuple((k, ModelObjectSnapshot._sort_key_for_comparison(v)) for k, v in sorted(value.items()) if k.lower() not in ("id", "guid")))
@@ -580,7 +725,15 @@ class ModelObjectSnapshot(BaseModel):
 
     @staticmethod
     def _deterministic_sort_key(item: dict[str, Any]) -> tuple:
-        """Generate deterministic sort key with hash tiebreaker for consistent ordering."""
+        """
+        Generate deterministic sort key with hash tiebreaker for consistent ordering.
+
+        Args:
+            item: Dict to build the key for
+
+        Returns:
+            Content key and hash tuple
+        """
         content_key = ModelObjectSnapshot._sort_key_for_comparison(item)
         # Use MD5
         content_hash = hashlib.md5(str(content_key).encode("utf-8")).hexdigest()
@@ -589,12 +742,28 @@ class ModelObjectSnapshot(BaseModel):
     def normalize(self, tolerance: float) -> Self:
         """
         Recursively rounds all float values to the nearest multiple of tolerance.
+
+        Args:
+            tolerance: Rounding tolerance
+
+        Returns:
+            Normalized snapshot copy
         """
         normalized_props = self._normalize_dict(self.report_properties, tolerance)
         normalized_user_props = self._normalize_dict(self.user_properties, tolerance)
         return self._normalize_self(normalized_props, normalized_user_props, tolerance)
 
     def _normalize_value(self, value: Any, tolerance: float) -> Any:
+        """
+        Round floats and sort lists in a value recursively.
+
+        Args:
+            value: Value to normalize
+            tolerance: Rounding tolerance
+
+        Returns:
+            Normalized value
+        """
         if value is None:
             return None
         if isinstance(value, float):
@@ -614,9 +783,33 @@ class ModelObjectSnapshot(BaseModel):
         return value
 
     def _normalize_dict(self, d: dict[str, Any], tolerance: float) -> dict[str, Any]:
+        """
+        Normalize dict values and drop `None` entries.
+
+        Args:
+            d: Dict to normalize
+            tolerance: Rounding tolerance
+
+        Returns:
+            Normalized dict
+        """
         return {k: self._normalize_value(v, tolerance) for k, v in d.items() if v is not None}
 
     def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
+        """
+        Build a normalized copy of the snapshot.
+
+        Args:
+            normalized_props: Normalized report properties
+            normalized_user_props: Normalized user properties
+            tolerance: Rounding tolerance
+
+        Returns:
+            Normalized snapshot copy
+
+        Raises:
+            NotImplementedError: Always, subclasses must override
+        """
         raise NotImplementedError
 
 
@@ -630,6 +823,17 @@ class PartSnapshot(ModelObjectSnapshot):
     welds: list[dict[str, Any]] = Field(default_factory=list, description="List of welds that belong to the part")
 
     def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
+        """
+        Build a normalized copy of the part snapshot.
+
+        Args:
+            normalized_props: Normalized report properties
+            normalized_user_props: Normalized user properties
+            tolerance: Rounding tolerance
+
+        Returns:
+            Normalized snapshot copy
+        """
         cutparts = [self._normalize_dict(cp, tolerance) for cp in self.cutparts if cp is not None]
         cutparts.sort(key=ModelObjectSnapshot._deterministic_sort_key)
 
@@ -651,7 +855,12 @@ class PartSnapshot(ModelObjectSnapshot):
         )
 
     def to_diff_view(self) -> dict[str, Any]:
-        """Convert snapshot to diff-friendly view for comparison."""
+        """
+        Convert snapshot to diff-friendly view for comparison.
+
+        Returns:
+            Comparable snapshot fields
+        """
         return {
             "pos": self.pos,
             "report_properties": self.report_properties,
@@ -671,6 +880,17 @@ class ReinforcementSnapshot(ModelObjectSnapshot):
     rebar_type: str = Field(description="Tekla class name of the reinforcement (e.g. BaseRebarGroup, RebarMesh, RebarStrand, SingleRebar)")
 
     def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
+        """
+        Build a normalized copy of the reinforcement snapshot.
+
+        Args:
+            normalized_props: Normalized report properties
+            normalized_user_props: Normalized user properties
+            tolerance: Rounding tolerance
+
+        Returns:
+            Normalized snapshot copy
+        """
         return self.__class__(
             id=self.id,
             guid=self.guid,
@@ -682,11 +902,15 @@ class ReinforcementSnapshot(ModelObjectSnapshot):
         )
 
     def to_diff_view(self) -> dict[str, Any]:
-        """Convert snapshot to diff-friendly view for comparison.
+        """
+        Convert snapshot to diff-friendly view for comparison.
 
         NOTE: `father_guid` is intentionally excluded - it is a relationship pointer,
         not a property of the reinforcement itself, and would cause false positives when
         comparing identical rebars that happen to belong to different parent parts.
+
+        Returns:
+            Comparable snapshot fields
         """
         return {
             "pos": self.pos,
@@ -706,6 +930,17 @@ class AssemblySnapshot(ModelObjectSnapshot):
     subassemblies: list["AssemblySnapshot"] = Field(default_factory=list, description="List of subassembly snapshots")
 
     def _normalize_self(self, normalized_props: dict[str, Any], normalized_user_props: dict[str, Any], tolerance: float) -> Self:
+        """
+        Build a normalized copy of the assembly snapshot.
+
+        Args:
+            normalized_props: Normalized report properties
+            normalized_user_props: Normalized user properties
+            tolerance: Rounding tolerance
+
+        Returns:
+            Normalized snapshot copy
+        """
         return self.__class__(
             id=self.id,
             guid=self.guid,
@@ -718,7 +953,12 @@ class AssemblySnapshot(ModelObjectSnapshot):
         )
 
     def to_diff_view(self) -> dict[str, Any]:
-        """Convert snapshot to diff-friendly view for comparison."""
+        """
+        Convert snapshot to diff-friendly view for comparison.
+
+        Returns:
+            Comparable snapshot fields
+        """
         return {
             "pos": self.pos,
             "report_properties": self.report_properties,
@@ -801,6 +1041,18 @@ class SlabInput(TeklaBeamInput):
     @field_validator("points")
     @classmethod
     def validate_points(cls, v: list[PointInput]) -> list[PointInput]:
+        """
+        Ensure the slab has at least 3 contour points.
+
+        Args:
+            v: Slab contour points
+
+        Returns:
+            The validated points
+
+        Raises:
+            PydanticCustomError: If fewer than 3 points
+        """
         if len(v) < 3:
             raise PydanticCustomError("invalid_points", f"At least 3 points are required to define a slab, got {len(v)}")
         return v
@@ -844,6 +1096,15 @@ class ViewAttributes(BaseModel):
 
     @model_validator(mode="after")
     def _at_least_one_set(self) -> "ViewAttributes":
+        """
+        Ensure at least one view attribute is set.
+
+        Returns:
+            The validated model
+
+        Raises:
+            ValueError: If no attribute is set
+        """
         if all(v is None for v in (self.scale, self.show_part_openings_or_recess_symbol, self.reflected_view, self.undeformed_view, self.unfolded_view)):
             raise ValueError("At least one attribute must be set")
         return self

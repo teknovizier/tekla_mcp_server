@@ -363,7 +363,12 @@ class Config:
 
     @lru_cache
     def get_element_types_list(self) -> list[dict[str, Any]]:
-        """Returns element types as flat list."""
+        """
+        Returns element types as flat list.
+
+        Returns:
+            Element type dicts with material, type and classes
+        """
         return [{"material": material, "type": type_name, "tekla_classes": config.get("tekla_classes", [])} for material, types in self.element_types.items() for type_name, config in types.items()]
 
     @lru_cache
@@ -375,6 +380,9 @@ class Config:
         so a class shared between a structural type and a reinforcement/embedded
         type (e.g. 13 = concrete column and mesh) resolves to the structural entry,
         which element_types.json lists first.
+
+        Returns:
+            Mapping of Tekla class to type config
         """
         result: dict[int, dict[str, Any]] = {}
         for types in self.element_types.values():
@@ -385,7 +393,15 @@ class Config:
 
     @lru_cache
     def get_custom_properties_schema(self, component_key: str) -> dict[str, dict[str, str]] | None:
-        """Returns custom_properties schema for a component."""
+        """
+        Returns custom_properties schema for a component.
+
+        Args:
+            component_key: Component key in `base_components`
+
+        Returns:
+            Custom properties schema, or None if not found
+        """
         component = self.base_components.get(component_key)
         if component:
             return component.get("custom_properties")
@@ -393,7 +409,15 @@ class Config:
 
     @lru_cache
     def get_component_by_tekla_name(self, tekla_name: str) -> dict[str, Any] | None:
-        """Returns the component definition dict for the given tekla_name."""
+        """
+        Returns the component definition dict for the given tekla_name.
+
+        Args:
+            tekla_name: Tekla component name
+
+        Returns:
+            Component definition, or None if not found
+        """
         for comp in self.base_components.values():
             if comp.get("tekla_name") == tekla_name:
                 return comp
@@ -401,7 +425,15 @@ class Config:
 
     @lru_cache
     def get_report_props(self, key: str) -> list[str]:
-        """Returns report property list for the given object type key."""
+        """
+        Returns report property list for the given object type key.
+
+        Args:
+            key: Object type key
+
+        Returns:
+            Report property names
+        """
         return self.report_properties.get(key, [])
 
 
@@ -443,6 +475,9 @@ def get_export_output_dir() -> str:
 
     Shared by `export_drawings` and `print_drawings`. May be relative (resolved
     against the model folder at call time) or absolute. Defaults to './PlotFiles'.
+
+    Returns:
+        Output directory path
     """
     return _load_settings().get("drawings", {}).get("output_dir", "./PlotFiles")
 
@@ -454,6 +489,9 @@ def get_default_export_settings() -> str:
     When non-empty, `export_drawings` uses these settings as-is by default.
     When empty (the default), exports run in on-the-go mode, patching the base
     settings with the chosen format/version.
+
+    Returns:
+        Export settings name, or empty string
     """
     return _load_settings().get("drawings", {}).get("export", {}).get("default_export_settings", "")
 
@@ -465,6 +503,9 @@ def get_default_print_settings() -> str:
     When non-empty, `print_drawings` uses these settings as-is by default.
     When empty (the default), prints run in on-the-go mode, patching the base
     settings with the auto-detected paper size and multi-sheet tiling.
+
+    Returns:
+        Print settings name, or empty string
     """
     return _load_settings().get("drawings", {}).get("print", {}).get("default_print_settings", "")
 
@@ -474,6 +515,12 @@ def get_mcp_data_dir(model_path: str) -> Path:
     Return the TeklaMCPData directory for runtime data in the given model.
 
     Creates the directory if it doesn't exist.
+
+    Args:
+        model_path: Tekla model folder
+
+    Returns:
+        Path to the data directory
     """
     data_dir = Path(model_path) / MCP_DATA_DIR_NAME
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -510,5 +557,10 @@ def get_tolerance(name: str, default: float, group: str = "model") -> float:
 
 @lru_cache
 def get_config() -> Config:
-    """Get the singleton Config instance."""
+    """
+    Get the singleton Config instance.
+
+    Returns:
+        Shared `Config` instance
+    """
     return Config()

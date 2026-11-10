@@ -111,6 +111,9 @@ def categorize_drawing_object(obj: Any) -> str:
 
     LeaderLine falls into 'other', which is excluded from every type_filter value.
 
+    Args:
+        obj: Drawing object to classify
+
     Returns:
         One of: 'dimensions', 'marks', 'text', 'graphics', 'other'.
     """

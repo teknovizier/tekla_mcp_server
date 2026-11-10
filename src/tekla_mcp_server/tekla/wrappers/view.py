@@ -14,6 +14,12 @@ class TeklaDrawingView:
     """
 
     def __init__(self, view: DrawingView):
+        """
+        Wrap a Tekla drawing view.
+
+        Args:
+            view: Tekla `DrawingView` object
+        """
         self._view = view
         self._view_key: str | None = None
 
@@ -149,7 +155,12 @@ class TeklaDrawingView:
 
     @origin.setter
     def origin(self, xy: tuple[float, float]) -> None:
-        """Sets the view origin (x, y) in mm."""
+        """
+        Sets the view origin (x, y) in mm.
+
+        Raises:
+            ValueError: If `xy` is not an (x, y) tuple.
+        """
         if not isinstance(xy, tuple) or len(xy) != 2:
             raise ValueError(f"Expected (x, y) tuple, got {xy!r}")
         self._view.Origin = Point(xy[0], xy[1], 0)
@@ -169,11 +180,21 @@ class TeklaDrawingView:
         return (round(aabb.MinPoint.X, 1), round(aabb.MinPoint.Y, 1))
 
     def modify(self) -> bool:
-        """Commits attribute changes to Tekla. Returns True on success."""
+        """
+        Commits attribute changes to Tekla.
+
+        Returns:
+            True on success
+        """
         return self._view.Modify()
 
     def delete(self) -> bool:
-        """Deletes the view from the drawing. Returns True on success."""
+        """
+        Deletes the view from the drawing.
+
+        Returns:
+            True on success
+        """
         return self._view.Delete()
 
     def set_attributes(
@@ -221,9 +242,18 @@ class TeklaDrawingView:
 
     def get_all_objects(self, type_filter: list[type] | None = None) -> list[DrawingObject] | None:
         """
-        Return all DrawingObject instances in this view as a plain list,
-        or None if enumeration fails (e.g. disconnection or corrupted view state).
+        Return all DrawingObject instances in this view as a plain list.
+
         Pass a list of types to let Tekla pre-filter via `GetAllObjects(Type[])`.
+
+        Args:
+            type_filter: Types to include
+
+        Returns:
+            Drawing objects, or None if enumeration fails (e.g. disconnection or corrupted view state)
+
+        Raises:
+            ValueError: If `type_filter` is an empty list.
         """
         if type_filter is not None and not type_filter:
             raise ValueError("type_filter must not be empty")
@@ -297,6 +327,9 @@ class TeklaDrawingView:
                 Assigned to the page with which the view's visible frame
                 (`frame_origin` + `width`/`height`) has the largest overlap.
                 Ignored for the sheet view itself.
+
+        Returns:
+            View metadata
         """
         if self.is_sheet:
             # Sheet view has no label, scale or frame_origin - those are

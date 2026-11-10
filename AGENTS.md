@@ -239,6 +239,8 @@ All functions must use **Google-style** docstrings with:
 
 **Exception: MCP tools in `providers/`:** docstrings of `@<provider>.tool` functions must NOT have `Args:`, `Returns:` or `Raises:` sections. The docstring becomes the tool description sent to MCP clients, and parameters are already described via `Annotated[..., Field(description=...)]`. Keep only the summary line and, if needed, a short prose description.
 
+**Exception: trivial accessors:** a getter or `@property` whose body only returns an attribute (e.g. `return self._number`) needs no docstring.
+
 For a multi-line docstring, the opening `"""` goes on its own line - never put the first line of text on the same line as the opening quotes.
 
 ```python

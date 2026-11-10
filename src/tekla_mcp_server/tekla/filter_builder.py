@@ -104,7 +104,7 @@ def add_filter(
         filter_collection: Collection to append to (mutated in place).
         filter_expression: Left-hand-side expression (e.g. `PartFilterExpressions.Name()`).
         value: Value to compare against.
-        match_type: Comparison operator; defaults to equality.
+        match_type: Comparison operator. Defaults to equality.
         operator: Boolean operator joining this item with previous entries.
 
     Raises:
@@ -156,7 +156,7 @@ def build_filter_group(expression: Any, filter_option: StringFilterOption | Nume
     Args:
         expression: Left-hand-side expression shared by every condition.
         filter_option: Pydantic option carrying conditions and join logic.
-        is_numeric: If True, parse `match_type` as `NumericMatchType`; else `StringMatchType`.
+        is_numeric: If True, parse `match_type` as `NumericMatchType`, otherwise as `StringMatchType`.
 
     Returns:
         The populated collection, or `None` if no conditions were added.

@@ -67,6 +67,18 @@ def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
 
     @wraps(func)
     def wrapper(model: TeklaModel, component: Any, *args: Any, **kwargs: Any) -> Any:
+        """
+        Run `func` in the first object's local plane.
+
+        Args:
+            model: Tekla model wrapper
+            component: Component to pass through
+            args: Target objects and extra args
+            kwargs: Extra keyword args
+
+        Returns:
+            Result of `func`
+        """
         # Determine the number of objects in args
         selected_object = args[0]  # Supports only the first element
 
@@ -437,7 +449,12 @@ def get_all_profiles() -> list[dict[str, str]]:
 
 @lru_cache
 def _read_all_profiles() -> list[dict[str, str]]:
-    """Read every profile from the catalog. Cached, assumes the catalog is connected."""
+    """
+    Read every profile from the catalog. Cached, assumes the catalog is connected.
+
+    Returns:
+        Profile dicts with 'name', 'type' and 'sub_type'
+    """
     catalog = CatalogHandler()
     profiles = catalog.GetLibraryProfileItems()
     result = []
@@ -474,7 +491,12 @@ def get_all_materials() -> list[dict[str, str]]:
 
 @lru_cache
 def _read_all_materials() -> list[dict[str, str]]:
-    """Read every material from the catalog. Cached, assumes the catalog is connected."""
+    """
+    Read every material from the catalog. Cached, assumes the catalog is connected.
+
+    Returns:
+        Material dicts with 'name' and 'type'
+    """
     catalog = CatalogHandler()
     materials = catalog.GetMaterialItems()
     result = []
@@ -509,7 +531,12 @@ def get_all_rebar_items() -> list[dict[str, str]]:
 
 @lru_cache
 def _read_all_rebar_items() -> list[dict[str, str]]:
-    """Read every rebar item from the catalog. Cached, assumes the catalog is connected."""
+    """
+    Read every rebar item from the catalog. Cached, assumes the catalog is connected.
+
+    Returns:
+        Rebar dicts with 'grade' and 'size'
+    """
     catalog = CatalogHandler()
     rebars = catalog.GetRebarItems()
     result = []
@@ -544,7 +571,12 @@ def get_all_bolt_items() -> list[dict[str, Any]]:
 
 @lru_cache
 def _read_all_bolt_items() -> list[dict[str, Any]]:
-    """Read every bolt item from the catalog. Cached, assumes the catalog is connected."""
+    """
+    Read every bolt item from the catalog. Cached, assumes the catalog is connected.
+
+    Returns:
+        Bolt dicts with 'standard' and 'size'
+    """
     catalog = CatalogHandler()
     bolts = catalog.GetBoltItems()
     result = []
