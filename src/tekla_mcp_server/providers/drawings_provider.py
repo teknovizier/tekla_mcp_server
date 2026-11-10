@@ -2075,7 +2075,9 @@ def check_drawing_collisions(
     Detect mark collisions in selected drawings by exporting to DXF and analysing geometry overlaps.
 
     Select drawings in the Document Manager first or pass the `marks` parameter.
-    Magenta revision clouds are drawn at every found collision.
+    A revision cloud is drawn at every found collision, colored by category: Red for
+    geometry/view-frame collisions, Blue for mark overlaps, Cyan for views outside the
+    sheet grid and content outside the sheet.
     """
     all_issues: list = []
     total_clouds_drawn = 0
