@@ -16,6 +16,7 @@ from tekla_mcp_server.models import (
     BeamInput,
     ColumnInput,
     PanelInput,
+    SlabInput,
     PlacementResult,
     BatchPlacementResult,
 )
@@ -111,6 +112,23 @@ class TestTeklaBeamInput:
         pos = PositionInput(plane="LEFT", depth="FRONT")
         beam_input = TeklaBeamInput(profile="HEA200", material="S235JR", tekla_class=100, position=pos)
         assert beam_input.position.plane == "LEFT"
+
+
+class TestPointOffsetSchema:
+    """Start/end point offsets are exposed only for beam-like inputs."""
+
+    @pytest.mark.parametrize("model", [BeamInput, ColumnInput, PanelInput])
+    def test_beam_like_inputs_expose_offsets(self, model):
+        """Beam-like schemas advertise both point offsets."""
+        properties = model.model_json_schema()["properties"]
+        assert "start_point_offset" in properties
+        assert "end_point_offset" in properties
+
+    def test_slab_input_does_not_expose_offsets(self):
+        """Slab schema has no point offsets, since contour plates cannot use them."""
+        properties = SlabInput.model_json_schema()["properties"]
+        assert "start_point_offset" not in properties
+        assert "end_point_offset" not in properties
 
 
 class TestBeamInput:

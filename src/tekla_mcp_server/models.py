@@ -997,18 +997,24 @@ class PositionInput(BaseModel):
     rotation_offset: float = Field(0.0, allow_inf_nan=False, description="Rotation offset in degrees")
 
 
-class TeklaBeamInput(BaseModel):
-    """Base input model for beam-like elements (beam, column, panel)."""
+class TeklaPartInput(BaseModel):
+    """Base input model for every placed part (beam, column, panel, slab)."""
 
     profile: str = Field(description="Element profile name, e.g. '300*600', 'HEA200'")
     material: str = Field(description="Element material grade, e.g. 'C30/37', 'S235JR'")
     tekla_class: int = Field(description="Tekla class number, e.g. 11, 100")
     name: str | None = Field(default=None, description="Element name")
     position: PositionInput | None = Field(default=None, description="Position settings for the element")
-    start_point_offset: OffsetInput | None = Field(default=None, description="Start point offset (dx, dy, dz)")
-    end_point_offset: OffsetInput | None = Field(default=None, description="End point offset (dx, dy, dz)")
     part_number: NumberingSeries | None = Field(default=None, description="Part numbering series")
     assembly_number: NumberingSeries | None = Field(default=None, description="Assembly numbering series")
+
+
+class TeklaBeamInput(TeklaPartInput):
+    """Base input model for beam-like elements (beam, column, panel)."""
+
+    # Only beam-like parts have start/end points to offset, slabs are contour plates
+    start_point_offset: OffsetInput | None = Field(default=None, description="Start point offset (dx, dy, dz)")
+    end_point_offset: OffsetInput | None = Field(default=None, description="End point offset (dx, dy, dz)")
 
 
 class BeamInput(TeklaBeamInput):
@@ -1032,7 +1038,7 @@ class PanelInput(TeklaBeamInput):
     end_point: PointInput = Field(description="End point coordinates")
 
 
-class SlabInput(TeklaBeamInput):
+class SlabInput(TeklaPartInput):
     """Input model for a single slab definition."""
 
     points: list[PointInput] = Field(description="List of contour points defining slab outline (minimum 3 points)")
