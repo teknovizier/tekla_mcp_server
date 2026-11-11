@@ -13,6 +13,6 @@ This produces an executable in `dist/mcp_server/`.
 
 ## Notes
 
-- The `_internals` directory must be distributed alongside the binary
-- Copy configuration files to `_internals/config/` for portable deployment
+- The `_internal` directory must be distributed alongside the binary
+- Copy the whole `config` folder (including `attributes/` and `macros/`) to `dist/mcp_server/config/`, next to the executable. Settings stay editable there after install. See [Config Directory Contents](configuration.md#config-directory-contents)
 - Python installation not required on target machine

@@ -39,15 +39,15 @@ Lookup material - skim for the one fact you need, this section is not meant to b
 
 **Package management**
 - Install: `uv pip install -r requirements.txt`
-- Add: `uv pip add <package>`
-- Update: `uv pip compile requirements.txt --upgrade`
+- Add: pin the package in `requirements.txt` (or `requirements-dev.txt`), then reinstall
+- Update: change the version pin in `requirements.txt`, then reinstall
 
 **Testing**
 - All tests: `uv run pytest tests/`
 - Unit only: `uv run pytest tests/unit/`
 - Functional only: `uv run pytest tests/functional/`
-- Single test: `uv run pytest tests/unit/test_utils.py::test_log_function_call -xvs`
-- Single test class: `uv run pytest tests/unit/test_utils.py::TestLogFunctionCall -xvs`
+- Single test: `uv run pytest tests/unit/test_utils.py::TestNormalizeGuid::test_empty_stays_empty -xvs`
+- Single test class: `uv run pytest tests/unit/test_utils.py::TestNormalizeGuid -xvs`
 - Verbose: `uv run pytest -xvs tests/`
 
 > ⚠️ Functional tests modify Tekla models - run only in test environments.
@@ -63,7 +63,7 @@ Or combined: `uv run ruff check . && uv run ruff format . && uv run mypy .`
 
 **Run / build**
 - Run server: `uv run python src/tekla_mcp_server/mcp_server.py`
-- Build binary: `uv run pyinstaller src/tekla_mcp_server/mcp_server.py`
+- Build binary: `uv pip install pyinstaller` (not in the dev requirements), then `uv run pyinstaller src/tekla_mcp_server/mcp_server.py`
 
 ### MCP Resources (Read-Only Data)
 
@@ -93,6 +93,7 @@ Resources provide discovery/metadata, not actions:
 tekla_mcp_server/
 ├── src/tekla_mcp_server/
 │   ├── config.py                        # Configuration management
+│   ├── drawing_export.py                # Export and print settings XML patching
 │   ├── dxf_operations.py                # DXF entity resolution and drawing collision checks
 │   ├── embeddings.py                    # Semantic attribute resolution
 │   ├── init.py                          # Logger and DLL loading
@@ -124,7 +125,9 @@ tekla_mcp_server/
 │           ├── model.py                 # TeklaModel singleton
 │           ├── model_object.py          # TeklaModelObject, TeklaPart, TeklaAssembly, ...
 │           └── view.py                  # TeklaDrawingView
-├── config/
+├── config/                              # Each *.json has a tracked *.sample.json template
+│   ├── attributes/                      # Base export/print/collision settings installed into the model
+│   ├── macros/modeling/                 # Bundled macros installed into XS_MACRO_DIRECTORY
 │   ├── base_components.json             # Component definitions + handler config
 │   ├── element_types.json               # Element type -> Tekla class mapping
 │   ├── report_properties.json           # Report property definitions
@@ -132,7 +135,7 @@ tekla_mcp_server/
 │   ├── settings.json                    # Server settings
 │   └── context/                         # project://context markdown files
 ├── tests/
-│   ├── unit/                            # Pure Python tests - no Tekla API
+│   ├── unit/                            # Pure and mock-based tests - never the live Tekla API
 │   └── functional/                      # Live model tests - use MCP_TEST_ prefix
 ├── docs/
 │   └── reference.md                     # Tool and resource reference (keep up to date)
@@ -431,7 +434,7 @@ def _helper_function(param: str) -> dict[str, Any]:
 ### MCP Server Architecture
 - **Providers** (`providers/`) - MCP tool definitions with inline implementations
 - Use `LocalProvider` for organizing tools into modules
-- Tool functions accept model inputs and return dict[str, Any]
+- Tool functions accept model inputs and return `ToolResult(structured_content=...)`
 - Use `to_filter_option()` helper from `tekla/filter_builder.py` to convert dicts to Pydantic models
 
 ### When to Use Resources vs Tools

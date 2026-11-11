@@ -7,7 +7,7 @@ This guide covers all configuration files and environment variables.
 | Property | Default | Description |
 |----------|---------|-------------|
 | `tekla_path` | **required** | Tekla Structures binary directory, e.g. `C:\Program Files\Tekla Structures\2022.0\bin`. The server fails to start without it. |
-| `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. |
+| `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. A relative path is resolved against the config directory, not the working directory. If the folder does not exist, `<config>/context` is used instead. |
 | `excluded_tags` | `[]` | List of tool tags to hide from the LLM. Leave empty to expose all tools. See [Tool Visibility](#tool-visibility) below. |
 | `read_only` | `false` | When `true`, shows only tools marked as read-only. Query, selection, and view/navigation tools remain available, anything that writes the model is hidden. |
 
@@ -51,7 +51,7 @@ Both settings compose: `excluded_tags` and `read_only` can be active simultaneou
 | `embeddings.embedding_minimum_threshold` | `0.8` | Min confidence score (0-1) |
 
 #### Semantic Attribute Mapping
-The server uses **sentence-transformers** (MiniLM) to perform semantic attribute mapping for **template attributes**, converting user-friendly text into Tekla attribute names. It is disabled by default - without it, attribute names are resolved by exact and override matching only. When enabled, it loads **fine‑tuned Tekla‑specific model** published on HuggingFace: [teknovizier/minilm-tekla-attr-embed-v1](https://huggingface.co/teknovizier/minilm-tekla-attr-embed-v1).
+The server uses **sentence-transformers** (MiniLM) to perform semantic attribute mapping for **template attributes**, converting user-friendly text into Tekla attribute names. It is disabled by default - without it, attribute names are resolved by exact and override matching only. When enabled, it loads **fine-tuned Tekla-specific model** published on HuggingFace: [teknovizier/minilm-tekla-attr-embed-v1](https://huggingface.co/teknovizier/minilm-tekla-attr-embed-v1).
 
 ##### How it works
 
@@ -102,7 +102,7 @@ Tolerances are grouped by domain: `model` for model operations and `drawings` fo
 | `drawings.export.default_export_settings` | `""` (empty) | Customer `.dwgsetting` export setting name used by `export_drawings` by default. When non-empty, exports run in named mode using this setting as-is (format/version args are ignored). When empty, on-the-go mode patches the base setting with the chosen format and version. |
 | `drawings.print.default_print_settings` | `""` (empty) | Customer `.PdfPrintOptions.xml` print setting name used by `print_drawings` by default. When non-empty, prints run in named mode using this setting as-is (size auto-detection is skipped). When empty, on-the-go mode patches the base setting with the auto-detected paper size and multi-sheet tiling. |
 
-The base export settings are stored in `config/attributes/TEKLA_MCP_EXPORT_BASE.dwgsetting`, and the base print settings in `config/attributes/TEKLA_MCP_PDF_BASE.PdfPrintOptions.xml`. MCP server patches these files with the chosen/detected values before running the export or print macro. You can adjust them directly and the server will pick them up on restart.
+The base export settings are stored in `config/attributes/TEKLA_MCP_EXPORT_BASE.dwgsetting`, and the base print settings in `config/attributes/TEKLA_MCP_PDF_BASE.PdfPrintOptions.xml`. On every export or print call the server reads the base file, patches a copy with the chosen/detected values and writes that copy to the model's `attributes` folder. The files in `config/attributes` are never modified. You can adjust them directly, and the change applies from the next call without a restart.
 
 Exported file names follow Tekla's `XS_DRAWING_PLOT_FILE_NAME_A/W/G/M/C` advanced options (one per drawing type). To change the output naming, set these values via Tekla's Advanced Options dialog and restart Tekla.
 
@@ -140,11 +140,14 @@ Map element type names to Tekla class numbers and numbering settings:
 ```
 
 **Fields:**
-- `tekla_classes`: Array of Tekla class numbers for this element type
-- `assembly_prefix`: Prefix for assembly numbering (required for all materials)
-- `assembly_start_number`: Starting number for assembly numbering (default: 1)
-- `part_prefix`: Prefix for part numbering (steel only - concrete typically uses assembly-only)
-- `part_start_number`: Starting number for part numbering (steel only)
+- `tekla_classes`: Array of Tekla class numbers for this element type (required)
+- `name`: Default name given to new elements of this type by the `place_*` tools (optional)
+- `assembly_prefix`: Prefix for assembly numbering (optional)
+- `assembly_start_number`: Starting number for assembly numbering (required when `assembly_prefix` is set)
+- `part_prefix`: Prefix for part numbering (optional, typically steel only - concrete usually uses assembly numbering only)
+- `part_start_number`: Starting number for part numbering (required when `part_prefix` is set)
+
+Besides `MATERIAL_CONCRETE` and `MATERIAL_STEEL`, the sample defines two groups whose entries only need `tekla_classes`: `MATERIAL_EMBEDDED` (classes treated as embedded details) and `MATERIAL_REINFORCEMENT` (classes treated as reinforcement).
 
 ## Report Properties (`report_properties.json`)
 
@@ -213,7 +216,7 @@ By default, settings for three Tekla components are included:
 #### `Lifting Anchor`
 No properties are supported. The placement of the component is performed by custom handlers (see below).
 
-#### `Mesh Bars`
+#### `MeshBars`
 Only supports straight rebars with same properties on all sides.
 Does not support splicing and setting custom UDA for reinforcing bars.
 
@@ -298,6 +301,19 @@ For example, in Claude Desktop:
 ```
 
 **Note:** All path variables (`TEKLA_MCP_LOG_FILE_PATH`, `TEKLA_MCP_CONFIG_DIR`) should use absolute paths.
+
+### Config Directory Contents
+
+`TEKLA_MCP_CONFIG_DIR` must point to a full copy of the repository's `config` folder, not only the JSON files:
+
+| Path | Purpose |
+|------|---------|
+| `*.json` | Settings and the files described above, copied from the `*.sample.json` files |
+| `context/` | Default `project://context` folder |
+| `attributes/` | Base export, print and collision-layer settings installed into the model by the drawing tools |
+| `macros/modeling/` | Macros installed into `XS_MACRO_DIRECTORY` by `print_drawings`, `export_drawings`, `explode_components`, `select_model_objects_from_drawings` and the drawing checks |
+
+Without `attributes/` and `macros/`, the tools that depend on them fail with a "Bundled ... not found" error.
 
 ### Logging Levels
 

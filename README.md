@@ -39,15 +39,15 @@ To use this server, one must first install and configure an MCP client.
 
 ### Features
 
-- **Modular Architecture**: Powered by FastMCP 3.0, with toolset organization through modular providers (Selection, View, Properties, Components, Operations, Drawings, Modeling).
+- **Modular Architecture**: Powered by FastMCP 4, with toolset organization through modular providers (Selection, View, Properties, Components, Operations, Drawings, Modeling).
 
-- **Resource Discovery**: Auto‑detection of available filters, macros, components, Tekla phases, grids, material and rebar catalogs and project context files.
+- **Resource Discovery**: Auto-detection of available filters, macros, components, Tekla phases, grids, material and rebar catalogs and project context files.
 
-- **Component Handler Plugin System**: Flexible plugin model for Tekla components with lifecycle hooks, e.g., `Lifting Anchors` component selects anchors based on element weight and auto‑calculates anchor placement according to center of gravity.
+- **Component Handler Plugin System**: Flexible plugin model for Tekla components with lifecycle hooks, e.g., `Lifting Anchor` component selects anchors based on element weight and auto-calculates anchor placement according to center of gravity.
 
-- **LLM‑Powered Component Property Understanding**: Natural language mapping like "concrete cover thickness" → actual Tekla component property.
+- **LLM-Powered Component Property Understanding**: Natural language mapping like "concrete cover thickness" → actual Tekla component property.
 
-- **Semantic Attribute Mapping**: Hybrid semantic system (MiniLM embedding model + LLM fallback) for mapping user‑friendly names to Tekla attributes. Opt-in, disabled by default.
+- **Semantic Attribute Mapping**: Hybrid semantic system (MiniLM embedding model + LLM fallback) for mapping user-friendly names to Tekla attributes. Opt-in, disabled by default.
 
 - **Flexible Access Control**: Possibility to run in read-only mode for safe query-only access and to hide specific tool categories based on project or workflow needs.
 
@@ -71,6 +71,7 @@ For complete setup instructions, see [Quickstart Guide](docs/quickstart.md).
 | [Configuration](docs/configuration.md) | Config files and environment variables |
 | [Testing](docs/testing.md) | Running tests |
 | [Distribution](docs/distribution.md) | Building portable binary |
+| [Compatibility](docs/compatibility.md) | Verified Tekla versions, MCP clients and language models |
 
 ## License
 
