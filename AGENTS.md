@@ -96,6 +96,7 @@ tekla_mcp_server/
 │   ├── drawing_export.py                # Export and print settings XML patching
 │   ├── dxf_operations.py                # DXF entity resolution and drawing collision checks
 │   ├── embeddings.py                    # Semantic attribute resolution
+│   ├── geometry.py                      # Pure 2D and 3D geometry (BBox, Segment, OrientedBox)
 │   ├── init.py                          # Logger and DLL loading
 │   ├── mcp_server.py                    # Main server entrypoint
 │   ├── models.py                        # Data models and enums
@@ -104,7 +105,7 @@ tekla_mcp_server/
 │   │   ├── components_provider.py       # put/get/modify/remove_components
 │   │   ├── drawings_provider.py         # get_drawings, print_drawings, ...
 │   │   ├── modeling_provider.py         # place_beams/columns/panels/slabs, move, grid
-│   │   ├── operations_provider.py       # cut, orphans, clash_check, macro, ...
+│   │   ├── operations_provider.py       # cut, orphans, clash_check, find_nearby_elements, macro, ...
 │   │   ├── properties_provider.py       # get/set_elements_properties, compare, copy_properties_from_ifc, ...
 │   │   ├── resources_provider.py        # All MCP resources (tekla://, project://)
 │   │   ├── selection_provider.py        # select_elements_by_filter/guid/name
@@ -154,6 +155,7 @@ tekla_mcp_server/
 | Python -> .NET conversion helper | `tekla/interop.py` (must import only `tekla/loader.py`, so wrappers can use it without an import cycle) |
 | Pure-Python feature logic with no Tekla import (DLL-free, fully unit-testable in CI) | top-level module in `src/tekla_mcp_server/`, not `tekla/` |
 | Configuration | `config/*.json` |
+| Pure geometry (2D boxes and segments, 3D boxes) | `geometry.py` |
 | General utility | `utils.py` |
 | Documentation | `docs/*.md` |
 | Unit test | `tests/unit/test_*.py` |

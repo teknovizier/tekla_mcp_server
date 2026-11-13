@@ -30,7 +30,7 @@ from tekla_mcp_server.dxf_operations import (
     shortening_gaps_from_boxes,
     view_local_to_sheet,
 )
-from tekla_mcp_server.utils import BBox, Segment
+from tekla_mcp_server.geometry import BBox, Segment
 
 import ezdxf
 

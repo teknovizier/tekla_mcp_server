@@ -35,7 +35,11 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
 )
 from tekla_mcp_server.tekla.loader import BooleanPart, CutPlane, EdgeChamfer, Fitting, Operation
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
-from tekla_mcp_server.tekla.utils import expand_to_parts, get_all_bolt_items, iterate_boolean_parts
+from tekla_mcp_server.tekla.utils import (
+    expand_to_parts,
+    get_all_bolt_items,
+    iterate_boolean_parts,
+)
 
 properties_provider = LocalProvider()
 

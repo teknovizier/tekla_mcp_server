@@ -8,15 +8,17 @@ import filecmp
 import re
 import shutil
 import time
+from contextlib import contextmanager
 from functools import wraps, lru_cache
 from typing import Any, Literal
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 
 from tekla_mcp_server.config import get_tolerance, get_advanced_option_directories, get_config_dir
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import BaseComponent
+from tekla_mcp_server.geometry import FloatArray, OrientedBox, smaller_box
 
 from tekla_mcp_server.tekla.loader import (
     Point,
@@ -45,13 +47,14 @@ from tekla_mcp_server.tekla.loader import (
     TeklaStructuresSettings,
     BooleanPart,
     Operation,
+    Part,
 )
 
 from tekla_mcp_server.utils import log_function_call
 
 
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaReinforcement, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaReinforcement, wrap_model_object, wrap_model_objects
 
 
 def ensure_transformation_plane(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -410,6 +413,99 @@ def get_candidates_in_bounding_box(element: TeklaModelObject, tolerance: float) 
     return candidates
 
 
+def get_parts_in_extent(min_point: FloatArray, max_point: FloatArray, max_objects: int) -> list[TeklaPart]:
+    """
+    Find parts whose extent intersects an axis-aligned box in the current work plane.
+
+    The search also returns rebars, cuts and welds. Loading every instance costs about
+    ten times more than the search itself, so only the parts are loaded, and only when
+    the search found no more than `max_objects` objects.
+
+    Args:
+        min_point: Box minimum corner
+        max_point: Box maximum corner
+        max_objects: Most objects of any type the search may return
+
+    Returns:
+        Wrapped parts
+
+    Raises:
+        ValueError: If the search found more than `max_objects` objects.
+    """
+    enumerator = ModelObjectSelector().GetObjectsByBoundingBox(Point(*min_point), Point(*max_point))
+    if enumerator.GetSize() > max_objects:
+        raise ValueError(f"Search area holds {enumerator.GetSize()} objects, more than the {max_objects} one search may load. Use a smaller `radius_mm` or a smaller source.")
+    enumerator.SelectInstances = False
+    parts: list[TeklaPart] = []
+    while enumerator.MoveNext():
+        obj = enumerator.Current
+        if isinstance(obj, Part) and obj.Select():
+            wrapped = wrap_model_object(obj)
+            if isinstance(wrapped, TeklaPart):
+                parts.append(wrapped)
+    return parts
+
+
+@contextmanager
+def global_work_plane(model: TeklaModel) -> Iterator[Any]:
+    """
+    Run a block in the global work plane and restore the previous plane afterwards.
+
+    Args:
+        model: Tekla model wrapper
+
+    Yields:
+        The work plane handler, for temporary switches inside the block
+    """
+    handler = model.model.GetWorkPlaneHandler()
+    saved_plane = handler.GetCurrentTransformationPlane()
+    try:
+        handler.SetCurrentTransformationPlane(TransformationPlane())
+        yield handler
+    finally:
+        handler.SetCurrentTransformationPlane(saved_plane)
+
+
+def get_oriented_box(part: TeklaPart, work_plane_handler: Any) -> OrientedBox | None:
+    """
+    Build the box of a part: the smaller of its extent in its own coordinate system and its global extent.
+
+    Both boxes enclose the part. The own-axis box is tight for straight members at any
+    angle, but a bent PolyBeam's coordinate system follows only its first segment, so
+    its own-axis box can be metres too large. The global box is then the tighter one.
+
+    Must run in the global work plane (`global_work_plane`). The part's plane is set
+    only to read the solid and the global plane is set again before returning.
+
+    Args:
+        part: Part to measure
+        work_plane_handler: Handler from `global_work_plane`
+
+    Returns:
+        The box in global coordinates, or None when the part has no solid
+    """
+    cs = part.model_object.GetCoordinateSystem()
+    try:
+        work_plane_handler.SetCurrentTransformationPlane(TransformationPlane(cs))
+        solid = part.get_solid()
+        if solid is None:
+            return None
+        mn, mx = solid.MinimumPoint, solid.MaximumPoint
+    finally:
+        work_plane_handler.SetCurrentTransformationPlane(TransformationPlane())
+    own_box = OrientedBox.from_local_extent(
+        (cs.Origin.X, cs.Origin.Y, cs.Origin.Z),
+        (cs.AxisX.X, cs.AxisX.Y, cs.AxisX.Z),
+        (cs.AxisY.X, cs.AxisY.Y, cs.AxisY.Z),
+        (mn.X, mn.Y, mn.Z),
+        (mx.X, mx.Y, mx.Z),
+    )
+    global_solid = part.get_solid()
+    gmn, gmx = global_solid.MinimumPoint, global_solid.MaximumPoint
+    global_box = OrientedBox.from_local_extent((0, 0, 0), (1, 0, 0), (0, 1, 0), (gmn.X, gmn.Y, gmn.Z), (gmx.X, gmx.Y, gmx.Z))
+    return smaller_box(own_box, global_box)
+
+
 def iterate_boolean_parts(model_object: ModelObject, types: tuple[type, ...] = (BooleanPart,)) -> list[ModelObject]:
     """
     Iterate over boolean parts attached to a model object.
@@ -737,7 +833,6 @@ def get_report_templates() -> list[str]:
     return sorted(template_names)
 
 
-@lru_cache
 def get_available_attribute_files(file_extension: str) -> list[str]:
     """
     Get available Tekla attribute file names for the given extension.
@@ -754,6 +849,29 @@ def get_available_attribute_files(file_extension: str) -> list[str]:
     if not file_extension.startswith("."):
         file_extension = f".{file_extension}"
 
+    # The model's own attributes folder is one search location among several, so a
+    # failure here must not kill the whole lookup. It must still be visible though -
+    # silently returning a short list looks like "no such setting exists" to the caller.
+    model_path = ""
+    try:
+        model_path = TeklaModel().model_path
+    except Exception as e:
+        logger.warning("Could not read the model's attributes folder while listing '%s' files, results are incomplete: %s", file_extension, e)
+    return list(_attribute_files(file_extension, model_path))
+
+
+@lru_cache
+def _attribute_files(file_extension: str, model_path: str) -> tuple[str, ...]:
+    """
+    Scan the attribute folders for files with the given extension.
+
+    Args:
+        file_extension: File extension including the dot
+        model_path: Model folder, empty when unknown. Part of the cache key
+
+    Returns:
+        Sorted file stems
+    """
     paths: list[Path] = []
 
     for option_name in ("XS_FIRM", "XS_PROJECT"):
@@ -765,22 +883,33 @@ def get_available_attribute_files(file_extension: str) -> list[str]:
             if path.is_dir():
                 paths.append(path.resolve())
 
-    # The model's own attributes folder is one search location among several, so a
-    # failure here must not kill the whole lookup. It must still be visible though -
-    # silently returning a short list looks like "no such setting exists" to the caller.
-    try:
-        model = TeklaModel()
-        model_path = model.model_path
-        if model_path:
-            attributes_dir = Path(model_path) / "attributes"
-            if attributes_dir.is_dir():
-                paths.append(attributes_dir.resolve())
-    except Exception as e:
-        logger.warning("Could not read the model's attributes folder while listing '%s' files, results are incomplete: %s", file_extension, e)
+    if model_path:
+        attributes_dir = Path(model_path) / "attributes"
+        if attributes_dir.is_dir():
+            paths.append(attributes_dir.resolve())
 
     names: set[str] = set()
     for dir_path in paths:
         for file in dir_path.rglob(f"*{file_extension}"):
             names.add(file.stem)
 
-    return sorted(names)
+    return tuple(sorted(names))
+
+
+def require_selection_filter(filter_name: str) -> None:
+    """
+    Check that a saved Tekla selection filter with this name exists.
+
+    Args:
+        filter_name: Selection filter name
+
+    Raises:
+        ValueError: If no such filter is available.
+    """
+    available = get_available_attribute_files(".SObjGrp") + ["standard"]
+    if filter_name not in available:
+        # The list is cached, so a filter saved after it was read needs one fresh scan
+        _attribute_files.cache_clear()
+        available = get_available_attribute_files(".SObjGrp") + ["standard"]
+    if filter_name not in available:
+        raise ValueError(f"Filter '{filter_name}' not found. Available filters: {available}")

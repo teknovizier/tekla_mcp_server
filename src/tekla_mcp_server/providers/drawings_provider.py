@@ -72,7 +72,7 @@ from tekla_mcp_server.dxf_operations import (
     AttachTargets,
     MARK_CLOUD_MARGIN,
 )
-from tekla_mcp_server.utils import BBox
+from tekla_mcp_server.geometry import BBox
 from tekla_mcp_server.tekla.wrappers.drawing import TeklaDrawing
 from tekla_mcp_server.tekla.wrappers.drawing_handler import TeklaDrawingHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel

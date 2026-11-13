@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 from tekla_mcp_server.config import get_tolerance
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import StringFilterOption, StringMatchType
-from tekla_mcp_server.utils import BBox
+from tekla_mcp_server.geometry import BBox
 from tekla_mcp_server.tekla.loader import (
     Cloud,
     DrawingColors,

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from ezdxf import bbox as dxf_bbox
 
-from tekla_mcp_server.utils import BBox, Segment
+from tekla_mcp_server.geometry import BBox, Segment
 
 # DXF layers that represent non-annotation sheet furniture
 SHEET_FURNITURE_LAYERS = {"TEKLA_MCP_DRAWING_FRAME", "TEKLA_MCP_DRAWING_TABLE"}

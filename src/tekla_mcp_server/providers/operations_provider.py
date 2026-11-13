@@ -4,7 +4,10 @@ Operations tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
+import math
 import time
+from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Annotated, Literal
@@ -16,6 +19,7 @@ from fastmcp.tools import ToolResult
 from tekla_mcp_server.config import get_tolerance, get_advanced_option_directories, get_report_preview_max_chars, get_report_preview_timeout
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AttachmentPair
+from tekla_mcp_server.geometry import EPSILON, OrientedBox, aabb, aabb_gap, axis_overlap, box_gap, orientation, relation, search_extents, sides
 from tekla_mcp_server.utils import mcp_handler, build_report_filename, normalize_guid, resolve_model_relative_dir
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -38,7 +42,10 @@ from tekla_mcp_server.tekla.utils import (
     get_candidates_in_bounding_box,
     get_all_materials,
     get_all_rebar_items,
-    get_available_attribute_files,
+    get_oriented_box,
+    get_parts_in_extent,
+    global_work_plane,
+    require_selection_filter,
     ensure_macro_installed,
     wait_for_macro,
 )
@@ -934,8 +941,7 @@ def check_for_invalid_objects() -> ToolResult:
                 # Zero or negative volume
                 try:
                     volume = float(obj.get_report_property("VOLUME"))
-                    epsilon = 0.0001
-                    if volume <= epsilon:
+                    if volume <= EPSILON:
                         issues.append("zero_volume")
                 except Exception as e:
                     logger.warning("Failed to read VOLUME for %s: %s", guid, e)
@@ -1065,9 +1071,7 @@ def clash_check(
     selected_objects = list(model.get_selected_objects())
 
     if filter_name:
-        available_filters = get_available_attribute_files(".SObjGrp") + ["standard"]
-        if filter_name not in available_filters:
-            raise ValueError(f"Filter '{filter_name}' not found. Available filters: {available_filters}")
+        require_selection_filter(filter_name)
 
         to_select = []
         for raw_obj in selected_objects:
@@ -1147,6 +1151,576 @@ def _report_format(path: Path) -> tuple[str, bool]:
     if suffix == ".xsr":
         return "xsr", True
     return "text", True
+
+
+# Caps for `find_nearby_elements`. They bound the work of one call, so each is checked
+# before the step it protects
+_NEARBY_MAX_GUIDS = 200  # GUIDs accepted, before they are resolved
+_NEARBY_MAX_SOURCES = 20  # sources after resolution
+_NEARBY_MAX_OBJECTS = 5000  # objects one area search may return, before any is loaded
+_NEARBY_MAX_LOADED = 5000  # parts loaded and filtered over the whole call
+_NEARBY_MAX_CANDIDATES = 300  # parts near the sources, before top-level lookups and boxes
+_NEARBY_MAX_NEIGHBOUR_ASSEMBLIES = 100  # neighbouring assemblies, before their parts are collected
+_NEARBY_MAX_NEIGHBOUR_PARTS = 600  # parts of neighbouring assemblies, before their boxes are built
+_NEARBY_MAX_PART_PAIRS = 10000  # exact box comparisons
+_NEARBY_MAX_PIECES_PER_PART = 16  # search pieces one long rotated part is cut into
+# Area searches per source, more fall back to one search. Twice the pieces of one part,
+# so a long beam keeps its tight searches next to a few end plates
+_NEARBY_MAX_SEARCH_EXTENTS = 2 * _NEARBY_MAX_PIECES_PER_PART
+_NEARBY_MAX_TOLERANCE_MM = 50.0
+_NEARBY_ANGLE_TOLERANCE_DEG = 1.0
+
+
+@dataclass
+class _NearbyUnit:
+    """
+    One element `find_nearby_elements` measures: a part in part mode, a top-level assembly in assembly mode.
+
+    Attributes:
+        element: The part or top-level assembly
+        parts: Its parts with their boxes
+        main_box: Box whose axes describe the unit
+    """
+
+    element: TeklaPart | TeklaAssembly
+    parts: list[tuple[TeklaPart, OrientedBox]]
+    main_box: OrientedBox
+
+    @property
+    def key(self) -> str:
+        return self.element.guid
+
+    @property
+    def boxes(self) -> list[OrientedBox]:
+        """
+        Return the boxes of the unit's parts.
+        """
+        return [box for _, box in self.parts]
+
+
+def _try_read(getter: Callable[[], Any], errors: tuple[type[Exception], ...] = (KeyError, ValueError)) -> Any:
+    """
+    Read one identity field, returning None when Tekla has no value for it.
+
+    Only the given errors mean "no value". A lost connection or a wrong attribute name
+    still raises, so it is not reported as an empty field.
+
+    Args:
+        getter: Zero-argument reader
+        errors: Exceptions that mean the value is missing
+
+    Returns:
+        The value, or None
+    """
+    try:
+        return getter()
+    except errors:
+        return None
+
+
+class _NearbyContext:
+    """
+    Per-call cache for `find_nearby_elements`.
+
+    Boxes, identities, top-level assemblies and filter results are read from Tekla once
+    each, and only for the parts that need them.
+    """
+
+    def __init__(self, handler: Any, filter_name: str | None) -> None:
+        """
+        Start an empty cache.
+
+        Args:
+            handler: Work plane handler from `global_work_plane`
+            filter_name: Saved selection filter neighbours must match, None for all
+        """
+        self._handler = handler
+        self._filter_name = filter_name
+        self._boxes: dict[str, OrientedBox | None] = {}
+        self._identities: dict[str, dict[str, Any]] = {}
+        self._tops: dict[str, TeklaAssembly | None] = {}
+        self._matches: dict[str, bool] = {}
+        self._pairs = 0
+
+    def box(self, part: TeklaPart) -> OrientedBox | None:
+        """
+        Return a part's box.
+
+        Args:
+            part: Part to measure
+
+        Returns:
+            The box, or None without a solid
+        """
+        if part.guid not in self._boxes:
+            self._boxes[part.guid] = get_oriented_box(part, self._handler)
+        return self._boxes[part.guid]
+
+    def count_pair(self) -> None:
+        """
+        Count one exact box comparison.
+
+        Raises:
+            ValueError: If the call would compare more part pairs than the cap allows.
+        """
+        self._pairs += 1
+        _check_cap(self._pairs, _NEARBY_MAX_PART_PAIRS, "part pairs to compare", "Use a smaller `radius_mm`, fewer sources, a `filter_name` or `include_embeds=False`.")
+
+    def top(self, part: TeklaPart) -> TeklaAssembly | None:
+        """
+        Return a part's top-level assembly.
+
+        Args:
+            part: Part to look up
+
+        Returns:
+            The assembly, or None
+        """
+        if part.guid not in self._tops:
+            self._tops[part.guid] = part.get_top_level_assembly()
+        return self._tops[part.guid]
+
+    def wanted(self, element: TeklaPart | TeklaAssembly) -> bool:
+        """
+        Check a neighbour against the optional selection filter.
+
+        Tekla ignores part rules when it tests an assembly and assembly rules when it tests
+        a part, so callers test parts in part mode and assemblies in assembly mode.
+
+        Args:
+            element: Neighbour part or top-level assembly
+
+        Returns:
+            True if it is measured
+        """
+        if self._filter_name is None:
+            return True
+        if element.guid not in self._matches:
+            self._matches[element.guid] = bool(Operation.ObjectMatchesToFilter(element.model_object, self._filter_name))
+        return self._matches[element.guid]
+
+    def identity(self, element: TeklaPart | TeklaAssembly) -> dict[str, Any]:
+        """
+        Return the fields describing an element in the result.
+
+        Args:
+            element: Part or top-level assembly
+
+        Returns:
+            GUID, type, name, profile and assembly position
+        """
+        if element.guid in self._identities:
+            return self._identities[element.guid]
+        if isinstance(element, TeklaPart):
+            identity = {
+                "guid": element.guid,
+                "type": element.element_type,
+                "name": _try_read(lambda: element.name),
+                "profile": _try_read(lambda: element.profile),
+                # Tekla raises AttributeError when a report property has no value
+                "assembly_position": _try_read(lambda: element.get_report_property("ASSEMBLY_POS"), (AttributeError, KeyError)),
+            }
+        else:
+            main_part = _try_read(lambda: element.main_part)
+            identity = {
+                "guid": element.guid,
+                "type": "Assembly",
+                "name": _try_read(lambda: element.name),
+                "assembly_position": _try_read(lambda: element.position, (AttributeError, KeyError)),
+                "main_part_profile": main_part.profile if isinstance(main_part, TeklaPart) else None,
+            }
+        self._identities[element.guid] = identity
+        return identity
+
+    def part_unit(self, part: TeklaPart) -> _NearbyUnit | None:
+        """
+        Build the unit of a single part.
+
+        Args:
+            part: Part to measure
+
+        Returns:
+            The unit, or None without a solid
+        """
+        box = self.box(part)
+        return None if box is None else _NearbyUnit(part, [(part, box)], box)
+
+    def assembly_unit(self, assembly: TeklaAssembly, parts: list[TeklaPart]) -> _NearbyUnit | None:
+        """
+        Build the unit of a top-level assembly from the given parts.
+
+        The main part's box gives the unit's axes. When the main part has no solid or is
+        not among `parts` (an embed left out), the largest part's box is used instead.
+
+        Args:
+            assembly: Top-level assembly
+            parts: Parts that make up the unit
+
+        Returns:
+            The unit, or None when no part has a solid
+        """
+        boxed = [(part, box) for part in parts if (box := self.box(part)) is not None]
+        if not boxed:
+            return None
+        main_part = _try_read(lambda: assembly.main_part)
+        main_guid = main_part.guid if isinstance(main_part, TeklaPart) else None
+        main_box = next((box for part, box in boxed if part.guid == main_guid), None)
+        if main_box is None:
+            main_box = max((box for _, box in boxed), key=lambda box: math.prod(box.half))
+        return _NearbyUnit(assembly, boxed, main_box)
+
+
+def _resolve_nearby_sources(guids: list[str] | None, mode: str) -> tuple[list[TeklaPart | TeklaAssembly], list[dict[str, Any]]]:
+    """
+    Turn the given GUIDs, or the current selection, into deduplicated sources.
+
+    Args:
+        guids: Source GUIDs, None or empty for the current selection
+        mode: 'part' or 'assembly'
+
+    Returns:
+        (sources, skipped inputs with a reason)
+
+    Raises:
+        ValueError: If nothing is selected, nothing is usable, or more than the source cap remain.
+    """
+    model = TeklaModel()
+    skipped: list[dict[str, Any]] = []
+    if guids:
+        found, _, missing = model.resolve_guids(guids)
+        skipped += [{"guid": guid, "type": None, "reason": "not_found"} for guid in missing]
+        raw_objects = list(found)
+    else:
+        raw_objects = list(model.get_selected_objects())
+
+    sources: dict[str, TeklaPart | TeklaAssembly] = {}
+    for raw in raw_objects:
+        wrapped = wrap_model_object(raw)
+        entry = {"guid": normalize_guid(raw.Identifier.GUID.ToString()), "type": type(raw).__name__}
+        if mode == "part":
+            if isinstance(wrapped, TeklaPart):
+                sources.setdefault(wrapped.guid, wrapped)
+            else:
+                skipped.append({**entry, "reason": "not_a_part"})
+            continue
+        top = wrapped.get_top_level_assembly() if wrapped is not None else None
+        if isinstance(top, TeklaAssembly):
+            sources.setdefault(top.guid, top)
+        else:
+            skipped.append({**entry, "reason": "no_assembly"})
+
+    if not sources:
+        summary = ", ".join(f"{count} {type_name} ({reason})" for (type_name, reason), count in Counter((s["type"], s["reason"]) for s in skipped).items())
+        hint = " Use mode='assembly' for assemblies." if mode == "part" and any(s["type"] == "Assembly" for s in skipped) else ""
+        raise ValueError(f"No usable source. Skipped: {summary}.{hint}")
+    if len(sources) > _NEARBY_MAX_SOURCES:
+        raise ValueError(f"{len(sources)} sources resolved, at most {_NEARBY_MAX_SOURCES} are allowed per call")
+    return list(sources.values()), skipped
+
+
+def _check_cap(count: int, cap: int, what: str, hint: str = "Use a smaller `radius_mm` or fewer sources.") -> None:
+    """
+    Raise when a step would handle more items than one call may.
+
+    Args:
+        count: Number of items found
+        cap: Most items allowed
+        what: Description of the counted items for the message
+        hint: What the caller can change
+
+    Raises:
+        ValueError: If `count` exceeds `cap`.
+    """
+    if count > cap:
+        raise ValueError(f"Search found {count} {what}, more than the {cap} one call may handle. {hint}")
+
+
+def _nearby_row(ctx: _NearbyContext, source: _NearbyUnit, neighbour: _NearbyUnit, mode: str, radius: float, tolerance: float) -> tuple[float, float, str, dict[str, Any]] | None:
+    """
+    Measure one neighbour against one source, part to part.
+
+    Args:
+        ctx: Per-call cache
+        source: Source unit, its main box gives the axes for `axis_overlap_mm`
+        neighbour: Neighbour unit
+        mode: 'part' or 'assembly'
+        radius: Search radius in mm
+        tolerance: Contact tolerance in mm
+
+    Returns:
+        (unrounded gap, penetration, neighbour key, row), or None when the neighbour is beyond the radius
+    """
+    best: tuple[float, float, TeklaPart, TeklaPart] | None = None
+    parts_within_radius = 0
+    source_extents = [(part, box, aabb([box])) for part, box in source.parts]
+    for neighbour_part, neighbour_box in neighbour.parts:
+        neighbour_extent = aabb([neighbour_box])
+        nearest = math.inf
+        for source_part, source_box, source_extent in source_extents:
+            # The cheap extent distance skips pairs that cannot be within the radius
+            if aabb_gap(source_extent, neighbour_extent) > radius:
+                continue
+            ctx.count_pair()
+            gap, depth = box_gap(source_box, neighbour_box)
+            nearest = min(nearest, gap)
+            if best is None or (gap, -depth) < (best[0], -best[1]):
+                best = (gap, depth, source_part, neighbour_part)
+        if nearest <= radius:
+            parts_within_radius += 1
+    if best is None or best[0] > radius:
+        return None
+
+    gap, depth, closest_source, closest_neighbour = best
+    row = dict(ctx.identity(neighbour.element))
+    if mode == "part":
+        source_top, neighbour_top = ctx.top(closest_source), ctx.top(closest_neighbour)
+        row["same_assembly"] = source_top is not None and neighbour_top is not None and source_top.guid == neighbour_top.guid
+    else:
+        row["parts_within_radius"] = parts_within_radius
+        row["closest_parts"] = {"source": closest_source.guid, "neighbour": closest_neighbour.guid}
+    row.update(
+        {
+            "gap_mm": round(gap, 1),
+            "penetration_mm": round(depth, 1),
+            "relation": relation(gap, depth, tolerance),
+            "sides": sides(source.boxes, neighbour.boxes, tolerance),
+            "axis_overlap_mm": {name: round(value, 1) for name, value in axis_overlap(source.main_box, source.boxes, neighbour.boxes).items()},
+            "orientation": orientation(source.main_box, neighbour.main_box, tolerance, _NEARBY_ANGLE_TOLERANCE_DEG),
+        }
+    )
+    return gap, depth, neighbour.key, row
+
+
+def _search_around(unit: _NearbyUnit, radius: float, own: set[str], loaded: set[str]) -> list[TeklaPart]:
+    """
+    Find the parts within the radius of a unit's extent, without the unit's own parts.
+
+    Each part box gets its own tight search extents, so a long rotated part does not
+    search a whole bay. A unit needing more searches than the cap gets one search
+    around its whole extent.
+
+    Args:
+        unit: Source unit
+        radius: Search radius in mm
+        own: GUIDs of the unit's own parts, embeds included
+        loaded: GUIDs of parts loaded so far in the call, extended here
+
+    Returns:
+        Parts found, each once
+
+    Raises:
+        ValueError: If a search or the whole call loads more than the caps allow.
+    """
+    extents = [extent for box in unit.boxes for extent in search_extents(box, radius, _NEARBY_MAX_PIECES_PER_PART)]
+    if len(extents) > _NEARBY_MAX_SEARCH_EXTENTS:
+        extents = [aabb(unit.boxes, radius)]
+    found: dict[str, TeklaPart] = {}
+    for lo, hi in extents:
+        for part in get_parts_in_extent(lo, hi, _NEARBY_MAX_OBJECTS):
+            if part.guid not in own:
+                found.setdefault(part.guid, part)
+                loaded.add(part.guid)
+        _check_cap(len(loaded), _NEARBY_MAX_LOADED, "parts to load")
+    return list(found.values())
+
+
+def _find_nearby(
+    sources: list[TeklaPart | TeklaAssembly],
+    mode: str,
+    handler: Any,
+    radius: float,
+    limit: int,
+    offset: int,
+    tolerance: float,
+    include_embeds: bool,
+    skip_own_assembly: bool,
+    filter_name: str | None,
+    skipped: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Find the neighbouring parts or top-level assemblies of each source.
+
+    Part mode is assembly mode with one-part units, so both share this path. They differ
+    only in what a neighbour is (a part or the top-level assembly of a part) and in the
+    extra row fields.
+
+    Args:
+        sources: Source parts (part mode) or top-level assemblies (assembly mode)
+        mode: 'part' or 'assembly'
+        handler: Work plane handler from `global_work_plane`
+        radius: Search radius in mm
+        limit: Neighbours returned per source
+        offset: Neighbours skipped per source before the first one returned
+        tolerance: Contact tolerance in mm
+        include_embeds: Whether embed parts take part in assembly mode
+        skip_own_assembly: Part mode only. Whether parts of the source's own top-level assembly are left out
+        filter_name: Saved selection filter neighbours must match, None for all
+        skipped: Skipped list, extended with sources that have no geometry
+
+    Returns:
+        One entry per measured source
+
+    Raises:
+        ValueError: If no source has geometry, or a step would exceed its cap.
+    """
+    ctx = _NearbyContext(handler, filter_name)
+
+    # Source units, with the GUIDs of each source's own parts, embeds included
+    measured: list[tuple[_NearbyUnit, set[str]]] = []
+    for source in sources:
+        if isinstance(source, TeklaPart):
+            unit, own = ctx.part_unit(source), {source.guid}
+            if skip_own_assembly and (own_top := ctx.top(source)) is not None:
+                # The source's own cast-in items sit inside its box and would crowd out the real neighbours
+                own |= {part.guid for part in own_top.get_all_parts(include_embeds=True)}
+        else:
+            all_parts = source.get_all_parts(include_embeds=True)
+            unit = ctx.assembly_unit(source, all_parts if include_embeds else source.get_all_parts(include_embeds=False))
+            own = {part.guid for part in all_parts}
+        if unit is None:
+            skipped.append({"guid": source.guid, "type": source.element_type, "reason": "no_geometry"})
+        else:
+            measured.append((unit, own))
+    if not measured:
+        raise ValueError("None of the sources has geometry")
+
+    # Parts near each source. In part mode the filter runs here, before the cap. Assemblies
+    # are only known after the top-level lookups the cap protects
+    loaded: set[str] = set()
+    found = {unit.key: [part for part in _search_around(unit, radius, own, loaded) if mode != "part" or ctx.wanted(part)] for unit, own in measured}
+    _check_cap(len({part.guid for parts in found.values() for part in parts}), _NEARBY_MAX_CANDIDATES, "parts near the sources", "Use a smaller `radius_mm`, fewer sources or a `filter_name`.")
+
+    # Neighbour units: each candidate part, or each top-level assembly a candidate belongs to
+    neighbours: dict[str, _NearbyUnit] = {}
+    neighbour_keys: dict[str, list[str]] = {}
+    if mode == "part":
+        for unit, _ in measured:
+            for part in found[unit.key]:
+                if part.guid not in neighbours and (part_unit := ctx.part_unit(part)) is not None:
+                    neighbours[part.guid] = part_unit
+            neighbour_keys[unit.key] = [part.guid for part in found[unit.key] if part.guid in neighbours]
+    else:
+        # A top-level lookup walks up the assembly tree and costs about 20 ms. Once one part's
+        # assembly is known, its whole part list maps the other parts without a lookup
+        seen: dict[str, TeklaAssembly] = {}
+        owner: dict[str, str] = {}
+        tops: dict[str, TeklaAssembly] = {}
+        found_by_top: dict[str, list[TeklaPart]] = {}
+        for unit, _ in measured:
+            keys: dict[str, None] = {}
+            for part in found[unit.key]:
+                if part.guid not in owner:
+                    top = ctx.top(part)
+                    if top is None:
+                        continue
+                    if top.guid not in seen:
+                        seen[top.guid] = top
+                        _check_cap(len(seen), _NEARBY_MAX_NEIGHBOUR_ASSEMBLIES, "neighbouring assemblies", "Use a smaller `radius_mm` or fewer sources.")
+                        owner.update((member.guid, top.guid) for member in top.get_all_parts(include_embeds=True))
+                    owner[part.guid] = top.guid
+                top_guid = owner[part.guid]
+                top = seen[top_guid]
+                if top_guid == unit.key or not ctx.wanted(top):
+                    continue
+                tops.setdefault(top_guid, top)
+                found_by_top.setdefault(top_guid, []).append(part)
+                keys.setdefault(top_guid)
+            neighbour_keys[unit.key] = list(keys)
+        top_parts: dict[str, list[TeklaPart]] = {}
+        for guid, top in tops.items():
+            parts = top.get_all_parts(include_embeds=False)
+            if include_embeds:
+                # Only the neighbour's embeds that lie in the search area, a precast unit can hold hundreds
+                base = {part.guid for part in parts}
+                parts += [part for part in found_by_top[guid] if part.guid not in base]
+            top_parts[guid] = parts
+        _check_cap(sum(len(parts) for parts in top_parts.values()), _NEARBY_MAX_NEIGHBOUR_PARTS, "parts in neighbouring assemblies")
+        for guid, top in tops.items():
+            if (assembly_unit := ctx.assembly_unit(top, top_parts[guid])) is not None:
+                neighbours[guid] = assembly_unit
+        for unit, _ in measured:
+            neighbour_keys[unit.key] = [key for key in neighbour_keys[unit.key] if key in neighbours]
+
+    entries = []
+    for unit, _ in measured:
+        rows = [row for key in neighbour_keys[unit.key] if (row := _nearby_row(ctx, unit, neighbours[key], mode, radius, tolerance)) is not None]
+        # Closest first, deeper penetration first among equal gaps, GUID breaks the rest.
+        # The order is stable, so `offset` pages through the same list on every call
+        rows.sort(key=lambda item: (item[0], -item[1], item[2]))
+        has_more = offset + limit < len(rows)
+        entries.append(
+            {
+                **ctx.identity(unit.element),
+                "neighbours_found": len(rows),
+                "offset": offset,
+                "has_more": has_more,
+                "next_offset": offset + limit if has_more else None,
+                "neighbours": [row for *_, row in rows[offset : offset + limit]],
+            }
+        )
+    return entries
+
+
+@operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})
+@mcp_handler(scope="tool")
+def find_nearby_elements(
+    guids: Annotated[list[str] | None, Field(description="GUIDs to check. Empty means the current selection. Max 20 sources", max_length=_NEARBY_MAX_GUIDS)] = None,
+    mode: Annotated[Literal["part", "assembly"], Field(description="'part': find parts near parts. 'assembly': find cast units near cast units")] = "part",
+    radius_mm: Annotated[float, Field(description="How far to search, in mm", ge=0.0, le=5000.0)] = 100.0,
+    limit: Annotated[int, Field(description="Max neighbours per element in one page, closest first", ge=1, le=50)] = 20,
+    offset: Annotated[int, Field(description="Neighbours to skip per element, the `next_offset` of the previous page", ge=0)] = 0,
+    touch_tolerance_mm: Annotated[float, Field(description="Distance in mm that still counts as touching", ge=0.0, le=_NEARBY_MAX_TOLERANCE_MM)] = 1.0,
+    include_embeds: Annotated[bool, Field(description="Assembly mode only. Also measure embeds, the neighbours' embeds only within the radius")] = False,
+    skip_own_assembly: Annotated[bool, Field(description="Part mode only. Leave out parts of the source's own cast unit, e.g. its cast-in items")] = True,
+    filter_name: Annotated[str | None, Field(description="Saved Tekla selection filter. Only matching neighbours are measured. Part mode tests parts, assembly mode tests assemblies")] = None,
+) -> ToolResult:
+    """
+    Find what is near the given parts or assemblies.
+
+    Each part is treated as a box. Cuts, slots and holes are ignored. So the real gap
+    can be bigger than `gap_mm`, never smaller, and nothing within the radius is missed.
+
+    Per neighbour:
+    - `gap_mm`: space between the boxes, 0 if they go into each other.
+    - `penetration_mm`: how far one box must move to get clear of the other, 0 if apart. For an embed deep inside a wall it includes the way out.
+    - `relation`: `near`, `touching` (within the tolerance) or `boxes_overlap`. `boxes_overlap` is not a clash, use `clash_check` for that.
+    - `sides`: where the neighbour is, in global directions: above, below, +X, -X, +Y, -Y.
+    - `axis_overlap_mm`: how much they overlap along the element's length, width and thickness, e.g. how far a slab bears on a wall.
+    - `orientation`: angle between the elements, `parallel`, `perpendicular` or `skew`. `null` when it is unclear, e.g. for a square column.
+
+    In part mode, parts of the source's own cast unit are left out unless `skip_own_assembly`
+    is false, then `same_assembly` marks them. In assembly mode, `closest_parts` names the
+    two parts that are closest.
+
+    Results come in pages of `limit` per element. When `has_more` is true, call again with
+    `offset` set to `next_offset`. Each page repeats the search, the order stays the same.
+
+    Use `filter_name` to skip what does not matter, e.g. a filter for walls only. In part
+    mode it must be a part filter, in assembly mode an assembly filter (object type
+    Assembly). Tekla lets every assembly pass a part-only filter. Available filters are in
+    the `tekla://filters/selection` resource.
+    """
+    if filter_name:
+        require_selection_filter(filter_name)
+    sources, skipped = _resolve_nearby_sources(guids, mode)
+    with global_work_plane(TeklaModel()) as handler:
+        entries = _find_nearby(sources, mode, handler, radius_mm, limit, offset, touch_tolerance_mm, include_embeds, skip_own_assembly, filter_name or None, skipped)
+
+    logger.info("find_nearby_elements(%s): sources=%d, skipped=%d, radius=%.1f", mode, len(entries), len(skipped), radius_mm)
+    return ToolResult(
+        structured_content={
+            "status": "partial" if skipped else "success",
+            "geometry_basis": "oriented_boxes",
+            "mode": mode,
+            "radius_mm": radius_mm,
+            "touch_tolerance_mm": touch_tolerance_mm,
+            "filter_name": filter_name,
+            "limit": limit,
+            "has_more": any(entry["has_more"] for entry in entries),
+            "sources": entries,
+            "skipped": skipped,
+        }
+    )
 
 
 @operations_provider.tool(tags={"operations"}, annotations={"readOnlyHint": True, "destructiveHint": False})

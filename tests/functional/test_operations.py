@@ -2,10 +2,12 @@
 Functional tests for operations_provider.
 
 Tests operations like boolean cuts, cut part conversion, macro execution,
-and report creation.
+report creation and the nearby-element search.
 """
 
 from pathlib import Path
+
+import pytest
 
 from tekla_mcp_server.config import get_advanced_option_directories
 from tekla_mcp_server.models import AttachmentPair, BeamInput, PanelInput, PointInput
@@ -19,9 +21,11 @@ from tekla_mcp_server.providers.operations_provider import (
     clash_check,
     create_report,
     cut_elements_with_cutters,
+    find_nearby_elements,
     convert_cut_parts_to_real_parts,
     run_macro,
 )
+from tekla_mcp_server.tekla.loader import Point, TransformationPlane, Vector
 from tekla_mcp_server.tekla.wrappers.model_object import ZERO_GUID
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
@@ -383,3 +387,217 @@ def test_create_report_no_folder_uses_default(model_objects):
     finally:
         if created_file is not None and created_file.exists():
             created_file.unlink()
+
+
+# Nearby tests. Relations are checked on the shared `model_objects` walls that no earlier
+# test in this module changes (WALL1, WALL2, WALL8, SW1 and the clash walls). Their rows
+# are looked up by GUID, so other shared objects in the radius cannot break the asserts.
+# Only the radius limits need an exact neighbour list, so they get their own small layout
+
+
+def _guid(obj) -> str:
+    """GUID of a Tekla model object."""
+    return obj.Identifier.GUID.ToString()
+
+
+def _nearby_rows(result) -> dict[str, dict]:
+    """Neighbour rows of the single source, keyed by GUID."""
+    sources = result.structured_content["sources"]
+    assert len(sources) == 1
+    return {row["guid"]: row for row in sources[0]["neighbours"]}
+
+
+def test_find_nearby_elements_touching_walls(model_objects):
+    """WALL1 touches WALL3 at its end (+X) and WALL8 along its face (+Y), and WALL2 sits 20 mm above it."""
+    rows = _nearby_rows(find_nearby_elements(guids=[_guid(model_objects["test_wall1"])], radius_mm=100.0))
+    assert _guid(model_objects["test_wall1"]) not in rows
+
+    end = rows[_guid(model_objects["test_wall3"])]
+    assert (end["relation"], end["gap_mm"], end["sides"]) == ("touching", pytest.approx(0.0, abs=0.5), ["+X"])
+
+    face = rows[_guid(model_objects["test_wall8"])]
+    assert (face["relation"], face["sides"]) == ("touching", ["+Y"])
+    assert face["orientation"]["length"]["label"] == "parallel"
+    # WALL1 is 2000 long and 3000 high, so its largest extent (`length`) is the height
+    assert face["axis_overlap_mm"]["length"] == pytest.approx(3000.0, abs=0.5)
+    assert face["axis_overlap_mm"]["width"] == pytest.approx(2000.0, abs=0.5)
+
+    above = rows[_guid(model_objects["test_wall2"])]
+    assert (above["relation"], above["gap_mm"], above["penetration_mm"], above["sides"]) == ("near", pytest.approx(20.0, abs=0.5), 0.0, ["above"])
+    assert above["same_assembly"] is False
+
+
+def test_find_nearby_elements_overlapping_walls(model_objects):
+    """
+    CLASH_WALL_B overlaps CLASH_WALL_A by 500 mm in height, but the shortest way out is
+    sideways through the 200 mm thickness. CLASH_WALL_C (100 thick) sits inside A, so its
+    way out is 150 mm. Both are `boxes_overlap` and come before touching rows.
+    """
+    sc = find_nearby_elements(guids=[_guid(model_objects["test_clash_wall_a"])], radius_mm=10.0).structured_content
+    neighbours = sc["sources"][0]["neighbours"]
+    rows = {row["guid"]: row for row in neighbours}
+
+    b = rows[_guid(model_objects["test_clash_wall_b"])]
+    assert (b["relation"], b["gap_mm"], b["penetration_mm"]) == ("boxes_overlap", 0.0, pytest.approx(200.0, abs=0.5))
+    c = rows[_guid(model_objects["test_clash_wall_c"])]
+    assert (c["relation"], c["gap_mm"], c["penetration_mm"]) == ("boxes_overlap", 0.0, pytest.approx(150.0, abs=0.5))
+
+    sw1 = rows[_guid(model_objects["test_sw1"])]
+    assert (sw1["relation"], sw1["sides"]) == ("touching", ["-X"])
+    relations = [row["relation"] for row in neighbours]
+    assert relations.index("touching") > max(i for i, r in enumerate(relations) if r == "boxes_overlap")
+
+
+def test_find_nearby_elements_assembly_mode(model_objects):
+    """In assembly mode a source part resolves to its assembly and rows name the closest part pair."""
+    wall1, wall2 = model_objects["test_wall1"], model_objects["test_wall2"]
+    sc = find_nearby_elements(guids=[_guid(wall1)], mode="assembly", radius_mm=100.0).structured_content
+    assert sc["status"] == "success"
+    source = sc["sources"][0]
+    assert source["type"] == "Assembly"
+    row = next(row for row in source["neighbours"] if row["closest_parts"]["neighbour"] == _guid(wall2))
+    assert row["closest_parts"]["source"] == _guid(wall1)
+    assert (row["gap_mm"], row["sides"], row["parts_within_radius"]) == (pytest.approx(20.0, abs=0.5), ["above"], 1)
+
+
+def test_find_nearby_elements_ignores_work_plane(model_objects):
+    """Results do not depend on the active work plane, and the plane is restored."""
+    source = _guid(model_objects["test_wall1"])
+    expected = find_nearby_elements(guids=[source], radius_mm=100.0).structured_content["sources"]
+
+    handler = TeklaModel().model.GetWorkPlaneHandler()
+    saved = handler.GetCurrentTransformationPlane()
+    rotated = TransformationPlane(Point(1000, 2000, 0), Vector(1, 1, 0), Vector(-1, 1, 0))
+    probe = Point(1000, 0, 0)
+    try:
+        handler.SetCurrentTransformationPlane(rotated)
+        before = handler.GetCurrentTransformationPlane().TransformationMatrixToLocal.Transform(probe)
+        actual = find_nearby_elements(guids=[source], radius_mm=100.0).structured_content["sources"]
+        after = handler.GetCurrentTransformationPlane().TransformationMatrixToLocal.Transform(probe)
+    finally:
+        handler.SetCurrentTransformationPlane(saved)
+
+    assert actual == expected
+    assert (after.X, after.Y, after.Z) == pytest.approx((before.X, before.Y, before.Z))
+
+
+def test_find_nearby_elements_reports_unusable_inputs(model_objects):
+    """A GUID not in the model is skipped with a reason, the call still answers for the rest."""
+    unknown = "4b0e9c1a-0000-0000-0000-000000000001"
+    sc = find_nearby_elements(guids=[_guid(model_objects["test_wall1"]), unknown], radius_mm=10.0).structured_content
+    assert sc["status"] == "partial"
+    assert {"guid": unknown, "type": None, "reason": "not_found"} in sc["skipped"]
+
+
+def test_find_nearby_elements_no_usable_source():
+    """Only unknown GUIDs is an error."""
+    sc = find_nearby_elements(guids=["4b0e9c1a-0000-0000-0000-000000000002"]).structured_content
+    assert sc["status"] == "error"
+
+
+def test_find_nearby_elements_unknown_filter(model_objects):
+    """A filter name that does not exist is an error."""
+    sc = find_nearby_elements(guids=[_guid(model_objects["test_wall1"])], filter_name="MCP_TEST_NO_SUCH_FILTER").structured_content
+    assert sc["status"] == "error"
+    assert "MCP_TEST_NO_SUCH_FILTER" in sc["message"]
+
+
+def test_find_nearby_elements_standard_filter_keeps_all(model_objects):
+    """The 'standard' filter matches everything, so it gives the same neighbours as no filter."""
+    source = _guid(model_objects["test_wall1"])
+    plain = find_nearby_elements(guids=[source], radius_mm=100.0).structured_content
+    filtered = find_nearby_elements(guids=[source], radius_mm=100.0, filter_name="standard").structured_content
+    assert filtered["filter_name"] == "standard"
+    assert filtered["sources"] == plain["sources"]
+
+
+def test_find_nearby_elements_pages_through_all_neighbours(model_objects):
+    """Pages fetched with `next_offset` give every neighbour once, in the same order as one big page."""
+    source = _guid(model_objects["test_wall1"])
+    full = find_nearby_elements(guids=[source], radius_mm=200.0, limit=50).structured_content["sources"][0]
+    assert full["neighbours_found"] >= 3 and not full["has_more"]
+
+    paged: list[str] = []
+    offset: int | None = 0
+    while offset is not None:
+        page = find_nearby_elements(guids=[source], radius_mm=200.0, limit=2, offset=offset).structured_content
+        entry = page["sources"][0]
+        assert entry["offset"] == offset
+        assert len(entry["neighbours"]) <= 2
+        assert page["has_more"] == entry["has_more"]
+        paged += [row["guid"] for row in entry["neighbours"]]
+        offset = entry["next_offset"]
+    assert paged == [row["guid"] for row in full["neighbours"]]
+
+
+# Own layout for the radius limits and the slab bearing, 3.4 m clear of the shared walls
+_NEARBY_X0 = 12000.0
+
+
+@pytest.fixture(scope="module")
+def nearby_layout():
+    """
+    Place a 2000 x 200 x 1000 source panel, four panels at clear distances of 50, 99, 101 and 150 mm,
+    and a slab bearing 180 mm onto the source, then delete them all.
+
+    Panels extend up from the reference line and are centred across it.
+    """
+    x0 = _NEARBY_X0
+
+    def panel(start: tuple[float, float, float], end: tuple[float, float, float], profile: str, name: str) -> PanelInput:
+        """Panel input with points relative to the layout origin."""
+        return PanelInput(
+            start_point=PointInput(x=x0 + start[0], y=start[1], z=start[2]),
+            end_point=PointInput(x=x0 + end[0], y=end[1], z=end[2]),
+            profile=profile,
+            material="Concrete_Undefined",
+            tekla_class=1,
+            name=name,
+        )
+
+    panels = {
+        "source": panel((0, 0, 0), (2000, 0, 0), "1000*200", "MCP_TEST_NEARBY_SRC"),
+        "gap_50": panel((2050, 0, 0), (2550, 0, 0), "1000*200", "MCP_TEST_NEARBY_50"),
+        "gap_99": panel((-599, 0, 0), (-99, 0, 0), "1000*200", "MCP_TEST_NEARBY_99"),
+        "gap_101": panel((0, 301, 0), (2000, 301, 0), "1000*200", "MCP_TEST_NEARBY_101"),
+        "gap_150": panel((0, -350, 0), (2000, -350, 0), "1000*200", "MCP_TEST_NEARBY_150"),
+        # Occupies x [-100, 1100] relative, y [-80, 5000], z [1000, 1265]
+        "slab": panel((500, -80, 1000), (500, 5000, 1000), "265*1200", "MCP_TEST_NEARBY_SLAB"),
+    }
+    results = place_panels(panels=list(panels.values())).structured_content["results"]
+    guids = dict(zip(panels, (r["guid"] for r in results), strict=True))
+    model = TeklaModel()
+    model.commit_changes()
+    yield guids
+    for obj in model.get_objects_by_guid(list(guids.values())):
+        obj.Delete()
+    model.commit_changes()
+
+
+def test_find_nearby_elements_radius_and_order(nearby_layout):
+    """Only parts within the radius are returned, sorted by gap, without the source itself."""
+    g = nearby_layout
+    sc = find_nearby_elements(guids=[g["source"]], radius_mm=100.0).structured_content
+    assert sc["status"] == "success"
+    assert sc["geometry_basis"] == "oriented_boxes"
+    returned = [row["guid"] for row in sc["sources"][0]["neighbours"]]
+    assert g["source"] not in returned
+    assert g["gap_101"] not in returned and g["gap_150"] not in returned
+    walls = [row for row in sc["sources"][0]["neighbours"] if row["guid"] in (g["gap_50"], g["gap_99"])]
+    assert [row["guid"] for row in walls] == [g["gap_50"], g["gap_99"]]
+    assert walls[0]["gap_mm"] == pytest.approx(50.0, abs=0.5)
+    assert walls[1]["gap_mm"] == pytest.approx(99.0, abs=0.5)
+    assert (walls[0]["relation"], walls[0]["penetration_mm"], walls[0]["sides"]) == ("near", 0.0, ["+X"])
+    assert walls[1]["sides"] == ["-X"]
+
+
+def test_find_nearby_elements_slab_bearing(nearby_layout):
+    """A slab laid on the source wall touches it, lies above it and overlaps 180 mm across its thickness."""
+    g = nearby_layout
+    slab = _nearby_rows(find_nearby_elements(guids=[g["source"]], radius_mm=10.0))[g["slab"]]
+    assert slab["relation"] == "touching"
+    assert slab["gap_mm"] == pytest.approx(0.0, abs=0.5)
+    assert slab["sides"] == ["above"]
+    assert slab["axis_overlap_mm"]["thickness"] == pytest.approx(180.0, abs=0.5)
+    assert slab["orientation"]["length"]["label"] == "perpendicular"
+    assert slab["orientation"]["thickness"]["label"] == "perpendicular"

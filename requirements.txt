@@ -5,3 +5,4 @@ pythonnet==3.2.1
 python-dotenv==1.2.4
 sentence-transformers==6.2.0
 ezdxf==1.4.5
+numpy==2.3.5
