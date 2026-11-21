@@ -412,17 +412,19 @@ def test_create_filter_selection_matches_the_tree(filter_scene, filter_files):
 
 def test_create_filter_refuses_to_overwrite_unless_asked(filter_scene, filter_files):
     """Tests that an existing filter is kept unless `overwrite` is set, and replaced when it is."""
-    first = create_filter(filter_name="MCP_TEST_FLT_OVERWRITE", filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 8)))
+    first = create_filter(filter_name="MCP_TEST_FLT_OVERWRITE", filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 8)), object_types=["part"])
     path = Path(first.structured_content["path"])
     filter_files.append(path)
     original = path.read_bytes()
 
-    refused = create_filter(filter_name="MCP_TEST_FLT_OVERWRITE", filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 14)))
+    refused = create_filter(filter_name="MCP_TEST_FLT_OVERWRITE", filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 14)), object_types=["part"])
     assert refused.structured_content["status"] == "error"
     assert "already exists" in refused.structured_content["message"]
     assert path.read_bytes() == original
 
-    replaced = create_filter(filter_name="MCP_TEST_FLT_OVERWRITE.SObjGrp", filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 14)), overwrite=True)
+    replaced = create_filter(
+        filter_name="MCP_TEST_FLT_OVERWRITE.SObjGrp", filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 14)), object_types=["part"], overwrite=True
+    )
     assert replaced.structured_content["status"] == "success", replaced.structured_content
     assert replaced.structured_content["overwritten"] is True
     assert path.read_bytes() != original
@@ -433,7 +435,7 @@ def test_create_filter_refuses_to_overwrite_unless_asked(filter_scene, filter_fi
 def test_create_filter_with_a_real_style_name(filter_scene, filter_files):
     """Tests a name with '#', brackets, '~', '+' and spaces, like the model's own filters."""
     name = "#MCP_TEST_FLT [COLD BENDED] ~x+y"
-    content = create_filter(filter_name=name, filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 8))).structured_content
+    content = create_filter(filter_name=name, filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 8)), object_types=["part"]).structured_content
     filter_files.append(Path(content.get("path", "")))
     assert content["status"] == "success", content
     assert Path(content["path"]).name == f"{name}.SObjGrp"
@@ -446,7 +448,9 @@ def test_create_filter_overwrite_leaves_no_temporary_file(filter_scene, filter_f
     """Tests that replacing a filter goes through a temporary file that is gone afterwards."""
     attributes = Path(TeklaModel().model_path) / "attributes"
     for value in (8, 14):
-        content = create_filter(filter_name="MCP_TEST_FLT_TEMP", filter_type="view", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", value)), overwrite=True).structured_content
+        content = create_filter(
+            filter_name="MCP_TEST_FLT_TEMP", filter_type="view", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", value)), object_types=["part"], overwrite=True
+        ).structured_content
         assert content["status"] == "success", content
     filter_files.append(Path(content["path"]))
     assert content["overwritten"] is True
@@ -488,7 +492,7 @@ def test_create_filter_view_has_the_selection_rows(filter_scene, filter_files):
 )
 def test_create_filter_invalid_input_writes_nothing(kwargs, message):
     """Tests that invalid input is an error and leaves no file behind."""
-    arguments = {"filter_type": "selection", "filter": _cond("part.class", "Is Equal", 1), **kwargs}
+    arguments = {"filter_type": "selection", "filter": _cond("part.class", "Is Equal", 1), "object_types": ["part"], **kwargs}
     result = create_filter(**arguments)
     assert result.structured_content["status"] == "error"
     assert message in result.structured_content["message"]

@@ -1125,6 +1125,19 @@ class TestFilterConditionLists:
         with pytest.raises(ValidationError, match=message):
             FilterCondition.model_validate(data)
 
+    @pytest.mark.parametrize("value", ['PL 1/2"', ["HEA300", 'ZQ"'], '"A "B"', '"'])
+    def test_double_quote_inside_a_value_is_rejected(self, value):
+        with pytest.raises(ValidationError, match="cannot contain a double quote"):
+            FilterCondition(field="part.profile", op="Is Equal", value=value)
+
+    def test_double_quote_in_a_text_attribute_is_rejected(self):
+        with pytest.raises(ValidationError, match="cannot contain a double quote"):
+            FilterCondition(attribute="COMMENT", op="Contains", value='2"')
+
+    @pytest.mark.parametrize("value", ['"ALREADY QUOTED"', "PL 1/2?"])
+    def test_wrapped_value_and_wildcard_are_accepted(self, value):
+        assert FilterCondition(field="part.profile", op="Is Equal", value=value).value == value
+
 
 def _spec(node: dict, object_type: str):
     """Specialize a dict tree for one object type and describe the result."""

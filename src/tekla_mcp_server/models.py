@@ -556,6 +556,14 @@ class FilterCondition(BaseModel):
                 converted.append(word)
             else:
                 converted.append(_coerce_filter_value(value, kind, name))
+        if kind == "string":
+            for value in converted:
+                # Tekla reads quotes as value delimiters, so a quote inside a value breaks every other value
+                # of the condition. A value already wrapped in quotes is passed through as it is
+                text = str(value)
+                inner = text[1:-1] if len(text) >= 2 and text[0] == text[-1] == '"' else text
+                if '"' in inner:
+                    raise ValueError(f"Invalid value {value!r} for '{name}'. A filter value cannot contain a double quote, use the wildcard '?' in its place")
         self.value = converted if isinstance(self.value, list) else converted[0]
         return self
 

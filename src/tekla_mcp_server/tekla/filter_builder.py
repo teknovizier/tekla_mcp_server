@@ -337,9 +337,10 @@ def build_filter_expression(tree: FilterNode, object_types: list[str]) -> Binary
 
     The result matches objects of any of `object_types` that satisfy the tree. A condition on a
     category tied to one object type (e.g. 'part' or 'bolt') is ignored for the other types, and
-    `object.type` conditions are decided per type. Types whose reduced trees are equal share one
-    branch. Tekla allows at most `MAX_NESTING_DEPTH` levels of brackets, so the expression relies on
-    AND binding tighter than OR instead of brackets wherever it can.
+    `object.type` conditions are decided per type. Every type must keep at least one condition or
+    be decided by an `object.type` condition, so a type is never matched whole by accident. Types
+    whose reduced trees are equal share one branch. Tekla allows at most `MAX_NESTING_DEPTH` levels
+    of brackets, so the expression relies on AND binding tighter than OR instead of brackets wherever it can.
 
     Args:
         tree: Validated filter group or single condition
@@ -349,7 +350,8 @@ def build_filter_expression(tree: FilterNode, object_types: list[str]) -> Binary
         The built expression
 
     Raises:
-        ValueError: If `object_types` is empty or unknown, no type can match, or the tree nests deeper than Tekla allows
+        ValueError: If `object_types` is empty or unknown, no condition applies to one of the types, no type can match,
+            or the tree nests deeper than Tekla allows
     """
     if not object_types:
         raise ValueError(f"At least one object type is required. Choose from: {sorted(OBJECT_TYPES)}")
@@ -359,14 +361,24 @@ def build_filter_expression(tree: FilterNode, object_types: list[str]) -> Binary
 
     # Group the types by what the tree means for them
     branches: dict[str, tuple[list[str], FilterNode | None]] = {}
+    unconstrained: list[str] = []
     simplified = simplify_filter_tree(tree)
     for object_type in dict.fromkeys(object_types):
         reduced = specialize_filter_tree(simplified, object_type)
         if reduced is False:
             continue
-        node = None if reduced is True or reduced is None else reduced
+        if reduced is None:
+            unconstrained.append(object_type)
+            continue
+        node = None if reduced is True else reduced
         key = "" if node is None else node.model_dump_json()
         branches.setdefault(key, ([], node))[0].append(object_type)
+    # A type no condition applies to would be matched whole, e.g. every assembly for a 'part.profile' filter
+    if unconstrained:
+        raise ValueError(
+            f"No condition of this filter applies to the object types {unconstrained}, so it would match all of them. "
+            "Remove these types or add a condition that applies to them, e.g. on 'assembly' or 'object' fields."
+        )
     if not branches:
         raise ValueError(f"No object of the types {object_types} can match this filter. Check its `object.type` conditions")
 

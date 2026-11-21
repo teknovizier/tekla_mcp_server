@@ -57,8 +57,21 @@ class TestExpandElementType:
 class TestResolveElementTypeClasses:
     @pytest.fixture
     def config(self, monkeypatch):
-        element_types = {"MATERIAL_CONCRETE": {"CONCRETE_WALL": {"tekla_classes": [1]}, "CONCRETE_SANDWICH_WALL": {"tekla_classes": [8, 52]}}}
+        element_types = {
+            "MATERIAL_CONCRETE": {"CONCRETE_WALL": {"tekla_classes": [1]}, "CONCRETE_SANDWICH_WALL": {"tekla_classes": [8, 52]}},
+            "MATERIAL_REINFORCEMENT": {"MESH": {"tekla_classes": [13]}},
+        }
         monkeypatch.setattr(sp, "get_config", lambda: SimpleNamespace(element_types=element_types))
+
+    @pytest.mark.parametrize("element_type", ["Mesh", "MESH"])
+    def test_reinforcement_type_is_rejected(self, config, element_type):
+        with pytest.raises(ValueError, match="reinforcement type, not a part type. Use 'rebar.class'"):
+            sp._resolve_element_type_classes(element_type)
+
+    def test_unknown_type_does_not_list_reinforcement_types(self, config):
+        with pytest.raises(ValueError) as exc_info:
+            sp._resolve_element_type_classes("FakeWall")
+        assert "Mesh" not in str(exc_info.value)
 
     @pytest.mark.parametrize("element_type", ["Sandwich Wall", "sandwich wall", "SANDWICH WALL", "CONCRETE_SANDWICH_WALL", "concrete_sandwich_wall", " Concrete Sandwich Wall "])
     def test_name_and_key_spellings(self, config, element_type):
@@ -111,7 +124,7 @@ def attributes(tmp_path, monkeypatch) -> Path:
 
 def _create(**kwargs: Any) -> dict[str, Any]:
     """Call `create_filter` with a simple part filter unless the test overrides arguments."""
-    arguments = {"filter_name": "MCP_TEST_F", "filter_type": "selection", "filter": {"field": "part.class", "op": "Is Equal", "value": 1}, **kwargs}
+    arguments = {"filter_name": "MCP_TEST_F", "filter_type": "selection", "filter": {"field": "part.class", "op": "Is Equal", "value": 1}, "object_types": ["part"], **kwargs}
     return sp.create_filter(**arguments).structured_content
 
 

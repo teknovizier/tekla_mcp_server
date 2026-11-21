@@ -500,8 +500,9 @@ class TestBuildFilterExpressionTypeSemantics:
     def test_condition_of_another_type_drops_out_of_any(self):
         assert _branches({"any": [A, BOLT_16]}, ["part", "bolt"]) == [[("ObjectType", PART_TYPE), ("Part.Name", "A")], [("ObjectType", BOLT_TYPE), ("BoltSize", "16")]]
 
-    def test_type_without_own_conditions_is_selected_whole(self):
-        assert _branches({"all": [A]}, ["part", "bolt"]) == [[("ObjectType", PART_TYPE), ("Part.Name", "A")], [("ObjectType", BOLT_TYPE)]]
+    def test_type_without_own_conditions_raises_instead_of_being_selected_whole(self):
+        with pytest.raises(ValueError, match=r"applies to the object types \['bolt'\]"):
+            _build({"all": [A]}, ["part", "bolt"])
 
     def test_mixed_and_chain_filters_each_type_by_its_own_conditions(self):
         rebar_class = _cond("rebar.class", "Is Equal", [44, 46])
@@ -511,8 +512,10 @@ class TestBuildFilterExpressionTypeSemantics:
             [("ObjectType", PART_TYPE), ("Part.Class", "66\x02107")],
         ]
 
-    def test_condition_of_an_unselected_type_is_ignored(self):
-        assert [(d.get("left"), d.get("value")) for d in _build(A, ["bolt"])] == [("ObjectType", BOLT_TYPE)]
+    @pytest.mark.parametrize("object_types", [["bolt"], ["assembly"]])
+    def test_condition_of_an_unselected_type_raises_instead_of_selecting_the_whole_type(self, object_types):
+        with pytest.raises(ValueError, match="would match all of them"):
+            _build(_cond("part.profile", "Is Equal", "HEA300"), object_types)
 
     def test_object_type_condition_selects_a_whole_type(self):
         node = {"any": [_cond("object.type", "Is Equal", "weld"), _cond("part.class", "Is Equal", 999999)]}

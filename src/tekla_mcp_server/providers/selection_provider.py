@@ -26,6 +26,9 @@ from tekla_mcp_server.tekla.utils import refresh_attribute_files
 
 selection_provider = LocalProvider()
 
+# Element type material group whose classes are rebar classes, not part classes
+REINFORCEMENT_MATERIAL = "MATERIAL_REINFORCEMENT"
+
 # Prefix of the file `create_filter` writes before moving it into place
 TEMPORARY_FILTER_PREFIX = "~mcp_tmp_"
 
@@ -47,12 +50,16 @@ def _resolve_element_type_classes(element_type: str) -> list[int]:
     """
     text = element_type.strip()
     wanted = text.upper().replace(" ", "_")
-    for material_types in get_config().element_types.values():
+    # Reinforcement classes are rebar classes that reuse part class numbers, e.g. 13 is a mesh and a concrete column
+    part_types = {material: types for material, types in get_config().element_types.items() if material != REINFORCEMENT_MATERIAL}
+    for material, material_types in get_config().element_types.items():
         for type_key, config in material_types.items():
             if wanted in (type_key.upper(), element_type_name(type_key).upper().replace(" ", "_")):
+                if material == REINFORCEMENT_MATERIAL:
+                    raise ValueError(f"'{text}' is a reinforcement type, not a part type. Use 'rebar.class' with object type 'rebar' instead.")
                 logger.debug("Element type '%s' is '%s' with classes %s", text, type_key, config.get("tekla_classes", []))
                 return list(config.get("tekla_classes", []))
-    names = [element_type_name(type_key) for material_types in get_config().element_types.values() for type_key in material_types]
+    names = [element_type_name(type_key) for material_types in part_types.values() for type_key in material_types]
     raise ValueError(f"Invalid element_type '{text}'. Must be one of: {names}")
 
 
@@ -112,8 +119,8 @@ def select_elements_by_filter(
     of `category`, or a report property such as 'MAINPART.CLASS_ATTR' with category 'template'). A list value
     matches any of its values, or none of them for a negative operator. A condition on a category tied to one
     object type, such as 'part' or 'bolt', is ignored for the other object types: 'all' groups skip it and
-    'any' groups do not match through it. So with several `object_types`, a type without conditions of its
-    own is selected whole. 'object.type' conditions make groups depend on the type. Assembly conditions
+    'any' groups do not match through it. A type that no condition applies to is rejected instead of being
+    selected whole, so list only the types the filter is about. 'object.type' conditions make groups depend on the type. Assembly conditions
     also apply to the parts of the assembly. 'part.element_type' takes element type names such as 'Wall'
     or their keys such as 'CONCRETE_WALL', in any case, and matches their Tekla classes. Fields with readable values (e.g. 'bolt.site_workshop': 'site' or
     'workshop') accept only 'Is Equal' and 'Is Not Equal'. '*' and '?' in a text value are always Tekla wildcards, so 'Is Equal 400*400' also matches a profile '400*1400'. Numeric fields take numbers only, so use a list or a range instead of a wildcard.
@@ -173,7 +180,10 @@ def create_filter(
         FilterGroup | FilterCondition,
         Field(description="Filter tree, the same as for `select_elements_by_filter`. Fields and object types are listed in `tekla://filters/fields`"),
     ],
-    object_types: Annotated[list[str], Field(description="Object types the filter matches, e.g. ['part'] or ['part', 'bolt']")] = ["part"],
+    object_types: Annotated[
+        list[str],
+        Field(description="Object types the filter matches, e.g. ['part'] or ['part', 'rebar', 'bolt']. A view filter shows only these types and hides all others"),
+    ],
     overwrite: Annotated[bool, Field(description="Replace a filter of the same name and type in the model's attributes folder")] = False,
 ) -> ToolResult:
     """
