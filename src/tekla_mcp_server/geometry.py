@@ -516,6 +516,46 @@ def search_extents(box: OrientedBox, grow: float, max_pieces: int = 16) -> list[
     return [aabb([OrientedBox(center=box.center + box.axes[i] * offset, axes=box.axes, half=half)], grow) for offset in offsets]
 
 
+# Offsets along a box's long axis, as fractions of its half-length, where containment is sampled
+BOX_SAMPLE_OFFSETS = np.array([-0.8, -0.4, 0.0, 0.4, 0.8])
+# Fractions along each polyline leg where containment is sampled. Ends are left out so a bar end flush with a face does not count
+LEG_SAMPLE_FRACTIONS = np.array([0.1, 0.3, 0.5, 0.7, 0.9])
+
+
+def box_sample_points(box: OrientedBox) -> FloatArray:
+    """
+    Return points along the long axis of a box, for containment tests.
+
+    One point at the box center misses an object that is only partly inside
+    a host, so points are spread over its length.
+
+    Args:
+        box: Box of the object
+
+    Returns:
+        Points, shape (5, 3)
+    """
+    i = int(np.argmax(box.half))
+    return box.center + np.outer(BOX_SAMPLE_OFFSETS * box.half[i], box.axes[i])
+
+
+def polyline_sample_points(points: npt.ArrayLike) -> FloatArray:
+    """
+    Return points along every leg of a polyline, for containment tests.
+
+    Args:
+        points: Polyline vertices, shape (n, 3)
+
+    Returns:
+        Points, shape (5 * (n - 1), 3), or the single vertex for a one-point polyline
+    """
+    pts = np.asarray(points, dtype=float).reshape(-1, 3)
+    if len(pts) < 2:
+        return pts.copy()
+    starts, legs = pts[:-1], pts[1:] - pts[:-1]
+    return (starts[:, None, :] + legs[:, None, :] * LEG_SAMPLE_FRACTIONS[None, :, None]).reshape(-1, 3)
+
+
 def aabb_gap(a: Extent, b: Extent) -> float:
     """
     Return the distance between two axis-aligned extents, 0 when they overlap.

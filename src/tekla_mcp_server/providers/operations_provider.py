@@ -13,13 +13,14 @@ from pathlib import Path
 from typing import Any, Annotated, Literal
 from pydantic import Field
 
+import numpy as np
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 
 from tekla_mcp_server.config import get_tolerance, get_advanced_option_directories, get_report_preview_max_chars, get_report_preview_timeout
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AttachmentPair
-from tekla_mcp_server.geometry import EPSILON, OrientedBox, aabb, aabb_gap, axis_overlap, box_gap, orientation, relation, search_extents, sides
+from tekla_mcp_server.geometry import EPSILON, FloatArray, OrientedBox, aabb, aabb_gap, axis_overlap, box_gap, box_sample_points, orientation, relation, search_extents, sides
 from tekla_mcp_server.utils import mcp_handler, build_report_filename, normalize_guid, resolve_model_relative_dir
 from tekla_mcp_server.tekla.clash_check import TeklaClashCheckHandler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -35,11 +36,13 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     SolidGeometryMixin,
     ZERO_GUID,
     REINFORCEMENT_CLASSES,
+    EMBEDDED_DETAILS_CLASSES,
 )
-from tekla_mcp_server.tekla.loader import Operation
+from tekla_mcp_server.tekla.loader import Assembly, Operation, Part, Reinforcement
 from tekla_mcp_server.tekla.utils import (
     iterate_boolean_parts,
     get_candidates_in_bounding_box,
+    get_objects_in_bounding_box,
     get_all_materials,
     get_all_rebar_items,
     get_oriented_box,
@@ -65,27 +68,74 @@ class CheckResult:
     issues: list[str] = field(default_factory=list)
 
 
-def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
+def _enumerator_ids(enumerator: Any) -> set[int]:
     """
-    Return GUIDs of all reinforcement attached to element, across main part and all secondaries.
+    Return the IDs of the objects of a model object enumerator without loading them.
+
+    Args:
+        enumerator: `ModelObjectEnumerator`, or None
+
+    Returns:
+        Object IDs
+    """
+    ids: set[int] = set()
+    if enumerator is None:
+        return ids
+    enumerator.SelectInstances = False
+    while enumerator.MoveNext():
+        ids.add(enumerator.Current.Identifier.ID)
+    return ids
+
+
+def _get_attached_part_ids(element: TeklaAssembly) -> tuple[set[int], set[str]]:
+    """
+    Return IDs of the parts in element's subassemblies at any depth, and GUIDs of its attached embeds.
+
+    These parts belong to the element, so the spatial search can leave them out without
+    loading them or asking each one for its assembly.
+
+    Args:
+        element: Host assembly
+
+    Returns:
+        Tuple of (part IDs, GUIDs of direct subassemblies that are embedded details)
+    """
+    part_ids: set[int] = set()
+    embed_guids: set[str] = set()
+    stack = [(sub, True) for sub in element.model_object.GetSubAssemblies()]
+    while stack:
+        sub, direct = stack.pop()
+        main = sub.GetMainPart()
+        if main is not None:
+            part_ids.add(main.Identifier.ID)
+            try:
+                if direct and int(main.Class) in EMBEDDED_DETAILS_CLASSES:
+                    embed_guids.add(sub.Identifier.GUID.ToString())
+            except (TypeError, ValueError):
+                logger.debug("Subassembly %s has a non-numeric main part class", sub.Identifier.ID)
+        part_ids.update(sec.Identifier.ID for sec in sub.GetSecondaries())
+        stack.extend((nested, False) for nested in sub.GetSubAssemblies())
+    return part_ids, embed_guids
+
+
+def _get_reinforcement_ids(element: TeklaAssembly) -> set[int]:
+    """
+    Return IDs of all reinforcement attached to element, across main part and all secondaries.
+
+    IDs need no loading of the rebars, which is slow for large groups and meshes.
 
     Args:
         element: Assembly to inspect
 
     Returns:
-        Reinforcement GUIDs
+        Reinforcement IDs
     """
-    guids: set[str] = set()
+    ids: set[int] = set()
 
     try:
-        reinfs = element.main_part.model_object.GetReinforcements()
+        ids |= _enumerator_ids(element.main_part.model_object.GetReinforcements())
     except Exception:
-        reinfs = None
-
-    if reinfs is not None:
-        for rebar in wrap_model_objects(reinfs):
-            if rebar:
-                guids.add(rebar.guid)
+        logger.debug("Failed to read reinforcement of the main part of %s", element.guid)
 
     try:
         secondaries = element.model_object.GetSecondaries()
@@ -95,57 +145,71 @@ def _get_reinforcement_guids(element: TeklaAssembly) -> set[str]:
     if secondaries is not None:
         for sec in secondaries:
             try:
-                sec_reinfs = sec.GetReinforcements()
+                ids |= _enumerator_ids(sec.GetReinforcements())
             except Exception:
                 continue
-            for rebar in wrap_model_objects(sec_reinfs):
-                if rebar:
-                    guids.add(rebar.guid)
 
-    return guids
+    return ids
 
 
-def _is_inside_any_assembly_part(candidate: SolidGeometryMixin, parts: list[TeklaPart], solid_cache: dict[int, dict[str, Any]]) -> bool:
+def _is_inside_any_part(points: FloatArray, parts: list[SolidGeometryMixin], solid_cache: dict[int, dict[str, Any]], raw: bool) -> bool:
     """
-    Check whether candidate lies within the solid geometry of any part in the list.
+    Check whether any sample point of an object lies within the solid of any part in the list.
 
-    Degenerate/no-geometry elements are skipped to avoid false-positive orphans.
-
-    Delegates to `is_inside` which handles the NORMAL → RAW fallback internally
-    for TeklaPart containers and never propagates exceptions (conservative True).
+    Objects without sample points are skipped to avoid false-positive orphans.
     `solid_cache` maps object ID to its solids and is shared across all candidates,
-    so each part's solids are built once instead of once per candidate, and the
-    candidate's own solid once instead of once per part.
+    so each part's solids are built once instead of once per candidate.
 
     Args:
-        candidate: Object to test
+        points: Sample points of the tested object
         parts: Container parts
         solid_cache: Shared solids by object ID
+        raw: Test against RAW solids, without cuts
 
     Returns:
-        True if any part contains the candidate, False otherwise or for an empty list
+        True if any part contains a point, False otherwise or for an empty list
     """
-    candidate_solids = solid_cache.setdefault(candidate.id, {})
-    for part in parts:
-        if candidate.is_inside(part, solid_cache.setdefault(part.id, {}), candidate_solids):
-            return True
-    return False
+    return any(part.contains_any_point(points, raw, solid_cache.setdefault(part.id, {})) for part in parts)
+
+
+def _embed_sample_points(embed: TeklaAssembly, work_plane_handler: Any) -> FloatArray:
+    """
+    Return sample points along every part of an embed, its subassemblies included.
+
+    The main part alone is not enough: a plate flush with the face is outside the
+    concrete while only its anchors, often in subassemblies, are cast in.
+
+    Args:
+        embed: Embedded-detail assembly
+        work_plane_handler: Handler from `global_work_plane`
+
+    Returns:
+        Points in global coordinates, shape (n, 3)
+    """
+    boxes = [get_oriented_box(part, work_plane_handler) for part in embed.get_all_parts()]
+    chunks = [box_sample_points(box) for box in boxes if box is not None]
+    return np.concatenate(chunks) if chunks else np.empty((0, 3))
 
 
 def _check_element_bounding_box_embeds(
     element: TeklaAssembly,
     target_assembly_guids: set[str],
     tolerance: float,
+    work_plane_handler: Any,
 ) -> tuple[list[CheckResult], set[str]]:
     """
     Find embedded details inside element that are not attached to it.
 
-    Uses bounding box to find candidates, then checks containment and parent assembly.
+    Uses bounding box to find candidates, then checks parent assembly and containment.
+    Attached embeds are counted without a geometry test, most embeds in an element are attached.
+    Containment is tested against the RAW solids of the element's parts: embeds cut their
+    own holes and recesses into the concrete, so the NORMAL solid never contains them.
 
     Args:
         element: Host assembly
         target_assembly_guids: Assemblies counted as attached
         tolerance: Bounding box tolerance
+        work_plane_handler: Handler from `global_work_plane`
 
     Returns:
         Tuple of (orphaned embeds, evaluated GUIDs) with deduplicated GUIDs
@@ -155,32 +219,36 @@ def _check_element_bounding_box_embeds(
     if not assembly_parts:
         return [], set()
 
-    candidates = get_candidates_in_bounding_box(element, tolerance)
+    # The element's own parts and the parts of its attached embeds are never orphans,
+    # leave them out without loading them. Attached embeds still count as evaluated
+    attached_part_ids, evaluated_guids = _get_attached_part_ids(element)
+    candidates = get_objects_in_bounding_box(element, tolerance, (Part, Assembly), {part.id for part in assembly_parts} | attached_part_ids)
 
     orphaned: list[CheckResult] = []
-    processed_guids: set[str] = set()
+    seen_assembly_ids: set[int] = set()
     part_solids: dict[int, dict[str, Any]] = {}
 
     for candidate in candidates:
         # Candidates may be parts belonging to a multi-part embed, promote to assembly
         # so we evaluate and report at assembly level rather than per-part
-        assembly_obj = None
-        wrapped_assembly = None
-
         if isinstance(candidate, TeklaAssembly):
-            wrapped_assembly = candidate
             assembly_obj = candidate.model_object
         elif isinstance(candidate, TeklaPart):
             assembly_obj = candidate.model_object.GetAssembly()
-            if assembly_obj:
-                wrapped_assembly = wrap_model_object(assembly_obj)
-
-        if not assembly_obj or not wrapped_assembly:
+        else:
+            continue
+        if not assembly_obj:
             continue
 
-        # A multi-part embed yields multiple candidates that resolve to the same assembly, process each assembly once
-        assembly_guid = wrapped_assembly.guid
-        if assembly_guid in processed_guids:
+        # A multi-part embed yields multiple candidates that resolve to the same assembly, process each
+        # assembly once. The ID is read before wrapping so repeated parts cost one call
+        assembly_id = assembly_obj.Identifier.ID
+        if assembly_id in seen_assembly_ids:
+            continue
+        seen_assembly_ids.add(assembly_id)
+
+        wrapped_assembly = candidate if isinstance(candidate, TeklaAssembly) else wrap_model_object(assembly_obj)
+        if not isinstance(wrapped_assembly, TeklaAssembly):
             continue
 
         try:
@@ -192,59 +260,65 @@ def _check_element_bounding_box_embeds(
         if not wrapped_assembly.is_embedded_detail(candidate_main):
             continue
 
-        # Skip embeds that are in the bounding box but outside the element's actual solid
-        if not _is_inside_any_assembly_part(candidate_main, assembly_parts, part_solids):
-            continue
-
-        processed_guids.add(assembly_guid)
-
         # An embed is orphaned when its parent assembly isn't one of the assemblies we're
-        # checking against - i.e. it's physically inside the element but not attached to it
+        # checking against - i.e. it's physically inside the element but not attached to it.
+        # Checked before the geometry, which attached embeds do not need
         parent = assembly_obj.GetAssembly()
         parent_guid = parent.Identifier.GUID.ToString() if parent else None
+        if parent_guid in target_assembly_guids:
+            evaluated_guids.add(wrapped_assembly.guid)
+            continue
 
-        if parent_guid not in target_assembly_guids:
-            orphaned.append(
-                CheckResult(
-                    guid=assembly_guid,
-                    name=candidate_main.name,
-                    position=candidate_main.position,
-                    tekla_class=candidate_main.tekla_class,
-                )
+        # Skip embeds that are in the bounding box but outside the element's actual solid
+        if not _is_inside_any_part(_embed_sample_points(wrapped_assembly, work_plane_handler), assembly_parts, part_solids, raw=True):
+            continue
+
+        evaluated_guids.add(wrapped_assembly.guid)
+        orphaned.append(
+            CheckResult(
+                guid=wrapped_assembly.guid,
+                name=candidate_main.name,
+                position=candidate_main.position,
+                tekla_class=candidate_main.tekla_class,
             )
+        )
     logger.debug("Found %d orphaned embeds for element %s", len(orphaned), element.guid)
-    return orphaned, processed_guids
+    return orphaned, evaluated_guids
 
 
 def _check_element_bounding_box_rebars(
     element: TeklaAssembly,
-    element_reinforcement_guids: set[str],
+    element_reinforcement_ids: set[int],
     tolerance: float,
-) -> tuple[list[CheckResult], set[str]]:
+) -> tuple[list[CheckResult], set[int]]:
     """
-    Find rebars inside element that are not in element_reinforcement_guids.
+    Find rebars inside element that are not in element_reinforcement_ids.
 
     Uses bounding box to find candidates, then checks containment and attachment status.
+    Rebars attached to the element are counted but never loaded.
+    Containment samples points along every bar leg and tests them against the NORMAL
+    solids of the element's parts, so bars in openings or hollow cores do not count.
 
     Args:
         element: Host assembly
-        element_reinforcement_guids: Rebars attached to the element
+        element_reinforcement_ids: IDs of rebars attached to the element
         tolerance: Bounding box tolerance
 
     Returns:
-        Tuple of (orphaned rebars, evaluated GUIDs) with deduplicated GUIDs
+        Tuple of (orphaned rebars, evaluated rebar IDs)
     """
     # Pre-compute assembly parts once (not per-candidate) for containment checks
     assembly_parts = element.get_top_level_parts()
     if not assembly_parts:
         return [], set()
 
-    candidates = get_candidates_in_bounding_box(element, tolerance)
+    # Rebar is correctly attached to this element - not orphaned, skipped without loading
+    evaluated_ids: set[int] = set()
+    candidates = get_objects_in_bounding_box(element, tolerance, (Reinforcement,), element_reinforcement_ids, evaluated_ids)
     if not candidates:
-        return [], set()
+        return [], evaluated_ids
 
     orphaned: list[CheckResult] = []
-    evaluated_guids: set[str] = set()
     part_solids: dict[int, dict[str, Any]] = {}
 
     for candidate in candidates:
@@ -256,17 +330,19 @@ def _check_element_bounding_box_rebars(
         if reinforcement_class not in REINFORCEMENT_CLASSES:
             continue
 
-        # Rebar is correctly attached to this element - not orphaned
         candidate_guid = candidate.guid
-        if candidate_guid in element_reinforcement_guids:
-            evaluated_guids.add(candidate_guid)
-            continue
+        try:
+            points = candidate.get_sample_points()
+        except Exception:
+            # Without bar geometry the bar cannot be ruled out, report it rather than hide an orphan
+            logger.warning("Bar geometry of rebar %s unavailable, treating it as inside", candidate_guid)
+            points = None
 
         # Skip rebars that are in the bounding box but outside the element's actual solid
-        if not _is_inside_any_assembly_part(candidate, assembly_parts, part_solids):
+        if points is not None and not _is_inside_any_part(points, assembly_parts, part_solids, raw=False):
             continue
 
-        evaluated_guids.add(candidate_guid)
+        evaluated_ids.add(candidate.id)
 
         # Starter bars: rebar belongs to a neighboring element and
         # legitimately reaches into this one. Recognised by the bar still lying
@@ -275,7 +351,7 @@ def _check_element_bounding_box_rebars(
         # are verifying specific ownership.
         # Neighbouring bars often share a father, so its solids go in the same per-part cache
         father = candidate.father
-        if father is not None and father.guid != ZERO_GUID and candidate.is_inside(father, part_solids.setdefault(father.id, {}), part_solids.setdefault(candidate.id, {})):
+        if points is not None and isinstance(father, SolidGeometryMixin) and father.guid != ZERO_GUID and _is_inside_any_part(points, [father], part_solids, raw=False):
             continue
 
         orphaned.append(
@@ -287,7 +363,7 @@ def _check_element_bounding_box_rebars(
             )
         )
     logger.debug("Found %d orphaned rebars for element %s", len(orphaned), element.guid)
-    return orphaned, evaluated_guids
+    return orphaned, evaluated_ids
 
 
 def _solid_box(obj: Any) -> BoundingBox | None:
@@ -553,7 +629,8 @@ def check_for_orphans(
     orphaned: list[dict] = []
     orphaned_guids: set[str] = set()
     skipped_elements: list[str] = []
-    evaluated_guids: set[str] = set()
+    # Embed GUIDs or rebar IDs, one kind per run
+    evaluated_guids: set[str | int] = set()
     checked_assembly_guids: set[str] = set()
 
     for obj in wrap_model_objects(selected_objects):
@@ -574,12 +651,15 @@ def check_for_orphans(
             continue
         checked_assembly_guids.add(parent_assembly.guid)
 
-        if mode == "subassemblies":
-            orphans, ev_guids = _check_element_bounding_box_embeds(parent_assembly, {parent_assembly.guid}, tolerance)
-        else:  # "rebars"
-            orphans, ev_guids = _check_element_bounding_box_rebars(parent_assembly, _get_reinforcement_guids(parent_assembly), tolerance)
+        # Sample points and solids must share one coordinate system
+        ev_keys: set[str] | set[int]
+        with global_work_plane(model) as work_plane_handler:
+            if mode == "subassemblies":
+                orphans, ev_keys = _check_element_bounding_box_embeds(parent_assembly, {parent_assembly.guid}, tolerance, work_plane_handler)
+            else:  # "rebars"
+                orphans, ev_keys = _check_element_bounding_box_rebars(parent_assembly, _get_reinforcement_ids(parent_assembly), tolerance)
 
-        evaluated_guids |= ev_guids
+        evaluated_guids |= ev_keys
 
         # Skip duplicates: same orphan may overlap multiple selected elements
         for item in orphans:

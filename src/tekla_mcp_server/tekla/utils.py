@@ -413,6 +413,52 @@ def get_candidates_in_bounding_box(element: TeklaModelObject, tolerance: float) 
     return candidates
 
 
+def get_objects_in_bounding_box(
+    element: TeklaModelObject, tolerance: float, types: tuple[type, ...], skip_ids: set[int] | None = None, skipped_found: set[int] | None = None
+) -> list[TeklaModelObject]:
+    """
+    Find objects of the given .NET types within element's bounding box.
+
+    The search returns every part, rebar, cut and weld in the box. Loading an instance
+    costs far more than the search, so only objects of `types` that are not in `skip_ids`
+    are loaded.
+
+    Args:
+        element: The element to get bounding box from
+        tolerance: Extra distance to expand the bounding box in all directions
+        types: Tekla classes to keep, e.g. `(Part,)` or `(Reinforcement,)`
+        skip_ids: Object IDs to leave out without loading them, e.g. the element's own parts
+        skipped_found: Receives the IDs from `skip_ids` that the search found
+
+    Returns:
+        Wrapped objects found within the expanded bounding box
+    """
+    aabb = element.bounding_box
+    if not aabb:
+        return []
+    skip_ids = skip_ids or set()
+    min_point = Point(aabb.min_x - tolerance, aabb.min_y - tolerance, aabb.min_z - tolerance)
+    max_point = Point(aabb.max_x + tolerance, aabb.max_y + tolerance, aabb.max_z + tolerance)
+    enumerator = ModelObjectSelector().GetObjectsByBoundingBox(min_point, max_point)
+    enumerator.SelectInstances = False
+    found: list[TeklaModelObject] = []
+    while enumerator.MoveNext():
+        obj = enumerator.Current
+        # Not `isinstance(obj, types)`: a type tuple narrows the .NET object to `object` for mypy
+        if not any(isinstance(obj, t) for t in types):
+            continue
+        if obj.Identifier.ID in skip_ids:
+            if skipped_found is not None:
+                skipped_found.add(obj.Identifier.ID)
+            continue
+        if obj.Select():
+            wrapped = wrap_model_object(obj)
+            if wrapped is not None:
+                found.append(wrapped)
+    logger.debug("Bounding box search for %s: loaded %d objects of %s", element.guid, len(found), [t.__name__ for t in types])
+    return found
+
+
 def get_parts_in_extent(min_point: FloatArray, max_point: FloatArray, max_objects: int) -> list[TeklaPart]:
     """
     Find parts whose extent intersects an axis-aligned box in the current work plane.

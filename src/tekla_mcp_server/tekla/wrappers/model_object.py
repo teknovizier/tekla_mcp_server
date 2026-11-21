@@ -10,7 +10,10 @@ from dataclasses import asdict, dataclass
 from pathlib import PureWindowsPath
 from typing import Any, Literal, overload
 
+import numpy as np
+
 from tekla_mcp_server.config import get_config, get_tolerance
+from tekla_mcp_server.geometry import FloatArray, polyline_sample_points
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import AssemblySnapshot, NumberingSeries, PartSnapshot, ReinforcementSnapshot, BeamType, OffsetInput, PointInput, PositionInput
 from tekla_mcp_server.utils import find_bolt_catalog_error, validate_property_type
@@ -215,34 +218,23 @@ class BoundingBox:
         return dist <= adaptive_tol
 
 
-def _ray_cast_inside(solid_self: Solid, solid_other: Solid) -> bool:
+def _point_inside(solid: Solid, x: float, y: float, z: float) -> bool:
     """
-    Odd/even ray-cast test - returns True if the center of the overlapping AABB
-    of the two solids lies inside `solid_other`.
+    Odd/even ray-cast test - returns True if the point lies inside `solid`.
 
     Casts a ray in a non-axis-aligned direction to avoid grazing hits, counts
     only forward-half-space intersections. An odd count means inside.
     Does not handle invalid solids. Callers must validate before calling.
 
     Args:
-        solid_self: Candidate solid
-        solid_other: Container solid
+        solid: Container solid
+        x: Point X
+        y: Point Y
+        z: Point Z
 
     Returns:
-        True if the overlap center is inside `solid_other`
+        True if the point is inside `solid`
     """
-    cmin, cmax = solid_self.MinimumPoint, solid_self.MaximumPoint
-    emin, emax = solid_other.MinimumPoint, solid_other.MaximumPoint
-    # Optimization: skip ray cast when AABBs have no positive-width overlap.
-    # Zero-width (touching) AABBs return False immediately - the `>=` guard
-    # catches them before any ray is cast. This is correct for a tangential
-    # touch: touching objects do not contain each other.
-    if max(cmin.X, emin.X) >= min(cmax.X, emax.X) or max(cmin.Y, emin.Y) >= min(cmax.Y, emax.Y) or max(cmin.Z, emin.Z) >= min(cmax.Z, emax.Z):
-        return False
-    cx = (max(cmin.X, emin.X) + min(cmax.X, emax.X)) * 0.5
-    cy = (max(cmin.Y, emin.Y) + min(cmax.Y, emax.Y)) * 0.5
-    cz = (max(cmin.Z, emin.Z) + min(cmax.Z, emax.Z)) * 0.5
-
     # Ray direction: irrational-ratio, non-axis-aligned values avoid accidental
     # alignment with flat faces or edges (which would cause a grazing/tangent hit
     # counted as 0 or 2 intersections instead of 1, corrupting the parity).
@@ -250,11 +242,30 @@ def _ray_cast_inside(solid_self: Solid, solid_other: Solid) -> bool:
     # structural element from any origin inside it, small enough to stay within
     # floating-point precision for the Tekla geometry kernel.
     dx, dy, dz = 1.2345e6, 0.9182e6, 0.4571e6
-    hits = solid_other.Intersect(LineSegment(Point(cx, cy, cz), Point(cx + dx, cy + dy, cz + dz)))
+    hits = solid.Intersect(LineSegment(Point(x, y, z), Point(x + dx, y + dy, z + dz)))
     if hits is None:
         return False
-    count = sum(1 for i in range(hits.Count) if (hits[i].X - cx) * dx + (hits[i].Y - cy) * dy + (hits[i].Z - cz) * dz > 0)
+    count = sum(1 for i in range(hits.Count) if (hits[i].X - x) * dx + (hits[i].Y - y) * dy + (hits[i].Z - z) * dz > 0)
     return count % 2 == 1
+
+
+def _points_inside(solid: Solid, points: FloatArray) -> FloatArray:
+    """
+    Return the points that lie inside a solid.
+
+    Points outside the solid's bounding box are dropped without a ray.
+
+    Args:
+        solid: Valid container solid
+        points: Points, shape (n, 3)
+
+    Returns:
+        Inside points, shape (m, 3)
+    """
+    mn, mx = solid.MinimumPoint, solid.MaximumPoint
+    candidates = points[np.all((points >= (mn.X, mn.Y, mn.Z)) & (points <= (mx.X, mx.Y, mx.Z)), axis=1)]
+    mask = np.array([_point_inside(solid, float(x), float(y), float(z)) for x, y, z in candidates], dtype=bool)
+    return candidates[mask] if len(candidates) else candidates
 
 
 class SolidGeometryMixin:
@@ -279,104 +290,95 @@ class SolidGeometryMixin:
         """
         return self.model_object.GetSolid()
 
-    def is_inside(self, other: TeklaModelObject, container_solids: dict[str, Solid] | None = None, self_solids: dict[str, Solid] | None = None) -> bool:
+    def _cached_solid(self, raw: bool, solids: dict[str, Any]) -> Solid:
         """
-        Return True if `self` object lies inside `other` using an odd/even ray-cast test.
-
-        Pass the same `container_solids` dict for repeated tests against one container
-        to build its NORMAL and RAW solids only once, and the same `self_solids` dict for
-        repeated tests of this object against several containers. Both use the key
-        'normal' for the same solid, so one object's dict serves either role. The model
-        must not change meanwhile.
-
-        A ray is cast from the center of the overlapping AABB region in a non-axis-aligned
-        direction to avoid grazing hits. Only forward-half-space intersections are counted.
-        An odd count means the origin is inside the solid, an even count means outside.
-
-        When `other` is a TeklaPart and the NORMAL solid test returns False, a RAW
-        (pre-boolean-cut) solid fallback is attempted automatically. The fallback is
-        gated on a centroid pre-check: the candidate's own centroid must lie within the
-        container's RAW-solid AABB. Using RAW (not NORMAL) ensures embeds inside a
-        boolean-cut corner are not rejected when the NORMAL AABB is tighter than the
-        original material envelope. Legitimate neighbours whose centroid is entirely
-        outside the original part are still rejected.
-
-        Notes:
-        - Simple convex and moderately concave geometry (L/T shapes) is typically handled
-          correctly. Highly concave or re-entrant solids may produce false results if the
-          ray exits and re-enters through the concavity, yielding an even parity count.
-        - Near-tangent or very thin geometry may still produce false positives or negatives.
-        - Any geometry/kernel failure conservatively returns True to avoid false negatives.
+        Return the NORMAL or RAW solid of this object, built once per `solids` dict.
 
         Args:
-            other: Container object
-            container_solids: Solid cache for `other`
-            self_solids: Solid cache for this object
+            raw: RAW solid (without cuts) instead of NORMAL. Only parts have one
+            solids: Solid cache for this object
 
         Returns:
-            True if this object is inside `other`
+            The solid, possibly None or invalid
         """
-        if container_solids is None:
-            container_solids = {}
-        if self_solids is None:
-            self_solids = {}
-        try:
-            # Get solids - prefer NORMAL (includes cuts/booleans) for both sides.
-            # Some Tekla types don't support SolidCreationTypeEnum, so fall back to GetSolid().
-            if "normal" in container_solids:
-                solid_other = container_solids["normal"]
-            elif isinstance(other, TeklaPart):
-                solid_other = container_solids["normal"] = other.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
-            elif isinstance(other, SolidGeometryMixin):
-                solid_other = container_solids["normal"] = other.get_solid()
+        key = "raw" if raw else "normal"
+        if key not in solids:
+            # Some Tekla types don't support SolidCreationTypeEnum, so fall back to GetSolid()
+            if isinstance(self, TeklaPart):
+                solids[key] = self.get_solid(Solid.SolidCreationTypeEnum.RAW if raw else Solid.SolidCreationTypeEnum.NORMAL)
             else:
-                logger.warning("is_inside: unknown container type %s, defaulting to inside", type(other).__name__)
+                solids[key] = self.get_solid()
+        return solids[key]
+
+    def _normal_within_raw(self, solids: dict[str, Any]) -> bool:
+        """
+        Return True if the NORMAL solid of this part lies within its RAW solid.
+
+        Cuts only remove material, but a boolean add puts material outside the RAW solid
+        and a fitting can lengthen a part past it. Built once per `solids` dict.
+
+        Args:
+            solids: Solid cache for this object
+
+        Returns:
+            True if every point of the NORMAL solid is also in the RAW solid
+        """
+        if "normal_within_raw" not in solids:
+            normal, raw = self._cached_solid(False, solids), self._cached_solid(True, solids)
+            within = bool(normal and raw and normal.IsValid() and raw.IsValid())
+            if within:
+                nmn, nmx, rmn, rmx = normal.MinimumPoint, normal.MaximumPoint, raw.MinimumPoint, raw.MaximumPoint
+                tol = 1.0
+                within = all(r0 - tol <= n0 and n1 <= r1 + tol for n0, n1, r0, r1 in ((nmn.X, nmx.X, rmn.X, rmx.X), (nmn.Y, nmx.Y, rmn.Y, rmx.Y), (nmn.Z, nmx.Z, rmn.Z, rmx.Z)))
+            if within:
+                booleans = self.model_object.GetBooleans()
+                while within and booleans.MoveNext():
+                    boolean = booleans.Current
+                    within = not (isinstance(boolean, BooleanPart) and boolean.Type == BooleanPart.BooleanTypeEnum.BOOLEAN_ADD)
+            solids["normal_within_raw"] = within
+        return solids["normal_within_raw"]
+
+    def contains_any_point(self, points: FloatArray, raw: bool = False, solids: dict[str, Any] | None = None) -> bool:
+        """
+        Return True if any of the points lies inside this object's solid.
+
+        Each point gets an odd/even ray-cast test, see `_point_inside`. Points outside
+        the solid's bounding box are skipped without a ray. For a NORMAL test of a part,
+        points are first tested against the RAW solid when the NORMAL solid lies within it:
+        a ray against the few RAW faces is far cheaper than against a NORMAL solid cut by
+        hundreds of embeds, and a point outside RAW cannot be inside NORMAL.
+
+        Pass the same `solids` dict for repeated tests against this object to build each
+        solid only once. The model must not change meanwhile.
+
+        Any geometry/kernel failure conservatively returns True to avoid false negatives.
+
+        Args:
+            points: Points in the current work plane, shape (n, 3)
+            raw: Test against the RAW solid (without cuts) of a part. Embeds cut their own
+                holes and recesses into the concrete, so only the RAW solid still contains them
+            solids: Solid cache for this object
+
+        Returns:
+            True if a point is inside, False for no points
+        """
+        if len(points) == 0:
+            return False
+        if solids is None:
+            solids = {}
+        try:
+            solid = self._cached_solid(raw, solids)
+            if not solid or not solid.IsValid():
+                logger.warning("contains_any_point: solid invalid (%s), defaulting to inside", "None" if not solid else "!IsValid()")
                 return True  # conservative
-            if "normal" in self_solids:
-                solid_self = self_solids["normal"]
-            elif isinstance(self, TeklaPart):
-                solid_self = self_solids["normal"] = self.get_solid(Solid.SolidCreationTypeEnum.NORMAL)
-            elif isinstance(self, SolidGeometryMixin):
-                solid_self = self_solids["normal"] = self.get_solid()
-            if not solid_other or not solid_other.IsValid():
-                logger.warning("is_inside: container solid invalid (%s), defaulting to inside", "None" if not solid_other else "!IsValid()")
-                return True  # conservative
-            if not solid_self or not solid_self.IsValid():
-                logger.warning("is_inside: self solid invalid (%s), defaulting to inside", "None" if not solid_self else "!IsValid()")
-                return True  # conservative
 
-            # Primary test against NORMAL solid
-            if _ray_cast_inside(solid_self, solid_other):
-                return True
-
-            # NORMAL returned False - fall back to RAW solid for TeklaPart containers.
-            # Embeds in boolean-cut sleeve holes sit in the void of the NORMAL solid
-            # but are physically within the original wall material.
-            # Gate on a centroid pre-check to reject neighbouring structural elements
-            # whose bounding box grazes the container but whose centre is outside it.
-            if not isinstance(other, TeklaPart):
-                return False
-
-            if "raw" not in container_solids:
-                container_solids["raw"] = other.get_solid(Solid.SolidCreationTypeEnum.RAW)
-            solid_raw = container_solids["raw"]
-            if not solid_raw or not solid_raw.IsValid():
-                return True  # conservative
-
-            # Gate on RAW AABB (not NORMAL) so that embeds inside a boolean-cut
-            # corner are not rejected: the RAW solid covers the full original
-            # material volume, whereas the NORMAL AABB may be tighter after a cut
-            # removes a corner. Legitimate neighbours whose centroid lies entirely
-            # outside the original part are still rejected.
-            cmin, cmax = solid_self.MinimumPoint, solid_self.MaximumPoint
-            rmin, rmax = solid_raw.MinimumPoint, solid_raw.MaximumPoint
-            scx, scy, scz = (cmin.X + cmax.X) * 0.5, (cmin.Y + cmax.Y) * 0.5, (cmin.Z + cmax.Z) * 0.5
-            if not (rmin.X <= scx <= rmax.X and rmin.Y <= scy <= rmax.Y and rmin.Z <= scz <= rmax.Z):
-                return False  # centroid outside RAW AABB - not embedded
-
-            return _ray_cast_inside(solid_self, solid_raw)
+            if not raw and isinstance(self, TeklaPart) and self._normal_within_raw(solids):
+                points = _points_inside(self._cached_solid(True, solids), points)
+            mn, mx = solid.MinimumPoint, solid.MaximumPoint
+            inside_box = np.all((points >= (mn.X, mn.Y, mn.Z)) & (points <= (mx.X, mx.Y, mx.Z)), axis=1)
+            return any(_point_inside(solid, float(x), float(y), float(z)) for x, y, z in points[inside_box])
         except Exception:
-            logger.warning("is_inside containment test failed, defaulting to inside")
+            logger.warning("contains_any_point containment test failed, defaulting to inside")
             return True  # conservative
 
 
@@ -2501,6 +2503,19 @@ class TeklaReinforcement(TeklaModelObject, SolidGeometryMixin):
         Sets the Tekla class of the reinforcement element.
         """
         self._set_property("Class", str(value))
+
+    def get_sample_points(self) -> FloatArray:
+        """
+        Return points along every leg of every bar, for containment tests.
+
+        Bar geometries follow the real bars of groups and meshes and their bends,
+        which one point on the solid's bounding box does not.
+
+        Returns:
+            Points in the current work plane, shape (n, 3), empty if Tekla returns no geometry
+        """
+        chunks = [polyline_sample_points([(p.X, p.Y, p.Z) for p in geometry.Shape.Points]) for geometry in self.model_object.GetRebarGeometries(True)]
+        return np.concatenate(chunks) if chunks else np.empty((0, 3))
 
     @property
     def father(self) -> TeklaModelObject | None:

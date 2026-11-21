@@ -14,7 +14,9 @@ from tekla_mcp_server.geometry import (
     angle_label,
     axis_overlap,
     box_gap,
+    box_sample_points,
     orientation,
+    polyline_sample_points,
     ranked_axes,
     relation,
     search_extents,
@@ -75,6 +77,37 @@ class TestOrientedBox:
         x, y = _plan_axes(45)
         lo, hi = aabb([_box((0, -1, 0), (10, 1, 1), axis_x=x, axis_y=y)])
         assert hi[0] - lo[0] == pytest.approx(10 / math.sqrt(2) + 2 / math.sqrt(2))
+
+
+class TestBoxSamplePoints:
+    def test_points_run_along_the_long_axis(self):
+        points = box_sample_points(_box((0, 0, 0), (100, 10, 1000)))
+        assert points.shape == (5, 3)
+        assert points[:, 0] == pytest.approx([50] * 5)
+        assert points[:, 1] == pytest.approx([5] * 5)
+        assert points[:, 2] == pytest.approx([100, 300, 500, 700, 900])
+
+    def test_rotated_box_points_stay_inside_it(self):
+        x, y = _plan_axes(30)
+        box = _box((0, -10, -10), (2000, 10, 10), axis_x=x, axis_y=y, origin=(500, 500, 0))
+        points = box_sample_points(box)
+        assert box.distance_to_points(points) == pytest.approx([0] * 5)
+        assert np.linalg.norm(points[-1] - points[0]) == pytest.approx(1600)
+
+
+class TestPolylineSamplePoints:
+    def test_five_points_per_leg_without_the_ends(self):
+        points = polyline_sample_points([(0, 0, 0), (100, 0, 0), (100, 0, 50)])
+        assert points.shape == (10, 3)
+        assert points[:5, 0] == pytest.approx([10, 30, 50, 70, 90])
+        assert points[5:, 2] == pytest.approx([5, 15, 25, 35, 45])
+        assert not any(np.allclose(p, (100, 0, 0)) for p in points)
+
+    def test_single_point_is_kept(self):
+        assert polyline_sample_points([(1, 2, 3)]) == pytest.approx(np.array([[1, 2, 3]]))
+
+    def test_empty_polyline(self):
+        assert polyline_sample_points([]).shape == (0, 3)
 
 
 class TestSegmentDistances:
