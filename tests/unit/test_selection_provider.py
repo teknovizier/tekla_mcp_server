@@ -14,72 +14,56 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
+from tekla_mcp_server.models import FilterCondition, FilterGroup
+
 sp = importlib.import_module("tekla_mcp_server.providers.selection_provider")
 
 
-class TestResolveClassCriteria:
+def _condition(**data) -> FilterCondition:
+    """Validate keyword arguments as a filter condition."""
+    return FilterCondition.model_validate(data)
+
+
+class TestExpandElementType:
     @pytest.fixture
     def wall_classes(self, monkeypatch):
-        monkeypatch.setattr(sp, "_resolve_element_type_classes", lambda element_type: [1, 2, 1])
+        monkeypatch.setattr(sp, "_resolve_element_type_classes", lambda element_type: [1, 8, 1])
 
-    def test_nothing_given_gives_no_classes(self):
-        assert sp._resolve_class_criteria(None, [], "AND") == []
+    def test_is_equal_becomes_one_class_list(self, wall_classes):
+        condition = sp._expand_element_type(_condition(field="part.element_type", op="Is Equal", value="Wall"))
+        assert (condition.field, condition.op, condition.value) == ("part.class", "Is Equal", [1, 8])
 
-    def test_empty_element_type_string_is_ignored(self):
-        assert sp._resolve_class_criteria("", [4], "AND") == [4]
+    def test_is_not_equal_keeps_its_operator(self, wall_classes):
+        assert sp._expand_element_type(_condition(field="part.element_type", op="Is Not Equal", value="Wall")).op == "Is Not Equal"
 
-    def test_classes_only_are_deduplicated(self):
-        assert sp._resolve_class_criteria(None, [8, 8, 3], "AND") == [8, 3]
+    def test_type_list_merges_classes(self, monkeypatch):
+        monkeypatch.setattr(sp, "_resolve_element_type_classes", lambda element_type: {"Wall": [1], "Sandwich Wall": [8, 52, 1]}[element_type])
+        condition = sp._expand_element_type(_condition(field="part.element_type", op="Is Equal", value=["Wall", "Sandwich Wall"]))
+        assert condition.value == [1, 8, 52]
 
-    def test_element_type_only(self, wall_classes):
-        assert sp._resolve_class_criteria("Wall", [], "AND") == [1, 2]
-
-    def test_and_keeps_shared_classes(self, wall_classes):
-        assert sp._resolve_class_criteria("Wall", [2, 9, 2], "AND") == [2]
-
-    def test_or_keeps_all_classes_once(self, wall_classes):
-        assert sp._resolve_class_criteria("Wall", [2, 9, 9], "OR") == [1, 2, 9]
-
-    def test_and_without_shared_class_raises(self, wall_classes):
-        with pytest.raises(ValueError, match="no class in common"):
-            sp._resolve_class_criteria("Wall", [9], "AND")
-
-    def test_element_type_without_classes_raises(self, monkeypatch):
+    def test_type_without_classes_raises(self, monkeypatch):
         monkeypatch.setattr(sp, "_resolve_element_type_classes", lambda element_type: [])
         with pytest.raises(ValueError, match="no Tekla classes configured"):
-            sp._resolve_class_criteria("Wall", [], "OR")
+            sp._expand_element_type(_condition(field="part.element_type", op="Is Equal", value="Wall"))
 
-    def test_invalid_element_type_raises(self):
+    def test_unknown_type_raises(self):
         with pytest.raises(ValueError, match="Invalid element_type"):
-            sp._resolve_class_criteria("NotAType", [1], "OR")
+            sp._expand_element_type(_condition(field="part.element_type", op="Is Equal", value="NotAType"))
 
 
-class TestClassFilterOption:
-    def test_one_or_condition_per_class(self):
-        option = sp._class_filter_option([1, 8])
-        assert option.logic == "OR"
-        assert [(c.match_type, c.value) for c in option.conditions] == [("Is Equal", 1), ("Is Equal", 8)]
+class TestPrepareTree:
+    def test_element_type_is_expanded_in_nested_groups(self, monkeypatch):
+        monkeypatch.setattr(sp, "_resolve_element_type_classes", lambda element_type: [1])
+        tree = FilterGroup.model_validate({"any": [{"all": [{"field": "part.element_type", "op": "Is Equal", "value": "Wall"}]}, {"attribute": "comment", "op": "Is Equal", "value": "x"}]})
+        prepared = sp._prepare_tree(tree)
+        assert prepared.is_any
+        expanded_group, attribute = prepared.items
+        assert (expanded_group.items[0].field, expanded_group.items[0].value) == ("part.class", [1])
+        # Attribute names are kept exactly, case included
+        assert attribute.attribute == "comment"
+        # The caller's tree is left as it was
+        assert tree.items[0].items[0].field == "part.element_type"
 
-
-class TestResolveCustomFilters:
-    def test_empty_input_skips_resolution(self, monkeypatch):
-        monkeypatch.setattr(sp.TemplateAttributeParser, "resolve_attributes", lambda queries: pytest.fail("must not resolve"))
-        assert sp._resolve_custom_filters({}) == ({}, [])
-
-    def test_failed_query_does_not_shift_names(self, monkeypatch):
-        error = {"query": "bad", "message": "not found"}
-        monkeypatch.setattr(sp.TemplateAttributeParser, "resolve_attributes", lambda queries: {"resolved": ["HEIGHT", "WIDTH"], "errors": [error]})
-        assert sp._resolve_custom_filters({"height": "h", "bad": "b", "width": "w"}) == ({"HEIGHT": "h", "WIDTH": "w"}, [error])
-
-    def test_all_names_fail(self, monkeypatch):
-        errors = [{"query": "a", "message": "not found"}, {"query": "b", "message": "not found"}]
-        monkeypatch.setattr(sp.TemplateAttributeParser, "resolve_attributes", lambda queries: {"resolved": [], "errors": errors})
-        assert sp._resolve_custom_filters({"a": 1, "b": 2}) == ({}, errors)
-
-    def test_empty_resolved_name_is_dropped(self, monkeypatch):
-        monkeypatch.setattr(sp.TemplateAttributeParser, "resolve_attributes", lambda queries: {"resolved": ["", "WIDTH"], "errors": []})
-        assert sp._resolve_custom_filters({"a": 1, "width": 2}) == ({"WIDTH": 2}, [])
-
-    def test_names_resolving_to_one_attribute_keep_the_last(self, monkeypatch):
-        monkeypatch.setattr(sp.TemplateAttributeParser, "resolve_attributes", lambda queries: {"resolved": ["HEIGHT", "HEIGHT"], "errors": []})
-        assert sp._resolve_custom_filters({"height": "first", "Height": "second"}) == ({"HEIGHT": "second"}, [])
+    def test_plain_condition_is_kept(self):
+        condition = _condition(field="part.name", op="Is Equal", value="A")
+        assert sp._prepare_tree(condition) is condition

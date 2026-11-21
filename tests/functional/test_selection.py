@@ -4,14 +4,21 @@ Functional tests for selection_provider.
 Tests element selection by filter, GUID, and assembly/main part modes.
 """
 
+from typing import Any
+
 import pytest
 
+from tekla_mcp_server.models import BeamInput, PanelInput, PointInput, SlabInput
+from tekla_mcp_server.providers.components_provider import put_components
+from tekla_mcp_server.providers.modeling_provider import place_beams, place_panels, place_slabs
 from tekla_mcp_server.providers.selection_provider import (
     select_elements_by_filter,
     select_elements_by_filter_name,
     select_elements_by_guid,
     select_related_elements,
 )
+from tekla_mcp_server.tekla.loader import BaseWeld, BoltArray, BoltGroup, CatalogHandler, Point, Polygon, SingleRebar, Weld
+from tekla_mcp_server.tekla.utils import get_all_rebar_items
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
@@ -25,182 +32,320 @@ def test_select_elements_by_filter_name(model_objects):
     assert result.structured_content["selected_count"]
 
 
-def test_select_elements_by_filter_no_filters_returns_error(model_objects):
-    """Tests select_elements_by_filter when called without any filter parameters."""
-    result = select_elements_by_filter()
-    assert result.structured_content["status"] == "error"
+def _cond(field: str, op: str, value: Any) -> dict[str, Any]:
+    """Build a filter condition dict."""
+    return {"field": field, "op": op, "value": value}
+
+
+def _attr(name: str, op: str, value: Any, category: str = "part") -> dict[str, Any]:
+    """Build an attribute condition dict."""
+    return {"attribute": name, "category": category, "op": op, "value": value}
+
+
+@pytest.fixture(scope="module")
+def filter_scene() -> Any:
+    """
+    A scene of every object kind the filter tree covers, far from the other test objects.
+
+    Walls of classes 1 and 8 (one named with spaces), a beam, a plate with a MeshBars component,
+    two single rebars, a site bolt group, a shop fillet weld and a site plug weld. Each test scopes
+    its filter to the scene's object IDs, so the selection must equal the expected objects exactly.
+    """
+    model = TeklaModel()
+    panel = {"material": "Concrete_Undefined"}
+    placed = place_panels(
+        panels=[
+            PanelInput(start_point=PointInput(x=90000, y=0, z=0), end_point=PointInput(x=92000, y=0, z=0), profile="3000*200", tekla_class=1, name="MCP_TEST_FLT_W1", **panel),
+            PanelInput(start_point=PointInput(x=93000, y=0, z=0), end_point=PointInput(x=95000, y=0, z=0), profile="2000*150", tekla_class=1, name="MCP_TEST_FLT_W2", **panel),
+            PanelInput(start_point=PointInput(x=96000, y=0, z=0), end_point=PointInput(x=98000, y=0, z=0), profile="3000*200", tekla_class=8, name="MCP_TEST_FLT_SW", **panel),
+            PanelInput(start_point=PointInput(x=99000, y=0, z=0), end_point=PointInput(x=101000, y=0, z=0), profile="2000*150", tekla_class=1, name="MCP_TEST_FLT LIGHT BLOCK", **panel),
+        ]
+    ).structured_content["results"]
+    beam_result = place_beams(
+        beams=[BeamInput(start_point=PointInput(x=91000, y=-500, z=1500), end_point=PointInput(x=91000, y=500, z=1500), profile="400*400", tekla_class=14, name="MCP_TEST_FLT_BEAM", **panel)]
+    ).structured_content["results"]
+    plate_result = place_slabs(
+        slabs=[
+            SlabInput(
+                points=[PointInput(x=x, y=y, z=0) for x, y in [(103000, 0), (106000, 0), (106000, 3000), (103000, 3000)]],
+                profile="200",
+                tekla_class=4,
+                name="MCP_TEST_FLT_PLATE",
+                **panel,
+            )
+        ]
+    ).structured_content["results"]
+    w1, w2, sw, light = model.get_objects_by_guid([r["guid"] for r in placed])
+    beam = model.get_objects_by_guid([beam_result[0]["guid"]])[0]
+    plate = model.get_objects_by_guid([plate_result[0]["guid"]])[0]
+    objects: dict[str, Any] = {"W1": w1, "W2": w2, "SW": sw, "LIGHT": light, "BEAM": beam, "PLATE": plate}
+
+    w1.SetUserProperty("comment", "MCP_TEST_UDA_VALUE")
+    w1.Modify()
+
+    rebar_item = get_all_rebar_items()[0]
+    for key, father, rebar_class, x in [("BAR_A", w1, 44, 90000), ("BAR_B", w2, 46, 93000)]:
+        bar = SingleRebar()
+        bar.Father = father
+        bar.Name = f"MCP_TEST_FLT_{key}"
+        bar.Class = rebar_class
+        bar.Grade = rebar_item["grade"]
+        bar.Size = rebar_item["size"]
+        polygon = Polygon()
+        polygon.Points.Add(Point(x + 200, 0, 500))
+        polygon.Points.Add(Point(x + 1800, 0, 500))
+        bar.Polygon = polygon
+        assert bar.Insert(), f"Rebar {key} was not inserted"
+        objects[key] = bar
+
+    bolt_items = CatalogHandler().GetBoltItems()
+    assert bolt_items.MoveNext(), "The bolt catalog is empty"
+    bolt = BoltArray()
+    bolt.PartToBoltTo = w1
+    bolt.PartToBeBolted = beam
+    bolt.FirstPosition = Point(91000, -300, 1500)
+    bolt.SecondPosition = Point(91000, 300, 1500)
+    bolt.BoltStandard = bolt_items.Current.Standard
+    bolt.BoltSize = bolt_items.Current.Size
+    bolt.Tolerance = 3.0
+    bolt.BoltType = BoltGroup.BoltTypeEnum.BOLT_TYPE_SITE
+    bolt.AddBoltDistX(0)
+    bolt.AddBoltDistY(0)
+    assert bolt.Insert(), "Bolt group was not inserted"
+    objects["BOLT"] = bolt
+
+    for key, main, secondary, shop, weld_type in [("WELD_SHOP", w1, beam, True, BaseWeld.WeldTypeEnum.WELD_TYPE_FILLET), ("WELD_SITE", w2, sw, False, BaseWeld.WeldTypeEnum.WELD_TYPE_PLUG)]:
+        weld = Weld()
+        weld.MainObject = main
+        weld.SecondaryObject = secondary
+        weld.ShopWeld = shop
+        weld.TypeAbove = weld_type
+        weld.SizeAbove = 6
+        assert weld.Insert(), f"Weld {key} was not inserted"
+        objects[key] = weld
+    model.commit_changes()
+
+    TeklaModel.select_objects([plate])
+    assert put_components(component_name="MeshBars").structured_content["status"] == "success"
+    reinforcements = plate.GetReinforcements()
+    while reinforcements.MoveNext():
+        component = reinforcements.Current.GetFatherComponent()
+        if component is not None:
+            objects["COMPONENT"] = component
+            break
+
+    # The shop weld joins the beam to the first wall's assembly, so assemblies are read after welding
+    for key in ("W1", "W2", "SW", "LIGHT", "PLATE"):
+        objects[f"ASM_{key}"] = objects[key].GetAssembly()
+
+    ids = {key: o.Identifier.ID for key, o in objects.items()}
+    yield {"objects": objects, "ids": ids, "names": {v: k for k, v in ids.items()}}
+
+    for key in ("COMPONENT", "WELD_SHOP", "WELD_SITE", "BOLT", "BAR_A", "BAR_B", "BEAM", "W1", "W2", "SW", "LIGHT", "PLATE"):
+        if key in objects:
+            objects[key].Delete()
+    model.commit_changes()
+
+
+def _pick(scene: dict, tree: dict, object_types: list[str] | None = None) -> set[str]:
+    """
+    Select with a tree scoped to the scene and return the keys of the selected scene objects.
+
+    Args:
+        scene: The `filter_scene` fixture
+        tree: Filter tree as a plain dict
+        object_types: Object types, 'part' when omitted
+
+    Returns:
+        Keys of the selected objects. Anything selected outside the scene fails the test
+    """
+    scope = _cond("object.id_number", "Is Equal", sorted(scene["ids"].values()))
+    result = select_elements_by_filter(filter={"all": [scope, tree]}, object_types=object_types or ["part"])
+    assert result.structured_content["status"] in ("success", "warning"), result.structured_content
+    if not result.structured_content["selected_count"]:
+        return set()
+    selected = {o.Identifier.ID for o in TeklaModel().get_selected_objects()}
+    assert selected <= set(scene["names"]), f"Selected objects outside the scene: {selected - set(scene['names'])}"
+    assert len(selected) == result.structured_content["selected_count"]
+    return {scene["names"][i] for i in selected}
 
 
 @pytest.mark.parametrize(
-    "element_type,tekla_classes",
+    "tree,object_types,expected",
     [
-        ("Wall", [1]),
-        ("Wall", [1, 8]),
-        (None, [1]),
+        # Plain fields, lists, quoting and wildcards
+        (_cond("part.class", "Is Equal", [1, 8]), None, {"W1", "W2", "SW", "LIGHT"}),
+        (_cond("part.class", "Is Not Equal", [1, 8]), None, {"BEAM", "PLATE"}),
+        (_cond("part.name", "Is Equal", "MCP_TEST_FLT LIGHT BLOCK"), None, {"LIGHT"}),
+        (_cond("part.name", "Is Equal", ["MCP_TEST_FLT LIGHT BLOCK", "MCP_TEST_FLT_W2"]), None, {"LIGHT", "W2"}),
+        (_cond("part.name", "Is Equal", "MCP_TEST_FLT_W?"), None, {"W1", "W2"}),
+        (_cond("part.name", "Contains", "LIGHT"), None, {"LIGHT"}),
+        (_cond("part.profile", "Is Equal", ["3000*200", "400*400"]), None, {"W1", "SW", "BEAM"}),
+        # Element types
+        (_cond("part.element_type", "Is Equal", "Wall"), None, {"W1", "W2", "LIGHT"}),
+        (_cond("part.element_type", "Is Equal", ["Wall", "Sandwich Wall"]), None, {"W1", "W2", "SW", "LIGHT"}),
+        (_cond("part.element_type", "Is Not Equal", "Wall"), None, {"SW", "BEAM", "PLATE"}),
+        # Nested groups up to Tekla's bracket limit
+        ({"any": [{"all": [_cond("part.class", "Is Equal", 1), _cond("part.profile", "Is Equal", "3000*200")]}, _cond("part.class", "Is Equal", 14)]}, None, {"W1", "BEAM"}),
+        (
+            {
+                "all": [
+                    _cond("part.class", "Is Equal", 1),
+                    {"any": [_cond("part.profile", "Is Equal", "2000*150"), {"all": [_cond("part.name", "Ends With", "W1"), _cond("part.profile", "Is Equal", "3000*200")]}]},
+                ]
+            },
+            None,
+            {"W1", "W2", "LIGHT"},
+        ),
+        # Rebars
+        (_cond("rebar.class", "Is Equal", 44), ["rebar"], {"BAR_A"}),
+        (_cond("rebar.class", "Is Not Equal", 44), ["rebar"], {"BAR_B"}),
+        (_cond("rebar.name", "Is Equal", ["MCP_TEST_FLT_BAR_A", "MCP_TEST_FLT_BAR_B"]), ["rebar"], {"BAR_A", "BAR_B"}),
+        # Several object types: each type is filtered by its own conditions only
+        ({"all": [_cond("rebar.class", "Is Equal", 46), _cond("part.class", "Is Equal", 8)]}, ["rebar", "part"], {"BAR_B", "SW"}),
+        ({"any": [_cond("part.name", "Is Equal", "MCP_TEST_FLT_W1"), _cond("bolt.site_workshop", "Is Equal", "site")]}, ["part", "bolt"], {"W1", "BOLT"}),
+        (_cond("part.class", "Is Equal", 8), ["part", "bolt"], {"SW", "BOLT"}),
+        ({"any": [_cond("object.type", "Is Equal", "weld"), _cond("part.class", "Is Equal", 14)]}, ["part", "weld"], {"WELD_SHOP", "WELD_SITE", "BEAM"}),
+        (_cond("object.type", "Is Not Equal", "part"), ["part", "weld"], {"WELD_SHOP", "WELD_SITE"}),
+        (_cond("object.type", "Is Equal", ["part", "weld"]), ["part", "bolt", "weld"], {"W1", "W2", "SW", "LIGHT", "BEAM", "PLATE", "WELD_SHOP", "WELD_SITE"}),
+        # Welds and bolts with readable values
+        (_cond("weld.welding_site", "Is Equal", "workshop"), ["weld"], {"WELD_SHOP"}),
+        (_cond("weld.welding_site", "Is Equal", "site"), ["weld"], {"WELD_SITE"}),
+        (_cond("weld.type_above", "Is Equal", "fillet"), ["weld"], {"WELD_SHOP"}),
+        (_cond("weld.type_above", "Is Equal", ["fillet", "plug"]), ["weld"], {"WELD_SHOP", "WELD_SITE"}),
+        (_cond("bolt.site_workshop", "Is Equal", "workshop"), ["bolt"], set()),
+        # Report properties, UDAs and assembly conditions
+        (_attr("MAINPART.CLASS_ATTR", "Is Equal", 8, "template"), ["assembly"], {"ASM_SW"}),
+        (_attr("CLASS_ATTR", "Is Equal", [8, 14], "template"), None, {"SW", "BEAM"}),
+        (_attr("comment", "Is Equal", "MCP_TEST_UDA_VALUE"), None, {"W1"}),
+        (_attr("COMMENT", "Is Equal", "MCP_TEST_UDA_VALUE"), None, set()),
+        # Components
+        (_cond("component.name", "Is Equal", "MeshBars"), ["component"], {"COMPONENT"}),
+        (_cond("component.name", "Is Equal", "MCP_TEST_NO_SUCH_COMPONENT"), ["component"], set()),
+        # Heavy combinations: an 'any' over four object types, one condition each
+        (
+            {
+                "any": [
+                    _cond("part.name", "Is Equal", "MCP_TEST_FLT LIGHT BLOCK"),
+                    _cond("rebar.class", "Is Equal", 44),
+                    _cond("bolt.site_workshop", "Is Equal", "site"),
+                    _cond("weld.type_above", "Is Equal", "plug"),
+                ]
+            },
+            ["part", "rebar", "bolt", "weld"],
+            {"LIGHT", "BAR_A", "BOLT", "WELD_SITE"},
+        ),
+        # Negative operators inside a nested group
+        (
+            {"all": [_cond("part.name", "Not Contains", "LIGHT"), {"any": [_cond("part.profile", "Is Not Equal", "3000*200"), _cond("part.class", "Is Not Equal", [1, 4])]}]},
+            None,
+            {"W2", "SW", "BEAM", "PLATE"},
+        ),
+        # Lists of wildcards in a group, one of them quoted because of its space
+        ({"any": [_cond("part.name", "Is Equal", ["MCP_TEST_FLT_W?", "MCP_TEST_FLT LIGHT*"]), _cond("part.profile", "Is Equal", ["400*4??"])]}, None, {"W1", "W2", "LIGHT", "BEAM"}),
+        # An object type excluded, and per type conditions in an 'any'
+        (
+            {"all": [_cond("object.type", "Is Not Equal", "weld"), {"any": [_cond("part.class", "Is Equal", 8), _cond("rebar.class", "Is Not Equal", 44)]}]},
+            ["part", "rebar", "weld"],
+            {"SW", "BAR_B"},
+        ),
+        # Report properties of assemblies, nested
+        (
+            {
+                "any": [
+                    _attr("MAINPART.CLASS_ATTR", "Is Equal", 8, "template"),
+                    {"all": [_attr("MAINPART.CLASS_ATTR", "Is Equal", 1, "template"), _attr("MAINPART.PROFILE", "Is Equal", "2000*150", "template")]},
+                ]
+            },
+            ["assembly"],
+            {"ASM_SW", "ASM_W2", "ASM_LIGHT"},
+        ),
+        # Conditions of one type do not touch the others: bolts have none, so all bolts match
+        ({"all": [_cond("part.class", "Is Equal", 1), _cond("weld.welding_site", "Is Equal", "workshop")]}, ["part", "bolt", "weld"], {"W1", "W2", "LIGHT", "BOLT", "WELD_SHOP"}),
+        # A component and parts in one 'any'
+        ({"any": [_cond("component.name", "Is Equal", "MeshBars"), _cond("part.class", "Is Equal", 4)]}, ["component", "part"], {"COMPONENT", "PLATE"}),
     ],
 )
-def test_select_elements_by_filter_element_type_and_tekla_classes(model_objects, element_type, tekla_classes):
-    """Tests select_elements_by_filter with element_type and tekla_classes parameters."""
-    kwargs = {}
-    if element_type:
-        kwargs["element_type"] = element_type
-    if tekla_classes:
-        kwargs["tekla_classes"] = tekla_classes
-
-    result = select_elements_by_filter(**kwargs)
-    assert result.structured_content["status"] == "success"
+def test_select_elements_by_filter_scene(filter_scene, tree, object_types, expected):
+    """Tests that a filter tree selects exactly the expected scene objects."""
+    if any(key not in filter_scene["ids"] for key in expected):
+        pytest.skip(f"Scene objects missing: {sorted(k for k in expected if k not in filter_scene['ids'])}")
+    assert _pick(filter_scene, tree, object_types) == expected
 
 
-@pytest.mark.parametrize("invalid_element_type", ["InvalidType", "NonExistent", "FakeWall"])
-def test_select_elements_by_filter_invalid_element_type(model_objects, invalid_element_type):
-    """Tests select_elements_by_filter with invalid element_type values."""
-    result = select_elements_by_filter(element_type=invalid_element_type)
-    assert result.structured_content["status"] == "error"
+def test_select_elements_by_filter_assembly_condition_applies_to_parts(filter_scene):
+    """Tests that an assembly condition selects the parts of the matching assembly."""
+    assembly = filter_scene["objects"]["ASM_W1"]
+    assembly_parts = {filter_scene["names"][p.Identifier.ID] for p in [assembly.GetMainPart(), *assembly.GetSecondaries()] if p.Identifier.ID in filter_scene["names"]}
+    assert _pick(filter_scene, _cond("assembly.name", "Is Equal", assembly.Name)) >= {"W1"}
+    assert _pick(filter_scene, _cond("assembly.name", "Is Equal", assembly.Name)) == assembly_parts
 
 
-@pytest.mark.parametrize(
-    "field,match_type,value",
-    [
-        ("name", "Contains", "MCP"),
-        ("name", "Starts With", "MCP_TEST"),
-        ("name", "Ends With", "WALL1"),
-        ("name", "Not Contains", "INVALID"),
-        ("name", "Is Not Equal", "OTHER_NAME"),
-        ("profile", "Contains", "3000"),
-        ("material", "Contains", "Concrete"),
-        ("finish", "Is Not Equal", "PAINT"),
-        ("phase", "Is Equal", "1"),
-    ],
-)
-def test_select_elements_by_filter_standard_string_filters(model_objects, field, value, match_type):
-    """Tests select_elements_by_filter with various standard string filter conditions."""
-    result = select_elements_by_filter(
-        element_type="Wall",
-        standard_string_filters={field: {"conditions": {"match_type": match_type, "value": value}}},
-    )
-    assert result.structured_content["status"] == "success"
-
-
-@pytest.mark.parametrize("logic", ["AND", "OR"])
-def test_select_elements_by_filter_string_multiple_conditions(model_objects, logic):
-    """Tests select_elements_by_filter with multiple string filter conditions."""
-    result = select_elements_by_filter(
-        element_type="Wall",
-        standard_string_filters={
-            "name": {
-                "conditions": [
-                    {"match_type": "Contains", "value": "T"},
-                    {"match_type": "Contains", "value": "E"},
-                ],
-                "logic": logic,
-            }
-        },
-    )
-    assert result.structured_content["status"] == "success"
-
-
-def test_select_elements_by_filter_custom_string_filters(model_objects):
-    """Tests select_elements_by_filter with custom string filters."""
-    kwargs = {
-        "element_type": "Wall",
-        "custom_string_filters": {},
+def test_select_elements_by_filter_field_uda_report_property_and_assembly(filter_scene):
+    """Tests one tree that mixes a field, a UDA, a report property and an assembly condition."""
+    tree = {
+        "all": [
+            _cond("part.class", "Is Equal", [1, 14]),
+            _cond("assembly.name", "Is Equal", filter_scene["objects"]["ASM_W1"].Name),
+            {"any": [_attr("comment", "Is Equal", "MCP_TEST_UDA_VALUE"), _attr("CLASS_ATTR", "Is Equal", 14, "template")]},
+        ]
     }
-    result = select_elements_by_filter(**kwargs)
-    assert result.structured_content["status"] == "success"
+    # The shop weld puts the beam into the first wall's assembly
+    assert _pick(filter_scene, tree) == {"W1", "BEAM"}
+
+
+def test_select_elements_by_filter_matches_tekla_named_filter_semantics(filter_scene):
+    """Tests that a mixed AND chain keeps the parts and rebars Tekla would keep."""
+    tree = {"all": [_cond("rebar.class", "Is Equal", [44, 46]), _cond("part.class", "Is Not Equal", [8, 14, 4])]}
+    assert _pick(filter_scene, tree, ["rebar", "part"]) == {"BAR_A", "BAR_B", "W1", "W2", "LIGHT"}
 
 
 @pytest.mark.parametrize(
-    "prop",
+    "kwargs,message",
     [
-        {"name": "HEIGHT", "match_type": "Greater Than", "value": 2000.0},
-        {"name": "WEIGHT", "match_type": "Greater Than", "value": 300.0},
-        {"name": "LENGTH", "match_type": "Greater Than", "value": 1500.0},
-    ],
-)
-def test_select_elements_by_filter_numeric_single_condition(model_objects, prop):
-    """Tests select_elements_by_filter with numeric filter conditions."""
-    result = select_elements_by_filter(
-        element_type="Wall",
-        custom_numeric_filters={
-            prop["name"]: {
-                "conditions": {
-                    "match_type": prop["match_type"],
-                    "value": prop["value"],
+        ({"filter": {"all": []}}, "at least one item"),
+        ({"filter": {"or": [_cond("part.class", "Is Equal", 1)]}}, "Extra inputs"),
+        ({"filter": _cond("part.class", "Is Equal", 1), "object_types": []}, "At least one object type"),
+        ({"filter": _cond("part.class", "Is Equal", 1), "object_types": ["beam"]}, "Unknown object types"),
+        ({"filter": _cond("bolt.site_workshop", "Is Equal", "factory"), "object_types": ["bolt"]}, "Must be one of"),
+        ({"filter": _cond("part.class", "Contains", 1)}, "does not apply"),
+        ({"filter": _cond("part.nope", "Is Equal", 1)}, "Unknown field"),
+        ({"filter": _cond("part.element_type", "Is Equal", "FakeWall")}, "Invalid element_type"),
+        ({"filter": _cond("object.type", "Is Equal", "bolt")}, "can match this filter"),
+        # Alternating 'all' and 'any' three times deep: every 'any' inside an 'all' needs brackets
+        (
+            {
+                "filter": {
+                    "all": [
+                        _cond("part.class", "Is Equal", 1),
+                        {
+                            "any": [
+                                _cond("part.class", "Is Equal", 2),
+                                {
+                                    "all": [
+                                        _cond("part.name", "Is Equal", "A"),
+                                        {
+                                            "any": [
+                                                _cond("part.name", "Is Equal", "B"),
+                                                {"all": [_cond("part.name", "Is Equal", "C"), {"any": [_cond("part.class", "Is Equal", 3), _cond("part.class", "Is Equal", 4)]}]},
+                                            ]
+                                        },
+                                    ]
+                                },
+                            ]
+                        },
+                    ]
                 }
-            }
-        },
-    )
-    assert result.structured_content["status"] == "success"
-
-
-@pytest.mark.parametrize("logic", ["AND", "OR"])
-def test_select_elements_by_filter_numeric_multiple_conditions(model_objects, logic):
-    """Tests select_elements_by_filter with multiple numeric conditions."""
-    result = select_elements_by_filter(
-        element_type="Wall",
-        custom_numeric_filters={
-            "HEIGHT": {
-                "conditions": [
-                    {"match_type": "Greater Than", "value": 1000.0},
-                    {"match_type": "Smaller Than", "value": 5000.0},
-                ],
-                "logic": logic,
-            }
-        },
-    )
-    assert result.structured_content["status"] == "success"
-
-
-@pytest.mark.parametrize("combine_with", ["AND", "OR"])
-def test_select_elements_by_filter_combined_filters(model_objects, combine_with):
-    """Tests select_elements_by_filter with combined string and numeric filters."""
-    result = select_elements_by_filter(
-        element_type="Wall",
-        standard_string_filters={"name": {"conditions": {"match_type": "Contains", "value": "MCP"}}},
-        custom_numeric_filters={"HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000.0}}},
-        combine_with=combine_with,
-    )
-    assert result.structured_content["status"] == "success"
-
-
-@pytest.mark.parametrize("invalid_logic", ["and", "or", "XOR", "", "NOT"])
-def test_select_elements_by_filter_invalid_combine_with(model_objects, invalid_logic):
-    """Tests select_elements_by_filter with invalid combine_with values."""
-    result = select_elements_by_filter(
-        element_type="Wall",
-        standard_string_filters={"name": {"conditions": {"match_type": "Contains", "value": "MCP"}}},
-        combine_with=invalid_logic,
-    )
-    assert result.structured_content["status"] == "error"
-
-
-CLASS_1 = {"class": {"conditions": {"match_type": "Is Equal", "value": 1}}}
-
-
-@pytest.mark.parametrize(
-    "kwargs,status",
-    [
-        ({"element_type": "Wall", "tekla_classes": [99], "combine_with": "OR"}, "success"),
-        ({"element_type": "Wall", "tekla_classes": [99]}, "error"),
-        ({"standard_numeric_filters": CLASS_1}, "success"),
-        ({"standard_numeric_filters": CLASS_1, "tekla_classes": [1]}, "error"),
-        ({"standard_numeric_filters": CLASS_1, "element_type": "Wall"}, "error"),
-        ({"object_type": "bolt", "element_type": "Wall"}, "error"),
-        ({"object_type": "bolt", "tekla_classes": [1]}, "error"),
-        ({"object_type": "bolt", "standard_numeric_filters": CLASS_1}, "error"),
+            },
+            "nests 4 levels",
+        ),
     ],
 )
-def test_select_elements_by_filter_class_criteria(model_objects, kwargs, status):
-    """Tests how `element_type`, `tekla_classes` and the 'class' key combine."""
+def test_select_elements_by_filter_invalid_input_returns_error(kwargs, message):
+    """Tests invalid trees, object types, values, operators, fields and too deep nesting."""
     result = select_elements_by_filter(**kwargs)
-    assert result.structured_content["status"] == status
-
-
-def test_select_elements_by_filter_unresolved_custom_attribute(model_objects):
-    """Tests that only unresolvable custom attributes select nothing."""
-    result = select_elements_by_filter(custom_numeric_filters={"MCP_TEST_NO_SUCH_ATTRIBUTE": {"conditions": {"match_type": "Greater Than", "value": 1}}})
     assert result.structured_content["status"] == "error"
-    assert "MCP_TEST_NO_SUCH_ATTRIBUTE" in result.structured_content["message"]
+    assert message in result.structured_content["message"]
 
 
 def test_select_elements_by_guid(model_objects):

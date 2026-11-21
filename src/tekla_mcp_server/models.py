@@ -5,13 +5,15 @@ This module defines core data structures, enumerations, and models used in the p
 import hashlib
 import json
 import math
+from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Any, Self, Literal
+from typing import Annotated, Any, Self, Literal, TypeAlias
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StrictFloat, StrictInt, StrictStr, field_validator, field_serializer, model_validator
 from pydantic_core import PydanticCustomError
 
 from tekla_mcp_server.config import get_config
+from tekla_mcp_server.filter_fields import CATEGORIES, CATEGORY_OBJECT_TYPES, FIELDS, OPS_BY_KIND
 
 
 TYPE_MAP = {"str": str, "int": int, "float": float}
@@ -415,6 +417,245 @@ class NumericFilterOption(BaseModel):
             'AND' or 'OR'
         """
         return self.logic
+
+
+def _coerce_filter_value(value: Any, kind: str, name: str) -> str | int | float | bool:
+    """
+    Check a filter value against the field kind and convert it where that is safe.
+
+    Numbers become text for string fields and numeric text becomes a number for numeric fields.
+
+    Args:
+        value: Value given by the caller
+        kind: Field kind, 'string', 'numeric', 'boolean' or 'date'
+        name: Field or attribute name, used in error messages
+
+    Returns:
+        The value in the form the builder expects
+
+    Raises:
+        ValueError: If the value does not fit the kind
+    """
+    if kind == "boolean":
+        if not isinstance(value, bool):
+            raise ValueError(f"'{name}' takes true or false, got {value!r}")
+        return value
+    if isinstance(value, bool):
+        raise ValueError(f"'{name}' does not take true or false, got {value!r}")
+    if kind == "numeric":
+        if isinstance(value, str):
+            try:
+                value = float(value.strip()) if any(c in value for c in ".eE") else int(value.strip())
+            except ValueError as e:
+                raise ValueError(f"'{name}' takes a number, got {value!r}") from e
+        if not math.isfinite(value):
+            raise ValueError(f"'{name}' takes a finite number, got {value!r}")
+        return value
+    if kind == "date":
+        try:
+            datetime.fromisoformat(str(value))
+        except ValueError as e:
+            raise ValueError(f"'{name}' takes an ISO date such as '2026-01-31', got {value!r}") from e
+        return str(value)
+    return str(value)
+
+
+class FilterCondition(BaseModel):
+    """
+    One condition of a filter tree.
+
+    `field` names a field from `tekla://filters/fields`. `attribute` names a UDA or report property
+    of `category` instead, and its value picks the custom type: a number, true/false or text, or a
+    date when `type` is 'date'. A list value matches any of its values, or none of them for a
+    negative operator such as 'Is Not Equal'.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    field: str | None = Field(default=None, description="Field from `tekla://filters/fields`, e.g. 'part.profile'")
+    attribute: str | None = Field(default=None, description="UDA or report property name, instead of `field`")
+    category: str = Field(default="part", description="Category of `attribute`, e.g. 'part', 'assembly', 'template' for report properties")
+    op: str = Field(description="Operator, e.g. 'Is Equal', 'Contains', 'Greater Than'")
+    # Strict list items, so true/false inside a list is rejected instead of turning into 1/0
+    value: str | int | float | bool | list[StrictStr | StrictInt | StrictFloat] = Field(description="Value to compare with, or a list of values")
+    type: Literal["date"] | None = Field(default=None, description="Set to 'date' for a date `attribute`")
+
+    @property
+    def values(self) -> list[Any]:
+        """Return the value as a list, a single value giving a one-item list."""
+        return list(self.value) if isinstance(self.value, list) else [self.value]
+
+    @property
+    def kind(self) -> str:
+        """Return the value kind: 'string', 'numeric', 'boolean' or 'date'."""
+        if self.field is not None:
+            return FIELDS[self.field].kind
+        if self.type == "date":
+            return "date"
+        if isinstance(self.value, bool):
+            return "boolean"
+        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in self.values):
+            return "numeric"
+        return "string"
+
+    @model_validator(mode="after")
+    def validate_condition(self) -> Self:
+        """
+        Check the field or attribute, the operator and the value.
+
+        Returns:
+            The validated condition, with readable values lowercased and values converted to the field kind
+
+        Raises:
+            ValueError: If the condition is not valid
+        """
+        if (self.field is None) == (self.attribute is None):
+            raise ValueError("A condition needs exactly one of `field` or `attribute`")
+        if isinstance(self.value, list) and not self.value:
+            raise ValueError("A list value must contain at least one value")
+
+        if self.field is not None:
+            spec = FIELDS.get(self.field)
+            if spec is None:
+                raise ValueError(f"Unknown field '{self.field}'. Read `tekla://filters/fields` for the available fields")
+            if self.type is not None:
+                raise ValueError("`type` applies to `attribute` conditions only")
+            name, ops, kind = self.field, spec.ops, spec.kind
+        else:
+            if self.category not in CATEGORIES:
+                raise ValueError(f"Unknown category '{self.category}'. Must be one of: {sorted(CATEGORIES)}")
+            if not str(self.attribute).strip():
+                raise ValueError("`attribute` must not be empty")
+            name, ops, kind = str(self.attribute), OPS_BY_KIND[self.kind], self.kind
+
+        if isinstance(self.value, list) and kind in ("boolean", "date"):
+            raise ValueError(f"'{name}' takes a single value, not a list")
+        if self.op not in ops:
+            raise ValueError(f"Operator '{self.op}' does not apply to '{name}'. Use one of: {list(ops)}")
+
+        readable = FIELDS[self.field].values if self.field is not None else {}
+        converted: list[str | int | float] = []
+        for value in self.values:
+            if readable:
+                word = value.strip().lower() if isinstance(value, str) else None
+                if word is None or word not in readable:
+                    raise ValueError(f"Invalid value {value!r} for '{name}'. Must be one of: {sorted(readable)}")
+                converted.append(word)
+            else:
+                converted.append(_coerce_filter_value(value, kind, name))
+        self.value = converted if isinstance(self.value, list) else converted[0]
+        return self
+
+
+class FilterGroup(BaseModel):
+    """
+    Group of filter conditions and nested groups.
+
+    Exactly one of `all` (every item must match) or `any` (at least one item must match).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    all: list["FilterGroup | FilterCondition"] | None = Field(default=None, description="Items that must all match")
+    any: list["FilterGroup | FilterCondition"] | None = Field(default=None, description="Items of which at least one must match")
+
+    @model_validator(mode="after")
+    def validate_group(self) -> Self:
+        """
+        Check that exactly one non-empty list is given.
+
+        Returns:
+            The validated group
+
+        Raises:
+            ValueError: If both or neither of `all` and `any` are given, or the list is empty
+        """
+        if (self.all is None) == (self.any is None):
+            raise ValueError("A group needs exactly one of `all` or `any`")
+        if not self.items:
+            raise ValueError("A group must contain at least one item")
+        return self
+
+    @property
+    def items(self) -> list["FilterGroup | FilterCondition"]:
+        """Return the group's items."""
+        return self.all if self.all is not None else (self.any or [])
+
+    @property
+    def is_any(self) -> bool:
+        """Return True when one matching item is enough."""
+        return self.any is not None
+
+
+FilterGroup.model_rebuild()
+
+# Root of a filter tree: a group or a single condition
+FilterNode: TypeAlias = FilterGroup | FilterCondition
+
+
+def simplify_filter_tree(node: FilterNode) -> FilterNode:
+    """
+    Flatten a filter tree without changing what it matches.
+
+    Groups nested in a group of the same kind are merged into it, and groups with one item
+    are replaced by that item. Tekla allows only a few levels of brackets, so this keeps
+    trees that are deeper than needed within the limit.
+
+    Args:
+        node: Filter group or condition
+
+    Returns:
+        The simplified tree
+    """
+    if isinstance(node, FilterCondition):
+        return node
+    items: list[FilterGroup | FilterCondition] = []
+    for item in node.items:
+        simplified = simplify_filter_tree(item)
+        if isinstance(simplified, FilterGroup) and simplified.is_any == node.is_any:
+            items.extend(simplified.items)
+        else:
+            items.append(simplified)
+    if len(items) == 1:
+        return items[0]
+    return FilterGroup(any=items) if node.is_any else FilterGroup(all=items)
+
+
+def specialize_filter_tree(node: FilterNode, object_type: str) -> FilterNode | bool | None:
+    """
+    Reduce a filter tree to what it means for objects of one type.
+
+    A condition on a category tied to another object type (e.g. a bolt condition for parts)
+    does not apply and drops out of its group. An `object.type` condition becomes true or false.
+    A group whose items all drop out does not apply either.
+
+    Args:
+        node: Filter group or condition
+        object_type: Key of `OBJECT_TYPES`
+
+    Returns:
+        The reduced tree, True when every object of the type matches, False when none does,
+        or None when nothing in the tree applies to the type
+    """
+    if isinstance(node, FilterCondition):
+        if node.field == "object.type":
+            listed = object_type in node.values
+            return listed if node.op == "Is Equal" else not listed
+        category = node.field.split(".")[0] if node.field is not None else node.category
+        owner = CATEGORY_OBJECT_TYPES.get(category)
+        return None if owner is not None and owner != object_type else node
+
+    results = [r for r in (specialize_filter_tree(item, object_type) for item in node.items) if r is not None]
+    if not results:
+        return None
+    # True decides an 'any' and False decides an 'all'. The other constant is neutral and drops out
+    deciding, neutral = (True, False) if node.is_any else (False, True)
+    if any(r is deciding for r in results):
+        return deciding
+    rest = [r for r in results if not isinstance(r, bool)]
+    if not rest:
+        return neutral
+    return simplify_filter_tree(FilterGroup(any=rest) if node.is_any else FilterGroup(all=rest))
 
 
 class ElementTypes:

@@ -14,7 +14,7 @@ if not load_dlls():
     )
 
 
-from System import Type as SystemType, Array as SystemArray, Int32
+from System import Type as SystemType, Array as SystemArray, DateTime as SystemDateTime, Double as SystemDouble, Int32
 from System.Reflection import BindingFlags
 from System.Collections import ArrayList, Hashtable
 from System.Collections.Generic import Dictionary, List
@@ -30,6 +30,7 @@ from Tekla.Structures.Model import (
     Assembly,
     BaseWeld,
     Beam,
+    Weld,
     Boolean,
     BooleanPart,
     BoltArray,
@@ -76,8 +77,27 @@ from Tekla.Structures.Filtering import (
     BinaryFilterExpression,
     StringOperatorType,
     FilterExpression,
+    BooleanConstantFilterExpression,
+    BooleanOperatorType,
+    DateTimeConstantFilterExpression,
+    DateTimeOperatorType,
 )
-from Tekla.Structures.Filtering.Categories import BoltFilterExpressions, PartFilterExpressions, ObjectFilterExpressions, TemplateFilterExpressions
+from Tekla.Structures.Filtering.Categories import (
+    AssemblyFilterExpressions,
+    BoltFilterExpressions,
+    ComponentFilterExpressions,
+    LogicalAreaFilterExpressions,
+    ObjectFilterExpressions,
+    PartFilterExpressions,
+    PourBreakFilterExpressions,
+    PourObjectFilterExpressions,
+    PourUnitFilterExpressions,
+    ReferenceObjectFilterExpressions,
+    ReinforcingBarFilterExpressions,
+    SurfaceFilterExpressions,
+    TemplateFilterExpressions,
+    WeldFilterExpressions,
+)
 from Tekla.Structures.Catalogs import BoltItem, CatalogHandler, MaterialItem, MaterialItemEnumerator, ProfileItem, ProfileItemEnumerator, RebarItem
 from Tekla.Structures.Drawing import (
     Drawing,
@@ -136,6 +156,8 @@ from Tekla.Structures.Drawing import (
 # Export everything
 __all__ = [
     "SystemType",
+    "SystemDateTime",
+    "SystemDouble",
     "SystemArray",
     "Int32",
     "BindingFlags",
@@ -160,6 +182,7 @@ __all__ = [
     "ModelObjectSelector",
     "Assembly",
     "BaseWeld",
+    "Weld",
     "Beam",
     "Boolean",
     "BooleanPart",
@@ -206,10 +229,24 @@ __all__ = [
     "BinaryFilterExpression",
     "StringOperatorType",
     "FilterExpression",
+    "BooleanConstantFilterExpression",
+    "BooleanOperatorType",
+    "DateTimeConstantFilterExpression",
+    "DateTimeOperatorType",
+    "AssemblyFilterExpressions",
     "BoltFilterExpressions",
-    "PartFilterExpressions",
+    "ComponentFilterExpressions",
+    "LogicalAreaFilterExpressions",
     "ObjectFilterExpressions",
+    "PartFilterExpressions",
+    "PourBreakFilterExpressions",
+    "PourObjectFilterExpressions",
+    "PourUnitFilterExpressions",
+    "ReferenceObjectFilterExpressions",
+    "ReinforcingBarFilterExpressions",
+    "SurfaceFilterExpressions",
     "TemplateFilterExpressions",
+    "WeldFilterExpressions",
     "BoltItem",
     "CatalogHandler",
     "MaterialItem",

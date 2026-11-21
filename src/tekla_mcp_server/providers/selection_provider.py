@@ -4,24 +4,25 @@ Selection tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Annotated, Any, Literal
+from typing import Annotated
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
-from pydantic import Field
+from pydantic import Field, TypeAdapter
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import ElementType, NumericFilterOption, SelectionMode
+from tekla_mcp_server.models import ElementType, FilterCondition, FilterGroup, FilterNode, SelectionMode
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.filter_builder import build_filter_expression
 from tekla_mcp_server.tekla.loader import ArrayList
-from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
 
 
 selection_provider = LocalProvider()
+
+_FILTER_ADAPTER: TypeAdapter[FilterNode] = TypeAdapter(FilterNode)
 
 
 def _resolve_element_type_classes(element_type: str) -> list[int]:
@@ -51,206 +52,110 @@ def _resolve_element_type_classes(element_type: str) -> list[int]:
     return element_type_classes
 
 
-def _resolve_class_criteria(element_type: str | None, tekla_classes: list[int], combine_with: str) -> list[int]:
+def _expand_element_type(condition: FilterCondition) -> FilterCondition:
     """
-    Merge `element_type` and `tekla_classes` into one list of Tekla class numbers.
-
-    They used to be two separate filter groups, so the merge follows `combine_with`. AND keeps
-    the classes in both lists, OR keeps the classes in either.
+    Replace a `part.element_type` condition with one condition on its class numbers.
 
     Args:
-        element_type: Named element type, or None
-        tekla_classes: Tekla class numbers, may be empty
-        combine_with: How the filter groups are combined, 'AND' or 'OR'
+        condition: Condition on 'part.element_type' with 'Is Equal' or 'Is Not Equal', one type or a list
 
     Returns:
-        Class numbers without duplicates, empty when neither criterion is given
+        'part.class' condition with the same operator and the classes of all the types as a list
 
     Raises:
-        ValueError: If the element type has no configured classes, or AND leaves no class
+        ValueError: If an element type is unknown or has no configured classes
     """
-    class_lists: list[list[int]] = []
-    if element_type:
-        element_type_classes = _resolve_element_type_classes(element_type)
-        if not element_type_classes:
+    classes: list[str | int | float] = []
+    for element_type in condition.values:
+        type_classes = _resolve_element_type_classes(str(element_type))
+        if not type_classes:
             raise ValueError(f"Element type '{element_type}' has no Tekla classes configured.")
-        class_lists.append(element_type_classes)
-    if tekla_classes:
-        class_lists.append(tekla_classes)
-
-    if len(class_lists) < 2:
-        return list(dict.fromkeys(class_lists[0])) if class_lists else []
-
-    first, second = class_lists
-    if combine_with == "AND":
-        merged = [cls for cls in dict.fromkeys(first) if cls in second]
-        if not merged:
-            raise ValueError(f"`element_type` classes {first} and `tekla_classes` {second} have no class in common, so combining them with AND matches nothing.")
-        return merged
-    return list(dict.fromkeys(first + second))
+        classes.extend(type_classes)
+    return FilterCondition(field="part.class", op=condition.op, value=list(dict.fromkeys(classes)))
 
 
-def _class_filter_option(tekla_classes: list[int]) -> NumericFilterOption:
+def _prepare_tree(node: FilterNode) -> FilterNode:
     """
-    Build a 'class' filter option matching any of the given Tekla classes.
+    Expand element type conditions in a tree.
 
     Args:
-        tekla_classes: Tekla class numbers, at least one
+        node: Validated filter group or condition
 
     Returns:
-        Filter option with one 'Is Equal' condition per class, joined by OR
+        A new tree ready for `build_filter_expression`
     """
-    return NumericFilterOption.model_validate({"conditions": [{"match_type": "Is Equal", "value": cls} for cls in tekla_classes], "logic": "OR"})
-
-
-def _resolve_custom_filters(custom_filters: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """
-    Replace custom attribute names given by the caller with the Tekla attribute names.
-
-    Args:
-        custom_filters: Attribute names as given by the caller to filter options
-
-    Returns:
-        Tuple of the filters keyed by Tekla attribute name, without the names that failed, and the resolution errors
-    """
-    if not custom_filters:
-        return {}, []
-    queries = list(custom_filters.keys())
-    resolution = TemplateAttributeParser.resolve_attributes(queries)
-    errors = resolution.get("errors", [])
-    # `resolved` holds only the names that resolved, in the order their queries
-    # succeeded. Align them to the non-failed queries - a positional zip against
-    # all queries would shift names onto the wrong attributes once one query fails
-    failed_queries = {e["query"] for e in errors}
-    successful_queries = [q for q in queries if q not in failed_queries]
-    resolved_map = dict(zip(successful_queries, resolution["resolved"]))
-    return {resolved_map[q]: custom_filters[q] for q in successful_queries if resolved_map.get(q)}, errors
+    if isinstance(node, FilterGroup):
+        items = [_prepare_tree(item) for item in node.items]
+        return FilterGroup(any=items) if node.is_any else FilterGroup(all=items)
+    if node.field == "part.element_type":
+        return _expand_element_type(node)
+    return node
 
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def select_elements_by_filter(
-    element_type: Annotated[str | None, Field(description="Named element type (e.g. 'Wall', 'Steel Beam')")] = None,
-    tekla_classes: Annotated[list[int], Field(description="Tekla class numbers")] = [],
-    standard_string_filters: Annotated[dict[str, Any], Field(description="Dict of standard string properties to filter options")] = {},
-    standard_numeric_filters: Annotated[dict[str, Any], Field(description="Dict of standard numeric properties to filter options")] = {},
-    custom_string_filters: Annotated[dict[str, Any], Field(description="Dict of custom attribute names to StringFilterOption")] = {},
-    custom_numeric_filters: Annotated[dict[str, Any], Field(description="Dict of custom property names to NumericFilterOption")] = {},
-    combine_with: Annotated[str, Field(description="How to combine filter groups: 'AND' or 'OR'")] = "AND",
-    object_type: Annotated[
-        Literal["part", "bolt"],
-        Field(
-            description="Object type to select. 'bolt' accepts only `standard_string_filters` keys 'bolt_standard' and 'bolt_type' ('site' or 'workshop') and `standard_numeric_filters` keys 'bolt_size', 'bolt_length', 'phase'"
-        ),
-    ] = "part",
+    filter: Annotated[
+        FilterGroup | FilterCondition,
+        Field(description="Filter tree: a group with 'all' or 'any' (groups nest), or a single condition. Fields and object types are listed in `tekla://filters/fields`"),
+    ],
+    object_types: Annotated[list[str], Field(description="Object types to select, e.g. ['part'] or ['part', 'bolt']")] = ["part"],
 ) -> ToolResult:
     """
-    Selects elements in the Tekla model using standard properties, custom attributes and numeric ranges.
+    Selects model objects matching a filter tree.
 
-    Parts are selected by default. Set `object_type` to 'bolt' to select bolt groups instead.
-    `element_type`, `tekla_classes` and the `standard_numeric_filters` key 'class' apply to parts only. Tekla cannot filter bolts by cut length, extra length
-    or tolerance. To find bolts by those, read them with `get_elements_properties` and select the matching GUIDs
-    with `select_elements_by_guid`.
+    A condition uses either `field` (e.g. 'part.profile', 'assembly.prefix', 'bolt.size') or `attribute` (a UDA
+    of `category`, or a report property such as 'MAINPART.CLASS_ATTR' with category 'template'). A list value
+    matches any of its values, or none of them for a negative operator. A condition on a category tied to one
+    object type, such as 'part' or 'bolt', is ignored for the other object types: 'all' groups skip it and
+    'any' groups do not match through it. So with several `object_types`, a type without conditions of its
+    own is selected whole. 'object.type' conditions make groups depend on the type. Assembly conditions
+    also apply to the parts of the assembly. 'part.element_type' takes element type names such as 'Wall'
+    and matches their Tekla classes. Fields with readable values (e.g. 'bolt.site_workshop': 'site' or
+    'workshop') accept only 'Is Equal' and 'Is Not Equal'. Text values may use Tekla wildcards '*' and '?'. Numeric fields take numbers only, so use a list or a range instead of a wildcard.
+    Attribute names are used exactly as given and are case-sensitive, so read them first, e.g. with
+    `get_elements_properties`. Tekla allows at most 3 levels of brackets, so prefer list values over
+    'any' groups of single values.
 
     ### EXAMPLES
-    # NAME = "Wall" OR PHASE = "2"
-    {
-        "standard_string_filters": {
-            "name": {"conditions": {"match_type": "Is Equal", "value": "Wall"}},
-            "phase": {"conditions": {"match_type": "Is Equal", "value": "2"}}
-        },
-        "combine_with": "OR"
-    }
+    # Walls with a profile starting with '200'
+    {"filter": {"all": [
+        {"field": "part.element_type", "op": "Is Equal", "value": "Wall"},
+        {"field": "part.profile", "op": "Starts With", "value": "200"}
+    ]}}
 
-    # element_type = Wall AND (name = "beam" OR profile = "200*600")
-    {
-        "element_type": "Wall",
-        "standard_string_filters": {
-            "name": {"conditions": {"match_type": "Is Equal", "value": "beam"}},
-            "profile": {"conditions": {"match_type": "Is Equal", "value": "200*600"}}
-        },
-        "combine_with": "OR"
-    }
+    # Parts in phase 2 whose assembly prefix is 'SB' or whose HEIGHT report property is over 2000
+    {"filter": {"all": [
+        {"field": "part.phase", "op": "Is Equal", "value": 2},
+        {"any": [
+            {"field": "assembly.prefix", "op": "Is Equal", "value": "SB"},
+            {"attribute": "HEIGHT", "category": "template", "op": "Greater Than", "value": 2000}
+        ]}
+    ]}}
 
-    # Elements in class 1 (Wall) with name ending in "1601"
-    {
-        "tekla_classes": [1],
-        "standard_string_filters": {
-            "name": {"conditions": {"match_type": "Ends With", "value": "1601"}}
-        }
-    }
+    # Assemblies whose main part class is 18, 23 or 31 (report property)
+    {"object_types": ["assembly"], "filter":
+        {"attribute": "MAINPART.CLASS_ATTR", "category": "template", "op": "Is Equal", "value": [18, 23, 31]}}
 
-    # Elements in class 1 (Wall) with height > 2m
-    {
-        "tekla_classes": [1],
-        "custom_numeric_filters": {
-            "HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000}}
-        }
-    }
-
-    # Combined: prefix starts with SB AND part_start_number > 50
-    {
-        "standard_string_filters": {
-            "part_prefix": {"conditions": {"match_type": "Starts With", "value": "SB"}}
-        },
-        "standard_numeric_filters": {
-            "part_start_number": {"conditions": {"match_type": "Greater Than", "value": 50}}
-        },
-        "combine_with": "AND"
-    }
-
-    # Bolts of standard '7990' with diameter 16
-    {
-        "object_type": "bolt",
-        "standard_string_filters": {
-            "bolt_standard": {"conditions": {"match_type": "Is Equal", "value": "7990"}}
-        },
-        "standard_numeric_filters": {
-            "bolt_size": {"conditions": {"match_type": "Is Equal", "value": 16}}
-        }
-    }
-
-    At least one filter must be provided.
+    # Site bolts of diameter 16
+    {"object_types": ["bolt"], "filter": {"all": [
+        {"field": "bolt.site_workshop", "op": "Is Equal", "value": "site"},
+        {"field": "bolt.size", "op": "Is Equal", "value": 16}
+    ]}}
     """
-    if object_type != "part" and (element_type or tekla_classes):
-        raise ValueError("`element_type` and `tekla_classes` apply to parts only. Remove them or set `object_type` to 'part'.")
-
-    # `element_type` and `tekla_classes` become the 'class' filter
-    standard_numeric_filters = dict(standard_numeric_filters)
-    class_numbers = _resolve_class_criteria(element_type, tekla_classes, combine_with)
-    if class_numbers:
-        if "class" in standard_numeric_filters:
-            raise ValueError("Use either the 'class' key in `standard_numeric_filters` or `element_type` and `tekla_classes`, not both.")
-        standard_numeric_filters["class"] = _class_filter_option(class_numbers)
-
-    resolved_string_filters, string_resolution_errors = _resolve_custom_filters(custom_string_filters)
-    resolved_numeric_filters, numeric_resolution_errors = _resolve_custom_filters(custom_numeric_filters)
-    if (custom_string_filters or custom_numeric_filters) and not any((standard_string_filters, standard_numeric_filters, resolved_string_filters, resolved_numeric_filters)):
-        failed = [e.get("query") for e in (string_resolution_errors + numeric_resolution_errors)]
-        raise ValueError(f"No usable filter conditions were produced - nothing was selected to avoid selecting the entire model. Unresolved custom attributes: {failed}.")
-
-    expression = build_filter_expression(
-        object_type=object_type,
-        standard_string_filters=standard_string_filters,
-        standard_numeric_filters=standard_numeric_filters,
-        custom_string_filters=resolved_string_filters,
-        custom_numeric_filters=resolved_numeric_filters,
-        combine_with=combine_with,
-    )
+    tree = _FILTER_ADAPTER.validate_python(filter)
+    expression = build_filter_expression(_prepare_tree(tree), object_types)
 
     model = TeklaModel()
     objects_to_select = model.get_objects_by_filter(expression)
     TeklaModel.select_objects(objects_to_select)
 
     count = objects_to_select.GetSize()
-    has_resolution_errors = bool(string_resolution_errors or numeric_resolution_errors)
-
+    logger.info("Selected %s objects by filter", count)
     return ToolResult(
         structured_content={
-            "status": "partial" if has_resolution_errors else ("success" if count else "warning"),
+            "status": "success" if count else "warning",
             "selected_count": count,
-            "string_resolution_errors": string_resolution_errors,
-            "numeric_resolution_errors": numeric_resolution_errors,
         }
     )
 

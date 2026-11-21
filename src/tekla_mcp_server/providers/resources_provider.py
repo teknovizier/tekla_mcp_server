@@ -10,6 +10,7 @@ from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers import LocalProvider
 
 from tekla_mcp_server.config import get_config
+from tekla_mcp_server.filter_fields import CATEGORIES, FIELDS, OBJECT_TYPES, OPS_BY_KIND
 from tekla_mcp_server.init import logger
 from tekla_mcp_server.tekla.loader import Grid
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -126,6 +127,27 @@ def get_view_filter_list() -> ResourceResult:
     filters = get_available_attribute_files(".VObjGrp") + ["standard"]
     logger.debug("Retrieved %d view filters", len(filters))
     return json_resource(filters)
+
+
+@resources_provider.resource("tekla://filters/fields")
+@mcp_handler(scope="resource")
+def get_filter_fields() -> ResourceResult:
+    """
+    Returns the fields, attribute categories, operators and object types for filter trees.
+
+    Conditions on a category tied to one object type (e.g. 'part', 'bolt') match only that type.
+    Fields with `values` accept only those words and the operators 'Is Equal' and 'Is Not Equal'.
+    """
+    data = {
+        "fields": {
+            name: {"kind": spec.kind, "operators": list(spec.ops), "description": spec.description, **({"values": sorted(spec.values)} if spec.values else {})} for name, spec in FIELDS.items()
+        },
+        "attribute_categories": sorted(CATEGORIES),
+        "operators_by_kind": {kind: list(ops) for kind, ops in OPS_BY_KIND.items()},
+        "object_types": sorted(OBJECT_TYPES),
+    }
+    logger.debug("Retrieved %d filter fields", len(FIELDS))
+    return json_resource(data)
 
 
 @resources_provider.resource("tekla://phases")

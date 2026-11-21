@@ -80,6 +80,7 @@ Resources provide discovery/metadata, not actions:
 | `tekla://reference_models` | List reference models |
 | `tekla://filters/selection` | List available selection filters |
 | `tekla://filters/view` | List available view filters |
+| `tekla://filters/fields` | Fields, categories and object types for filter trees |
 | `tekla://connection_status` | Connection status |
 | `tekla://catalog/materials` | All available material names from the Tekla material catalog |
 | `tekla://catalog/rebars` | All available rebar grades and sizes from the Tekla rebar catalog |
@@ -96,6 +97,7 @@ tekla_mcp_server/
 │   ├── drawing_export.py                # Export and print settings XML patching
 │   ├── dxf_operations.py                # DXF entity resolution and drawing collision checks
 │   ├── embeddings.py                    # Semantic attribute resolution
+│   ├── filter_fields.py                 # Filter tree field catalog
 │   ├── geometry.py                      # Pure 2D and 3D geometry (BBox, Segment, OrientedBox)
 │   ├── init.py                          # Logger and DLL loading
 │   ├── mcp_server.py                    # Main server entrypoint

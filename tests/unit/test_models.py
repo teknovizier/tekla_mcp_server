@@ -13,6 +13,8 @@ from pydantic_core import ValidationError
 from tekla_mcp_server.models import (
     ElementType,
     ElementTypes,
+    FilterCondition,
+    FilterGroup,
     BaseComponent,
     ReportProperty,
     PartSnapshot,
@@ -24,6 +26,8 @@ from tekla_mcp_server.models import (
     PointInput,
     PositionInput,
     _coerce_custom_property,
+    simplify_filter_tree,
+    specialize_filter_tree,
 )
 
 
@@ -977,3 +981,212 @@ def test_placement_inputs_reject_non_finite(model, fields, field, bad):
     """Coordinates and offsets reject NaN and infinity, which would corrupt the placed geometry."""
     with pytest.raises(ValidationError):
         model(**{**fields, field: bad})
+
+
+class TestFilterCondition:
+    def test_field_condition(self):
+        condition = FilterCondition(field="part.profile", op="Starts With", value="HEA")
+        assert (condition.kind, condition.value) == ("string", "HEA")
+
+    def test_attribute_defaults_to_part_category(self):
+        assert FilterCondition(attribute="HEIGHT", op="Greater Than", value=2000).category == "part"
+
+    @pytest.mark.parametrize("value,extra,kind", [(1, {}, "numeric"), (1.5, {}, "numeric"), (True, {}, "boolean"), ("x", {}, "string"), ("2026-01-31", {"type": "date"}, "date")])
+    def test_attribute_kind_follows_value(self, value, extra, kind):
+        op = "Is Equal"
+        assert FilterCondition(attribute="A", op=op, value=value, **extra).kind == kind
+
+    def test_number_becomes_text_for_string_field(self):
+        assert FilterCondition(field="part.position_number", op="Is Equal", value=7).value == "7"
+
+    @pytest.mark.parametrize("value,expected", [("5", 5), ("2.5", 2.5), (" 12 ", 12)])
+    def test_numeric_text_becomes_number(self, value, expected):
+        assert FilterCondition(field="part.class", op="Is Equal", value=value).value == expected
+
+    def test_readable_value_is_lowercased(self):
+        assert FilterCondition(field="bolt.site_workshop", op="Is Equal", value=" Site ").value == "site"
+
+    @pytest.mark.parametrize(
+        "data,message",
+        [
+            ({"op": "Is Equal", "value": 1}, "exactly one of `field` or `attribute`"),
+            ({"field": "part.name", "attribute": "A", "op": "Is Equal", "value": "x"}, "exactly one of `field` or `attribute`"),
+            ({"field": "part.nope", "op": "Is Equal", "value": 1}, "Unknown field 'part.nope'"),
+            ({"attribute": "A", "category": "beam", "op": "Is Equal", "value": 1}, "Unknown category 'beam'"),
+            ({"attribute": "  ", "op": "Is Equal", "value": 1}, "must not be empty"),
+            ({"field": "part.class", "op": "Contains", "value": 1}, "does not apply to 'part.class'"),
+            ({"field": "part.name", "op": "Greater Than", "value": "A"}, "does not apply to 'part.name'"),
+            ({"field": "bolt.site_workshop", "op": "Contains", "value": "site"}, "does not apply"),
+            ({"field": "bolt.site_workshop", "op": "Is Equal", "value": "factory"}, "Must be one of"),
+            ({"field": "weld.type_above", "op": "Is Equal", "value": 10}, "Must be one of"),
+            ({"field": "part.element_type", "op": "Starts With", "value": "Wall"}, "does not apply"),
+            ({"field": "part.class", "op": "Is Equal", "value": "abc"}, "takes a number"),
+            ({"field": "part.class", "op": "Is Equal", "value": True}, "does not take true or false"),
+            ({"field": "part.class", "op": "Is Equal", "value": float("inf")}, "finite number"),
+            ({"field": "part.name", "op": "Is Equal", "value": False}, "does not take true or false"),
+            ({"attribute": "A", "op": "Is Equal", "value": "31.01.2026", "type": "date"}, "ISO date"),
+            ({"field": "part.name", "op": "Is Equal", "value": "x", "type": "date"}, "applies to `attribute` conditions only"),
+            ({"attribute": "A", "op": "Contains", "value": True}, "does not apply to 'A'"),
+            ({"attribute": "A", "op": "Is Equal", "value": 1, "unexpected": 1}, "Extra inputs"),
+        ],
+    )
+    def test_invalid_conditions(self, data, message):
+        with pytest.raises(ValidationError, match=message):
+            FilterCondition.model_validate(data)
+
+
+class TestFilterGroup:
+    def test_nested_groups(self):
+        group = FilterGroup.model_validate({"all": [{"field": "part.name", "op": "Is Equal", "value": "A"}, {"any": [{"all": [{"field": "part.class", "op": "Is Equal", "value": 1}]}]}]})
+        assert not group.is_any
+        inner = group.items[1]
+        assert isinstance(inner, FilterGroup) and inner.is_any
+        assert isinstance(inner.items[0], FilterGroup)
+
+    def test_items_are_parsed_as_conditions(self):
+        group = FilterGroup.model_validate({"any": [{"attribute": "A", "op": "Is Equal", "value": 1}]})
+        assert isinstance(group.items[0], FilterCondition)
+
+    @pytest.mark.parametrize(
+        "data,message",
+        [
+            ({}, "exactly one of `all` or `any`"),
+            ({"all": [], "any": []}, "exactly one of `all` or `any`"),
+            ({"all": []}, "at least one item"),
+            ({"any": [{"field": "part.nope", "op": "Is Equal", "value": 1}]}, "Unknown field"),
+            ({"all": [{"all": []}]}, "at least one item"),
+            ({"or": [{"field": "part.name", "op": "Is Equal", "value": "A"}]}, "Extra inputs"),
+        ],
+    )
+    def test_invalid_groups(self, data, message):
+        with pytest.raises(ValidationError, match=message):
+            FilterGroup.model_validate(data)
+
+
+def _leaf(value: str) -> dict:
+    """Build a part name condition dict."""
+    return {"field": "part.name", "op": "Is Equal", "value": value}
+
+
+def _shape(node) -> object:
+    """Describe a filter tree as nested tuples of 'all'/'any' and leaf values."""
+    if isinstance(node, FilterCondition):
+        return node.value
+    return ("any" if node.is_any else "all", [_shape(item) for item in node.items])
+
+
+class TestSimplifyFilterTree:
+    def test_condition_is_returned_as_is(self):
+        condition = FilterCondition.model_validate(_leaf("A"))
+        assert simplify_filter_tree(condition) is condition
+
+    def test_single_item_group_is_unwrapped(self):
+        assert _shape(simplify_filter_tree(FilterGroup.model_validate({"any": [_leaf("A")]}))) == "A"
+
+    def test_same_kind_groups_are_merged(self):
+        tree = FilterGroup.model_validate({"all": [_leaf("A"), {"all": [_leaf("B"), {"all": [_leaf("C")]}]}]})
+        assert _shape(simplify_filter_tree(tree)) == ("all", ["A", "B", "C"])
+
+    def test_different_kinds_stay_nested(self):
+        tree = FilterGroup.model_validate({"all": [_leaf("A"), {"any": [_leaf("B"), _leaf("C")]}]})
+        assert _shape(simplify_filter_tree(tree)) == ("all", ["A", ("any", ["B", "C"])])
+
+    def test_unwrapping_can_enable_a_merge(self):
+        tree = FilterGroup.model_validate({"any": [_leaf("A"), {"all": [{"any": [_leaf("B"), _leaf("C")]}]}]})
+        assert _shape(simplify_filter_tree(tree)) == ("any", ["A", "B", "C"])
+
+
+class TestFilterConditionLists:
+    def test_numeric_list_items_are_converted(self):
+        assert FilterCondition(field="part.class", op="Is Equal", value=["1", 8, "2.5"]).value == [1, 8, 2.5]
+
+    def test_readable_list_is_lowercased(self):
+        assert FilterCondition(field="bolt.site_workshop", op="Is Not Equal", value=["Site", " WORKSHOP"]).value == ["site", "workshop"]
+
+    def test_attribute_list_kind(self):
+        assert FilterCondition(attribute="A", op="Is Equal", value=[1, 2.5]).kind == "numeric"
+        assert FilterCondition(attribute="A", op="Is Equal", value=[1, "x"]).kind == "string"
+
+    def test_values_property(self):
+        assert FilterCondition(field="part.name", op="Is Equal", value="A").values == ["A"]
+
+    @pytest.mark.parametrize(
+        "data,message",
+        [
+            ({"field": "part.class", "op": "Is Equal", "value": []}, "at least one value"),
+            ({"field": "part.class", "op": "Is Equal", "value": [1, "x"]}, "takes a number"),
+            ({"field": "bolt.site_workshop", "op": "Is Equal", "value": ["site", "factory"]}, "Must be one of"),
+            ({"attribute": "A", "op": "Is Equal", "value": ["2026-01-31"], "type": "date"}, "single value, not a list"),
+            ({"field": "part.class", "op": "Is Equal", "value": [1, True]}, "Input should be"),
+        ],
+    )
+    def test_invalid_lists(self, data, message):
+        with pytest.raises(ValidationError, match=message):
+            FilterCondition.model_validate(data)
+
+
+def _spec(node: dict, object_type: str):
+    """Specialize a dict tree for one object type and describe the result."""
+    tree = FilterGroup.model_validate(node) if "all" in node or "any" in node else FilterCondition.model_validate(node)
+    result = specialize_filter_tree(tree, object_type)
+    return result if result is None or isinstance(result, bool) else _shape(result)
+
+
+PART_A = {"field": "part.name", "op": "Is Equal", "value": "A"}
+BOLT_16 = {"field": "bolt.size", "op": "Is Equal", "value": 16}
+ASM_B = {"field": "assembly.prefix", "op": "Is Equal", "value": "B"}
+
+
+class TestSpecializeFilterTree:
+    def test_own_category_condition_is_kept(self):
+        assert _spec(PART_A, "part") == "A"
+
+    def test_other_category_condition_does_not_apply(self):
+        assert _spec(PART_A, "bolt") is None
+
+    @pytest.mark.parametrize("node", [ASM_B, {"field": "object.phase", "op": "Is Equal", "value": 1}, {"attribute": "X", "category": "template", "op": "Is Equal", "value": 1}])
+    def test_cross_type_conditions_apply_to_every_type(self, node):
+        assert _spec(node, "bolt") is not None
+
+    def test_drops_out_of_all(self):
+        assert _spec({"all": [PART_A, BOLT_16]}, "part") == "A"
+
+    def test_drops_out_of_any(self):
+        assert _spec({"any": [PART_A, BOLT_16]}, "bolt") == 16
+
+    def test_group_of_other_conditions_does_not_apply(self):
+        assert _spec({"any": [PART_A, {"all": [PART_A]}]}, "bolt") is None
+
+    @pytest.mark.parametrize("op,object_type,expected", [("Is Equal", "weld", True), ("Is Equal", "part", False), ("Is Not Equal", "weld", False), ("Is Not Equal", "part", True)])
+    def test_object_type_condition_is_decided(self, op, object_type, expected):
+        assert _spec({"field": "object.type", "op": op, "value": "weld"}, object_type) is expected
+
+    def test_object_type_list(self):
+        assert _spec({"field": "object.type", "op": "Is Equal", "value": ["weld", "bolt"]}, "bolt") is True
+
+    def test_true_decides_any(self):
+        assert _spec({"any": [{"field": "object.type", "op": "Is Equal", "value": "weld"}, ASM_B]}, "weld") is True
+
+    def test_false_drops_out_of_any(self):
+        assert _spec({"any": [{"field": "object.type", "op": "Is Equal", "value": "weld"}, ASM_B]}, "part") == "B"
+
+    def test_false_decides_all(self):
+        assert _spec({"all": [{"field": "object.type", "op": "Is Equal", "value": "weld"}, ASM_B]}, "part") is False
+
+    def test_true_drops_out_of_all(self):
+        assert _spec({"all": [{"field": "object.type", "op": "Is Equal", "value": "weld"}, ASM_B]}, "weld") == "B"
+
+    def test_all_true_items_give_true(self):
+        assert _spec({"all": [{"field": "object.type", "op": "Is Equal", "value": "weld"}, BOLT_16]}, "weld") is True
+
+    def test_all_false_items_give_false(self):
+        assert _spec({"any": [{"field": "object.type", "op": "Is Equal", "value": "weld"}, BOLT_16]}, "part") is False
+
+    def test_result_is_simplified(self):
+        node = {"all": [ASM_B, {"any": [PART_A, BOLT_16]}]}
+        assert _spec(node, "part") == ("all", ["B", "A"])
+
+    def test_nested_mixed_tree(self):
+        node = {"any": [{"all": [PART_A, ASM_B]}, {"all": [BOLT_16, {"field": "object.type", "op": "Is Equal", "value": "bolt"}]}]}
+        assert _spec(node, "part") == ("all", ["A", "B"])
+        assert _spec(node, "bolt") == ("any", ["B", 16])

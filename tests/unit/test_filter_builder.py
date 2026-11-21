@@ -16,20 +16,18 @@ from pydantic import ValidationError
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_mcp_server.models import NumericFilterOption, NumericMatchType, StringFilterOption, StringMatchType
+from tekla_mcp_server.filter_fields import OBJECT_TYPES
+from tekla_mcp_server.models import FilterCondition, FilterGroup, NumericFilterOption, NumericMatchType, StringFilterOption, StringMatchType
 from tekla_mcp_server.tekla.filter_builder import (
     NUMERIC_MATCH_TYPE_MAPPING,
     STRING_MATCH_TYPE_MAPPING,
     _parse_numeric_string,
-    _to_bolt_type_filter,
     add_filter,
     build_filter_expression,
-    build_filter_group,
     to_filter_option,
 )
 from tekla_mcp_server.tekla.loader import (
     BinaryFilterExpressionCollection,
-    BinaryFilterExpressionItem,
     BinaryFilterOperatorType,
     NumericOperatorType,
     ObjectFilterExpressions,
@@ -39,6 +37,13 @@ from tekla_mcp_server.tekla.loader import (
 
 # The loader import has initialized pythonnet, so the System namespace is importable now
 from System.Reflection import BindingFlags  # noqa: E402
+
+_CONSTANT_KINDS = {
+    "StringConstantFilterExpression": "string",
+    "NumericConstantFilterExpression": "numeric",
+    "BooleanConstantFilterExpression": "boolean",
+    "DateTimeConstantFilterExpression": "date",
+}
 
 _ALL_MEMBERS = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
 
@@ -79,7 +84,7 @@ def _describe(collection: Any) -> list[dict[str, Any]]:
             entry.update(
                 left=_get(_get(expression, "Left"), "Value"),
                 op=str(_get(expression, "Operator")),
-                kind="string" if right.GetType().Name == "StringConstantFilterExpression" else "numeric",
+                kind=_CONSTANT_KINDS[right.GetType().Name],
                 value=_get(right, "Value"),
             )
         result.append(entry)
@@ -222,212 +227,373 @@ class TestAddFilterCollection:
         ]
 
 
-class TestBuildFilterGroup:
-    def test_single_string_condition(self):
-        option = StringFilterOption(conditions={"match_type": "Starts With", "value": "MCP_"})
-        group = build_filter_group(PartFilterExpressions.Name(), option)
-        assert _describe(group) == [{"join": "BOOLEAN_OR", "left": "Part.Name", "op": "STARTS_WITH", "kind": "string", "value": "MCP_"}]
+PART_TYPE = str(int(TeklaStructuresDatabaseTypeEnum.PART))
+BOLT_TYPE = str(int(TeklaStructuresDatabaseTypeEnum.BOLT))
+REBAR_TYPE = str(int(TeklaStructuresDatabaseTypeEnum.REBAR))
 
-    @pytest.mark.parametrize("logic,join", [("OR", "BOOLEAN_OR"), ("AND", "BOOLEAN_AND")])
-    def test_conditions_joined_by_logic(self, logic, join):
-        option = StringFilterOption(
-            conditions=[{"match_type": "Is Equal", "value": "A"}, {"match_type": "Ends With", "value": "1601"}],
-            logic=logic,
-        )
-        group = build_filter_group(PartFilterExpressions.Name(), option)
-        assert [(i["op"], i["value"], i["join"]) for i in _describe(group)] == [("IS_EQUAL", "A", join), ("ENDS_WITH", "1601", join)]
 
-    def test_numeric_string_value_stays_string_in_string_group(self):
-        """A string option with a numeric-looking value must build a string expression."""
-        option = StringFilterOption(conditions={"match_type": "Is Equal", "value": "2"})
-        item = _single(build_filter_group(PartFilterExpressions.Name(), option))
-        assert (item["kind"], item["value"]) == ("string", "2")
+def _tree(node: dict[str, Any]) -> FilterGroup | FilterCondition:
+    """
+    Validate a plain dict as a filter group or condition.
 
-    def test_numeric_group(self):
-        option = NumericFilterOption(
-            conditions=[{"match_type": "Greater Or Equal", "value": 10}, {"match_type": "Smaller Than", "value": 20.5}],
-        )
-        group = build_filter_group(PartFilterExpressions.Class(), option, is_numeric=True)
-        assert [(i["op"], i["kind"], i["value"], i["join"]) for i in _describe(group)] == [
-            ("GREATER_OR_EQUAL", "numeric", "10", "BOOLEAN_AND"),
-            ("SMALLER_THAN", "numeric", "20.5", "BOOLEAN_AND"),
+    Args:
+        node: Group dict with 'all' or 'any', or a condition dict
+
+    Returns:
+        The validated model
+    """
+    return FilterGroup.model_validate(node) if "all" in node or "any" in node else FilterCondition.model_validate(node)
+
+
+def _expression(node: dict[str, Any], object_types: list[str] | None = None) -> Any:
+    """
+    Build a tree into a Tekla expression.
+
+    Args:
+        node: Filter tree as a plain dict
+        object_types: Object types, 'part' when omitted
+
+    Returns:
+        The built `BinaryFilterExpressionCollection`
+    """
+    return build_filter_expression(_tree(node), object_types or ["part"])
+
+
+def _build(node: dict[str, Any], object_types: list[str] | None = None) -> list[dict[str, Any]]:
+    """
+    Build a tree and describe the result.
+
+    Args:
+        node: Filter tree as a plain dict
+        object_types: Object types, 'part' when omitted
+
+    Returns:
+        `_describe` output of the built expression
+    """
+    return _describe(_expression(node, object_types))
+
+
+def _properties(expression: Any) -> list[str]:
+    """
+    Return the values of an expression's non-public `Properties` dictionary.
+
+    Args:
+        expression: Left-hand side filter expression
+
+    Returns:
+        The stored values as strings, e.g. a custom attribute name
+    """
+    return [str(v) for v in _get(expression, "Properties").Values]
+
+
+def _cond(field: str, op: str, value: Any) -> dict[str, Any]:
+    """
+    Build a condition dict.
+
+    Args:
+        field: Catalog field name
+        op: Operator
+        value: Value
+
+    Returns:
+        Condition dict
+    """
+    return {"field": field, "op": op, "value": value}
+
+
+A = _cond("part.name", "Is Equal", "A")
+B = _cond("part.class", "Is Equal", 1)
+C = _cond("part.profile", "Is Equal", "C")
+D = _cond("part.material", "Is Equal", "D")
+
+
+class TestBuildFilterExpressionObjectTypes:
+    def test_single_type_is_a_flat_first_item(self):
+        described = _build(A)
+        assert (described[0]["left"], described[0]["value"], described[0]["join"]) == ("ObjectType", PART_TYPE, "BOOLEAN_AND")
+
+    def test_several_types_are_one_list_row_without_duplicates(self):
+        described = _build(_cond("object.phase", "Is Equal", 1), ["part", "bolt", "part"])
+        assert (described[0]["left"], described[0]["value"]) == ("ObjectType", f"{PART_TYPE}{BOLT_TYPE}")
+
+    def test_no_type_raises(self):
+        with pytest.raises(ValueError, match="At least one object type"):
+            build_filter_expression(_tree(A), [])
+
+    def test_unknown_type_raises(self):
+        with pytest.raises(ValueError, match=r"Unknown object types \['beam'\]"):
+            build_filter_expression(_tree(A), ["beam"])
+
+    @pytest.mark.parametrize("object_type", ["part", "assembly", "rebar", "bolt", "weld", "component", "reference_object", "pour_object", "pour_break", "pour_unit", "surface"])
+    def test_every_object_type_builds(self, object_type):
+        assert _build(_cond("object.phase", "Is Equal", 1), [object_type])[0]["left"] == "ObjectType"
+
+
+class TestBuildFilterExpressionStructure:
+    def test_root_all_items_are_inlined(self):
+        described = _build({"all": [A, B]})
+        assert [(d.get("value"), d["join"]) for d in described] == [(PART_TYPE, "BOOLEAN_AND"), ("A", "BOOLEAN_AND"), ("1", "BOOLEAN_AND")]
+
+    def test_root_any_repeats_the_type_in_each_alternative(self):
+        assert _chains(_build({"any": [A, B]})) == [[("ObjectType", PART_TYPE), ("Part.Name", "A")], [("ObjectType", PART_TYPE), ("Part.Class", "1")]]
+
+    def test_same_kind_groups_are_merged(self):
+        described = _build({"all": [{"all": [A]}, {"all": [B, {"all": [C]}]}]})
+        assert [d.get("value") for d in described] == [PART_TYPE, "A", "1", "C"]
+
+    def test_single_item_any_is_unwrapped(self):
+        assert [d.get("value") for d in _build({"any": [A]})] == [PART_TYPE, "A"]
+
+    def test_all_inside_any_needs_no_brackets(self):
+        assert _chains(_build({"any": [A, {"all": [B, C]}]})) == [
+            [("ObjectType", PART_TYPE), ("Part.Name", "A")],
+            [("ObjectType", PART_TYPE), ("Part.Class", "1"), ("Part.Profile", "C")],
         ]
 
-    def test_empty_conditions_return_none(self):
-        """Validation forbids an empty list, but a constructed option must still not produce an empty group."""
-        option = StringFilterOption.model_construct(conditions=[], logic="OR")
-        assert build_filter_group(PartFilterExpressions.Name(), option) is None
+    def test_any_inside_all_keeps_its_brackets(self):
+        assert _chains(_build({"all": [A, {"any": [B, {"all": [C, D]}]}]})) == [
+            [("ObjectType", PART_TYPE), ("Part.Name", "A"), ("(", [[("Part.Class", "1")], [("Part.Profile", "C"), ("Part.Material", "D")]])]
+        ]
 
-    def test_group_nests_into_parent_collection(self):
-        option = StringFilterOption(conditions=[{"match_type": "Is Equal", "value": "A"}, {"match_type": "Is Equal", "value": "B"}])
-        parent = BinaryFilterExpressionCollection()
-        add_filter(parent, ObjectFilterExpressions.Type(), TeklaStructuresDatabaseTypeEnum.PART)
-        parent.Add(BinaryFilterExpressionItem(build_filter_group(PartFilterExpressions.Name(), option), BinaryFilterOperatorType.BOOLEAN_AND))
-        described = _describe(parent)
-        assert described[0]["left"] == "ObjectType"
-        assert [i["value"] for i in described[1]["items"]] == ["A", "B"]
+    def test_three_levels_are_allowed(self):
+        deep = {"all": [A, {"any": [B, {"all": [C, {"any": [D, A]}]}]}]}
+        inner = _chains(_build(deep))[0][2][1]
+        assert inner[1][1] == ("(", [[("Part.Material", "D")], [("Part.Name", "A")]])
 
+    def test_four_levels_raise(self):
+        deeper = {"all": [A, {"any": [B, {"all": [C, {"any": [D, {"all": [A, {"any": [B, C]}]}]}]}]}]}
+        with pytest.raises(ValueError, match="nests 4 levels of brackets, but Tekla allows at most 3"):
+            _build(deeper)
 
-class TestBoltTypeFilter:
-    @pytest.mark.parametrize("value,expected", [("site", "0"), ("Workshop", "1"), (" SITE ", "0")])
-    def test_value_is_translated(self, value, expected):
-        option = StringFilterOption(conditions={"match_type": "Is Equal", "value": value})
-        result = _to_bolt_type_filter(option)
-        assert [c.value for c in result.conditions] == [expected]
+    @pytest.mark.parametrize(
+        "field,op,value,expected_op,kind",
+        [
+            ("part.profile", "Starts With", "HEA", "STARTS_WITH", "string"),
+            ("part.class", "Greater Or Equal", 10, "GREATER_OR_EQUAL", "numeric"),
+            ("rebar.diameter", "Smaller Than", 12.5, "SMALLER_THAN", "numeric"),
+            ("part.position_number", "Is Equal", "007", "IS_EQUAL", "string"),
+        ],
+    )
+    def test_field_operators_and_kinds(self, field, op, value, expected_op, kind):
+        condition = _build(_cond(field, op, value), [field.split(".")[0]])[1]
+        assert (condition["op"], condition["kind"], condition["value"]) == (expected_op, kind, str(value))
 
-    def test_several_conditions_keep_their_logic(self):
-        option = StringFilterOption(conditions=[{"match_type": "Is Equal", "value": "site"}, {"match_type": "Is Equal", "value": "workshop"}], logic="OR")
-        result = _to_bolt_type_filter(option)
-        assert [c.value for c in result.conditions] == ["0", "1"]
-        assert result.logic == "OR"
+    def test_assembly_start_number_uses_report_property(self):
+        condition = list(_expression(_cond("assembly.start_number", "Greater Than", 50)))[1]
+        assert "ASSEMBLY_START_NUMBER" in _properties(_get(_get(condition, "FilterExpression"), "Left"))
 
-    def test_unknown_value_is_rejected(self):
-        option = StringFilterOption(conditions={"match_type": "Is Equal", "value": "factory"})
-        with pytest.raises(ValueError, match="factory"):
-            _to_bolt_type_filter(option)
-
-
-class TestBuildFilterExpression:
-    @staticmethod
-    def _class_filter(*classes: int) -> dict[str, Any]:
-        return {"class": {"conditions": [{"match_type": "Is Equal", "value": c} for c in classes], "logic": "OR"}}
-
-    def test_no_criteria_raises(self):
-        with pytest.raises(ValueError, match="At least one filter"):
-            build_filter_expression()
-
-    def test_invalid_combine_with_raises(self):
-        with pytest.raises(ValueError, match="combine_with"):
-            build_filter_expression(standard_numeric_filters=self._class_filter(1), combine_with="XOR")
-
-    def test_unknown_standard_key_raises(self):
-        with pytest.raises(ValueError, match="standard_string_filters key 'bolt_standard'"):
-            build_filter_expression(standard_string_filters={"bolt_standard": {"conditions": {"match_type": "Is Equal", "value": "7990"}}})
-
-    def test_class_key_is_parts_only(self):
-        with pytest.raises(ValueError, match="standard_numeric_filters key 'class'"):
-            build_filter_expression(object_type="bolt", standard_numeric_filters=self._class_filter(1))
-
-    def test_class_conditions_are_joined_by_or(self):
-        expression = build_filter_expression(standard_numeric_filters=self._class_filter(1, 8))
-        described = _describe(expression)
-        assert described[0]["left"] == "ObjectType"
-        assert [(i["op"], i["value"], i["join"]) for i in described[1]["items"]] == [("IS_EQUAL", "1", "BOOLEAN_OR"), ("IS_EQUAL", "8", "BOOLEAN_OR")]
-
-    def test_custom_attribute_name_is_used_as_given(self):
-        expression = build_filter_expression(custom_numeric_filters={"HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 2000}}})
-        item = _describe(expression)[1]["items"][0]
-        assert (item["left"], item["op"], item["value"]) == ("TemplateCustomNumber", "GREATER_THAN", "2000")
-        # The attribute name sits in the expression's `Properties` dictionary, not in `Value`
-        group = _get(list(expression)[1], "FilterExpression")
-        left = _get(_get(next(iter(group)), "FilterExpression"), "Left")
-        assert "HEIGHT" in list(_get(left, "Properties").Values)
-
-    @pytest.mark.parametrize("combine_with,join", [("AND", "BOOLEAN_AND"), ("OR", "BOOLEAN_OR")])
-    def test_groups_joined_by_combine_with(self, combine_with, join):
-        name_filter = {"name": {"conditions": {"match_type": "Is Equal", "value": "Wall"}}}
-        expression = build_filter_expression(standard_string_filters=name_filter, standard_numeric_filters=self._class_filter(1), combine_with=combine_with)
-        combined = _describe(expression)[1]["items"]
-        assert [g["join"] for g in combined] == [join, join]
-        assert [g["items"][0]["value"] for g in combined] == ["Wall", "1"]
+    def test_expanded_field_must_not_reach_builder(self):
+        with pytest.raises(ValueError, match="must be expanded"):
+            _build(_cond("part.element_type", "Is Equal", "Wall"))
 
 
-class TestBuildFilterExpressionEdgeCases:
-    NAME_FILTER = {"name": {"conditions": {"match_type": "Is Equal", "value": "Wall"}}}
+class TestBuildFilterExpressionValues:
+    @pytest.mark.parametrize(
+        "field,value,expected",
+        [
+            ("bolt.site_workshop", "Site", "0"),
+            ("bolt.site_workshop", "workshop", "1"),
+            ("weld.welding_site", "workshop", "1"),
+            ("weld.type_above", "fillet", "10"),
+            ("weld.type_below", "none", "0"),
+            ("part.primary_part", "yes", "1"),
+        ],
+    )
+    def test_readable_values_are_mapped(self, field, value, expected):
+        assert _build(_cond(field, "Is Equal", value), [field.split(".")[0]])[1]["value"] == expected
 
-    def test_invalid_object_type_raises(self):
-        with pytest.raises(ValueError, match="Invalid object_type 'weld'"):
-            build_filter_expression(object_type="weld", standard_string_filters=self.NAME_FILTER)
+    def test_numeric_coded_value_builds_numeric_condition(self):
+        assert _build(_cond("weld.type_above", "Is Not Equal", "fillet"), ["weld"])[1]["kind"] == "numeric"
 
-    def test_unknown_numeric_key_raises(self):
-        with pytest.raises(ValueError, match="standard_numeric_filters key 'height'"):
-            build_filter_expression(standard_numeric_filters={"height": {"conditions": {"match_type": "Is Equal", "value": 1}}})
+    def test_string_coded_value_builds_string_condition(self):
+        assert _build(_cond("bolt.site_workshop", "Is Equal", "site"), ["bolt"])[1]["kind"] == "string"
 
-    def test_part_keys_are_rejected_for_bolts(self):
-        with pytest.raises(ValueError, match="standard_string_filters key 'name'"):
-            build_filter_expression(object_type="bolt", standard_string_filters=self.NAME_FILTER)
 
-    def test_bolt_type_is_rejected_for_parts(self):
-        with pytest.raises(ValueError, match="standard_string_filters key 'bolt_type'"):
-            build_filter_expression(standard_string_filters={"bolt_type": {"conditions": {"match_type": "Is Equal", "value": "site"}}})
+class TestBuildFilterExpressionAttributes:
+    @pytest.mark.parametrize(
+        "value,extra,kind",
+        [(2000, {}, "numeric"), (2.5, {}, "numeric"), ("A1", {}, "string"), (True, {}, "boolean"), ("2026-01-31", {"type": "date"}, "date")],
+    )
+    def test_attribute_kind_follows_value(self, value, extra, kind):
+        op = "Is Equal"
+        assert _build({"attribute": "MY_UDA", "op": op, "value": value, **extra})[1]["kind"] == kind
 
-    @pytest.mark.parametrize("combine_with", ["and", "or", "", "NOT"])
-    def test_combine_with_is_case_sensitive(self, combine_with):
-        with pytest.raises(ValueError, match="combine_with"):
-            build_filter_expression(standard_string_filters=self.NAME_FILTER, combine_with=combine_with)
+    def test_attribute_name_is_used_as_given(self):
+        condition = list(_expression({"attribute": "MCP_TEST_UDA", "category": "assembly", "op": "Contains", "value": "x"}))[1]
+        assert "MCP_TEST_UDA" in _properties(_get(_get(condition, "FilterExpression"), "Left"))
 
-    def test_empty_dicts_count_as_no_criteria(self):
-        with pytest.raises(ValueError, match="At least one filter"):
-            build_filter_expression(standard_string_filters={}, standard_numeric_filters={}, custom_string_filters={}, custom_numeric_filters={})
+    @pytest.mark.parametrize("op,expected", [("Earlier Than", "EARLIER_THAN"), ("Later Or Equal", "LATER_OR_EQUAL")])
+    def test_date_operators(self, op, expected):
+        assert _build({"attribute": "MY_DATE", "op": op, "value": "2026-01-31T08:30:00", "type": "date"})[1]["op"] == expected
 
-    def test_filter_option_instances_are_accepted(self):
-        option = StringFilterOption(conditions={"match_type": "Is Equal", "value": "Wall"})
-        expression = build_filter_expression(standard_string_filters={"name": option})
-        assert _describe(expression)[1]["items"][0]["value"] == "Wall"
+    def test_boolean_operator(self):
+        condition = _build({"attribute": "MY_FLAG", "op": "Is Not Equal", "value": False})[1]
+        assert (condition["op"], condition["kind"]) == ("IS_NOT_EQUAL", "boolean")
 
-    def test_invalid_filter_option_dict_raises(self):
-        with pytest.raises(ValidationError):
-            build_filter_expression(standard_string_filters={"name": {"conditions": {"match_type": "Bogus", "value": "Wall"}}})
 
-    def test_text_value_in_numeric_filter_raises(self):
-        """The filter option model rejects the text before any expression is built."""
-        with pytest.raises(ValidationError):
-            build_filter_expression(standard_numeric_filters={"part_start_number": {"conditions": {"match_type": "Greater Than", "value": "many"}}})
+WELD_TYPE = str(int(TeklaStructuresDatabaseTypeEnum.WELDING))
+ASSEMBLY_TYPE = str(int(TeklaStructuresDatabaseTypeEnum.ASSEMBLY))
+BOLT_16 = _cond("bolt.size", "Is Equal", 16)
 
-    def test_single_group_is_joined_with_and_even_for_or(self):
-        described = _describe(build_filter_expression(standard_string_filters=self.NAME_FILTER, combine_with="OR"))
-        assert len(described) == 2
-        assert described[1]["join"] == "BOOLEAN_AND"
-        assert described[1]["items"][0]["value"] == "Wall"
 
-    def test_combined_groups_sit_under_and_after_type_filter(self):
-        described = _describe(
-            build_filter_expression(
-                standard_string_filters=self.NAME_FILTER,
-                standard_numeric_filters={"part_start_number": {"conditions": {"match_type": "Greater Than", "value": 5}}},
-                combine_with="OR",
-            )
-        )
-        assert len(described) == 2
-        assert described[1]["join"] == "BOOLEAN_AND"
-        assert len(described[1]["items"]) == 2
+def _chains(described: list[dict[str, Any]]) -> list[list[tuple[Any, Any]]]:
+    """
+    Split described items into OR-joined chains of AND-joined items.
 
-    def test_type_filter_differs_for_parts_and_bolts(self):
-        part = _describe(build_filter_expression(standard_numeric_filters={"part_start_number": {"conditions": {"match_type": "Is Equal", "value": 1}}}))
-        bolt = _describe(build_filter_expression(object_type="bolt", standard_numeric_filters={"phase": {"conditions": {"match_type": "Is Equal", "value": 1}}}))
-        assert part[0]["left"] == bolt[0]["left"] == "ObjectType"
-        assert part[0]["value"] != bolt[0]["value"]
+    Args:
+        described: `_describe` output of one collection
 
-    def test_bolt_type_values_are_translated(self):
-        expression = build_filter_expression(object_type="bolt", standard_string_filters={"bolt_type": {"conditions": {"match_type": "Is Equal", "value": "Workshop"}}})
-        assert _describe(expression)[1]["items"][0]["value"] == "1"
+    Returns:
+        One list per chain with (left, value) of each condition, or ('(', chains) for a bracketed group
+    """
+    chains: list[list[tuple[Any, Any]]] = []
+    current: list[tuple[Any, Any]] = []
+    for item in described:
+        current.append(("(", _chains(item["items"])) if "items" in item else (item.get("left"), item.get("value")))
+        if item["join"] == "BOOLEAN_OR":
+            chains.append(current)
+            current = []
+    chains.append(current)
+    return chains
 
-    def test_invalid_bolt_type_value_raises(self):
-        with pytest.raises(ValueError, match="Invalid bolt_type filter value"):
-            build_filter_expression(object_type="bolt", standard_string_filters={"bolt_type": {"conditions": {"match_type": "Is Equal", "value": "factory"}}})
 
-    def test_bolt_custom_attributes_use_bolt_expressions(self):
-        option = {"conditions": {"match_type": "Is Equal", "value": "A"}}
-        part = _describe(build_filter_expression(custom_string_filters={"COMMENT": option}))
-        bolt = _describe(build_filter_expression(object_type="bolt", custom_string_filters={"COMMENT": option}))
-        assert part[1]["items"][0]["left"] != bolt[1]["items"][0]["left"]
+def _branches(node: dict[str, Any], object_types: list[str]) -> list[list[tuple[Any, Any]]]:
+    """
+    Build a tree with several object type branches and return the chains.
 
-    def test_custom_string_filter_builds_string_condition(self):
-        expression = build_filter_expression(custom_string_filters={"COMMENT": {"conditions": {"match_type": "Contains", "value": "007"}}})
-        item = _describe(expression)[1]["items"][0]
-        assert (item["op"], item["kind"], item["value"]) == ("CONTAINS", "string", "007")
+    Args:
+        node: Filter tree as a plain dict
+        object_types: Object types that give different branches
 
-    def test_every_criteria_kind_becomes_its_own_group(self):
-        expression = build_filter_expression(
-            standard_string_filters=self.NAME_FILTER,
-            standard_numeric_filters={"class": {"conditions": {"match_type": "Is Equal", "value": 1}}},
-            custom_string_filters={"COMMENT": {"conditions": {"match_type": "Contains", "value": "x"}}},
-            custom_numeric_filters={"HEIGHT": {"conditions": {"match_type": "Greater Than", "value": 1}}},
-        )
-        assert len(_describe(expression)[1]["items"]) == 4
+    Returns:
+        One list per chain with (left, value) of each item
+    """
+    return _chains(_build(node, object_types))
 
-    def test_inputs_are_not_mutated(self):
-        filters = {"bolt_type": {"conditions": {"match_type": "Is Equal", "value": "site"}}}
-        snapshot = {"bolt_type": {"conditions": {"match_type": "Is Equal", "value": "site"}}}
-        build_filter_expression(object_type="bolt", standard_string_filters=filters)
-        assert filters == snapshot
+
+class TestObjectTypeCodes:
+    @pytest.mark.parametrize(
+        "name,member",
+        [
+            ("part", "PART"),
+            ("assembly", "ASSEMBLY"),
+            ("rebar", "REBAR"),
+            ("bolt", "BOLT"),
+            ("weld", "WELDING"),
+            ("component", "COMPONENT"),
+            ("reference_object", "FOREIGN_OBJECT"),
+            ("pour_object", "DB_POUR_OBJECT"),
+            ("pour_break", "DB_POUR_BREAK"),
+            ("pour_unit", "DB_POUR_UNIT"),
+            ("surface", "SURFACE_OBJECT"),
+        ],
+    )
+    def test_codes_match_the_database_enum(self, name, member):
+        assert OBJECT_TYPES[name] == int(getattr(TeklaStructuresDatabaseTypeEnum, member))
+
+
+class TestBuildFilterExpressionTypeSemantics:
+    def test_same_meaning_for_all_types_is_one_branch_with_a_type_list(self):
+        described = _build(_cond("assembly.prefix", "Is Equal", "B"), ["part", "bolt"])
+        assert [(d.get("left"), d.get("value")) for d in described] == [("ObjectType", f"{PART_TYPE}\x02{BOLT_TYPE}"), ("Assembly.Prefix", "B")]
+
+    def test_condition_of_another_type_drops_out_of_any(self):
+        assert _branches({"any": [A, BOLT_16]}, ["part", "bolt"]) == [[("ObjectType", PART_TYPE), ("Part.Name", "A")], [("ObjectType", BOLT_TYPE), ("BoltSize", "16")]]
+
+    def test_type_without_own_conditions_is_selected_whole(self):
+        assert _branches({"all": [A]}, ["part", "bolt"]) == [[("ObjectType", PART_TYPE), ("Part.Name", "A")], [("ObjectType", BOLT_TYPE)]]
+
+    def test_mixed_and_chain_filters_each_type_by_its_own_conditions(self):
+        rebar_class = _cond("rebar.class", "Is Equal", [44, 46])
+        part_class = _cond("part.class", "Is Not Equal", [66, 107])
+        assert _branches({"all": [rebar_class, part_class]}, ["rebar", "part"]) == [
+            [("ObjectType", REBAR_TYPE), ("ReinforcingBarClass", "44\x0246")],
+            [("ObjectType", PART_TYPE), ("Part.Class", "66\x02107")],
+        ]
+
+    def test_condition_of_an_unselected_type_is_ignored(self):
+        assert [(d.get("left"), d.get("value")) for d in _build(A, ["bolt"])] == [("ObjectType", BOLT_TYPE)]
+
+    def test_object_type_condition_selects_a_whole_type(self):
+        node = {"any": [_cond("object.type", "Is Equal", "weld"), _cond("part.class", "Is Equal", 999999)]}
+        assert _branches(node, ["part", "weld"]) == [[("ObjectType", PART_TYPE), ("Part.Class", "999999")], [("ObjectType", WELD_TYPE)]]
+
+    def test_object_type_not_equal_excludes_a_type(self):
+        assert [d.get("value") for d in _build(_cond("object.type", "Is Not Equal", "part"), ["part", "bolt"])] == [BOLT_TYPE]
+
+    def test_object_type_list(self):
+        assert [d.get("value") for d in _build(_cond("object.type", "Is Equal", ["part", "weld"]), ["part", "bolt", "weld"])] == [f"{PART_TYPE}\x02{WELD_TYPE}"]
+
+    def test_object_type_that_excludes_every_type_raises(self):
+        with pytest.raises(ValueError, match="can match this filter"):
+            _build(_cond("object.type", "Is Equal", "bolt"), ["part"])
+
+    def test_report_property_applies_to_every_type(self):
+        node = {"attribute": "MAINPART.CLASS_ATTR", "category": "template", "op": "Is Equal", "value": [18, 23]}
+        described = _build(node, ["part", "assembly"])
+        assert [d.get("value") for d in described] == [f"{PART_TYPE}\x02{ASSEMBLY_TYPE}", "18\x0223"]
+        assert described[1]["left"] == "TemplateCustomNumber"
+
+    def test_reduced_any_branch_is_spread_into_chains(self):
+        # For parts the tree reduces to any[A, B], which needs no brackets once spread out
+        assert _branches({"all": [{"any": [A, B]}, BOLT_16]}, ["part", "bolt"]) == [
+            [("ObjectType", PART_TYPE), ("Part.Name", "A")],
+            [("ObjectType", PART_TYPE), ("Part.Class", "1")],
+            [("ObjectType", BOLT_TYPE), ("BoltSize", "16")],
+        ]
+
+    def test_any_inside_a_branch_all_keeps_one_level(self):
+        node = {"all": [C, {"any": [A, B]}, BOLT_16]}
+        assert _branches(node, ["part", "bolt"]) == [
+            [("ObjectType", PART_TYPE), ("Part.Profile", "C"), ("(", [[("Part.Name", "A")], [("Part.Class", "1")]])],
+            [("ObjectType", BOLT_TYPE), ("BoltSize", "16")],
+        ]
+
+    def test_branch_with_and_chain_fits(self):
+        assert _branches({"any": [{"all": [A, B]}, BOLT_16]}, ["part", "bolt"])[0] == [("ObjectType", PART_TYPE), ("Part.Name", "A"), ("Part.Class", "1")]
+
+    def test_any_branch_repeats_its_type(self):
+        node = {"any": [A, B, BOLT_16]}
+        assert _branches(node, ["part", "bolt"]) == [
+            [("ObjectType", PART_TYPE), ("Part.Name", "A")],
+            [("ObjectType", PART_TYPE), ("Part.Class", "1")],
+            [("ObjectType", BOLT_TYPE), ("BoltSize", "16")],
+        ]
+
+
+class TestBuildFilterExpressionLists:
+    def test_numeric_list_is_one_row(self):
+        assert _build(_cond("part.class", "Is Equal", [18, 23, 31]))[1]["value"] == "18\x0223\x0231"
+
+    def test_float_list(self):
+        assert _build(_cond("rebar.diameter", "Is Equal", [10, 12.5]), ["rebar"])[1]["value"] == "10\x0212.5"
+
+    def test_negative_list_keeps_its_operator(self):
+        condition = _build(_cond("part.class", "Is Not Equal", [1, 8]))[1]
+        assert (condition["op"], condition["value"]) == ("IS_NOT_EQUAL", "1\x028")
+
+    def test_string_list_quotes_items_with_spaces(self):
+        # Tekla stores the separating and the quoted spaces as \x02, like its own filter files
+        assert _build(_cond("part.name", "Is Equal", ["WALL PLATE", "BRV?-*"]))[1]["value"] == '"WALL\x02PLATE"\x02BRV?-*'
+
+    def test_readable_value_list_is_mapped(self):
+        assert _build(_cond("weld.type_above", "Is Equal", ["fillet", "plug"]), ["weld"])[1]["value"] == "10\x0211"
+
+    def test_attribute_list(self):
+        condition = _build({"attribute": "COMMENT", "op": "Contains", "value": ["A", "B"]})[1]
+        assert (condition["kind"], condition["value"]) == ("string", "A\x02B")
+
+
+class TestQuoting:
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("LIGHTWEIGHT BLOCK", '"LIGHTWEIGHT\x02BLOCK"'),
+            ('"ALREADY QUOTED"', '"ALREADY\x02QUOTED"'),
+            ("NOSPACE", "NOSPACE"),
+            ("TAB\tSEP", '"TAB\tSEP"'),
+            ("BRW*[1234567]-12*", "BRW*[1234567]-12*"),
+        ],
+    )
+    def test_values_with_spaces_are_quoted(self, value, expected):
+        assert _build(_cond("part.name", "Is Equal", value))[1]["value"] == expected
