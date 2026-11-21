@@ -1,10 +1,15 @@
 """
 Helpers for constructing Tekla `BinaryFilterExpressionCollection` objects.
+
+`build_filter_expression` turns structured filter criteria into one expression,
+so every tool that filters by criteria builds it the same way. It takes Tekla
+property and attribute names as they are, resolving names is the caller's job.
 """
 
 import math
 from typing import Any
 
+from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import (
     NumericFilterOption,
     NumericMatchType,
@@ -16,10 +21,15 @@ from tekla_mcp_server.tekla.loader import (
     BinaryFilterExpressionCollection,
     BinaryFilterExpressionItem,
     BinaryFilterOperatorType,
+    BoltFilterExpressions,
     NumericConstantFilterExpression,
     NumericOperatorType,
+    ObjectFilterExpressions,
+    PartFilterExpressions,
     StringConstantFilterExpression,
     StringOperatorType,
+    TeklaStructuresDatabaseTypeEnum,
+    TemplateFilterExpressions,
 )
 
 
@@ -41,6 +51,55 @@ NUMERIC_MATCH_TYPE_MAPPING = {
     NumericMatchType.SMALLER_OR_EQUAL: NumericOperatorType.SMALLER_OR_EQUAL,
     NumericMatchType.GREATER_THAN: NumericOperatorType.GREATER_THAN,
     NumericMatchType.GREATER_OR_EQUAL: NumericOperatorType.GREATER_OR_EQUAL,
+}
+
+# Define expression maps
+STANDARD_STRING_EXPRESSION_MAP = {
+    "name": PartFilterExpressions.Name(),
+    "profile": PartFilterExpressions.Profile(),
+    "material": PartFilterExpressions.Material(),
+    "finish": PartFilterExpressions.Finish(),
+    "phase": TemplateFilterExpressions.CustomString("ASSEMBLY.PHASE"),
+    "part_prefix": PartFilterExpressions.Prefix(),
+    "assembly_prefix": TemplateFilterExpressions.CustomString("ASSEMBLY_PREFIX"),
+}
+
+STANDARD_NUMERIC_EXPRESSION_MAP = {
+    "class": PartFilterExpressions.Class(),
+    "part_start_number": PartFilterExpressions.StartNumber(),
+    "assembly_start_number": TemplateFilterExpressions.CustomNumber("ASSEMBLY_START_NUMBER"),
+}
+
+BOLT_STRING_EXPRESSION_MAP = {
+    "bolt_standard": BoltFilterExpressions.Standard(),
+    "bolt_type": BoltFilterExpressions.SiteWorkshop(),
+}
+
+# Tekla's site/workshop filter matches the `BoltTypeEnum` value as a string
+BOLT_TYPE_FILTER_VALUES = {"site": "0", "workshop": "1"}
+
+BOLT_NUMERIC_EXPRESSION_MAP = {
+    "bolt_size": BoltFilterExpressions.Size(),
+    "bolt_length": BoltFilterExpressions.Length(),
+    "phase": BoltFilterExpressions.Phase(),
+}
+
+# Per object type: (database type, string map, numeric map, custom string factory, custom number factory)
+OBJECT_TYPE_FILTERS: dict[str, tuple[Any, dict[str, Any], dict[str, Any], Any, Any]] = {
+    "part": (
+        TeklaStructuresDatabaseTypeEnum.PART,
+        STANDARD_STRING_EXPRESSION_MAP,
+        STANDARD_NUMERIC_EXPRESSION_MAP,
+        TemplateFilterExpressions.CustomString,
+        TemplateFilterExpressions.CustomNumber,
+    ),
+    "bolt": (
+        TeklaStructuresDatabaseTypeEnum.BOLT,
+        BOLT_STRING_EXPRESSION_MAP,
+        BOLT_NUMERIC_EXPRESSION_MAP,
+        BoltFilterExpressions.CustomString,
+        BoltFilterExpressions.CustomNumber,
+    ),
 }
 
 
@@ -178,3 +237,143 @@ def build_filter_group(expression: Any, filter_option: StringFilterOption | Nume
     if sub.Count == 0:
         return None
     return sub
+
+
+def _to_bolt_type_filter(filter_option: StringFilterOption) -> StringFilterOption:
+    """
+    Translate 'site' and 'workshop' in a `bolt_type` filter to the values Tekla matches.
+
+    Args:
+        filter_option: Filter option whose condition values are 'site' or 'workshop'
+
+    Returns:
+        A copy of the option with the values replaced
+
+    Raises:
+        ValueError: If a value is not 'site' or 'workshop'
+    """
+    conditions = filter_option.conditions if isinstance(filter_option.conditions, list) else [filter_option.conditions]
+    mapped = []
+    for condition in conditions:
+        value = BOLT_TYPE_FILTER_VALUES.get(condition.value.strip().lower())
+        if value is None:
+            raise ValueError(f"Invalid bolt_type filter value '{condition.value}'. Must be one of: {sorted(BOLT_TYPE_FILTER_VALUES)}")
+        mapped.append(condition.model_copy(update={"value": value}))
+    return filter_option.model_copy(update={"conditions": mapped})
+
+
+def build_filter_expression(
+    object_type: str = "part",
+    standard_string_filters: dict[str, Any] | None = None,
+    standard_numeric_filters: dict[str, Any] | None = None,
+    custom_string_filters: dict[str, Any] | None = None,
+    custom_numeric_filters: dict[str, Any] | None = None,
+    combine_with: str = "AND",
+) -> BinaryFilterExpressionCollection:
+    """
+    Build a Tekla filter expression from structured filter criteria.
+
+    The expression always restricts the object type, then joins the criteria groups with `combine_with`.
+
+    Args:
+        object_type: Key of `OBJECT_TYPE_FILTERS`, 'part' or 'bolt'
+        standard_string_filters: Standard string property keys to filter options
+        standard_numeric_filters: Standard numeric property keys to filter options
+        custom_string_filters: Tekla custom attribute names to string filter options
+        custom_numeric_filters: Tekla custom attribute names to numeric filter options
+        combine_with: How to combine filter groups, 'AND' or 'OR'
+
+    Returns:
+        The built expression
+
+    Raises:
+        ValueError: If the criteria are invalid or produce no usable condition
+    """
+    standard_string_filters = standard_string_filters or {}
+    standard_numeric_filters = standard_numeric_filters or {}
+    custom_string_filters = custom_string_filters or {}
+    custom_numeric_filters = custom_numeric_filters or {}
+
+    # Validate combine_with and ensure at least one filter provided
+    if combine_with not in {"AND", "OR"}:
+        raise ValueError(f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'.")
+
+    if not any((standard_string_filters, standard_numeric_filters, custom_string_filters, custom_numeric_filters)):
+        raise ValueError("At least one filter must be provided.")
+
+    if object_type not in OBJECT_TYPE_FILTERS:
+        raise ValueError(f"Invalid object_type '{object_type}'. Must be one of: {sorted(OBJECT_TYPE_FILTERS)}")
+    database_type, string_expression_map, numeric_expression_map, custom_string_expression, custom_number_expression = OBJECT_TYPE_FILTERS[object_type]
+
+    # Base filter: always filter for the requested object type only
+    filter_collection = BinaryFilterExpressionCollection()
+    filter_collection.Add(
+        BinaryFilterExpressionItem(
+            BinaryFilterExpression(
+                ObjectFilterExpressions.Type(),
+                NumericOperatorType.IS_EQUAL,
+                NumericConstantFilterExpression(database_type),
+            )
+        )
+    )
+
+    # Derive valid keys from expression maps
+    valid_string_keys = frozenset(string_expression_map.keys())
+    valid_numeric_keys = frozenset(numeric_expression_map.keys())
+
+    # Validate input keys
+    for key in standard_string_filters:
+        if key not in valid_string_keys:
+            raise ValueError(f"Invalid standard_string_filters key '{key}'. Must be one of: {valid_string_keys}")
+
+    for key in standard_numeric_filters:
+        if key not in valid_numeric_keys:
+            raise ValueError(f"Invalid standard_numeric_filters key '{key}'. Must be one of: {valid_numeric_keys}")
+
+    filter_groups: list[BinaryFilterExpressionCollection] = []
+
+    # Add standard string filters (parts: name, profile, material, finish, phase, prefixes. Bolts: bolt_standard, bolt_type)
+    for key, filter_option in standard_string_filters.items():
+        filter_option = to_filter_option(filter_option, StringFilterOption)
+        if object_type == "bolt" and key == "bolt_type":
+            filter_option = _to_bolt_type_filter(filter_option)
+        result = build_filter_group(string_expression_map[key], filter_option)
+        if result is not None:
+            filter_groups.append(result)
+
+    # Add standard numeric filters (parts: class, start numbers. Bolts: bolt_size, bolt_length, phase)
+    for key, filter_option in standard_numeric_filters.items():
+        filter_option = to_filter_option(filter_option, NumericFilterOption)
+        result = build_filter_group(numeric_expression_map[key], filter_option, is_numeric=True)
+        if result is not None:
+            filter_groups.append(result)
+
+    # Add custom attribute filters
+    for attribute_name, filter_option in custom_string_filters.items():
+        filter_option = to_filter_option(filter_option, StringFilterOption)
+        result = build_filter_group(custom_string_expression(attribute_name), filter_option)
+        if result is not None:
+            filter_groups.append(result)
+
+    for attribute_name, filter_option in custom_numeric_filters.items():
+        filter_option = to_filter_option(filter_option, NumericFilterOption)
+        result = build_filter_group(custom_number_expression(attribute_name), filter_option, is_numeric=True)
+        if result is not None:
+            filter_groups.append(result)
+
+    # Refuse rather than silently matching every object via the bare type filter
+    if not filter_groups:
+        raise ValueError("No usable filter conditions were produced - nothing was selected to avoid selecting the entire model.")
+
+    # Combine all filter groups into final filter
+    if len(filter_groups) == 1:
+        filter_collection.Add(BinaryFilterExpressionItem(filter_groups[0], BinaryFilterOperatorType.BOOLEAN_AND))
+    else:
+        combined = BinaryFilterExpressionCollection()
+        group_operator = BinaryFilterOperatorType.BOOLEAN_OR if combine_with == "OR" else BinaryFilterOperatorType.BOOLEAN_AND
+        logger.debug("Combining %d filter groups with %s", len(filter_groups), combine_with)
+        for fg in filter_groups:
+            combined.Add(BinaryFilterExpressionItem(fg, group_operator))
+        filter_collection.Add(BinaryFilterExpressionItem(combined, BinaryFilterOperatorType.BOOLEAN_AND))
+
+    return filter_collection

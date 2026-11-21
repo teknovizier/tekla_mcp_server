@@ -174,6 +174,35 @@ def test_select_elements_by_filter_invalid_combine_with(model_objects, invalid_l
     assert result.structured_content["status"] == "error"
 
 
+CLASS_1 = {"class": {"conditions": {"match_type": "Is Equal", "value": 1}}}
+
+
+@pytest.mark.parametrize(
+    "kwargs,status",
+    [
+        ({"element_type": "Wall", "tekla_classes": [99], "combine_with": "OR"}, "success"),
+        ({"element_type": "Wall", "tekla_classes": [99]}, "error"),
+        ({"standard_numeric_filters": CLASS_1}, "success"),
+        ({"standard_numeric_filters": CLASS_1, "tekla_classes": [1]}, "error"),
+        ({"standard_numeric_filters": CLASS_1, "element_type": "Wall"}, "error"),
+        ({"object_type": "bolt", "element_type": "Wall"}, "error"),
+        ({"object_type": "bolt", "tekla_classes": [1]}, "error"),
+        ({"object_type": "bolt", "standard_numeric_filters": CLASS_1}, "error"),
+    ],
+)
+def test_select_elements_by_filter_class_criteria(model_objects, kwargs, status):
+    """Tests how `element_type`, `tekla_classes` and the 'class' key combine."""
+    result = select_elements_by_filter(**kwargs)
+    assert result.structured_content["status"] == status
+
+
+def test_select_elements_by_filter_unresolved_custom_attribute(model_objects):
+    """Tests that only unresolvable custom attributes select nothing."""
+    result = select_elements_by_filter(custom_numeric_filters={"MCP_TEST_NO_SUCH_ATTRIBUTE": {"conditions": {"match_type": "Greater Than", "value": 1}}})
+    assert result.structured_content["status"] == "error"
+    assert "MCP_TEST_NO_SUCH_ATTRIBUTE" in result.structured_content["message"]
+
+
 def test_select_elements_by_guid(model_objects):
     """Tests select_elements_by_guid function."""
     result = select_elements_by_guid(guids=[""])

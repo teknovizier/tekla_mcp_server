@@ -12,106 +12,119 @@ from pydantic import Field
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import (
-    ElementType,
-    SelectionMode,
-    StringFilterOption,
-    NumericFilterOption,
-)
+from tekla_mcp_server.models import ElementType, NumericFilterOption, SelectionMode
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
-from tekla_mcp_server.tekla.filter_builder import add_filter, build_filter_group, to_filter_option
-from tekla_mcp_server.tekla.loader import (
-    ArrayList,
-    BinaryFilterExpression,
-    BinaryFilterExpressionCollection,
-    BinaryFilterExpressionItem,
-    BinaryFilterOperatorType,
-    BoltFilterExpressions,
-    NumericConstantFilterExpression,
-    NumericOperatorType,
-    ObjectFilterExpressions,
-    PartFilterExpressions,
-    TeklaStructuresDatabaseTypeEnum,
-    TemplateFilterExpressions,
-)
+from tekla_mcp_server.tekla.filter_builder import build_filter_expression
+from tekla_mcp_server.tekla.loader import ArrayList
 from tekla_mcp_server.tekla.template_attrs_parser import TemplateAttributeParser
-
-
-# Define expression maps
-STANDARD_STRING_EXPRESSION_MAP = {
-    "name": PartFilterExpressions.Name(),
-    "profile": PartFilterExpressions.Profile(),
-    "material": PartFilterExpressions.Material(),
-    "finish": PartFilterExpressions.Finish(),
-    "phase": TemplateFilterExpressions.CustomString("ASSEMBLY.PHASE"),
-    "part_prefix": PartFilterExpressions.Prefix(),
-    "assembly_prefix": TemplateFilterExpressions.CustomString("ASSEMBLY_PREFIX"),
-}
-
-STANDARD_NUMERIC_EXPRESSION_MAP = {
-    "part_start_number": PartFilterExpressions.StartNumber(),
-    "assembly_start_number": TemplateFilterExpressions.CustomNumber("ASSEMBLY_START_NUMBER"),
-}
-
-BOLT_STRING_EXPRESSION_MAP = {
-    "bolt_standard": BoltFilterExpressions.Standard(),
-    "bolt_type": BoltFilterExpressions.SiteWorkshop(),
-}
-
-# Tekla's site/workshop filter matches the `BoltTypeEnum` value as a string
-BOLT_TYPE_FILTER_VALUES = {"site": "0", "workshop": "1"}
-
-BOLT_NUMERIC_EXPRESSION_MAP = {
-    "bolt_size": BoltFilterExpressions.Size(),
-    "bolt_length": BoltFilterExpressions.Length(),
-    "phase": BoltFilterExpressions.Phase(),
-}
-
-# Per object type: (database type, string map, numeric map, custom string factory, custom number factory)
-OBJECT_TYPE_FILTERS: dict[str, tuple[Any, dict[str, Any], dict[str, Any], Any, Any]] = {
-    "part": (
-        TeklaStructuresDatabaseTypeEnum.PART,
-        STANDARD_STRING_EXPRESSION_MAP,
-        STANDARD_NUMERIC_EXPRESSION_MAP,
-        TemplateFilterExpressions.CustomString,
-        TemplateFilterExpressions.CustomNumber,
-    ),
-    "bolt": (
-        TeklaStructuresDatabaseTypeEnum.BOLT,
-        BOLT_STRING_EXPRESSION_MAP,
-        BOLT_NUMERIC_EXPRESSION_MAP,
-        BoltFilterExpressions.CustomString,
-        BoltFilterExpressions.CustomNumber,
-    ),
-}
 
 
 selection_provider = LocalProvider()
 
 
-def _to_bolt_type_filter(filter_option: StringFilterOption) -> StringFilterOption:
+def _resolve_element_type_classes(element_type: str) -> list[int]:
     """
-    Translate 'site' and 'workshop' in a `bolt_type` filter to the values Tekla matches.
+    Resolve a named element type to its Tekla class numbers from the config.
 
     Args:
-        filter_option: Filter option whose condition values are 'site' or 'workshop'
+        element_type: Named element type (e.g. 'Wall', 'Steel Beam')
 
     Returns:
-        A copy of the option with the values replaced
+        Tekla class numbers of the element type, empty when none is configured
 
     Raises:
-        ValueError: If a value is not 'site' or 'workshop'
+        ValueError: If `element_type` is not a known element type
     """
-    conditions = filter_option.conditions if isinstance(filter_option.conditions, list) else [filter_option.conditions]
-    mapped = []
-    for condition in conditions:
-        value = BOLT_TYPE_FILTER_VALUES.get(condition.value.strip().lower())
-        if value is None:
-            raise ValueError(f"Invalid bolt_type filter value '{condition.value}'. Must be one of: {sorted(BOLT_TYPE_FILTER_VALUES)}")
-        mapped.append(condition.model_copy(update={"value": value}))
-    return filter_option.model_copy(update={"conditions": mapped})
+    try:
+        element_type_enum = ElementType(element_type.strip())
+    except Exception as e:
+        raise ValueError(f"Invalid element_type: {e}") from e
+
+    element_type_classes: list[int] = []
+    for material_types in get_config().element_types.values():
+        for type_name, config in material_types.items():
+            logger.debug("Checking element type '%s' against '%s', classes=%s", element_type_enum.name, type_name, config.get("tekla_classes", []))
+            if element_type_enum.name.replace(" ", "_").upper() in type_name.upper() or type_name.upper() in element_type_enum.name.upper():
+                element_type_classes.extend(config.get("tekla_classes", []))
+    return element_type_classes
+
+
+def _resolve_class_criteria(element_type: str | None, tekla_classes: list[int], combine_with: str) -> list[int]:
+    """
+    Merge `element_type` and `tekla_classes` into one list of Tekla class numbers.
+
+    They used to be two separate filter groups, so the merge follows `combine_with`. AND keeps
+    the classes in both lists, OR keeps the classes in either.
+
+    Args:
+        element_type: Named element type, or None
+        tekla_classes: Tekla class numbers, may be empty
+        combine_with: How the filter groups are combined, 'AND' or 'OR'
+
+    Returns:
+        Class numbers without duplicates, empty when neither criterion is given
+
+    Raises:
+        ValueError: If the element type has no configured classes, or AND leaves no class
+    """
+    class_lists: list[list[int]] = []
+    if element_type:
+        element_type_classes = _resolve_element_type_classes(element_type)
+        if not element_type_classes:
+            raise ValueError(f"Element type '{element_type}' has no Tekla classes configured.")
+        class_lists.append(element_type_classes)
+    if tekla_classes:
+        class_lists.append(tekla_classes)
+
+    if len(class_lists) < 2:
+        return list(dict.fromkeys(class_lists[0])) if class_lists else []
+
+    first, second = class_lists
+    if combine_with == "AND":
+        merged = [cls for cls in dict.fromkeys(first) if cls in second]
+        if not merged:
+            raise ValueError(f"`element_type` classes {first} and `tekla_classes` {second} have no class in common, so combining them with AND matches nothing.")
+        return merged
+    return list(dict.fromkeys(first + second))
+
+
+def _class_filter_option(tekla_classes: list[int]) -> NumericFilterOption:
+    """
+    Build a 'class' filter option matching any of the given Tekla classes.
+
+    Args:
+        tekla_classes: Tekla class numbers, at least one
+
+    Returns:
+        Filter option with one 'Is Equal' condition per class, joined by OR
+    """
+    return NumericFilterOption.model_validate({"conditions": [{"match_type": "Is Equal", "value": cls} for cls in tekla_classes], "logic": "OR"})
+
+
+def _resolve_custom_filters(custom_filters: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """
+    Replace custom attribute names given by the caller with the Tekla attribute names.
+
+    Args:
+        custom_filters: Attribute names as given by the caller to filter options
+
+    Returns:
+        Tuple of the filters keyed by Tekla attribute name, without the names that failed, and the resolution errors
+    """
+    if not custom_filters:
+        return {}, []
+    queries = list(custom_filters.keys())
+    resolution = TemplateAttributeParser.resolve_attributes(queries)
+    errors = resolution.get("errors", [])
+    # `resolved` holds only the names that resolved, in the order their queries
+    # succeeded. Align them to the non-failed queries - a positional zip against
+    # all queries would shift names onto the wrong attributes once one query fails
+    failed_queries = {e["query"] for e in errors}
+    successful_queries = [q for q in queries if q not in failed_queries]
+    resolved_map = dict(zip(successful_queries, resolution["resolved"]))
+    return {resolved_map[q]: custom_filters[q] for q in successful_queries if resolved_map.get(q)}, errors
 
 
 @selection_provider.tool(tags={"selection"}, annotations={"readOnlyHint": True, "destructiveHint": False})
@@ -135,7 +148,7 @@ def select_elements_by_filter(
     Selects elements in the Tekla model using standard properties, custom attributes and numeric ranges.
 
     Parts are selected by default. Set `object_type` to 'bolt' to select bolt groups instead.
-    `element_type` and `tekla_classes` apply to parts only. Tekla cannot filter bolts by cut length, extra length
+    `element_type`, `tekla_classes` and the `standard_numeric_filters` key 'class' apply to parts only. Tekla cannot filter bolts by cut length, extra length
     or tolerance. To find bolts by those, read them with `get_elements_properties` and select the matching GUIDs
     with `select_elements_by_guid`.
 
@@ -199,172 +212,34 @@ def select_elements_by_filter(
 
     At least one filter must be provided.
     """
-    # Validate combine_with and ensure at least one filter provided
-    if combine_with not in {"AND", "OR"}:
-        raise ValueError(f"Invalid combine_with '{combine_with}'. Must be 'AND' or 'OR'.")
-
-    if not any((element_type, tekla_classes, standard_string_filters, standard_numeric_filters, custom_string_filters, custom_numeric_filters)):
-        raise ValueError("At least one filter must be provided.")
-
-    if object_type not in OBJECT_TYPE_FILTERS:
-        raise ValueError(f"Invalid object_type '{object_type}'. Must be one of: {sorted(OBJECT_TYPE_FILTERS)}")
-    database_type, string_expression_map, numeric_expression_map, custom_string_expression, custom_number_expression = OBJECT_TYPE_FILTERS[object_type]
-
     if object_type != "part" and (element_type or tekla_classes):
         raise ValueError("`element_type` and `tekla_classes` apply to parts only. Remove them or set `object_type` to 'part'.")
 
-    if element_type:
-        try:
-            element_type_enum = ElementType(element_type.strip())
-        except Exception as e:
-            raise ValueError(f"Invalid element_type: {e}") from e
+    # `element_type` and `tekla_classes` become the 'class' filter
+    standard_numeric_filters = dict(standard_numeric_filters)
+    class_numbers = _resolve_class_criteria(element_type, tekla_classes, combine_with)
+    if class_numbers:
+        if "class" in standard_numeric_filters:
+            raise ValueError("Use either the 'class' key in `standard_numeric_filters` or `element_type` and `tekla_classes`, not both.")
+        standard_numeric_filters["class"] = _class_filter_option(class_numbers)
 
-    model = TeklaModel()
+    resolved_string_filters, string_resolution_errors = _resolve_custom_filters(custom_string_filters)
+    resolved_numeric_filters, numeric_resolution_errors = _resolve_custom_filters(custom_numeric_filters)
+    if (custom_string_filters or custom_numeric_filters) and not any((standard_string_filters, standard_numeric_filters, resolved_string_filters, resolved_numeric_filters)):
+        failed = [e.get("query") for e in (string_resolution_errors + numeric_resolution_errors)]
+        raise ValueError(f"No usable filter conditions were produced - nothing was selected to avoid selecting the entire model. Unresolved custom attributes: {failed}.")
 
-    # Base filter: always filter for the requested object type only
-    filter_collection = BinaryFilterExpressionCollection()
-    filter_collection.Add(
-        BinaryFilterExpressionItem(
-            BinaryFilterExpression(
-                ObjectFilterExpressions.Type(),
-                NumericOperatorType.IS_EQUAL,
-                NumericConstantFilterExpression(database_type),
-            )
-        )
+    expression = build_filter_expression(
+        object_type=object_type,
+        standard_string_filters=standard_string_filters,
+        standard_numeric_filters=standard_numeric_filters,
+        custom_string_filters=resolved_string_filters,
+        custom_numeric_filters=resolved_numeric_filters,
+        combine_with=combine_with,
     )
 
-    # Derive valid keys from expression maps
-    _VALID_STRING_KEYS = frozenset(string_expression_map.keys())
-    _VALID_NUMERIC_KEYS = frozenset(numeric_expression_map.keys())
-
-    # Validate input keys
-    if standard_string_filters:
-        for key in standard_string_filters:
-            if key not in _VALID_STRING_KEYS:
-                raise ValueError(f"Invalid standard_string_filters key '{key}'. Must be one of: {_VALID_STRING_KEYS}")
-
-    if standard_numeric_filters:
-        for key in standard_numeric_filters:
-            if key not in _VALID_NUMERIC_KEYS:
-                raise ValueError(f"Invalid standard_numeric_filters key '{key}'. Must be one of: {_VALID_NUMERIC_KEYS}")
-
-    filter_groups: list[BinaryFilterExpressionCollection] = []
-
-    # Resolve element_type to tekla class numbers
-    if element_type:
-        element_type_classes: list[int] = []
-        for material_types in get_config().element_types.values():
-            for type_name, config in material_types.items():
-                logger.debug("Checking element type '%s' against '%s', classes=%s", element_type_enum.name, type_name, config.get("tekla_classes", []))
-                if element_type_enum.name.replace(" ", "_").upper() in type_name.upper() or type_name.upper() in element_type_enum.name.upper():
-                    element_type_classes.extend(config.get("tekla_classes", []))
-        type_sub = BinaryFilterExpressionCollection()
-        for cls in element_type_classes:
-            add_filter(type_sub, PartFilterExpressions.Class(), cls, NumericOperatorType.IS_EQUAL, operator=BinaryFilterOperatorType.BOOLEAN_OR)
-        filter_groups.append(type_sub)
-
-    # Add explicit tekla_classes to filter
-    if tekla_classes:
-        type_sub = BinaryFilterExpressionCollection()
-        for cls in tekla_classes:
-            add_filter(type_sub, PartFilterExpressions.Class(), cls, NumericOperatorType.IS_EQUAL, operator=BinaryFilterOperatorType.BOOLEAN_OR)
-        filter_groups.append(type_sub)
-
-    # Add standard string filters (parts: name, profile, material, finish, phase, prefixes. Bolts: bolt_standard, bolt_type)
-    if standard_string_filters:
-        for key, filter_option in standard_string_filters.items():
-            expression = string_expression_map[key]
-            filter_option = to_filter_option(filter_option, StringFilterOption)
-            if object_type == "bolt" and key == "bolt_type":
-                filter_option = _to_bolt_type_filter(filter_option)
-            result = build_filter_group(expression, filter_option)
-            if result is not None:
-                filter_groups.append(result)
-
-    # Add standard numeric filters (parts: start numbers. Bolts: bolt_size, bolt_length, phase)
-    if standard_numeric_filters:
-        for key, filter_option in standard_numeric_filters.items():
-            expression = numeric_expression_map[key]
-            filter_option = to_filter_option(filter_option, NumericFilterOption)
-            result = build_filter_group(expression, filter_option, is_numeric=True)
-            if result is not None:
-                filter_groups.append(result)
-
-    string_resolution_errors: list[dict[str, Any]] = []
-    numeric_resolution_errors: list[dict[str, Any]] = []
-    resolved_string_attrs: dict[str, str | None] = {}
-    resolved_numeric_attrs: dict[str, str | None] = {}
-
-    # Resolve custom attribute names to Tekla names, then add string filters
-    if custom_string_filters:
-        string_queries = list(custom_string_filters.keys())
-        if string_queries:
-            resolution = TemplateAttributeParser.resolve_attributes(string_queries)
-            errors = resolution.get("errors", [])
-            string_resolution_errors = errors
-            # `resolved` holds only the names that resolved, in the order their queries
-            # succeeded. Align them to the non-failed queries - a positional zip against
-            # all queries would shift names onto the wrong attributes once one query fails
-            failed_queries = {e["query"] for e in errors}
-            successful_queries = [q for q in string_queries if q not in failed_queries]
-            resolved_map = dict(zip(successful_queries, resolution["resolved"]))
-            for query in string_queries:
-                resolved_string_attrs[query] = resolved_map.get(query)
-
-        for field_name, filter_option in custom_string_filters.items():
-            resolved_name = resolved_string_attrs.get(field_name)
-            if resolved_name:
-                expression = custom_string_expression(resolved_name)
-                filter_option = to_filter_option(filter_option, StringFilterOption)
-                result = build_filter_group(expression, filter_option)
-                if result is not None:
-                    filter_groups.append(result)
-
-    # Same for numeric filters
-    if custom_numeric_filters:
-        numeric_queries = list(custom_numeric_filters.keys())
-        if numeric_queries:
-            resolution = TemplateAttributeParser.resolve_attributes(numeric_queries)
-            errors = resolution.get("errors", [])
-            numeric_resolution_errors = errors
-            # See the string-filter block above: align resolved names to the non-failed
-            # queries so a single failed query does not shift names onto wrong attributes
-            failed_queries = {e["query"] for e in errors}
-            successful_queries = [q for q in numeric_queries if q not in failed_queries]
-            resolved_map = dict(zip(successful_queries, resolution["resolved"]))
-            for query in numeric_queries:
-                resolved_numeric_attrs[query] = resolved_map.get(query)
-
-        for field_name, filter_option in custom_numeric_filters.items():
-            resolved_name = resolved_numeric_attrs.get(field_name)
-            if resolved_name:
-                expression = custom_number_expression(resolved_name)
-                filter_option = to_filter_option(filter_option, NumericFilterOption)
-                result = build_filter_group(expression, filter_option, is_numeric=True)
-                if result is not None:
-                    filter_groups.append(result)
-
-    # Drop empty groups - e.g. an element_type that matched no classes, or custom
-    # attributes that all failed to resolve. If nothing meaningful remains, refuse
-    # rather than silently selecting every object via the bare type filter.
-    non_empty_groups = [fg for fg in filter_groups if fg is not None and fg.Count > 0]
-    if not non_empty_groups:
-        failed = [e.get("query") for e in (string_resolution_errors + numeric_resolution_errors)]
-        detail = f" Unresolved custom attributes: {failed}." if failed else ""
-        raise ValueError(f"No usable filter conditions were produced - nothing was selected to avoid selecting the entire model.{detail}")
-
-    # Combine all filter groups into final filter
-    if len(non_empty_groups) == 1:
-        filter_collection.Add(BinaryFilterExpressionItem(non_empty_groups[0], BinaryFilterOperatorType.BOOLEAN_AND))
-    else:
-        combined = BinaryFilterExpressionCollection()
-        group_operator = BinaryFilterOperatorType.BOOLEAN_OR if combine_with == "OR" else BinaryFilterOperatorType.BOOLEAN_AND
-        logger.debug("Combining %d filter groups with %s", len(non_empty_groups), combine_with)
-        for fg in non_empty_groups:
-            combined.Add(BinaryFilterExpressionItem(fg, group_operator))
-        filter_collection.Add(BinaryFilterExpressionItem(combined, BinaryFilterOperatorType.BOOLEAN_AND))
-
-    objects_to_select = model.get_objects_by_filter(filter_collection)
+    model = TeklaModel()
+    objects_to_select = model.get_objects_by_filter(expression)
     TeklaModel.select_objects(objects_to_select)
 
     count = objects_to_select.GetSize()
