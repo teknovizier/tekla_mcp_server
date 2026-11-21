@@ -195,6 +195,19 @@ class ElementType(StrEnum):
     STEEL_BRACE = "Steel Brace"
 
 
+def element_type_name(type_key: str) -> str:
+    """
+    Return the readable name of an element type key from `element_types.json`.
+
+    Args:
+        type_key: Key such as 'CONCRETE_WALL' or 'INCAST_DETAIL'
+
+    Returns:
+        The `ElementType` value when there is one (e.g. 'Wall'), otherwise the key in words (e.g. 'Incast Detail')
+    """
+    return ElementType[type_key].value if type_key in ElementType.__members__ else type_key.replace("_", " ").title()
+
+
 class ComponentType(StrEnum):
     """
     Represents different types of components in Tekla.

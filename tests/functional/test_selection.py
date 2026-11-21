@@ -4,6 +4,7 @@ Functional tests for selection_provider.
 Tests element selection by filter, GUID, and assembly/main part modes.
 """
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -12,13 +13,14 @@ from tekla_mcp_server.models import BeamInput, PanelInput, PointInput, SlabInput
 from tekla_mcp_server.providers.components_provider import put_components
 from tekla_mcp_server.providers.modeling_provider import place_beams, place_panels, place_slabs
 from tekla_mcp_server.providers.selection_provider import (
+    create_filter,
     select_elements_by_filter,
     select_elements_by_filter_name,
     select_elements_by_guid,
     select_related_elements,
 )
 from tekla_mcp_server.tekla.loader import BaseWeld, BoltArray, BoltGroup, CatalogHandler, Point, Polygon, SingleRebar, Weld
-from tekla_mcp_server.tekla.utils import get_all_rebar_items
+from tekla_mcp_server.tekla.utils import get_all_rebar_items, get_available_attribute_files, refresh_attribute_files
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
 
@@ -185,6 +187,8 @@ def _pick(scene: dict, tree: dict, object_types: list[str] | None = None) -> set
         (_cond("part.element_type", "Is Equal", "Wall"), None, {"W1", "W2", "LIGHT"}),
         (_cond("part.element_type", "Is Equal", ["Wall", "Sandwich Wall"]), None, {"W1", "W2", "SW", "LIGHT"}),
         (_cond("part.element_type", "Is Not Equal", "Wall"), None, {"SW", "BEAM", "PLATE"}),
+        (_cond("part.element_type", "Is Equal", "sandwich wall"), None, {"SW"}),
+        (_cond("part.element_type", "Is Equal", ["CONCRETE_WALL", "concrete_sandwich_wall"]), None, {"W1", "W2", "SW", "LIGHT"}),
         # Nested groups up to Tekla's bracket limit
         ({"any": [{"all": [_cond("part.class", "Is Equal", 1), _cond("part.profile", "Is Equal", "3000*200")]}, _cond("part.class", "Is Equal", 14)]}, None, {"W1", "BEAM"}),
         (
@@ -346,6 +350,149 @@ def test_select_elements_by_filter_invalid_input_returns_error(kwargs, message):
     result = select_elements_by_filter(**kwargs)
     assert result.structured_content["status"] == "error"
     assert message in result.structured_content["message"]
+
+
+@pytest.fixture
+def filter_files() -> Any:
+    """Collect the paths of filter files a test writes and delete them afterwards."""
+    paths: list[Path] = []
+    yield paths
+    for path in paths:
+        path.unlink(missing_ok=True)
+    refresh_attribute_files()
+
+
+def _scoped(scene: dict, tree: dict) -> dict:
+    """Scope a tree to the scene's object IDs."""
+    return {"all": [_cond("object.id_number", "Is Equal", sorted(scene["ids"].values())), tree]}
+
+
+def _selected_keys(scene: dict, count: int) -> set[str]:
+    """Return the keys of the selected scene objects, failing on anything outside the scene."""
+    if not count:
+        return set()
+    selected = {o.Identifier.ID for o in TeklaModel().get_selected_objects()}
+    assert selected <= set(scene["names"]), f"Selected objects outside the scene: {selected - set(scene['names'])}"
+    return {scene["names"][i] for i in selected}
+
+
+MIXED_TREE = {
+    "any": [
+        _cond("part.name", "Is Equal", "MCP_TEST_FLT LIGHT BLOCK"),
+        {"all": [_cond("part.class", "Is Equal", 1), _cond("part.profile", "Is Equal", "3000*200")]},
+        _cond("rebar.class", "Is Equal", 44),
+        _cond("bolt.site_workshop", "Is Equal", "site"),
+        _cond("weld.type_above", "Is Equal", "plug"),
+    ]
+}
+MIXED_TYPES = ["part", "rebar", "bolt", "weld"]
+MIXED_EXPECTED = {"LIGHT", "W1", "BAR_A", "BOLT", "WELD_SITE"}
+
+
+def test_create_filter_selection_matches_the_tree(filter_scene, filter_files):
+    """Tests that a saved selection filter selects exactly what the tree selects."""
+    tree = _scoped(filter_scene, MIXED_TREE)
+    result = create_filter(filter_name="MCP_TEST_FLT_SEL", filter_type="selection", filter=tree, object_types=MIXED_TYPES)
+    content = result.structured_content
+    filter_files.append(Path(content.get("path", "")))
+    assert content["status"] == "success", content
+    assert (content["filter_name"], content["filter_type"], content["overwritten"]) == ("MCP_TEST_FLT_SEL", "selection", False)
+    assert Path(content["path"]).name == "MCP_TEST_FLT_SEL.SObjGrp"
+    assert content["matching_objects"] == len(MIXED_EXPECTED)
+
+    # The cached filter list sees the new file at once
+    assert "MCP_TEST_FLT_SEL" in get_available_attribute_files(".SObjGrp")
+
+    # Tekla evaluates the saved file the same way as the tree
+    by_name = select_elements_by_filter_name(filter_name="MCP_TEST_FLT_SEL").structured_content
+    assert _selected_keys(filter_scene, by_name["selected_count"]) == MIXED_EXPECTED
+    by_tree = select_elements_by_filter(filter=tree, object_types=MIXED_TYPES).structured_content
+    assert _selected_keys(filter_scene, by_tree["selected_count"]) == MIXED_EXPECTED
+
+
+def test_create_filter_refuses_to_overwrite_unless_asked(filter_scene, filter_files):
+    """Tests that an existing filter is kept unless `overwrite` is set, and replaced when it is."""
+    first = create_filter(filter_name="MCP_TEST_FLT_OVERWRITE", filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 8)))
+    path = Path(first.structured_content["path"])
+    filter_files.append(path)
+    original = path.read_bytes()
+
+    refused = create_filter(filter_name="MCP_TEST_FLT_OVERWRITE", filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 14)))
+    assert refused.structured_content["status"] == "error"
+    assert "already exists" in refused.structured_content["message"]
+    assert path.read_bytes() == original
+
+    replaced = create_filter(filter_name="MCP_TEST_FLT_OVERWRITE.SObjGrp", filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 14)), overwrite=True)
+    assert replaced.structured_content["status"] == "success", replaced.structured_content
+    assert replaced.structured_content["overwritten"] is True
+    assert path.read_bytes() != original
+    by_name = select_elements_by_filter_name(filter_name="MCP_TEST_FLT_OVERWRITE").structured_content
+    assert _selected_keys(filter_scene, by_name["selected_count"]) == {"BEAM"}
+
+
+def test_create_filter_with_a_real_style_name(filter_scene, filter_files):
+    """Tests a name with '#', brackets, '~', '+' and spaces, like the model's own filters."""
+    name = "#MCP_TEST_FLT [COLD BENDED] ~x+y"
+    content = create_filter(filter_name=name, filter_type="selection", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", 8))).structured_content
+    filter_files.append(Path(content.get("path", "")))
+    assert content["status"] == "success", content
+    assert Path(content["path"]).name == f"{name}.SObjGrp"
+    assert name in get_available_attribute_files(".SObjGrp")
+    by_name = select_elements_by_filter_name(filter_name=name).structured_content
+    assert _selected_keys(filter_scene, by_name["selected_count"]) == {"SW"}
+
+
+def test_create_filter_overwrite_leaves_no_temporary_file(filter_scene, filter_files):
+    """Tests that replacing a filter goes through a temporary file that is gone afterwards."""
+    attributes = Path(TeklaModel().model_path) / "attributes"
+    for value in (8, 14):
+        content = create_filter(filter_name="MCP_TEST_FLT_TEMP", filter_type="view", filter=_scoped(filter_scene, _cond("part.class", "Is Equal", value)), overwrite=True).structured_content
+        assert content["status"] == "success", content
+    filter_files.append(Path(content["path"]))
+    assert content["overwritten"] is True
+    assert not list(attributes.glob("~mcp_tmp_*"))
+
+
+def test_create_filter_view_has_the_selection_rows(filter_scene, filter_files):
+    """Tests that a view filter holds the same rows as a selection filter of the same tree and selects the same objects."""
+    tree = _scoped(filter_scene, MIXED_TREE)
+    view = create_filter(filter_name="MCP_TEST_FLT_VIEW", filter_type="view", filter=tree, object_types=MIXED_TYPES).structured_content
+    view_path = Path(view["path"])
+    filter_files.append(view_path)
+    assert view["status"] == "success", view
+    assert view_path.name == "MCP_TEST_FLT_VIEW.VObjGrp"
+    assert "MCP_TEST_FLT_VIEW" in get_available_attribute_files(".VObjGrp")
+
+    selection = create_filter(filter_name="MCP_TEST_FLT_VIEW_AS_SEL", filter_type="selection", filter=tree, object_types=MIXED_TYPES).structured_content
+    filter_files.append(Path(selection["path"]))
+    assert view_path.read_bytes() == Path(selection["path"]).read_bytes()
+
+    # Tekla cannot select by a view filter name, so evaluate the view file through a selection copy
+    copy = view_path.with_name("MCP_TEST_FLT_VIEW_COPY.SObjGrp")
+    copy.write_bytes(view_path.read_bytes())
+    filter_files.append(copy)
+    by_name = select_elements_by_filter_name(filter_name=copy.stem).structured_content
+    assert _selected_keys(filter_scene, by_name["selected_count"]) == MIXED_EXPECTED
+
+
+@pytest.mark.parametrize(
+    "kwargs,message",
+    [
+        ({"filter_name": "MCP_TEST/BAD"}, "without folders or a drive"),
+        ({"filter_name": "  "}, "must not be empty"),
+        ({"filter_name": "C:MCP_TEST_FLT_BAD"}, "without folders or a drive"),
+        ({"filter_name": "MCP_TEST_FLT?BAD"}, "Tekla could not write the filter 'MCP_TEST_FLT?BAD'"),
+        ({"filter_name": "MCP_TEST_FLT_BAD", "filter": _cond("part.nope", "Is Equal", 1)}, "Unknown field"),
+        ({"filter_name": "MCP_TEST_FLT_BAD", "object_types": ["beam"]}, "Unknown object types"),
+    ],
+)
+def test_create_filter_invalid_input_writes_nothing(kwargs, message):
+    """Tests that invalid input is an error and leaves no file behind."""
+    arguments = {"filter_type": "selection", "filter": _cond("part.class", "Is Equal", 1), **kwargs}
+    result = create_filter(**arguments)
+    assert result.structured_content["status"] == "error"
+    assert message in result.structured_content["message"]
+    assert not (Path(TeklaModel().model_path) / "attributes" / "MCP_TEST_FLT_BAD.SObjGrp").exists()
 
 
 def test_select_elements_by_guid(model_objects):

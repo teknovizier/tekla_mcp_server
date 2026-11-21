@@ -110,7 +110,7 @@ tekla_mcp_server/
 │   │   ├── operations_provider.py       # cut, orphans, clash_check, find_nearby_elements, macro, ...
 │   │   ├── properties_provider.py       # get/set_elements_properties, compare, copy_properties_from_ifc, ...
 │   │   ├── resources_provider.py        # All MCP resources (tekla://, project://)
-│   │   ├── selection_provider.py        # select_elements_by_filter/guid/name
+│   │   ├── selection_provider.py        # select_elements_by_filter/guid/name, create_filter
 │   │   └── view_provider.py             # color, zoom, hide, labels, filters
 │   └── tekla/
 │       ├── loader.py                    # Single source for all Tekla.* DLL imports

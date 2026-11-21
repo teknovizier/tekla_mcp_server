@@ -11,10 +11,13 @@ from tekla_mcp_server.filter_fields import (
     CATEGORY_OBJECT_TYPES,
     CUSTOM_MEMBERS,
     FIELDS,
+    FILTER_FILE_EXTENSIONS,
+    MAX_FILTER_NAME_LENGTH,
     OBJECT_TYPES,
     OPS_BY_KIND,
     VALUE_OPS,
     WELD_TYPES,
+    normalize_filter_name,
 )
 
 
@@ -77,3 +80,50 @@ class TestCategories:
 
     def test_object_type_field_offers_every_object_type(self):
         assert FIELDS["object.type"].values == OBJECT_TYPES
+
+
+class TestNormalizeFilterName:
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("MCP_TEST_FILTER", "MCP_TEST_FILTER"),
+            ("  padded  ", "padded"),
+            ("#WALLS [COLD BENDED] ~x+y", "#WALLS [COLD BENDED] ~x+y"),
+            ("with.SObjGrp", "with"),
+            ("with.sobjgrp", "with"),
+            ("dotted.name", "dotted.name"),
+            ("CON", "CON"),
+            ("A" * MAX_FILTER_NAME_LENGTH, "A" * MAX_FILTER_NAME_LENGTH),
+        ],
+    )
+    def test_valid_names(self, name, expected):
+        assert normalize_filter_name(name, "selection") == expected
+
+    def test_view_extension_is_dropped_for_view_filters(self):
+        assert normalize_filter_name("walls.VObjGrp", "view") == "walls"
+
+    @pytest.mark.parametrize("name,filter_type", [("walls.VObjGrp", "selection"), ("walls.vobjgrp", "selection"), ("walls.SObjGrp", "view"), ("x.SObjGrp.VObjGrp", "selection")])
+    def test_other_type_extension_is_rejected(self, name, filter_type):
+        with pytest.raises(ValueError, match="filter extension"):
+            normalize_filter_name(name, filter_type)
+
+    @pytest.mark.parametrize(
+        "name,message",
+        [
+            ("", "must not be empty"),
+            ("   ", "must not be empty"),
+            (".SObjGrp", "must not be empty"),
+            ("A" * (MAX_FILTER_NAME_LENGTH + 1), "at most"),
+            ("sub/dir", "without folders or a drive"),
+            ("sub\\dir", "without folders or a drive"),
+            ("..\\escape", "without folders or a drive"),
+            ("C:name", "without folders or a drive"),
+            ("C:\\abs\\name", "without folders or a drive"),
+        ],
+    )
+    def test_invalid_names(self, name, message):
+        with pytest.raises(ValueError, match=message):
+            normalize_filter_name(name, "selection")
+
+    def test_extensions_per_type(self):
+        assert FILTER_FILE_EXTENSIONS == {"selection": ".SObjGrp", "view": ".VObjGrp"}

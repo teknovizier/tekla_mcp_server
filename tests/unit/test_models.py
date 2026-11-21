@@ -26,6 +26,7 @@ from tekla_mcp_server.models import (
     PointInput,
     PositionInput,
     _coerce_custom_property,
+    element_type_name,
     simplify_filter_tree,
     specialize_filter_tree,
 )
@@ -1190,3 +1191,19 @@ class TestSpecializeFilterTree:
         node = {"any": [{"all": [PART_A, ASM_B]}, {"all": [BOLT_16, {"field": "object.type", "op": "Is Equal", "value": "bolt"}]}]}
         assert _spec(node, "part") == ("all", ["A", "B"])
         assert _spec(node, "bolt") == ("any", ["B", 16])
+
+
+class TestElementTypeName:
+    @pytest.mark.parametrize(
+        "type_key,expected",
+        [
+            ("CONCRETE_WALL", "Wall"),
+            ("CONCRETE_SANDWICH_WALL", "Sandwich Wall"),
+            ("STEEL_BEAM", "Steel Beam"),
+            ("INCAST_DETAIL", "Incast Detail"),
+            ("CORRUGATED_TUBE", "Corrugated Tube"),
+            ("REBAR", "Rebar"),
+        ],
+    )
+    def test_names(self, type_key, expected):
+        assert element_type_name(type_key) == expected

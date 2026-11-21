@@ -7,6 +7,7 @@ objects by `tekla/filter_builder.py`.
 """
 
 from dataclasses import dataclass, field
+from pathlib import PureWindowsPath
 from typing import Literal
 
 FieldKind = Literal["string", "numeric", "boolean", "date"]
@@ -19,6 +20,11 @@ DATE_OPS = ("Is Equal", "Is Not Equal", "Earlier Than", "Earlier Or Equal", "Lat
 VALUE_OPS = ("Is Equal", "Is Not Equal")
 
 OPS_BY_KIND: dict[str, tuple[str, ...]] = {"string": STRING_OPS, "numeric": NUMERIC_OPS, "boolean": BOOLEAN_OPS, "date": DATE_OPS}
+
+# Filter file type -> file extension Tekla uses in the attributes folder
+FILTER_FILE_EXTENSIONS: dict[str, str] = {"selection": ".SObjGrp", "view": ".VObjGrp"}
+
+MAX_FILTER_NAME_LENGTH = 80
 
 
 @dataclass(frozen=True)
@@ -220,3 +226,37 @@ FIELDS: dict[str, FieldSpec] = {
     "logical_area.section": FieldSpec(_LOGICAL_AREA, "Section", "string", "Section name"),
     "logical_area.story": FieldSpec(_LOGICAL_AREA, "Story", "string", "Storey name"),
 }
+
+
+def normalize_filter_name(name: str, filter_type: str) -> str:
+    """
+    Check a filter name and return it as the file stem to write.
+
+    A trailing extension of `filter_type` is dropped. The name must be a plain file name without
+    folders or a drive, so it can never point outside the attributes folder. Characters Windows
+    does not allow in file names make Tekla refuse to write the file, which the caller reports.
+
+    Args:
+        name: Filter name given by the caller
+        filter_type: Key of `FILTER_FILE_EXTENSIONS`, 'selection' or 'view'
+
+    Returns:
+        The file stem without extension
+
+    Raises:
+        ValueError: If the name is empty, too long, has the other filter type's extension, or contains a folder or drive
+    """
+    stem = name.strip()
+    extension = FILTER_FILE_EXTENSIONS[filter_type]
+    if stem.lower().endswith(extension.lower()):
+        stem = stem[: -len(extension)].rstrip()
+    for other_type, other_extension in FILTER_FILE_EXTENSIONS.items():
+        if other_type != filter_type and stem.lower().endswith(other_extension.lower()):
+            raise ValueError(f"The filter name {name.strip()!r} ends with the {other_type} filter extension '{other_extension}', but the filter type is '{filter_type}'")
+    if not stem:
+        raise ValueError("The filter name must not be empty")
+    if len(stem) > MAX_FILTER_NAME_LENGTH:
+        raise ValueError(f"The filter name must be at most {MAX_FILTER_NAME_LENGTH} characters long")
+    if PureWindowsPath(stem).name != stem:
+        raise ValueError(f"The filter name {stem!r} must be a plain file name, without folders or a drive")
+    return stem

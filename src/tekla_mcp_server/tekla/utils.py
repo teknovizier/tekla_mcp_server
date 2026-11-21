@@ -906,6 +906,13 @@ def get_available_attribute_files(file_extension: str) -> list[str]:
     return list(_attribute_files(file_extension, model_path))
 
 
+def refresh_attribute_files() -> None:
+    """
+    Forget the cached attribute file lists, so a file written since the last scan shows up.
+    """
+    _attribute_files.cache_clear()
+
+
 @lru_cache
 def _attribute_files(file_extension: str, model_path: str) -> tuple[str, ...]:
     """

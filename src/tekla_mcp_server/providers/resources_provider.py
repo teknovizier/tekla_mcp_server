@@ -5,6 +5,7 @@ Provides read-only data resources for discovery and metadata.
 """
 
 from dataclasses import asdict
+from typing import Any
 
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.providers import LocalProvider
@@ -12,6 +13,7 @@ from fastmcp.server.providers import LocalProvider
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.filter_fields import CATEGORIES, FIELDS, OBJECT_TYPES, OPS_BY_KIND
 from tekla_mcp_server.init import logger
+from tekla_mcp_server.models import element_type_name
 from tekla_mcp_server.tekla.loader import Grid
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.utils import get_all_materials, get_all_rebar_items, get_macros, get_available_attribute_files, get_report_templates
@@ -101,8 +103,10 @@ def get_report_template_list() -> ResourceResult:
 def get_element_types() -> ResourceResult:
     """
     Returns a list of available Tekla element types and their corresponding class numbers.
+
+    `name` is a readable name 'part.element_type' takes in filter trees, e.g. 'Wall' for 'CONCRETE_WALL'.
     """
-    element_types = get_config().get_element_types_list()
+    element_types = [{**entry, "name": element_type_name(entry["type"])} for entry in get_config().get_element_types_list()]
     logger.debug("Retrieved %d element types", len(element_types))
     return json_resource(element_types)
 
@@ -135,13 +139,22 @@ def get_filter_fields() -> ResourceResult:
     """
     Returns the fields, attribute categories, operators and object types for filter trees.
 
-    Conditions on a category tied to one object type (e.g. 'part', 'bolt') match only that type.
-    Fields with `values` accept only those words and the operators 'Is Equal' and 'Is Not Equal'.
+    A condition on a category tied to one object type (e.g. 'part', 'bolt') is ignored for the other
+    object types. Fields of kind 'choice' take only the listed words and the operators 'Is Equal'
+    and 'Is Not Equal'. '*' and '?' in text values are always wildcards.
     """
+    fields = {}
+    for name, spec in FIELDS.items():
+        entry: dict[str, Any] = {"kind": spec.kind, "operators": list(spec.ops), "description": spec.description}
+        if spec.values:
+            entry.update(kind="choice", values=sorted(spec.values))
+        elif spec.expanded:
+            # Reinforcement classes are rebar classes, not part classes, so 'rebar.class' covers them
+            names = [element_type_name(t["type"]) for t in get_config().get_element_types_list() if t["material"] != "MATERIAL_REINFORCEMENT"]
+            entry.update(kind="choice", values=names, note="Names or keys of `tekla://element_types`, in any case")
+        fields[name] = entry
     data = {
-        "fields": {
-            name: {"kind": spec.kind, "operators": list(spec.ops), "description": spec.description, **({"values": sorted(spec.values)} if spec.values else {})} for name, spec in FIELDS.items()
-        },
+        "fields": fields,
         "attribute_categories": sorted(CATEGORIES),
         "operators_by_kind": {kind: list(ops) for kind, ops in OPS_BY_KIND.items()},
         "object_types": sorted(OBJECT_TYPES),

@@ -4,52 +4,56 @@ Selection tools provider for Tekla MCP server.
 Uses LocalProvider for modular organization and callable decorator pattern.
 """
 
-from typing import Annotated
+import os
+from pathlib import Path
+from typing import Annotated, Literal
 
 from fastmcp.server.providers import LocalProvider
 from fastmcp.tools import ToolResult
 from pydantic import Field, TypeAdapter
 
 from tekla_mcp_server.config import get_config
+from tekla_mcp_server.filter_fields import FILTER_FILE_EXTENSIONS, normalize_filter_name
 from tekla_mcp_server.init import logger
-from tekla_mcp_server.models import ElementType, FilterCondition, FilterGroup, FilterNode, SelectionMode
+from tekla_mcp_server.models import FilterCondition, FilterGroup, FilterNode, SelectionMode, element_type_name
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.filter_builder import build_filter_expression
-from tekla_mcp_server.tekla.loader import ArrayList
+from tekla_mcp_server.tekla.loader import ArrayList, Filter, FilterExpressionFileType
+from tekla_mcp_server.tekla.utils import refresh_attribute_files
 
 
 selection_provider = LocalProvider()
+
+# Prefix of the file `create_filter` writes before moving it into place
+TEMPORARY_FILTER_PREFIX = "~mcp_tmp_"
 
 _FILTER_ADAPTER: TypeAdapter[FilterNode] = TypeAdapter(FilterNode)
 
 
 def _resolve_element_type_classes(element_type: str) -> list[int]:
     """
-    Resolve a named element type to its Tekla class numbers from the config.
+    Resolve an element type to its Tekla class numbers from `element_types.json`.
 
     Args:
-        element_type: Named element type (e.g. 'Wall', 'Steel Beam')
+        element_type: Name or key from `tekla://element_types`, e.g. 'Wall' or 'CONCRETE_WALL', in any case
 
     Returns:
         Tekla class numbers of the element type, empty when none is configured
 
     Raises:
-        ValueError: If `element_type` is not a known element type
+        ValueError: If `element_type` is not a configured element type
     """
-    try:
-        element_type_enum = ElementType(element_type.strip())
-    except Exception as e:
-        raise ValueError(f"Invalid element_type: {e}") from e
-
-    element_type_classes: list[int] = []
+    text = element_type.strip()
+    wanted = text.upper().replace(" ", "_")
     for material_types in get_config().element_types.values():
-        for type_name, config in material_types.items():
-            logger.debug("Checking element type '%s' against '%s', classes=%s", element_type_enum.name, type_name, config.get("tekla_classes", []))
-            if element_type_enum.name.replace(" ", "_").upper() in type_name.upper() or type_name.upper() in element_type_enum.name.upper():
-                element_type_classes.extend(config.get("tekla_classes", []))
-    return element_type_classes
+        for type_key, config in material_types.items():
+            if wanted in (type_key.upper(), element_type_name(type_key).upper().replace(" ", "_")):
+                logger.debug("Element type '%s' is '%s' with classes %s", text, type_key, config.get("tekla_classes", []))
+                return list(config.get("tekla_classes", []))
+    names = [element_type_name(type_key) for material_types in get_config().element_types.values() for type_key in material_types]
+    raise ValueError(f"Invalid element_type '{text}'. Must be one of: {names}")
 
 
 def _expand_element_type(condition: FilterCondition) -> FilterCondition:
@@ -111,8 +115,8 @@ def select_elements_by_filter(
     'any' groups do not match through it. So with several `object_types`, a type without conditions of its
     own is selected whole. 'object.type' conditions make groups depend on the type. Assembly conditions
     also apply to the parts of the assembly. 'part.element_type' takes element type names such as 'Wall'
-    and matches their Tekla classes. Fields with readable values (e.g. 'bolt.site_workshop': 'site' or
-    'workshop') accept only 'Is Equal' and 'Is Not Equal'. Text values may use Tekla wildcards '*' and '?'. Numeric fields take numbers only, so use a list or a range instead of a wildcard.
+    or their keys such as 'CONCRETE_WALL', in any case, and matches their Tekla classes. Fields with readable values (e.g. 'bolt.site_workshop': 'site' or
+    'workshop') accept only 'Is Equal' and 'Is Not Equal'. '*' and '?' in a text value are always Tekla wildcards, so 'Is Equal 400*400' also matches a profile '400*1400'. Numeric fields take numbers only, so use a list or a range instead of a wildcard.
     Attribute names are used exactly as given and are case-sensitive, so read them first, e.g. with
     `get_elements_properties`. Tekla allows at most 3 levels of brackets, so prefer list values over
     'any' groups of single values.
@@ -156,6 +160,73 @@ def select_elements_by_filter(
         structured_content={
             "status": "success" if count else "warning",
             "selected_count": count,
+        }
+    )
+
+
+@selection_provider.tool(tags={"selection", "filters"}, annotations={"readOnlyHint": False, "destructiveHint": True})
+@mcp_handler(scope="tool")
+def create_filter(
+    filter_name: Annotated[str, Field(description="Name of the filter file, without extension")],
+    filter_type: Annotated[Literal["selection", "view"], Field(description="'selection' writes a selection filter (.SObjGrp), 'view' a view filter (.VObjGrp)")],
+    filter: Annotated[
+        FilterGroup | FilterCondition,
+        Field(description="Filter tree, the same as for `select_elements_by_filter`. Fields and object types are listed in `tekla://filters/fields`"),
+    ],
+    object_types: Annotated[list[str], Field(description="Object types the filter matches, e.g. ['part'] or ['part', 'bolt']")] = ["part"],
+    overwrite: Annotated[bool, Field(description="Replace a filter of the same name and type in the model's attributes folder")] = False,
+) -> ToolResult:
+    """
+    Saves a filter as a Tekla selection filter or view filter.
+
+    An existing filter is replaced only when `overwrite` is set. A model
+    filter hides a firm or project filter of the same name. The result reports how many objects of the
+    model match now.
+    """
+    # Check the whole request before touching any file
+    stem = normalize_filter_name(filter_name, filter_type)
+    tree = _FILTER_ADAPTER.validate_python(filter)
+    expression = build_filter_expression(_prepare_tree(tree), object_types)
+
+    model = TeklaModel()
+    attributes = Path(model.model_path) / "attributes"
+    if not attributes.is_dir():
+        raise RuntimeError(f"The model has no attributes folder at '{attributes}'")
+    file_name = f"{stem}{FILTER_FILE_EXTENSIONS[filter_type]}"
+    # Windows file names ignore case, so an existing filter keeps its own spelling
+    path = next((f for f in attributes.iterdir() if f.name.lower() == file_name.lower()), attributes / file_name)
+    existed = path.exists()
+    if existed and not overwrite:
+        raise ValueError(f"A {filter_type} filter named '{path.stem}' already exists in the model. Set `overwrite` to replace it.")
+
+    # Tekla writes a temporary file first, so a failed write never damages the filter it replaces
+    file_type = FilterExpressionFileType.OBJECT_GROUP_SELECTION if filter_type == "selection" else FilterExpressionFileType.OBJECT_GROUP_VIEW
+    temporary_stem = attributes / f"{TEMPORARY_FILTER_PREFIX}{path.stem}"
+    try:
+        # Tekla appends the extension and returns the path it wrote
+        written = Path(str(Filter(expression).CreateFile(file_type, str(temporary_stem))))
+    except Exception as e:
+        raise ValueError(f"Tekla could not write the filter '{stem}': {str(e).splitlines()[0]}") from e
+    try:
+        if not written.is_file():
+            raise RuntimeError(f"Tekla did not write the filter file '{written}'")
+        os.replace(written, path)
+    finally:
+        written.unlink(missing_ok=True)
+
+    # The filter lists behind `tekla://filters/*` and `apply_view_filter` are cached
+    refresh_attribute_files()
+    matching = model.get_objects_by_filter(expression).GetSize()
+    logger.info("Created %s filter '%s' matching %d objects", filter_type, path, matching)
+    return ToolResult(
+        structured_content={
+            "status": "success",
+            "filter_name": path.stem,
+            "filter_type": filter_type,
+            "path": str(path),
+            "overwritten": existed,
+            "matching_objects": matching,
+            "note": "Tekla reads its filter lists when a dialog opens, so reopen the view properties or filter dialog to see this filter there.",
         }
     )
 
