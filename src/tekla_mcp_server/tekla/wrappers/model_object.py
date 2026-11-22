@@ -338,7 +338,7 @@ class SolidGeometryMixin:
             solids["normal_within_raw"] = within
         return solids["normal_within_raw"]
 
-    def contains_any_point(self, points: FloatArray, raw: bool = False, solids: dict[str, Any] | None = None) -> bool:
+    def contains_any_point(self, points: FloatArray, raw: bool = False, solids: dict[str, Any] | None = None, on_error: bool = True) -> bool:
         """
         Return True if any of the points lies inside this object's solid.
 
@@ -351,13 +351,15 @@ class SolidGeometryMixin:
         Pass the same `solids` dict for repeated tests against this object to build each
         solid only once. The model must not change meanwhile.
 
-        Any geometry/kernel failure conservatively returns True to avoid false negatives.
+        An invalid solid or a geometry failure returns `on_error`. The safe answer depends on
+        the caller: True when "inside" reports a problem, False when "inside" clears one.
 
         Args:
             points: Points in the current work plane, shape (n, 3)
             raw: Test against the RAW solid (without cuts) of a part. Embeds cut their own
                 holes and recesses into the concrete, so only the RAW solid still contains them
             solids: Solid cache for this object
+            on_error: Answer when the solid cannot be tested
 
         Returns:
             True if a point is inside, False for no points
@@ -369,8 +371,8 @@ class SolidGeometryMixin:
         try:
             solid = self._cached_solid(raw, solids)
             if not solid or not solid.IsValid():
-                logger.warning("contains_any_point: solid invalid (%s), defaulting to inside", "None" if not solid else "!IsValid()")
-                return True  # conservative
+                logger.warning("contains_any_point: solid invalid (%s), answering %s", "None" if not solid else "!IsValid()", on_error)
+                return on_error
 
             if not raw and isinstance(self, TeklaPart) and self._normal_within_raw(solids):
                 points = _points_inside(self._cached_solid(True, solids), points)
@@ -378,8 +380,8 @@ class SolidGeometryMixin:
             inside_box = np.all((points >= (mn.X, mn.Y, mn.Z)) & (points <= (mx.X, mx.Y, mx.Z)), axis=1)
             return any(_point_inside(solid, float(x), float(y), float(z)) for x, y, z in points[inside_box])
         except Exception:
-            logger.warning("contains_any_point containment test failed, defaulting to inside")
-            return True  # conservative
+            logger.warning("contains_any_point containment test failed, answering %s", on_error)
+            return on_error
 
 
 def wrap_model_object(model_object: ModelObject) -> TeklaModelObject | None:

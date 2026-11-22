@@ -152,7 +152,7 @@ def _get_reinforcement_ids(element: TeklaAssembly) -> set[int]:
     return ids
 
 
-def _is_inside_any_part(points: FloatArray, parts: list[SolidGeometryMixin], solid_cache: dict[int, dict[str, Any]], raw: bool) -> bool:
+def _is_inside_any_part(points: FloatArray, parts: list[SolidGeometryMixin], solid_cache: dict[int, dict[str, Any]], raw: bool, on_error: bool = True) -> bool:
     """
     Check whether any sample point of an object lies within the solid of any part in the list.
 
@@ -165,11 +165,41 @@ def _is_inside_any_part(points: FloatArray, parts: list[SolidGeometryMixin], sol
         parts: Container parts
         solid_cache: Shared solids by object ID
         raw: Test against RAW solids, without cuts
+        on_error: Answer for a part whose solid cannot be tested. True suits a container test,
+            where "inside" reports the object, False suits a test where "inside" clears it
 
     Returns:
         True if any part contains a point, False otherwise or for an empty list
     """
-    return any(part.contains_any_point(points, raw, solid_cache.setdefault(part.id, {})) for part in parts)
+    return any(part.contains_any_point(points, raw, solid_cache.setdefault(part.id, {}), on_error) for part in parts)
+
+
+def _embed_root(assembly: Any) -> tuple[Any, Any]:
+    """
+    Walk up from an assembly while its parent is an embedded detail too.
+
+    An embed's anchors often sit in subassemblies whose main part also has an embedded-detail
+    class. The walk stops below the first parent that is not an embedded detail, such as the
+    element the embed is attached to, so that parent can still be checked.
+
+    Args:
+        assembly: Tekla `Assembly` found for a candidate part
+
+    Returns:
+        Tuple of (outermost embedded-detail assembly, its parent or None)
+    """
+    while True:
+        parent = assembly.GetAssembly()
+        if parent is None or parent.Identifier.ID == assembly.Identifier.ID:
+            return assembly, None
+        main = parent.GetMainPart()
+        try:
+            embedded = main is not None and int(main.Class) in EMBEDDED_DETAILS_CLASSES
+        except (TypeError, ValueError):
+            embedded = False
+        if not embedded:
+            return assembly, parent
+        assembly = parent
 
 
 def _embed_sample_points(embed: TeklaAssembly, work_plane_handler: Any) -> FloatArray:
@@ -239,6 +269,9 @@ def _check_element_bounding_box_embeds(
             continue
         if not assembly_obj:
             continue
+        # A part of an embed's subassembly, e.g. an anchor, resolves to that subassembly.
+        # Report the whole embed instead, or one orphan would show up once per subassembly
+        assembly_obj, parent = _embed_root(assembly_obj)
 
         # A multi-part embed yields multiple candidates that resolve to the same assembly, process each
         # assembly once. The ID is read before wrapping so repeated parts cost one call
@@ -247,7 +280,7 @@ def _check_element_bounding_box_embeds(
             continue
         seen_assembly_ids.add(assembly_id)
 
-        wrapped_assembly = candidate if isinstance(candidate, TeklaAssembly) else wrap_model_object(assembly_obj)
+        wrapped_assembly = candidate if isinstance(candidate, TeklaAssembly) and candidate.id == assembly_id else wrap_model_object(assembly_obj)
         if not isinstance(wrapped_assembly, TeklaAssembly):
             continue
 
@@ -263,7 +296,6 @@ def _check_element_bounding_box_embeds(
         # An embed is orphaned when its parent assembly isn't one of the assemblies we're
         # checking against - i.e. it's physically inside the element but not attached to it.
         # Checked before the geometry, which attached embeds do not need
-        parent = assembly_obj.GetAssembly()
         parent_guid = parent.Identifier.GUID.ToString() if parent else None
         if parent_guid in target_assembly_guids:
             evaluated_guids.add(wrapped_assembly.guid)
@@ -349,9 +381,10 @@ def _check_element_bounding_box_rebars(
         # inside the solid of its actual father part.
         # We check only the father part, not the entire father assembly, because we
         # are verifying specific ownership.
-        # Neighbouring bars often share a father, so its solids go in the same per-part cache
+        # Neighbouring bars often share a father, so its solids go in the same per-part cache.
+        # A father solid that cannot be tested does not clear the bar, or it would hide an orphan
         father = candidate.father
-        if points is not None and isinstance(father, SolidGeometryMixin) and father.guid != ZERO_GUID and _is_inside_any_part(points, [father], part_solids, raw=False):
+        if points is not None and isinstance(father, SolidGeometryMixin) and father.guid != ZERO_GUID and _is_inside_any_part(points, [father], part_solids, raw=False, on_error=False):
             continue
 
         orphaned.append(

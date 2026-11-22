@@ -25,7 +25,7 @@ from tekla_mcp_server.providers.operations_provider import (
     convert_cut_parts_to_real_parts,
     run_macro,
 )
-from tekla_mcp_server.tekla.loader import Point, TransformationPlane, Vector
+from tekla_mcp_server.tekla.loader import Beam, BooleanPart, Point, Polygon, SingleRebar, TransformationPlane, Vector
 from tekla_mcp_server.tekla.wrappers.model_object import ZERO_GUID
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 
@@ -70,6 +70,84 @@ def test_check_for_orphans_pairs_shape(model_objects):
     for entry in result.structured_content["orphaned"]:
         assert "object_guid" in entry
         assert "target_guid" in entry
+
+
+_ORPHAN_Y = 910000.0  # far from the fixture objects and the model
+
+
+@pytest.fixture
+def orphan_scene():
+    """Build objects next to a 4000 x 3000 x 200 MCP_TEST_ wall at Y = `_ORPHAN_Y`, delete them afterwards."""
+    created: list = []
+
+    def beam(name: str, start: tuple, end: tuple, profile: str, tekla_class: str, material: str = "C30/37") -> Beam:
+        b = Beam()
+        b.StartPoint, b.EndPoint = Point(*start), Point(*end)
+        b.Name, b.Class = name, tekla_class
+        b.Profile.ProfileString, b.Material.MaterialString = profile, material
+        assert b.Insert(), name
+        created.append(b)
+        return b
+
+    def bar(name: str, father: Beam, points: list[tuple]) -> SingleRebar:
+        r = SingleRebar()
+        r.Father = father
+        polygon = Polygon()
+        for point in points:
+            polygon.Points.Add(Point(*point))
+        r.Polygon = polygon
+        r.Name, r.Size, r.Grade, r.Class = name, "12", "B500B", 2
+        assert r.Insert(), name
+        return r
+
+    # The 3000 high profile hangs below its reference line, so the wall spans Z -3000..0
+    wall = beam("MCP_TEST_ORPHAN_WALL", (0, _ORPHAN_Y, 0), (4000, _ORPHAN_Y, 0), "3000*200", "1")
+    yield wall, beam, bar
+    model = TeklaModel()
+    # Bars and cuts go with their fathers
+    for obj in created:
+        obj.Delete()
+    model.commit_changes()
+
+
+def _orphans(host: Beam, mode: str) -> list[str]:
+    """GUIDs `check_for_orphans` reports for one host."""
+    TeklaModel.select_objects([host])
+    return [entry["object_guid"] for entry in check_for_orphans(mode=mode).structured_content["orphaned"]]
+
+
+def test_check_for_orphans_reports_an_embed_once_with_its_anchor_subassembly(orphan_scene):
+    """An orphan embed whose anchor sits in an embedded-detail subassembly is one orphan, an attached embed none."""
+    wall, beam, _ = orphan_scene
+    plate = beam("MCP_TEST_ORPHAN_PLATE", (1000, _ORPHAN_Y, -1500), (1200, _ORPHAN_Y, -1500), "100*100", "4", "S235JR")
+    anchor = beam("MCP_TEST_ORPHAN_ANCHOR", (1100, _ORPHAN_Y, -1400), (1100, _ORPHAN_Y, -1100), "D20", "4", "S235JR")
+    embed = plate.GetAssembly()
+    assert embed.Add(anchor.GetAssembly()) and embed.Modify()
+    attached = beam("MCP_TEST_ORPHAN_ATTACHED", (3000, _ORPHAN_Y, -1500), (3200, _ORPHAN_Y, -1500), "100*100", "4", "S235JR")
+    wall_assembly = wall.GetAssembly()
+    assert wall_assembly.Add(attached.GetAssembly()) and wall_assembly.Modify()
+    TeklaModel().commit_changes()
+    embed.Select()
+
+    assert _orphans(wall, "subassemblies") == [embed.Identifier.GUID.ToString()]
+
+
+def test_check_for_orphans_reports_a_bar_whose_father_solid_is_broken(orphan_scene):
+    """A father solid that cannot be tested must not clear a bar as a starter bar, real starter bars still are."""
+    wall, beam, bar = orphan_scene
+    # A cut that removes the whole father leaves it without a valid NORMAL solid
+    father = beam("MCP_TEST_ORPHAN_EATEN", (0, _ORPHAN_Y + 5000, 0), (1000, _ORPHAN_Y + 5000, 0), "300*300", "1")
+    eater = beam("MCP_TEST_ORPHAN_EATER", (-500, _ORPHAN_Y + 5000, 150), (1500, _ORPHAN_Y + 5000, 150), "2000*2000", BooleanPart.BooleanOperativeClassName)
+    cut = BooleanPart()
+    cut.Father, cut.Type = father, BooleanPart.BooleanTypeEnum.BOOLEAN_CUT
+    cut.SetOperativePart(eater)
+    assert cut.Insert()
+    broken_bar = bar("MCP_TEST_ORPHAN_BAR", father, [(500, _ORPHAN_Y, -300), (3500, _ORPHAN_Y, -300)])
+    neighbour = beam("MCP_TEST_ORPHAN_NEIGHBOUR", (4000, _ORPHAN_Y, 0), (6000, _ORPHAN_Y, 0), "3000*200", "1")
+    bar("MCP_TEST_ORPHAN_STARTER", neighbour, [(5000, _ORPHAN_Y, -1000), (3500, _ORPHAN_Y, -1000)])
+    TeklaModel().commit_changes()
+
+    assert _orphans(wall, "rebars") == [broken_bar.Identifier.GUID.ToString()]
 
 
 def test_attach_assemblies_empty_pairs():

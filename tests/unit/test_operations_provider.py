@@ -146,3 +146,58 @@ class TestBatchAttachConflictingTargets:
             result = operations_module._batch_attach("rebars", pairs, attach, lambda obj, target: True).structured_content
 
         assert (result["attached"], result["skipped"]) == (["r"], [])
+
+
+def _assembly(assembly_id: int, main_class: str | None, parent: MagicMock | None = None) -> MagicMock:
+    """Build a mocked Tekla assembly with a main part class and a parent."""
+    assembly = MagicMock()
+    assembly.Identifier.ID = assembly_id
+    assembly.GetMainPart.return_value = None if main_class is None else MagicMock(Class=main_class)
+    assembly.GetAssembly.return_value = parent
+    return assembly
+
+
+class TestEmbedRoot:
+    def test_anchor_subassembly_is_promoted_to_its_embed(self):
+        """An anchor subassembly of an orphan embed resolves to the embed, which is reported once."""
+        embed = _assembly(2, "4")
+        anchor = _assembly(3, "4", parent=embed)
+        assert operations_module._embed_root(anchor) == (embed, None)
+
+    def test_walk_stops_below_the_element_it_is_attached_to(self):
+        wall = _assembly(1, "1")
+        embed = _assembly(2, "4", parent=wall)
+        anchor = _assembly(3, "4", parent=embed)
+        assert operations_module._embed_root(anchor) == (embed, wall)
+
+    def test_assembly_that_is_its_own_parent_stops(self):
+        embed = _assembly(2, "4")
+        embed.GetAssembly.return_value = embed
+        assert operations_module._embed_root(embed) == (embed, None)
+
+    @pytest.mark.parametrize("main_class", [None, "BlOpCl"])
+    def test_parent_without_a_numeric_class_is_not_an_embed(self, main_class):
+        parent = _assembly(1, main_class)
+        embed = _assembly(2, "4", parent=parent)
+        assert operations_module._embed_root(embed) == (embed, parent)
+
+
+class TestContainsAnyPointOnError:
+    """An untestable solid answers `on_error`: True reports a container hit, False keeps a father test from clearing an orphan."""
+
+    @pytest.mark.parametrize("on_error", [True, False])
+    def test_invalid_solid_answers_on_error(self, on_error):
+        holder = MagicMock()
+        holder._cached_solid.return_value = MagicMock(IsValid=MagicMock(return_value=False))
+        assert operations_module.SolidGeometryMixin.contains_any_point(holder, np.zeros((1, 3)), on_error=on_error) is on_error
+
+    @pytest.mark.parametrize("on_error", [True, False])
+    def test_failing_geometry_answers_on_error(self, on_error):
+        holder = MagicMock()
+        holder._cached_solid.side_effect = RuntimeError("kernel failure")
+        assert operations_module.SolidGeometryMixin.contains_any_point(holder, np.zeros((1, 3)), on_error=on_error) is on_error
+
+    def test_default_stays_inside(self):
+        holder = MagicMock()
+        holder._cached_solid.return_value = None
+        assert operations_module.SolidGeometryMixin.contains_any_point(holder, np.zeros((1, 3))) is True
