@@ -4,7 +4,9 @@ Unit tests for modeling tools.
 Tests input models and placement logic.
 """
 
+import importlib
 import os
+from unittest.mock import patch
 
 import pytest
 from pydantic_core import ValidationError
@@ -263,61 +265,34 @@ class TestBatchPlacementResult:
 
 
 @pytest.mark.skipif(os.getenv("CI") == "true", reason="Skipping (Tekla not available in CI)")
-class TestCommitOrFail:
-    """Tests for the _commit_or_fail helper."""
+class TestCommitFailureNote:
+    """Tests for the _commit_failure_note helper."""
 
-    def _make_results(self, n: int, success: bool = True) -> list:
-        return [PlacementResult(success=success, guid=f"GUID{i}", message="OK") for i in range(n)]
+    def test_commit_success_adds_nothing(self):
+        from tekla_mcp_server.providers.modeling_provider import _commit_failure_note
 
-    def test_commit_success_leaves_results_unchanged(self):
-        """When commit succeeds, results and succeeded count are untouched."""
-        from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
+        assert _commit_failure_note(True, "placing 3 beams") == ""
 
-        results = self._make_results(3)
-        out_results, out_succeeded, out_commit = _commit_or_fail(results, 3, True, "beams")
-        assert out_succeeded == 3
-        assert out_commit is True
-        assert all(r.success for r in out_results)
-        assert out_results[0].guid == "GUID0"
+    def test_commit_success_does_not_redraw(self):
+        mp_module = importlib.import_module("tekla_mcp_server.providers.modeling_provider")
 
-    def test_commit_failure_resets_succeeded_to_zero(self):
-        """When commit fails, succeeded count becomes 0."""
-        from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
+        with patch.object(mp_module, "_redraw_active_views") as redraw:
+            mp_module._commit_failure_note(True, "placing 3 beams")
+        redraw.assert_not_called()
 
-        results = self._make_results(3)
-        _, out_succeeded, out_commit = _commit_or_fail(results, 3, False, "beams")
-        assert out_succeeded == 0
-        assert out_commit is False
+    def test_commit_failure_redraws_and_says_the_changes_are_shown(self):
+        """Uncommitted changes are in the model but hidden until a redraw, so the note redraws and says so."""
+        mp_module = importlib.import_module("tekla_mcp_server.providers.modeling_provider")
 
-    def test_commit_failure_replaces_all_results_with_generic_message(self):
-        """When commit fails, all PlacementResults get the generic commit-failure message."""
-        from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
+        with patch.object(mp_module, "_redraw_active_views", return_value=True) as redraw:
+            note = mp_module._commit_failure_note(False, "placing 3 beams")
+        redraw.assert_called_once()
+        assert "commit_changes() failed" in note and "view was redrawn to show them" in note and "check them before retrying" in note
+        assert "reverted" not in note and "not persisted" not in note
 
-        results = self._make_results(2)
-        out_results, _, __ = _commit_or_fail(results, 2, False, "panels")
-        assert len(out_results) == 2
-        assert all(not r.success for r in out_results)
-        assert all("Commit failed" in r.message for r in out_results)
+    def test_failed_redraw_tells_the_user_to_redraw(self):
+        mp_module = importlib.import_module("tekla_mcp_server.providers.modeling_provider")
 
-    def test_commit_failure_preserves_result_count(self):
-        """Result list length is unchanged even on commit failure."""
-        from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
-
-        results = self._make_results(4)
-        out_results, _, __ = _commit_or_fail(results, 4, False, "slabs")
-        assert len(out_results) == 4
-
-    def test_commit_success_with_mixed_results(self):
-        """Commit success with pre-existing failures preserves original per-item state."""
-        from tekla_mcp_server.providers.modeling_provider import _commit_or_fail
-
-        results = [
-            PlacementResult(success=True, guid="G1", message="OK"),
-            PlacementResult(success=False, message="Insert failed"),
-        ]
-        out_results, out_succeeded, out_commit = _commit_or_fail(results, 1, True, "columns")
-        assert out_succeeded == 1
-        assert out_commit is True
-        assert out_results[0].success is True
-        assert out_results[1].success is False
-        assert out_results[1].message == "Insert failed"
+        with patch.object(mp_module, "_redraw_active_views", return_value=False):
+            note = mp_module._commit_failure_note(False, "placing 3 beams")
+        assert "not shown until the view is redrawn" in note

@@ -37,7 +37,8 @@ from tekla_mcp_server.tekla.wrappers.model_object import (
     wrap_model_objects,
 )
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.loader import Grid, Connection, Operation, Phase, Point, Seam, Vector
+from tekla_mcp_server.tekla.loader import Grid, Connection, Operation, Phase, Point, Seam, Vector, ViewHandler
+from tekla_mcp_server.tekla.utils import get_active_views
 
 
 modeling_provider = LocalProvider()
@@ -211,29 +212,47 @@ def _place_beam_element(
     return False, PlacementResult(success=False, message="Insert() returned false")
 
 
-def _commit_or_fail(
-    results: list[PlacementResult],
-    succeeded: int,
-    commit_success: bool,
-    action_description: str,
-) -> tuple[list[PlacementResult], int, bool]:
+def _redraw_active_views() -> bool:
     """
-    Replace all results with failure records when commit fails, return (results, succeeded, commit_success).
+    Redraw the active model views.
+
+    Changes made without a successful commit are in the model but stay hidden until a view is redrawn.
+
+    Returns:
+        True if at least one view was redrawn
+    """
+    redrawn = 0
+    try:
+        for view in get_active_views():
+            if ViewHandler.RedrawView(view):
+                redrawn += 1
+    except Exception:
+        logger.exception("Redrawing the active views failed")
+    return redrawn > 0
+
+
+def _commit_failure_note(commit_success: bool, action_description: str) -> str:
+    """
+    Show the changes after a failed commit and describe it for the result message.
+
+    Inserted, moved, copied and deleted objects are already changed in the model when the commit
+    runs, and a failed commit does not undo them. It only leaves the views showing the old state.
+    So the views are redrawn and the per-element results stay as they are. Claiming the changes
+    failed would invite a retry that duplicates them.
 
     Args:
-        results: Placement results
-        succeeded: Success count
         commit_success: Commit outcome
         action_description: Action text for the log
 
     Returns:
-        Tuple of (results, succeeded, commit_success)
+        Text to append to the message, empty when the commit succeeded
     """
-    if not commit_success:
-        logger.error("commit_changes() failed after %s", action_description)
-        results = [PlacementResult(success=False, message="Commit failed: changes not persisted") for _ in results]
-        succeeded = 0
-    return results, succeeded, commit_success
+    if commit_success:
+        return ""
+    logger.error("commit_changes() failed after %s", action_description)
+    if _redraw_active_views():
+        return ", but commit_changes() failed. The changes are in the model and the view was redrawn to show them, so check them before retrying"
+    return ", but commit_changes() failed. The changes are in the model but are not shown until the view is redrawn, so check the model before retrying"
 
 
 def _to_tool_result(
@@ -241,6 +260,7 @@ def _to_tool_result(
     total: int,
     succeeded: int,
     item_type: str,
+    commit_success: bool,
 ) -> ToolResult:
     """
     Convert batch placement results to ToolResult.
@@ -250,18 +270,19 @@ def _to_tool_result(
         total: Total element count
         succeeded: Success count
         item_type: Element type for the message
+        commit_success: Commit outcome
 
     Returns:
         Batch placement tool result
     """
     return ToolResult(
         structured_content=BatchPlacementResult(
-            success=succeeded == total and total > 0,
+            success=commit_success and succeeded == total and total > 0,
             total=total,
             succeeded=succeeded,
             failed=total - succeeded,
             results=results,
-            message=f"Placed {succeeded} of {total} {item_type}",
+            message=f"Placed {succeeded} of {total} {item_type}{_commit_failure_note(commit_success, f'placing {succeeded} {item_type}')}",
         ).model_dump(mode="json", exclude_none=True)
     )
 
@@ -312,9 +333,9 @@ def place_beams(beams: Annotated[list[BeamInput], Field(description="List of bea
             logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    results, succeeded, _ = _commit_or_fail(results, succeeded, model.commit_changes(), f"placing {succeeded} beams")
+    commit_success = model.commit_changes()
     logger.info("Placed %d of %d beams", succeeded, len(beams))
-    return _to_tool_result(results, len(beams), succeeded, "beams")
+    return _to_tool_result(results, len(beams), succeeded, "beams", commit_success)
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
@@ -365,9 +386,9 @@ def place_columns(columns: Annotated[list[ColumnInput], Field(description="List 
             logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    results, succeeded, _ = _commit_or_fail(results, succeeded, model.commit_changes(), f"placing {succeeded} columns")
+    commit_success = model.commit_changes()
     logger.info("Placed %d of %d columns", succeeded, len(columns))
-    return _to_tool_result(results, len(columns), succeeded, "columns")
+    return _to_tool_result(results, len(columns), succeeded, "columns", commit_success)
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
@@ -415,9 +436,9 @@ def place_panels(panels: Annotated[list[PanelInput], Field(description="List of 
             logger.exception("Failed to insert element: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    results, succeeded, _ = _commit_or_fail(results, succeeded, model.commit_changes(), f"placing {succeeded} panels")
+    commit_success = model.commit_changes()
     logger.info("Placed %d of %d panels", succeeded, len(panels))
-    return _to_tool_result(results, len(panels), succeeded, "panels")
+    return _to_tool_result(results, len(panels), succeeded, "panels", commit_success)
 
 
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
@@ -481,9 +502,9 @@ def place_slabs(slabs: Annotated[list[SlabInput], Field(description="List of sla
             logger.exception("Failed to insert slab: %s", str(e))
             results.append(PlacementResult(success=False, message=str(e)))
 
-    results, succeeded, _ = _commit_or_fail(results, succeeded, model.commit_changes(), f"placing {succeeded} slabs")
+    commit_success = model.commit_changes()
     logger.info("Placed %d of %d slabs", succeeded, len(slabs))
-    return _to_tool_result(results, len(slabs), succeeded, "slabs")
+    return _to_tool_result(results, len(slabs), succeeded, "slabs", commit_success)
 
 
 def _move_or_copy_elements(dx: float, dy: float, dz: float, copy: bool) -> ToolResult:
@@ -555,17 +576,17 @@ def _move_or_copy_elements(dx: float, dy: float, dz: float, copy: bool) -> ToolR
                 results.append(PlacementResult(success=False, guid=guid, message=f"Bolt group joining moved parts was not moved: {e}"))
 
     total = len(results)
-    results, succeeded, commit_success = _commit_or_fail(results, succeeded, model.commit_changes(), f"{verb} {succeeded} elements")
+    commit_success = model.commit_changes()
     logger.info("%s %d of %d elements, %d carried along by their parts (dx=%.0f dy=%.0f dz=%.0f)", action, succeeded, total, carried, dx, dy, dz)
     carried_note = f", {carried} more went along with their parts" if carried else ""
     return ToolResult(
         structured_content=BatchPlacementResult(
-            success=succeeded == total and total > 0,
+            success=commit_success and succeeded == total and total > 0,
             total=total,
             succeeded=succeeded,
             failed=total - succeeded,
             results=results,
-            message=f"{action} {succeeded} of {total} elements{carried_note}" if commit_success else f"Commit failed: {action} reverted",
+            message=f"{action} {succeeded} of {total} elements{carried_note}{_commit_failure_note(commit_success, f'{verb} {succeeded} elements')}",
         ).model_dump(mode="json", exclude_none=True)
     )
 
@@ -714,10 +735,8 @@ def delete_elements() -> ToolResult:
         status = "error"
         message = f"None of the {count} objects could be deleted"
     elif not commit_success:
-        logger.error("commit_changes() failed after deleting %d objects", deleted)
         status = "error"
-        # The deletions already ran in the open model, only saving them failed
-        message = f"Deleted {deleted} of {count} objects but commit_changes() failed, the deletions may not be saved"
+        message = f"Deleted {deleted} of {count} objects{_commit_failure_note(False, f'deleting {deleted} objects')}"
     elif failed_count:
         status = "partial"
         message = f"Deleted {deleted} of {count} objects"

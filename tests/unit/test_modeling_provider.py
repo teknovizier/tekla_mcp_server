@@ -204,3 +204,46 @@ class TestJointBolts:
         _run(True, [parts])
 
         assert operation.CopyObject.call_count == 2
+
+
+class TestFailedCommit:
+    """A failed commit does not undo what already ran in the open model, so results must not claim it did."""
+
+    def test_move_keeps_its_results_and_warns(self, operation):
+        with patch.object(mp, "TeklaModel") as model_class, patch.object(mp, "_redraw_active_views", return_value=True):
+            model_class.return_value.commit_changes.return_value = False
+            result = _run(False, [[_part(1)], [_part(2)]])
+
+        assert (result["success"], result["succeeded"], result["failed"]) == (False, 2, 0)
+        assert [r["guid"] for r in result["results"]] == ["guid-1", "guid-2"]
+        assert result["message"].startswith("Moved 2 of 2 elements, but commit_changes() failed")
+        assert "redrawn to show them" in result["message"] and "reverted" not in result["message"]
+
+    def test_placement_keeps_its_results_and_warns(self):
+        results = [mp.PlacementResult(success=True, guid="g1"), mp.PlacementResult(success=False, message="bad profile")]
+        with patch.object(mp, "_redraw_active_views", return_value=True):
+            content = mp._to_tool_result(results, 2, 1, "beams", commit_success=False).structured_content
+
+        assert (content["success"], content["succeeded"], content["failed"]) == (False, 1, 1)
+        assert content["results"][0] == {"success": True, "guid": "g1"}
+        assert content["message"].startswith("Placed 1 of 2 beams, but commit_changes() failed")
+
+    def test_successful_commit_has_no_note(self):
+        content = mp._to_tool_result([mp.PlacementResult(success=True, guid="g1")], 1, 1, "beams", commit_success=True).structured_content
+        assert (content["success"], content["message"]) == (True, "Placed 1 of 1 beams")
+
+
+def test_failed_delete_commit_redraws_and_keeps_the_count():
+    """Deletions run in the model before the commit, so a failed commit still reports them and redraws the view."""
+    objects = [MagicMock(), MagicMock()]
+    for obj in objects:
+        obj.Delete.return_value = True
+    with patch.object(mp, "TeklaModel") as model_class, patch.object(mp, "_redraw_active_views", return_value=True) as redraw:
+        model_class.return_value.get_selected_objects.return_value = objects
+        model_class.return_value.commit_changes.return_value = False
+        content = mp.delete_elements().structured_content
+
+    redraw.assert_called_once()
+    assert content["status"] == "error"
+    assert content["message"].startswith("Deleted 2 of 2 objects, but commit_changes() failed")
+    assert "redrawn to show them" in content["message"]
