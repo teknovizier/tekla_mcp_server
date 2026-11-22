@@ -8,10 +8,11 @@ import pytest
 
 from tekla_mcp_server.providers.modeling_provider import place_beams, place_columns, place_panels, place_slabs, delete_elements, move_elements, copy_elements, place_grid, create_phase
 from tekla_mcp_server.providers.selection_provider import select_elements_by_guid
-from tekla_mcp_server.models import BeamInput, ColumnInput, PanelInput, SlabInput, PointInput, PositionInput
+from tekla_mcp_server.models import BeamInput, ColumnInput, FilterCondition, PanelInput, SlabInput, PointInput, PositionInput
+from tekla_mcp_server.tekla.filter_builder import build_filter_expression
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_object, TeklaAssembly
-from tekla_mcp_server.tekla.loader import Fitting, Point, Vector
+from tekla_mcp_server.tekla.loader import Beam, BooleanPart, BoltXYList, Fitting, Point, Polygon, SingleRebar, Vector, Weld
 
 
 _TEST_PHASE_MIN_NUMBER = 9900
@@ -509,6 +510,73 @@ def test_copy_part_selected_with_its_assembly(panel_input):
     result = copy_elements(dz=6000.0)
     assert result.structured_content["success"] is True
     assert result.structured_content["succeeded"] == 1
+
+
+@pytest.mark.parametrize("copy", [False, True])
+def test_part_selected_with_its_rebar_and_cut_is_handled_once(beam_input, copy):
+    """A rebar and a cut selected with their father part go along with it once, not twice."""
+    host = TeklaModel().get_objects_by_guid([place_beams(beams=[beam_input]).structured_content["results"][0]["guid"]])[0]
+    rebar = SingleRebar()
+    rebar.Father = host
+    polygon = Polygon()
+    for x in (100, 1900):
+        polygon.Points.Add(Point(x, 0, -200))
+    rebar.Polygon = polygon
+    rebar.Name, rebar.Size, rebar.Grade, rebar.Class = "MCP_TEST_BAR", "12", "B500B", 2
+    assert rebar.Insert()
+    cutter = Beam()
+    cutter.StartPoint, cutter.EndPoint = Point(900, 0, -400), Point(1100, 0, -400)
+    cutter.Profile.ProfileString, cutter.Class = "200*200", BooleanPart.BooleanOperativeClassName
+    assert cutter.Insert()
+    cut = BooleanPart()
+    cut.Father = host
+    cut.SetOperativePart(cutter)
+    cut.Type = BooleanPart.BooleanTypeEnum.BOOLEAN_CUT
+    assert cut.Insert()
+    cutter.Delete()
+    TeklaModel().commit_changes()
+    rebar_z, cut_z = rebar.Polygon.Points[0].Z, cut.OperativePart.StartPoint.Z
+
+    TeklaModel.select_objects([rebar, cut, host])
+    result = (copy_elements if copy else move_elements)(dz=1000.0).structured_content
+
+    assert (result["total"], result["succeeded"]) == (1, 1)
+    assert "2 more went along with their parts" in result["message"]
+    rebar.Select()
+    cut.Select()
+    if copy:
+        # The original bar and one copy, not a second copy made through the bar itself
+        bars = build_filter_expression(FilterCondition(field="rebar.name", op="Is Equal", value="MCP_TEST_BAR"), ["rebar"])
+        assert TeklaModel().get_objects_by_filter(bars).GetSize() == 2
+    else:
+        assert rebar.Polygon.Points[0].Z - rebar_z == pytest.approx(1000.0)
+        assert cut.OperativePart.StartPoint.Z - cut_z == pytest.approx(1000.0)
+
+
+def test_move_assembly_takes_the_bolt_group_joining_its_parts(beam_input):
+    """A bolt group joining two parts of a moved assembly moves with them, though Tekla leaves it when they move one by one."""
+    main = TeklaModel().get_objects_by_guid([place_beams(beams=[beam_input]).structured_content["results"][0]["guid"]])[0]
+    secondary_input = beam_input.model_copy(update={"start_point": PointInput(x=0, y=300, z=0), "end_point": PointInput(x=2000, y=300, z=0)})
+    secondary = TeklaModel().get_objects_by_guid([place_beams(beams=[secondary_input]).structured_content["results"][0]["guid"]])[0]
+    weld = Weld()
+    weld.MainObject, weld.SecondaryObject, weld.ShopWeld = main, secondary, True
+    assert weld.Insert()
+    bolt = BoltXYList()
+    bolt.PartToBoltTo, bolt.PartToBeBolted = main, secondary
+    bolt.FirstPosition, bolt.SecondPosition = Point(500, 0, 0), Point(800, 0, 0)
+    bolt.AddBoltDistX(0)
+    bolt.AddBoltDistY(0)
+    bolt.BoltSize, bolt.BoltStandard, bolt.Bolt = 20, "7990", False
+    assert bolt.Insert()
+    TeklaModel().commit_changes()
+    bolt_z = bolt.FirstPosition.Z
+
+    TeklaModel.select_objects([main.GetAssembly()])
+    result = move_elements(dz=1000.0).structured_content
+
+    assert (result["total"], result["succeeded"]) == (2, 2)
+    bolt.Select()
+    assert bolt.FirstPosition.Z - bolt_z == pytest.approx(1000.0)
 
 
 def test_move_zero_displacement():

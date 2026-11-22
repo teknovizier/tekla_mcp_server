@@ -24,7 +24,18 @@ from tekla_mcp_server.models import (
     NumberingSeries,
 )
 from tekla_mcp_server.utils import format_coordinate_string, mcp_handler
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, TeklaAssembly, TeklaPart, TeklaBeam, TeklaContourPlate, wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import (
+    TeklaModelObject,
+    TeklaAssembly,
+    TeklaBoltGroup,
+    TeklaBooleanPart,
+    TeklaPart,
+    TeklaBeam,
+    TeklaContourPlate,
+    TeklaReinforcement,
+    TeklaWeld,
+    wrap_model_objects,
+)
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
 from tekla_mcp_server.tekla.loader import Grid, Connection, Operation, Phase, Point, Seam, Vector
 
@@ -34,7 +45,7 @@ modeling_provider = LocalProvider()
 T = TypeVar("T", BeamInput, ColumnInput, PanelInput)
 
 
-def _collect_parts(obj: TeklaModelObject) -> list[TeklaPart]:
+def _collect_parts(obj: TeklaModelObject) -> list[TeklaModelObject]:
     """
     Return the child Part objects to move/copy for *obj*.
 
@@ -44,21 +55,92 @@ def _collect_parts(obj: TeklaModelObject) -> list[TeklaPart]:
     its host parts and moves its created parts (e.g. pipes) along when those parts
     move, so displacing them explicitly as well would put them in the wrong place.
 
+    Any other object, such as a part, rebar or bolt group, is returned as it is.
+
     Args:
-        obj: Part or assembly
+        obj: Part, assembly or other model object
 
     Returns:
-        Parts to move or copy
+        Objects to move or copy
     """
     if not isinstance(obj, TeklaAssembly):
         return [obj]
 
-    parts: list[TeklaPart] = []
+    parts: list[TeklaModelObject] = []
     for part in obj.get_all_parts():
         # Skip Seam/Connection parts - the component moves them with its host parts.
         if not isinstance(part.model_object.GetFatherComponent(), (Seam, Connection)):
             parts.append(part)
     return parts
+
+
+def _carrier_ids(obj: TeklaModelObject) -> set[int]:
+    """
+    Return the IDs of the parts that carry *obj* along when one of them is moved or copied.
+
+    A rebar or cut follows its father part and a weld its secondary part.
+    A bolt group follows only when it bolts a single part. A bolt group joining several
+    parts stays in place when they are moved one by one, so it has no carrier.
+
+    Args:
+        obj: Selected model object
+
+    Returns:
+        Part IDs, empty for parts, assemblies and objects that no part carries
+    """
+    raw = obj.model_object
+    if isinstance(obj, (TeklaReinforcement, TeklaBooleanPart)):
+        carriers = [raw.Father]
+    elif isinstance(obj, TeklaWeld):
+        carriers = [raw.SecondaryObject]
+    elif isinstance(obj, TeklaBoltGroup):
+        bolted = _bolted_ids(raw)
+        return bolted if len(bolted) == 1 else set()
+    else:
+        return set()
+    return {c.Identifier.ID for c in carriers if c is not None}
+
+
+def _bolted_ids(bolt: Any) -> set[int]:
+    """
+    Return the IDs of all parts a bolt group bolts.
+
+    Args:
+        bolt: Tekla `BoltGroup`
+
+    Returns:
+        Part IDs
+    """
+    return {p.Identifier.ID for p in (bolt.PartToBoltTo, bolt.PartToBeBolted, *bolt.OtherPartsToBolt) if p is not None}
+
+
+def _joint_bolts(parts: list[TeklaModelObject], moved_ids: set[int], handled_ids: set[int]) -> list[Any]:
+    """
+    Return the bolt groups joining several moved parts that were not moved yet.
+
+    Moving the parts one by one leaves a bolt group that joins them in place, unlike a copy,
+    which brings it along. Such a bolt group must therefore be moved itself.
+
+    Args:
+        parts: Objects that were moved
+        moved_ids: IDs of the parts that were moved
+        handled_ids: IDs of the objects already moved or carried, extended with the returned bolt groups
+
+    Returns:
+        Tekla `BoltGroup` objects to move
+    """
+    bolts: list[Any] = []
+    for part in parts:
+        if not isinstance(part, TeklaPart) or part.id not in moved_ids:
+            continue
+        enumerator = part.model_object.GetBolts()
+        while enumerator.MoveNext():
+            bolt = enumerator.Current
+            bolted = _bolted_ids(bolt)
+            if bolt.Identifier.ID not in handled_ids and len(bolted) > 1 and bolted <= moved_ids:
+                handled_ids.add(bolt.Identifier.ID)
+                bolts.append(bolt)
+    return bolts
 
 
 def _resolve_numbering_and_name(
@@ -436,26 +518,46 @@ def _move_or_copy_elements(dx: float, dy: float, dz: float, copy: bool) -> ToolR
     # A part reached through several selected objects (e.g. a part selected together with
     # its assembly) must be moved or copied only once, otherwise it is displaced twice
     handled_ids: set[int] = set()
+    objects = [item for obj in wrap_model_objects(selected_objects) for item in _collect_parts(obj)]
+    # A rebar, cut, weld or bolt group whose carrier part is moved too goes along with it,
+    # so moving it as well would displace it twice. Collected first, as a child may come before its father
+    part_ids = {item.id for item in objects if isinstance(item, TeklaPart)}
+    carried = 0
+    moved_ids: set[int] = set()
 
-    for obj in wrap_model_objects(selected_objects):
-        for part in _collect_parts(obj):
-            if part.id in handled_ids:
-                continue
-            handled_ids.add(part.id)
+    for part in objects:
+        if part.id in handled_ids:
+            continue
+        handled_ids.add(part.id)
+        if _carrier_ids(part) & part_ids:
+            carried += 1
+            continue
+        try:
+            if copy:
+                Operation.CopyObject(part.model_object, move_vec)
+            else:
+                Operation.MoveObject(part.model_object, move_vec)
+            succeeded += 1
+            moved_ids.add(part.id)
+            results.append(PlacementResult(success=True, guid=part.guid))
+        except Exception as e:
+            logger.exception("Failed to %s part %s: %s", op, part.guid, str(e))
+            results.append(PlacementResult(success=False, message=str(e)))
+
+    if not copy:
+        for bolt in _joint_bolts(objects, moved_ids, handled_ids):
+            guid = bolt.Identifier.GUID.ToString()
             try:
-                if copy:
-                    Operation.CopyObject(part.model_object, move_vec)
-                else:
-                    Operation.MoveObject(part.model_object, move_vec)
-                succeeded += 1
-                results.append(PlacementResult(success=True, guid=part.guid))
+                Operation.MoveObject(bolt, move_vec)
+                carried += 1
             except Exception as e:
-                logger.exception("Failed to %s part %s: %s", op, part.guid, str(e))
-                results.append(PlacementResult(success=False, message=str(e)))
+                logger.exception("Failed to move bolt group %s joining moved parts: %s", guid, str(e))
+                results.append(PlacementResult(success=False, guid=guid, message=f"Bolt group joining moved parts was not moved: {e}"))
 
     total = len(results)
     results, succeeded, commit_success = _commit_or_fail(results, succeeded, model.commit_changes(), f"{verb} {succeeded} elements")
-    logger.info("%s %d of %d elements (dx=%.0f dy=%.0f dz=%.0f)", action, succeeded, total, dx, dy, dz)
+    logger.info("%s %d of %d elements, %d carried along by their parts (dx=%.0f dy=%.0f dz=%.0f)", action, succeeded, total, carried, dx, dy, dz)
+    carried_note = f", {carried} more went along with their parts" if carried else ""
     return ToolResult(
         structured_content=BatchPlacementResult(
             success=succeeded == total and total > 0,
@@ -463,7 +565,7 @@ def _move_or_copy_elements(dx: float, dy: float, dz: float, copy: bool) -> ToolR
             succeeded=succeeded,
             failed=total - succeeded,
             results=results,
-            message=f"{action} {succeeded} of {total} elements" if commit_success else f"Commit failed: {action} reverted",
+            message=f"{action} {succeeded} of {total} elements{carried_note}" if commit_success else f"Commit failed: {action} reverted",
         ).model_dump(mode="json", exclude_none=True)
     )
 
@@ -477,6 +579,10 @@ def move_elements(
 ) -> ToolResult:
     """
     Moves all selected elements by a displacement offset relative to their current positions.
+
+    A rebar, cut, weld or bolt group selected together with the part that carries it is moved
+    once, along with that part. A bolt group joining moved parts is moved with them even when
+    it is not selected.
 
     ## COORDINATE SYSTEM
     X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
@@ -498,6 +604,9 @@ def copy_elements(
 ) -> ToolResult:
     """
     Copies all selected elements by a displacement offset relative to their current positions.
+
+    A rebar, cut, weld or bolt group selected together with the part that carries it is copied
+    once, along with that part.
 
     ## COORDINATE SYSTEM
     X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.

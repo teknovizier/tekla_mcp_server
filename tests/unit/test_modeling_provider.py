@@ -64,3 +64,143 @@ def test_distinct_parts_are_all_moved(operation):
 
     assert operation.MoveObject.call_count == 3
     assert result["succeeded"] == 3
+
+
+def _raw(part_id: int) -> MagicMock:
+    """Build a mocked raw Tekla object with the given id."""
+    raw = MagicMock()
+    raw.Identifier.ID = part_id
+    return raw
+
+
+def _enumerator(items: list) -> MagicMock:
+    """Build a mocked Tekla enumerator over the given items."""
+    enumerator = MagicMock()
+    iterator = iter(items)
+
+    def move_next() -> bool:
+        enumerator.Current = next(iterator, None)
+        return enumerator.Current is not None
+
+    enumerator.MoveNext.side_effect = move_next
+    return enumerator
+
+
+def _typed(cls: type, object_id: int, bolts: list | None = None, **raw_attributes) -> MagicMock:
+    """Build a mocked wrapper of class `cls` whose raw object has the given attributes and bolt groups."""
+    obj = MagicMock(spec=cls)
+    obj.id = object_id
+    obj.guid = f"guid-{object_id}"
+    obj.model_object = MagicMock(**raw_attributes)
+    obj.model_object.GetBolts.side_effect = lambda: _enumerator(bolts or [])
+    return obj
+
+
+def _raw_bolt(object_id: int, *bolted_ids: int) -> MagicMock:
+    """Build a mocked raw bolt group bolting the parts with the given ids."""
+    to, be, *others = [_raw(i) for i in bolted_ids] + [None] * (2 - len(bolted_ids))
+    return MagicMock(Identifier=MagicMock(ID=object_id), PartToBoltTo=to, PartToBeBolted=be, OtherPartsToBolt=others)
+
+
+def _bolt(object_id: int, *bolted_ids: int) -> MagicMock:
+    """Build a mocked wrapped bolt group bolting the parts with the given ids."""
+    raw = _raw_bolt(object_id, *bolted_ids)
+    obj = _typed(mp.TeklaBoltGroup, object_id)
+    obj.model_object = raw
+    return obj
+
+
+class TestCarrierIds:
+    def test_rebar_and_cut_follow_their_father(self):
+        assert mp._carrier_ids(_typed(mp.TeklaReinforcement, 10, Father=_raw(1))) == {1}
+        assert mp._carrier_ids(_typed(mp.TeklaBooleanPart, 11, Father=_raw(1))) == {1}
+
+    def test_weld_follows_its_secondary_part(self):
+        assert mp._carrier_ids(_typed(mp.TeklaWeld, 12, MainObject=_raw(1), SecondaryObject=_raw(2))) == {2}
+
+    def test_bolt_on_one_part_follows_it(self):
+        assert mp._carrier_ids(_bolt(13, 1, 1)) == {1}
+
+    def test_bolt_joining_several_parts_has_no_carrier(self):
+        assert mp._carrier_ids(_bolt(14, 1, 2)) == set()
+
+    def test_part_has_no_carrier(self):
+        assert mp._carrier_ids(_typed(mp.TeklaPart, 1)) == set()
+
+
+@pytest.mark.parametrize("copy", [False, True])
+def test_children_of_a_moved_part_go_along_once(operation, copy):
+    """A rebar, cut, weld and single-part bolt selected with their carrier part are not moved again."""
+    host = _typed(mp.TeklaPart, 1)
+    children = [
+        _typed(mp.TeklaReinforcement, 10, Father=_raw(1)),
+        _typed(mp.TeklaBooleanPart, 11, Father=_raw(1)),
+        _typed(mp.TeklaWeld, 12, MainObject=_raw(2), SecondaryObject=_raw(1)),
+        _bolt(13, 1, 1),
+    ]
+
+    # Children come first, so the carrier must be known before the loop reaches them
+    result = _run(copy, [[child] for child in children] + [[host]])
+
+    call = operation.CopyObject if copy else operation.MoveObject
+    assert [c.args[0] for c in call.call_args_list] == [host.model_object]
+    assert (result["total"], result["succeeded"]) == (1, 1)
+    assert "4 more went along with their parts" in result["message"]
+
+
+def test_children_without_a_moved_carrier_are_moved(operation):
+    """A rebar of an unselected part, a weld on the main part only and a bolt joining two parts are moved themselves."""
+    host = _typed(mp.TeklaPart, 1)
+    others = [
+        _typed(mp.TeklaReinforcement, 10, Father=_raw(99)),
+        _typed(mp.TeklaWeld, 12, MainObject=_raw(1), SecondaryObject=_raw(2)),
+        _bolt(13, 1, 2),
+    ]
+
+    result = _run(False, [[host]] + [[o] for o in others])
+
+    assert operation.MoveObject.call_count == 4
+    assert result["succeeded"] == 4
+    assert "went along" not in result["message"]
+
+
+class TestJointBolts:
+    def test_unselected_bolt_joining_moved_parts_is_moved(self, operation):
+        """Moving parts one by one leaves a bolt group joining them in place, so it is moved itself."""
+        joint = _raw_bolt(20, 1, 2)
+        main = _typed(mp.TeklaPart, 1, bolts=[joint])
+        secondary = _typed(mp.TeklaPart, 2, bolts=[joint])
+
+        result = _run(False, [[main, secondary]])
+
+        assert [c.args[0] for c in operation.MoveObject.call_args_list] == [main.model_object, secondary.model_object, joint]
+        assert (result["total"], result["succeeded"]) == (2, 2)
+        assert "1 more went along with their parts" in result["message"]
+
+    def test_selected_joint_bolt_is_moved_once(self, operation):
+        joint = _raw_bolt(20, 1, 2)
+        selected = _bolt(20, 1, 2)
+        selected.model_object = joint
+        main = _typed(mp.TeklaPart, 1, bolts=[joint])
+        secondary = _typed(mp.TeklaPart, 2, bolts=[joint])
+
+        _run(False, [[main, secondary], [selected]])
+
+        assert [c.args[0] for c in operation.MoveObject.call_args_list].count(joint) == 1
+
+    def test_bolt_to_a_part_that_stays_is_left_alone(self, operation):
+        joint = _raw_bolt(20, 1, 3)
+        main = _typed(mp.TeklaPart, 1, bolts=[joint])
+
+        _run(False, [[main]])
+
+        assert joint not in [c.args[0] for c in operation.MoveObject.call_args_list]
+
+    def test_copy_does_not_copy_joint_bolts_again(self, operation):
+        """A copy of the parts brings the bolt group joining them along."""
+        joint = _raw_bolt(20, 1, 2)
+        parts = [_typed(mp.TeklaPart, 1, bolts=[joint]), _typed(mp.TeklaPart, 2, bolts=[joint])]
+
+        _run(True, [parts])
+
+        assert operation.CopyObject.call_count == 2
