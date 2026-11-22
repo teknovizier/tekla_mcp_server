@@ -5,7 +5,7 @@ Complete reference for tools and resources available in Tekla MCP Server.
 ## Tools
 
 Safety annotations:
-- 🔒 Read-only - reads model data without modifying it, kept visible in read-only mode
+- 🔒 Read-only - never changes model objects, kept visible in read-only mode. Print, export and report tools are read-only although they write output files
 - ✏️ Creative - creates new model objects without modifying or deleting existing data
 - ⚠️ Destructive - modifies or deletes existing model data
 
@@ -73,10 +73,10 @@ Drawing tools that take `marks` act on all of them or none: if any mark has no d
 | Drawings | ⚠️ `set_views_attributes` | Set display attributes (scale, opening symbols, reflected/undeformed/unfolded) on one or more drawing views | **`views_attributes`** (list): each item has **`view_key`** (str) and at least one of `scale` (float), `show_part_openings_or_recess_symbol` (bool), `reflected_view` (bool), `undeformed_view` (bool), `unfolded_view` (bool) |
 | Drawings | ⚠️ `delete_views` | Delete one or more views from the active drawing. Returns `total`, `succeeded`, `failed` and a per-key `results` list | **`view_keys`** (list[str]) |
 | Drawings | ⚠️ `delete_clouds` | Delete all clouds from model views and the sheet view | `view_keys` (list[str], processes all views when omitted) |
-| Modeling | ✏️ `place_beams` | Place one or more beams | **`beams`** (list): each item has **`start_point`**, **`end_point`**, **`profile`**, **`material`**, **`tekla_class`** (int), and `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
-| Modeling | ✏️ `place_columns` | Place one or more columns | **`columns`** (list): each item has **`base_point`**, **`height`** (float, mm), **`profile`**, **`material`**, **`tekla_class`** (int), and `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
-| Modeling | ✏️ `place_panels` | Place one or more wall panels | **`panels`** (list): each item has **`start_point`**, **`end_point`**, **`profile`**, **`material`**, **`tekla_class`** (int), and `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
-| Modeling | ✏️ `place_slabs` | Place one or more slabs | **`slabs`** (list): each item has **`points`** (list of at least 3 points), **`profile`**, **`material`**, **`tekla_class`** (int), and `name`, `position`, `part_number`, `assembly_number` |
+| Modeling | ✏️ `place_beams` | Place one or more beams | `beams` (list, at least one item, default: `[]`): each item has **`start_point`**, **`end_point`**, **`profile`**, **`material`**, **`tekla_class`** (int), and `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
+| Modeling | ✏️ `place_columns` | Place one or more columns | `columns` (list, at least one item, default: `[]`): each item has **`base_point`**, **`height`** (float, mm), **`profile`**, **`material`**, **`tekla_class`** (int), and `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
+| Modeling | ✏️ `place_panels` | Place one or more wall panels | `panels` (list, at least one item, default: `[]`): each item has **`start_point`**, **`end_point`**, **`profile`**, **`material`**, **`tekla_class`** (int), and `start_point_offset`, `end_point_offset`, `name`, `position`, `part_number`, `assembly_number` |
+| Modeling | ✏️ `place_slabs` | Place one or more slabs | `slabs` (list, at least one item, default: `[]`): each item has **`points`** (list of at least 3 points), **`profile`**, **`material`**, **`tekla_class`** (int), and `name`, `position`, `part_number`, `assembly_number` |
 | Modeling | ⚠️ `move_elements` | Move selected elements by a displacement vector. Assemblies are expanded to all constituent parts recursively | `dx` (float, mm, default: `0`), `dy` (float, mm, default: `0`), `dz` (float, mm, default: `0`) - at least one must be non-zero |
 | Modeling | ✏️ `copy_elements` | Copy selected elements to a new position defined by the displacement vector, keeping originals in place. Assemblies are expanded to all constituent parts recursively | `dx` (float, mm, default: `0`), `dy` (float, mm, default: `0`), `dz` (float, mm, default: `0`) - at least one must be non-zero |
 | Modeling | ✏️ `place_grid` | Place a rectangular grid in the Tekla model. Labels are optional, one per coordinate without spaces | **`x`** (list[float], mm), **`y`** (list[float], mm), **`z`** (list[float], mm), `x_labels` (list[str]), `y_labels` (list[str]), `z_labels` (list[str]), `origin` (PointInput), `name` (str) |

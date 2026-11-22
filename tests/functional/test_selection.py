@@ -491,12 +491,14 @@ def test_create_filter_view_has_the_selection_rows(filter_scene, filter_files):
     ],
 )
 def test_create_filter_invalid_input_writes_nothing(kwargs, message):
-    """Tests that invalid input is an error and leaves no file behind."""
+    """Tests that invalid input is an error and leaves no file behind, whatever name it would have had."""
+    attributes = Path(TeklaModel().model_path) / "attributes"
+    before = {f.name for f in attributes.iterdir()}
     arguments = {"filter_type": "selection", "filter": _cond("part.class", "Is Equal", 1), "object_types": ["part"], **kwargs}
     result = create_filter(**arguments)
     assert result.structured_content["status"] == "error"
     assert message in result.structured_content["message"]
-    assert not (Path(TeklaModel().model_path) / "attributes" / "MCP_TEST_FLT_BAD.SObjGrp").exists()
+    assert {f.name for f in attributes.iterdir()} - before == set()
 
 
 def test_select_elements_by_guid(model_objects):

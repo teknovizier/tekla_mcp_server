@@ -7,32 +7,34 @@ The project includes unit tests and functional tests.
 ### Unit Tests (`tests/unit/`)
 
 Pure Python, no Tekla needed, run in CI:
-- `test_init.py`: DLL loading and error handling
 - `test_config.py`: Configuration management
-- `test_models.py`: Data model validation
+- `test_models.py`: Data model validation (a few element type tests need Tekla and are skipped in CI)
 - `test_utils.py`: Decorators and utilities
 - `test_base_components_schema.py`: `base_components.json` schema
 - `test_component_handlers.py`: Component handler plugins
 - `test_drawing_export.py`: Export and print settings XML patching
 - `test_dxf_operations.py`: DXF collision and attachment checks
 - `test_embeddings.py`: Semantic attribute resolution
-- `test_modeling.py`: Modeling utilities
+- `test_modeling.py`: Modeling utilities (the commit failure note tests need Tekla and are skipped in CI)
+- `test_filter_fields.py`: Filter field catalog
+- `test_geometry.py`: Pure 2D and 3D geometry
 - `test_provider_registration.py`: Provider and tool registration
 - `test_tekla_template_attrs_index.py`: Template attribute index
 - `test_tool_annotations.py`: Guards that every tool declares `readOnlyHint`/`destructiveHint`
 - `test_docs_reference_parity.py`: Guards that `docs/reference.md` matches the provider code
 
 Mock the Tekla API but import Tekla wrappers, so they need a local Tekla install and are skipped in CI:
+- `test_init.py`: DLL loading and error handling
 - `test_tekla_utils.py`: Tekla API helpers
 - `test_tekla_model.py`: TeklaModel connection wrapper (singleton, thread safety)
 - `test_tekla_model_object.py`: Tekla ModelObject wrappers
 - `test_tekla_view.py`: Tekla view wrapper
 - `test_tekla_drawing_handler.py`: Drawing handler wrapper
-- `test_tekla_template_attrs_parser.py`: Template attribute parsing
+- `test_tekla_template_attrs_parser.py`: Template attribute parsing, also skipped unless `embeddings.enabled` is set
 - `test_filter_builder.py`: Tekla filter expression builder
 - `test_snapshot_builder.py`: Part and assembly snapshots
 - `test_drawing_utils.py`: Drawing helpers
-- `test_components_provider.py`, `test_drawings_provider_helpers.py`, `test_modeling_provider.py`, `test_properties_provider.py`, `test_selection_provider.py`: Provider helpers
+- `test_components_provider.py`, `test_drawings_provider_helpers.py`, `test_modeling_provider.py`, `test_operations_provider.py`, `test_properties_provider.py`, `test_selection_provider.py`: Provider helpers
 
 ### Functional Tests (`tests/functional/`)
 - `conftest.py`: Shared fixtures and utilities

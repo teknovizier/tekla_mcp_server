@@ -1016,7 +1016,7 @@ def check_for_invalid_objects() -> ToolResult:
 
     for model_obj in wrap_model_objects(selected_objects):
         if not isinstance(model_obj, (TeklaPart, TeklaAssembly)):
-            logger.debug(f"Skipping non-part/assembly object: {type(model_obj).__name__}")
+            logger.debug("Skipping non-part/assembly object: %s", type(model_obj).__name__)
             continue
 
         # Get top-level assembly for the selected object

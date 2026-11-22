@@ -69,10 +69,10 @@ def draw_elements_labels(
     ## VALID VALUES BY ELEMENT TYPE
 
     ### FOR ASSEMBLIES:
-    - Position, GUID, Name, Weight
+    - Position, GUID, Name, Phase, Weight
 
     ### FOR PARTS:
-    - Position, GUID, Name, Profile, Material, Finish, Class, Weight
+    - Position, GUID, Name, Phase, Profile, Material, Finish, Class, Weight
 
     Note: If a label is not applicable to the selected element type, it defaults to Name.
     """

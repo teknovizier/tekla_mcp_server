@@ -166,7 +166,7 @@ class BoundingBox:
         Returns:
             (overlap tolerance in mm, centroid tolerance factor of the diagonal)
         """
-        return get_tolerance("default", 20.0), get_tolerance("center_tolerance_factor", default=0.1)
+        return get_tolerance("default", 20.0), get_tolerance("center_tolerance_factor", default=0.05)
 
     def overlaps(self, other: BoundingBox, tol: float | None = None) -> bool:
         """

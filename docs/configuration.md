@@ -9,7 +9,7 @@ This guide covers all configuration files and environment variables.
 | `tekla_path` | **required** | Tekla Structures binary directory, e.g. `C:\Program Files\Tekla Structures\2022.0\bin`. The server fails to start without it. |
 | `context_folder` | `context` | Path to the folder with markdown files. Their contents can be accessed by LLM via `project://context` MCP resource to provide context like project design requirements, element naming conventions, etc. A relative path is resolved against the config directory, not the working directory. If the folder does not exist, `<config>/context` is used instead. |
 | `excluded_tags` | `[]` | List of tool tags to hide from the LLM. Leave empty to expose all tools. See [Tool Visibility](#tool-visibility) below. |
-| `read_only` | `false` | When `true`, shows only tools marked as read-only. Query, selection, and view/navigation tools remain available, anything that writes the model is hidden. |
+| `read_only` | `false` | When `true`, shows only tools marked as read-only, the ones that never change model objects. Query, selection, view/navigation, print, export and report tools remain available. These can still write output files and install the macros and settings they run with. Anything that changes model objects is hidden. |
 
 ### Tool Visibility
 
@@ -29,6 +29,7 @@ When set to `true`, exposes **only** tools annotated with `readOnlyHint=true` (a
 | `operations` | Cuts, clash checks, orphan and invalid-object checks, attaching, macros, reports, and other model operations |
 | `components` | Place and manage Tekla components |
 | `drawings` | Open, edit, print, export, and check existing drawings |
+| `filters` | Save selection and view filters into the model's attributes folder (`create_filter`, also tagged `selection`) |
 | `modeling` | Create and modify model objects |
 
 MCP resources have no tags and cannot be hidden with `excluded_tags`.

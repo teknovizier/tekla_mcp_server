@@ -194,5 +194,6 @@ def test_resolve_attributes_multiple():
     """Checks batch resolution with mixed results."""
     result = TemplateAttributeParser.resolve_attributes(["AREA", "WEIGHT", "unknown_query"])
 
-    assert len(result["resolved"]) >= 0
-    assert len(result["errors"]) >= 0
+    # Every query is either resolved or reported, and the unknown one is reported
+    assert len(result["resolved"]) + len(result["errors"]) == 3
+    assert "unknown_query" in [error["query"] for error in result["errors"]]

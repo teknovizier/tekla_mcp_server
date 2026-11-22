@@ -331,7 +331,7 @@ class Config:
 
     @property
     def read_only(self) -> bool:
-        """When True, hide all tools marked as destructive from the LLM."""
+        """When True, show the LLM only the tools marked read-only, the ones that do not change model objects."""
         return bool(_load_settings().get("read_only", False))
 
     @property

@@ -859,6 +859,12 @@ def print_drawings(
             expected_files = 1 if single_file_output else group_size
 
             def _poll() -> list[Path]:
+                """
+                Wait for the printed PDF files to appear.
+
+                Returns:
+                    New PDF files in the output folder
+                """
                 return _wait_for_new_files(Path(output_dir), "*.pdf", before_files, expected_files, get_export_timeout())
 
             logger.info("Printing %d drawing(s) [%s, %s, multi_sheet=%s, single_file=%s] -> %s", group_size, paper_size_str, orientation, is_multi_sheet, single_file_output, output_dir)
