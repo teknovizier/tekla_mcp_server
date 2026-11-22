@@ -64,3 +64,73 @@ def test_handler_rejection_is_reported_per_host():
 
     assert result["status"] == "partial"
     assert result["errors"] == [{"guid": "PLATE", "error": "Only concrete elements are supported."}]
+
+
+def test_every_host_failing_is_an_error():
+    callback = MagicMock(side_effect=ValueError("Unsupported material type"))
+
+    result = _run([_obj("STEEL1"), _obj("STEEL2")], callback)
+
+    assert result["status"] == "error"
+    assert [e["guid"] for e in result["errors"]] == ["STEEL1", "STEEL2"]
+
+
+class FakeCustomPart(MagicMock):
+    """Stand-in for `CustomPart`, which the wrappers have no class for."""
+
+
+def _component(name: str, guid: str, deleted: bool = True) -> MagicMock:
+    comp = MagicMock(Name=name)
+    comp.Identifier.GUID = guid
+    comp.Delete.return_value = deleted
+    return comp
+
+
+def _host(host_id: int, components: list[MagicMock]) -> FakePart:
+    host = FakePart()
+    host.Identifier.ID = host_id
+    host.GetComponents.side_effect = lambda: iter(components)
+    return host
+
+
+class TestRemoveComponentsCleanup:
+    def _remove(self, hosts: list, handler: MagicMock) -> dict:
+        with (
+            patch.object(cp, "Part", FakePart),
+            patch.object(cp, "TeklaModel") as model_class,
+            patch.object(cp.HandlerRegistry, "get", return_value=handler),
+        ):
+            model_class.return_value.get_selected_objects.return_value = hosts
+            model_class.return_value.commit_changes.return_value = True
+            return cp.remove_components(component_names=["lifting anchor"]).structured_content
+
+    def test_part_that_still_holds_an_anchor_keeps_its_recesses(self):
+        """The recess cleanup works per part, so a part where one anchor failed to delete is not cleaned."""
+        clean = _host(1, [_component("Lifting Anchor", "a")])
+        mixed = _host(2, [_component("Lifting Anchor", "b"), _component("Lifting Anchor", "c", deleted=False)])
+        handler = MagicMock()
+        handler.post_remove.return_value = 2
+
+        result = self._remove([clean, mixed], handler)
+
+        handler.post_remove.assert_called_once_with([clean])
+        assert (result["removed"], result["failed_count"], result["cleaned_count"]) == ({"Lifting Anchor": 2}, 1, 2)
+
+    def test_no_cleanup_when_every_host_keeps_an_anchor(self):
+        handler = MagicMock()
+        self._remove([_host(1, [_component("Lifting Anchor", "a"), _component("Lifting Anchor", "b", deleted=False)])], handler)
+        handler.post_remove.assert_not_called()
+
+
+def test_get_components_lists_custom_parts():
+    """A CustomPart can hold components but has no wrapper class, so it must not be dropped."""
+    custom = FakeCustomPart()
+    custom.Identifier.GUID.ToString.return_value = "CUSTOM"
+    custom.GetComponents.return_value = MagicMock(MoveNext=MagicMock(side_effect=[True, False]), Current=MagicMock(Name="Unconfigured", Number=7))
+    with patch.object(cp, "CustomPart", FakeCustomPart), patch.object(cp, "TeklaModel") as model_class:
+        model_class.return_value.get_selected_objects.return_value = [custom]
+        result = cp.get_components().structured_content
+
+    assert result["total_elements"] == 1
+    assert result["elements"][0]["guid"] == "CUSTOM"
+    assert [c["name"] for c in result["elements"][0]["components"]] == ["Unconfigured"]

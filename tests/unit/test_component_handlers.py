@@ -78,3 +78,14 @@ class TestHandlerRegistry:
     def test_clear(self):
         HandlerRegistry.clear()
         assert HandlerRegistry._instances == {}
+
+
+class TestPostProcessRecesses:
+    """Recesses are made for the anchors' cuts on the part, so a failed insert must not add them for older anchors."""
+
+    @pytest.mark.parametrize("inserted,expected_calls", [(0, 0), (2, 1)])
+    def test_recesses_only_after_an_insert(self, handler, monkeypatch, inserted, expected_calls):
+        calls = []
+        monkeypatch.setattr(handler, "_process_recesses", lambda obj, cog: calls.append(obj))
+        count = handler.post_process(component=None, selected_object="part", initial_count=inserted, context={"number_of_anchors": 2})
+        assert (count, len(calls)) == (inserted, expected_calls)

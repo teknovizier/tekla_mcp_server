@@ -14,9 +14,9 @@ from typing import Any
 import pytest
 
 from tekla_mcp_server.config import get_config
-from tekla_mcp_server.models import PanelInput, PointInput, SlabInput
+from tekla_mcp_server.models import BeamInput, PanelInput, PointInput, SlabInput
 from tekla_mcp_server.providers.components_provider import put_components, remove_components, get_components, modify_components, explode_components
-from tekla_mcp_server.providers.modeling_provider import place_panels, place_slabs
+from tekla_mcp_server.providers.modeling_provider import place_beams, place_panels, place_slabs
 from tekla_mcp_server.tekla.loader import Int32
 from tekla_mcp_server.tekla.utils import iterate_boolean_parts
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
@@ -95,11 +95,29 @@ def test_put_components_skips_non_parts(model_objects):
     assert result.structured_content["skipped_objects"] == [{"guid": assembly.Identifier.GUID.ToString(), "type": "Assembly"}]
 
 
-def test_put_lifting_anchors_walls(model_objects):
-    """Tests put_components for lifting anchors on standard walls."""
+@pytest.mark.parametrize("name", ["Lifting Anchor", "lifting anchor"])
+def test_put_lifting_anchors_walls(model_objects, name):
+    """Tests put_components for lifting anchors on standard walls, with the name in any case."""
     TeklaModel.select_objects([model_objects["test_wall1"]])
-    result = put_components(component_name="Lifting Anchor")
+    result = put_components(component_name=name)
     assert result.structured_content["status"] == "success"
+    assert result.structured_content["processed_components_count"] > 0
+
+
+def test_put_lifting_anchors_on_steel_only_is_an_error(model_objects):
+    """A batch where every host is rejected is an error, not a warning."""
+    steel = BeamInput(start_point=PointInput(x=50000, y=0, z=0), end_point=PointInput(x=56000, y=0, z=0), profile="HEA300", material="S355J2", tekla_class=100, name="MCP_TEST_STEEL")
+    guid = place_beams(beams=[steel]).structured_content["results"][0]["guid"]
+    model = TeklaModel()
+    try:
+        TeklaModel.select_objects(model.get_objects_by_guid([guid]))
+        result = put_components(component_name="Lifting Anchor")
+        assert result.structured_content["status"] == "error"
+        assert len(result.structured_content["errors"]) == 1
+    finally:
+        for obj in model.get_objects_by_guid([guid]):
+            obj.Delete()
+        model.commit_changes()
 
 
 def test_put_lifting_anchors_sandwich(model_objects):

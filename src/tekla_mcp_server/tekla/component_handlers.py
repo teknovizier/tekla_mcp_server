@@ -254,20 +254,25 @@ class LiftingAnchorsHandler:
             counter += int(insert_component(selected_object, component))
             logger.debug("Inserted additional anchors for 4-anchor configuration. Total: %s", counter)
 
-        self._process_recesses(selected_object, local_cog)
+        # Recesses are made for the anchors' own cuts on the part. With no anchor inserted, those
+        # cuts belong to anchors inserted earlier, which have their recesses already
+        if counter:
+            self._process_recesses(selected_object, local_cog)
         logger.info("Total lifting anchor components inserted: %s", counter)
 
         return counter
 
-    def pre_remove(self, selected_objects: tuple["ModelObject", ...]) -> int:
+    def post_remove(self, selected_objects: list["ModelObject"]) -> int:
         """
-        Pre-remove hook: cleans up associated parts before component removal.
+        Post-remove hook: deletes the recess cuts on parts whose lifting anchors were removed.
+
+        The cuts are found by name per part, so the caller passes only parts that hold no lifting anchor anymore.
 
         Args:
-            selected_objects: Objects to clean up
+            selected_objects: Parts to clean up
 
         Returns:
-            Number of parts removed
+            Number of recess cuts removed
         """
         from tekla_mcp_server.tekla.loader import BooleanPart
 

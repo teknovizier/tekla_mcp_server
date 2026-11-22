@@ -402,7 +402,10 @@ class Config:
     @lru_cache
     def get_component_by_tekla_name(self, tekla_name: str) -> dict[str, Any] | None:
         """
-        Returns the component definition dict for the given tekla_name.
+        Returns the component definition dict for the given tekla_name, ignoring case.
+
+        Matches the way component handlers are looked up, so a name typed in another case
+        finds both its handler and its definition.
 
         Args:
             tekla_name: Tekla component name
@@ -410,8 +413,9 @@ class Config:
         Returns:
             Component definition, or None if not found
         """
+        wanted = tekla_name.strip().lower()
         for comp in self.base_components.values():
-            if comp.get("tekla_name") == tekla_name:
+            if str(comp.get("tekla_name", "")).strip().lower() == wanted:
                 return comp
         return None
 

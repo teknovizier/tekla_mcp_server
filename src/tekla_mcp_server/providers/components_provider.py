@@ -16,7 +16,6 @@ from tekla_mcp_server.models import BaseComponent, ComponentType, TYPE_DEFAULTS
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.providers.operations_provider import run_macro
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
 from tekla_mcp_server.tekla.component_handlers import HandlerRegistry
 from tekla_mcp_server.tekla.loader import CustomPart, Int32, Part
 from tekla_mcp_server.tekla.utils import ensure_macro_installed, ensure_transformation_plane, get_wall_pairs, insert_component, insert_detail, wait_for_macro
@@ -116,6 +115,9 @@ def _process_detail_or_component(
         status = "partial"
     elif processed_components_count:
         status = "success"
+    elif errors:
+        # Every object failed, which is an error, not just a call that had nothing to do
+        status = "error"
     else:
         status = "warning"
 
@@ -194,6 +196,9 @@ def _process_seam_or_connection(
         status = "partial"
     elif processed_components_count:
         status = "success"
+    elif errors:
+        # Every object failed, which is an error, not just a call that had nothing to do
+        status = "error"
     else:
         status = "warning"
 
@@ -264,7 +269,8 @@ def _modify_single_component(model: TeklaModel, component: BaseComponent, select
     comp_enum = selected_object.GetComponents()
     while comp_enum.MoveNext():
         comp = comp_enum.Current
-        if comp.Name == component.name:
+        # Names are matched regardless of case, like `remove_components` does
+        if comp.Name and comp.Name.lower() == component.name.strip().lower():
             if component.properties:
                 for key, value in component.properties.items():
                     if not has_schema and isinstance(value, int):
@@ -329,6 +335,7 @@ def remove_components(
 
     removed: dict[str, int] = {}
     cleanup_hosts: dict[str, dict[int, Any]] = {}  # component name -> host part ID -> host part
+    kept_on_hosts: dict[str, set[int]] = {}  # component name -> IDs of host parts where a delete failed
     failed_count = 0
     for guid, comp in matches.items():
         if comp.Delete():
@@ -337,15 +344,18 @@ def remove_components(
                 cleanup_hosts.setdefault(comp.Name, {})[host.Identifier.ID] = host
         else:
             failed_count += 1
+            kept_on_hosts.setdefault(comp.Name, set()).update(host.Identifier.ID for host in hosts[guid])
             logger.warning("Failed to delete component '%s' (%s)", comp.Name, comp.Identifier.GUID)
 
     # Handlers clean up objects their component created outside itself (e.g. lifting anchor recess cuts).
-    # Only parts whose component was deleted are cleaned, so a failed delete keeps its recesses
+    # The cleanup works per part, not per component, so a part that still holds one of these components
+    # after a failed delete is left alone and keeps all its recesses
     cleaned_count = 0
     for name, parts in cleanup_hosts.items():
         handler = HandlerRegistry.get(name)
-        if handler and hasattr(handler, "pre_remove"):
-            cleaned_count += handler.pre_remove(list(parts.values()))
+        cleanable = [part for part_id, part in parts.items() if part_id not in kept_on_hosts.get(name, set())]
+        if handler and hasattr(handler, "post_remove") and cleanable:
+            cleaned_count += handler.post_remove(cleanable)
 
     commit_success: bool | None = None
     if removed:
@@ -487,12 +497,13 @@ def get_components() -> ToolResult:
     schemas: dict[str, dict[str, Any]] = {}
     total_components = 0
 
-    for selected_object in wrap_model_objects(selected_objects):
+    # Raw objects, because the wrappers have no class for a CustomPart and would drop it
+    for selected_object in selected_objects:
         # Only Part and CustomPart support GetComponents()
-        if not isinstance(selected_object.model_object, (Part, CustomPart)):
+        if not isinstance(selected_object, (Part, CustomPart)):
             continue
         object_components: list[dict[str, Any]] = []
-        comp_enum = selected_object.model_object.GetComponents()
+        comp_enum = selected_object.GetComponents()
 
         while comp_enum.MoveNext():
             comp = comp_enum.Current
@@ -542,7 +553,7 @@ def get_components() -> ToolResult:
 
         elements_data.append(
             {
-                "guid": selected_object.guid,
+                "guid": selected_object.Identifier.GUID.ToString(),
                 "components": object_components,
             }
         )

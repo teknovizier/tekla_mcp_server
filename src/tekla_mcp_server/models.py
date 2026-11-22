@@ -857,6 +857,9 @@ class BaseComponent(BaseModel):
             __context: Pydantic validation context
         """
         component_def = get_config().get_component_by_tekla_name(self.name)
+        # Tekla matches component names exactly, so use the configured spelling of a name typed in another case
+        if component_def and component_def.get("tekla_name"):
+            self.name = component_def["tekla_name"]
 
         self._number = component_def.get("number", -1) if component_def else -1
         self._component_type = ComponentType.DETAIL if self._number == -1 else ComponentType.COMPONENT

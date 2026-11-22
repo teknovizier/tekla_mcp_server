@@ -523,6 +523,18 @@ class TestBaseComponentCustomPropertiesValidation:
             )
         assert "Invalid value for 'TopAsBott'" in str(exc_info.value)
 
+    @pytest.mark.parametrize("name", ["meshbars", "MESHBARS", " MeshBars "])
+    def test_name_in_another_case_uses_the_configured_spelling(self, name):
+        """Tekla matches component names exactly, so a name typed in another case takes the config's spelling and schema."""
+        component = BaseComponent(name=name, custom_properties={"TopAsBott": 1})
+        assert (component.name, component.number) == ("MeshBars", -100000)
+        with pytest.raises(ValidationError, match="Unknown property"):
+            BaseComponent(name=name, custom_properties={"unknown_prop": 1})
+
+    def test_unconfigured_name_is_kept_as_given(self):
+        component = BaseComponent(name="Some Custom Detail")
+        assert (component.name, component.number) == ("Some Custom Detail", -1)
+
     def test_none_custom_properties(self):
         """None should be allowed."""
         component = BaseComponent(name="MeshBars", custom_properties=None)
