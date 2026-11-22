@@ -45,7 +45,10 @@ def _coerce_custom_property(value: Any, expected_type: str) -> Any:
     if expected_type == "str":
         return value if isinstance(value, str) else str(value)
 
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as e:
+        raise ValueError(f"Value with {len(str(abs(value)))} digits is too large") from e
     if not math.isfinite(number):
         raise ValueError(f"Non-finite value {value!r}")
     if expected_type == "float":
@@ -461,7 +464,11 @@ def _coerce_filter_value(value: Any, kind: str, name: str) -> str | int | float 
                 value = float(value.strip()) if any(c in value for c in ".eE") else int(value.strip())
             except ValueError as e:
                 raise ValueError(f"'{name}' takes a number, got {value!r}") from e
-        if not math.isfinite(value):
+        try:
+            finite = math.isfinite(value)
+        except OverflowError as e:
+            raise ValueError(f"'{name}' takes a number, got one with {len(str(abs(value)))} digits") from e
+        if not finite:
             raise ValueError(f"'{name}' takes a finite number, got {value!r}")
         return value
     if kind == "date":

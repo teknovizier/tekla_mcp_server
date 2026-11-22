@@ -4,6 +4,7 @@ Modeling tools provider for Tekla MCP server.
 Provides tools for placing beams, columns, panels and managing elements.
 """
 
+import math
 from typing import Annotated, Any, Callable, TypeVar
 from pydantic import Field
 
@@ -44,6 +45,9 @@ from tekla_mcp_server.tekla.utils import get_active_views
 modeling_provider = LocalProvider()
 
 T = TypeVar("T", BeamInput, ColumnInput, PanelInput)
+
+# A grid coordinate in mm. NaN or infinity cannot be written into the grid string
+GridCoordinate = Annotated[float, Field(allow_inf_nan=False)]
 
 
 def _collect_parts(obj: TeklaModelObject) -> list[TeklaModelObject]:
@@ -640,15 +644,45 @@ def copy_elements(
     return _move_or_copy_elements(dx, dy, dz, copy=True)
 
 
+def _check_grid_axis(axis: str, coordinates: list[float], labels: list[str]) -> None:
+    """
+    Check the coordinates and labels of one grid axis.
+
+    The coordinates may come in any order, Tekla places each line at its own coordinate.
+
+    Args:
+        axis: Axis name for the error message
+        coordinates: Absolute coordinates
+        labels: Line labels, empty for Tekla's default labels
+
+    Raises:
+        ValueError: If there are fewer than two coordinates, a repeated coordinate, a label count that
+            does not match, or a label with whitespace
+    """
+    if len(coordinates) < 2:
+        raise ValueError(f"At least two {axis} coordinates required")
+    if not all(math.isfinite(c) for c in coordinates):
+        raise ValueError(f"{axis} coordinates must be finite numbers, got {coordinates}")
+    repeated = sorted({c for c in coordinates if coordinates.count(c) > 1})
+    if repeated:
+        raise ValueError(f"{axis} coordinates {repeated} are given more than once")
+    if labels and len(labels) != len(coordinates):
+        raise ValueError(f"{len(labels)} {axis} labels given for {len(coordinates)} {axis} coordinates, give one label per coordinate")
+    # Tekla stores the labels as one space separated string, so a space would split a label in two
+    spaced = [label for label in labels if not label.strip() or any(c.isspace() for c in label)]
+    if spaced:
+        raise ValueError(f"{axis} labels {spaced} are empty or contain whitespace, which would shift every later label")
+
+
 @modeling_provider.tool(tags={"modeling"}, annotations={"readOnlyHint": False, "destructiveHint": False})
 @mcp_handler(scope="tool")
 def place_grid(
-    x: Annotated[list[float], Field(description="Absolute X axis coordinates (mm), e.g. [0, 5000, 10000]")],
-    y: Annotated[list[float], Field(description="Absolute Y axis coordinates (mm)")],
-    z: Annotated[list[float], Field(description="Absolute Z axis coordinates (storey heights, mm)")] = [],
-    x_labels: Annotated[list[str], Field(description="Labels for X axis lines")] = [],
-    y_labels: Annotated[list[str], Field(description="Labels for Y axis lines")] = [],
-    z_labels: Annotated[list[str], Field(description="Labels for Z axis lines")] = [],
+    x: Annotated[list[GridCoordinate], Field(description="Absolute X axis coordinates (mm), e.g. [0, 5000, 10000]. At least two, each once")],
+    y: Annotated[list[GridCoordinate], Field(description="Absolute Y axis coordinates (mm). At least two, each once")],
+    z: Annotated[list[GridCoordinate], Field(description="Absolute Z levels (mm), e.g. [0, 3000]. At least two, each once, Tekla does not show a grid with fewer")],
+    x_labels: Annotated[list[str], Field(description="Labels for X axis lines, one per coordinate in the same order, without spaces")] = [],
+    y_labels: Annotated[list[str], Field(description="Labels for Y axis lines, one per coordinate in the same order, without spaces")] = [],
+    z_labels: Annotated[list[str], Field(description="Labels for Z levels, one per coordinate in the same order, without spaces")] = [],
     origin: Annotated[PointInput | None, Field(description="Grid origin point (mm). Defaults to (0, 0, 0)")] = None,
     name: Annotated[str | None, Field(description="Grid name")] = None,
 ) -> ToolResult:
@@ -659,8 +693,8 @@ def place_grid(
     X, Y = horizontal plane, Z = vertical (height, mm). Z+ is up.
 
     ## EXAMPLES
-    # Simple 3 x 2 grid, 5 m spacing
-    place_grid(x=[0, 5000, 10000], y=[0, 5000])
+    # Simple 3 x 2 grid, 5 m spacing, one 3 m storey
+    place_grid(x=[0, 5000, 10000], y=[0, 5000], z=[0, 3000])
 
     # Named grid with labels and storeys
     place_grid(
@@ -671,19 +705,15 @@ def place_grid(
         name="MAIN_GRID",
     )
     """
-    if len(x) < 2:
-        raise ValueError("At least two X coordinates required")
-    if len(y) < 2:
-        raise ValueError("At least two Y coordinates required")
-
-    resolved_z = z or []
+    for axis, coordinates, labels in (("X", x, x_labels), ("Y", y, y_labels), ("Z", z, z_labels)):
+        _check_grid_axis(axis, coordinates, labels)
 
     grid = Grid()
     if name:
         grid.Name = name
     grid.CoordinateX = format_coordinate_string(x)
     grid.CoordinateY = format_coordinate_string(y)
-    grid.CoordinateZ = format_coordinate_string(resolved_z) if resolved_z else ""
+    grid.CoordinateZ = format_coordinate_string(z)
     if x_labels:
         grid.LabelX = " ".join(x_labels)
     if y_labels:
@@ -703,7 +733,7 @@ def place_grid(
         logger.error("commit_changes() failed after inserting grid")
         raise RuntimeError("Grid insertion failed: commit_changes() returned false")
     guid = grid.Identifier.GUID.ToString()
-    logger.info("Placed grid guid=%s (x=%d, y=%d, z=%d lines)", guid, len(x), len(y), len(resolved_z))
+    logger.info("Placed grid guid=%s (x=%d, y=%d, z=%d lines)", guid, len(x), len(y), len(z))
     return ToolResult(structured_content={"status": "success", "guid": guid, "name": grid.Name})
 
 

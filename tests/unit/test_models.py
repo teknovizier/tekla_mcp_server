@@ -1220,3 +1220,15 @@ class TestElementTypeName:
     )
     def test_names(self, type_key, expected):
         assert element_type_name(type_key) == expected
+
+
+class TestLargeNumbers:
+    """A whole number too large for a float gets a clear error instead of a raw OverflowError."""
+
+    def test_filter_value_too_large_for_a_float_is_rejected(self):
+        with pytest.raises(ValidationError, match="takes a number, got one with 401 digits"):
+            FilterCondition(field="part.class", op="Is Equal", value=10**400)
+
+    def test_custom_property_too_large_for_a_float_is_rejected(self):
+        with pytest.raises(ValueError, match="401 digits is too large"):
+            _coerce_custom_property(10**400, "int")

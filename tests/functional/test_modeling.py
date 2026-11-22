@@ -605,8 +605,8 @@ def grid_cleanup():
 
 
 def test_place_grid_basic(grid_cleanup):
-    """Place a minimal grid with only X and Y axes."""
-    result = place_grid(x=[0, 5000, 10000], y=[0, 5000])
+    """Place a minimal grid with two Z levels, the fewest Tekla shows."""
+    result = place_grid(x=[0, 5000, 10000], y=[0, 5000], z=[0, 3000])
     assert result.structured_content["status"] == "success"
     assert "guid" in result.structured_content
     grid_cleanup.append(result.structured_content["guid"])
@@ -630,16 +630,43 @@ def test_place_grid_with_name_and_z(grid_cleanup):
 
 def test_place_grid_requires_two_x_coords():
     """Single X coordinate is rejected by validation."""
-    result = place_grid(x=[0], y=[0, 5000])
+    result = place_grid(x=[0], y=[0, 5000], z=[0, 3000])
     assert result.structured_content["status"] == "error"
     assert "X coordinates" in result.structured_content["message"]
 
 
 def test_place_grid_requires_two_y_coords():
     """Single Y coordinate is rejected by validation."""
-    result = place_grid(x=[0, 5000], y=[0])
+    result = place_grid(x=[0, 5000], y=[0], z=[0, 3000])
     assert result.structured_content["status"] == "error"
     assert "Y coordinates" in result.structured_content["message"]
+
+
+@pytest.mark.parametrize(
+    "kwargs,message",
+    [
+        ({"z": [0]}, "At least two Z coordinates"),
+        ({"x": [0, float("nan")]}, "X coordinates must be finite"),
+        ({"x": [0, 5000, 5000]}, "given more than once"),
+        ({"x_labels": ["A"]}, "1 X labels given for 2 X coordinates"),
+        ({"x_labels": ["A", "B", "C"]}, "3 X labels given for 2 X coordinates"),
+        ({"x_labels": ["A 1", "B"]}, "contain whitespace"),
+    ],
+)
+def test_place_grid_rejects_invalid_axes(kwargs, message):
+    """Inputs Tekla would store wrongly or not show are rejected before anything is inserted."""
+    result = place_grid(**{"x": [0, 5000], "y": [0, 5000], "z": [0, 3000], **kwargs})
+    assert result.structured_content["status"] == "error"
+    assert message in result.structured_content["message"]
+
+
+def test_place_grid_keeps_unsorted_coordinates_in_place(grid_cleanup):
+    """Unsorted coordinates are valid, Tekla stores them as negative spacings and places each line at its coordinate."""
+    result = place_grid(x=[10000, 0, 5000], y=[0, 5000], z=[0, 3000], x_labels=["C", "A", "B"])
+    assert result.structured_content["status"] == "success"
+    grid_cleanup.append(result.structured_content["guid"])
+    grid = TeklaModel().get_objects_by_guid([result.structured_content["guid"]])[0]
+    assert (grid.CoordinateX, grid.LabelX) == ("10000 -10000 5000", "C A B")
 
 
 def test_create_phase_number_only():

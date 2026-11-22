@@ -247,3 +247,26 @@ def test_failed_delete_commit_redraws_and_keeps_the_count():
     assert content["status"] == "error"
     assert content["message"].startswith("Deleted 2 of 2 objects, but commit_changes() failed")
     assert "redrawn to show them" in content["message"]
+
+
+class TestCheckGridAxis:
+    def test_unsorted_coordinates_and_matching_labels_pass(self):
+        mp._check_grid_axis("X", [10000.0, 0.0, 5000.0], ["C", "A", "B"])
+
+    def test_no_labels_pass(self):
+        mp._check_grid_axis("Z", [0.0, 3000.0], [])
+
+    @pytest.mark.parametrize(
+        "coordinates,labels,message",
+        [
+            ([0.0], [], "At least two X coordinates"),
+            ([0.0, float("inf")], [], "must be finite"),
+            ([0.0, 5000.0, 0.0], [], r"\[0.0\] are given more than once"),
+            ([0.0, 5000.0], ["A"], "1 X labels given for 2 X coordinates"),
+            ([0.0, 5000.0], ["A 1", "B"], "contain whitespace"),
+            ([0.0, 5000.0], ["", "B"], "are empty"),
+        ],
+    )
+    def test_invalid_axis_is_rejected(self, coordinates, labels, message):
+        with pytest.raises(ValueError, match=message):
+            mp._check_grid_axis("X", coordinates, labels)

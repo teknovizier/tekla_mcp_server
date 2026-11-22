@@ -79,7 +79,7 @@ Drawing tools that take `marks` act on all of them or none: if any mark has no d
 | Modeling | ✏️ `place_slabs` | Place one or more slabs | **`slabs`** (list): each item has **`points`** (list of at least 3 points), **`profile`**, **`material`**, **`tekla_class`** (int), and `name`, `position`, `part_number`, `assembly_number` |
 | Modeling | ⚠️ `move_elements` | Move selected elements by a displacement vector. Assemblies are expanded to all constituent parts recursively | `dx` (float, mm, default: `0`), `dy` (float, mm, default: `0`), `dz` (float, mm, default: `0`) - at least one must be non-zero |
 | Modeling | ✏️ `copy_elements` | Copy selected elements to a new position defined by the displacement vector, keeping originals in place. Assemblies are expanded to all constituent parts recursively | `dx` (float, mm, default: `0`), `dy` (float, mm, default: `0`), `dz` (float, mm, default: `0`) - at least one must be non-zero |
-| Modeling | ✏️ `place_grid` | Place a rectangular grid in the Tekla model | **`x`** (list[float], mm), **`y`** (list[float], mm), `z` (list[float], mm), `x_labels` (list[str]), `y_labels` (list[str]), `z_labels` (list[str]), `origin` (PointInput), `name` (str) |
+| Modeling | ✏️ `place_grid` | Place a rectangular grid in the Tekla model. Labels are optional, one per coordinate without spaces | **`x`** (list[float], mm), **`y`** (list[float], mm), **`z`** (list[float], mm), `x_labels` (list[str]), `y_labels` (list[str]), `z_labels` (list[str]), `origin` (PointInput), `name` (str) |
 | Modeling | ⚠️ `delete_elements` | Delete all selected objects, including cut parts, cut planes and fittings | - |
 | Modeling | ✏️ `create_phase` | Create a new phase in the Tekla model | **`phase_number`** (int), `name` (str) |
 
