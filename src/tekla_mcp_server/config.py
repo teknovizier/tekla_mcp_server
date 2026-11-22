@@ -285,14 +285,6 @@ class Config:
         return _get_contentattributes_file_paths()
 
     @property
-    def template_attributes_json_path(self) -> str | None:
-        """Full path to template attributes JSON file."""
-        name = _load_settings().get("template_attributes_json_name")
-        if name:
-            return str(get_config_dir() / name)
-        return None
-
-    @property
     def embeddings(self) -> dict[str, Any]:
         """Embeddings configuration."""
         return _load_settings().get("embeddings", {})
