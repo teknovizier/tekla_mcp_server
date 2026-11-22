@@ -1274,6 +1274,9 @@ _NEARBY_MAX_PIECES_PER_PART = 16  # search pieces one long rotated part is cut i
 _NEARBY_MAX_SEARCH_EXTENTS = 2 * _NEARBY_MAX_PIECES_PER_PART
 _NEARBY_MAX_TOLERANCE_MM = 50.0
 _NEARBY_ANGLE_TOLERANCE_DEG = 1.0
+# Box sides within this of each other leave the axis between them unclear, e.g. the thickness of a square
+# column. Kept apart from `touch_tolerance_mm`, so a looser contact tolerance does not blur the orientation
+_NEARBY_TIE_TOLERANCE_MM = 1.0
 
 
 @dataclass
@@ -1590,7 +1593,7 @@ def _nearby_row(ctx: _NearbyContext, source: _NearbyUnit, neighbour: _NearbyUnit
             "relation": relation(gap, depth, tolerance),
             "sides": sides(source.boxes, neighbour.boxes, tolerance),
             "axis_overlap_mm": {name: round(value, 1) for name, value in axis_overlap(source.main_box, source.boxes, neighbour.boxes).items()},
-            "orientation": orientation(source.main_box, neighbour.main_box, tolerance, _NEARBY_ANGLE_TOLERANCE_DEG),
+            "orientation": orientation(source.main_box, neighbour.main_box, _NEARBY_TIE_TOLERANCE_MM, _NEARBY_ANGLE_TOLERANCE_DEG),
         }
     )
     return gap, depth, neighbour.key, row
@@ -1708,6 +1711,8 @@ def _find_nearby(
         # A top-level lookup walks up the assembly tree and costs about 20 ms. Once one part's
         # assembly is known, its whole part list maps the other parts without a lookup
         seen: dict[str, TeklaAssembly] = {}
+        # Parts of each seen assembly without embeds, loaded once and reused as the neighbour's parts
+        members: dict[str, list[TeklaPart]] = {}
         owner: dict[str, str] = {}
         tops: dict[str, TeklaAssembly] = {}
         found_by_top: dict[str, list[TeklaPart]] = {}
@@ -1721,7 +1726,9 @@ def _find_nearby(
                     if top.guid not in seen:
                         seen[top.guid] = top
                         _check_cap(len(seen), _NEARBY_MAX_NEIGHBOUR_ASSEMBLIES, "neighbouring assemblies", "Use a smaller `radius_mm` or fewer sources.")
-                        owner.update((member.guid, top.guid) for member in top.get_all_parts(include_embeds=True))
+                        # Without embeds, a precast unit can hold hundreds. An embed found nearby gets its own lookup
+                        members[top.guid] = top.get_all_parts(include_embeds=False)
+                        owner.update((member.guid, top.guid) for member in members[top.guid])
                     owner[part.guid] = top.guid
                 top_guid = owner[part.guid]
                 top = seen[top_guid]
@@ -1732,8 +1739,8 @@ def _find_nearby(
                 keys.setdefault(top_guid)
             neighbour_keys[unit.key] = list(keys)
         top_parts: dict[str, list[TeklaPart]] = {}
-        for guid, top in tops.items():
-            parts = top.get_all_parts(include_embeds=False)
+        for guid in tops:
+            parts = list(members[guid])
             if include_embeds:
                 # Only the neighbour's embeds that lie in the search area, a precast unit can hold hundreds
                 base = {part.guid for part in parts}
@@ -1791,7 +1798,7 @@ def find_nearby_elements(
     - `relation`: `near`, `touching` (within the tolerance) or `boxes_overlap`. `boxes_overlap` is not a clash, use `clash_check` for that.
     - `sides`: where the neighbour is, in global directions: above, below, +X, -X, +Y, -Y.
     - `axis_overlap_mm`: how much they overlap along the element's length, width and thickness, e.g. how far a slab bears on a wall.
-    - `orientation`: angle between the elements, `parallel`, `perpendicular` or `skew`. `null` when it is unclear, e.g. for a square column.
+    - `orientation`: for the `length` and the `thickness` axis, the angle between the two elements' axes and its label, `parallel`, `perpendicular` or `skew`. An axis is `null` when it is unclear, e.g. the thickness of a square column.
 
     In part mode, parts of the source's own cast unit are left out unless `skip_own_assembly`
     is false, then `same_assembly` marks them. In assembly mode, `closest_parts` names the

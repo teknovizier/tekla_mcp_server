@@ -614,6 +614,22 @@ def test_find_nearby_elements_radius_and_order(nearby_layout):
     assert walls[1]["sides"] == ["-X"]
 
 
+def test_find_nearby_elements_orientation_ignores_touch_tolerance():
+    """A 400 x 360 column has a clear thickness, so a loose touch tolerance must not make it unclear."""
+    beam = BeamInput(start_point=PointInput(x=40000, y=0, z=0), end_point=PointInput(x=43000, y=0, z=0), profile="300*600", material="C30/37", tekla_class=11, name="MCP_TEST_NEARBY_BEAM")
+    column = BeamInput(start_point=PointInput(x=43400, y=0, z=-2000), end_point=PointInput(x=43400, y=0, z=2000), profile="400*360", material="C30/37", tekla_class=13, name="MCP_TEST_NEARBY_COLUMN")
+    beam_guid, column_guid = (r["guid"] for r in place_beams(beams=[beam, column]).structured_content["results"])
+    model = TeklaModel()
+    try:
+        for tolerance in (1.0, 50.0):
+            row = _nearby_rows(find_nearby_elements(guids=[beam_guid], radius_mm=500.0, touch_tolerance_mm=tolerance))[column_guid]
+            assert row["orientation"]["thickness"] == {"angle_deg": 90.0, "label": "perpendicular"}, tolerance
+    finally:
+        for obj in model.get_objects_by_guid([beam_guid, column_guid]):
+            obj.Delete()
+        model.commit_changes()
+
+
 def test_find_nearby_elements_slab_bearing(nearby_layout):
     """A slab laid on the source wall touches it, lies above it and overlaps 180 mm across its thickness."""
     g = nearby_layout
