@@ -43,6 +43,43 @@ from tekla_mcp_server.tekla.utils import (
 
 properties_provider = LocalProvider()
 
+# `clear_elements_udas` result key for each object type it clears
+_UDA_TYPE_KEYS: dict[type, str] = {
+    TeklaAssembly: "assemblies",
+    TeklaPart: "parts",
+    TeklaReinforcement: "reinforcements",
+    TeklaBoltGroup: "bolts",
+    TeklaWeld: "welds",
+    TeklaReferenceModelObject: "reference_objects",
+}
+
+# `set_elements_properties` parameters each object type takes, besides `user_properties` that every type takes
+_ASSEMBLY_PARAMETERS = frozenset({"name", "assembly_prefix", "assembly_start_number", "phase"})
+_SETTABLE_PARAMETERS: tuple[tuple[type, str, frozenset[str]], ...] = (
+    (TeklaAssembly, "assembly", _ASSEMBLY_PARAMETERS),
+    (TeklaPart, "part", _ASSEMBLY_PARAMETERS | {"profile", "material", "tekla_class", "finish", "part_prefix", "part_start_number"}),
+    (TeklaBoltGroup, "bolt", frozenset({"bolt_standard", "bolt_size", "bolt_cut_length", "bolt_extra_length", "bolt_tolerance", "bolt_type", "phase"})),
+    (
+        TeklaWeld,
+        "weld",
+        frozenset(
+            {
+                "weld_type_above",
+                "weld_type_below",
+                "weld_prefix_above",
+                "weld_prefix_below",
+                "weld_size_above",
+                "weld_size_below",
+                "weld_length_above",
+                "weld_length_below",
+                "weld_edge_around",
+                "weld_workshop_site",
+                "phase",
+            }
+        ),
+    ),
+)
+
 
 def _plane_to_dict(plane: Any) -> dict[str, dict[str, float]]:
     """
@@ -94,6 +131,14 @@ def _compact_field_getters(obj: TeklaModelObject) -> dict[str, Callable[[], Any]
         }
     if isinstance(obj, TeklaBoltGroup):
         return {"material": lambda: obj.bolt_standard, "size": lambda: obj.bolt_size}
+    if isinstance(obj, TeklaWeld):
+        # A weld has no name or material. Its type and size tell welds apart, read from the side above
+        # the line unless only the side below has a weld
+        below_only = cache(lambda: obj.type_above == "none" and obj.type_below != "none")
+        return {
+            "name": lambda: obj.type_below if below_only() else obj.type_above,
+            "size": lambda: obj.size_below if below_only() else obj.size_above,
+        }
     if isinstance(obj, TeklaReferenceModelObject):
         # IFC objects often lack these properties, so a missing one is None, not an error
         ifc_props = cache(lambda: obj.get_multiple_report_properties(["NAME", "PROFILE", "MATERIAL"]))
@@ -173,6 +218,28 @@ def _get_compact_properties(selected_objects: Any) -> dict[str, Any]:
     }
 
 
+def _wrap_or_skip(selected_objects: Any, supported: tuple[type, ...], skipped_objects: list[dict[str, str]]) -> list[TeklaModelObject]:
+    """
+    Wrap the selected objects a mode reports and record the others.
+
+    Args:
+        selected_objects: Enumerator of the selected model objects
+        supported: Wrapper classes the mode reports
+        skipped_objects: Extended in place with the GUID and Tekla type of every other object
+
+    Returns:
+        Wrapped objects of the supported types, in selection order
+    """
+    wrapped: list[TeklaModelObject] = []
+    for raw in selected_objects:
+        obj = wrap_model_object(raw)
+        if isinstance(obj, supported):
+            wrapped.append(obj)
+        else:
+            skipped_objects.append({"guid": raw.Identifier.GUID.ToString(), "type": type(raw).__name__})
+    return wrapped
+
+
 def _validate_at_least_two_selected(count: int) -> None:
     """
     Check that at least two elements are selected.
@@ -230,13 +297,50 @@ def set_elements_properties(
     are checked against the bolt catalog, because Tekla silently accepts combinations that do not exist.
     Welds accept only the `weld_*` properties, `phase` and `user_properties`. Use the same names and values
     `get_elements_properties` returns for welds.
+    A given property that does not apply to a selected object type is left out for that type and listed in
+    `ignored_parameters` with the types it was ignored for.
     """
     selected_objects = TeklaModel().get_selected_objects()
     bolt_values_given = any(v is not None for v in (bolt_standard, bolt_size))
     # Read once per call, only when a catalog check is needed
     bolt_catalog = get_all_bolt_items() if bolt_values_given else []
+    warnings: list[str] = []
     if bolt_values_given and not bolt_catalog:
         logger.warning("set_elements_properties: bolt catalog unavailable, bolt standard/size are not validated")
+        warnings.append("The bolt catalog could not be read, so `bolt_standard` and `bolt_size` were set without checking them")
+    given_parameters = {
+        key
+        for key, value in {
+            "name": name,
+            "profile": profile,
+            "material": material,
+            "tekla_class": tekla_class,
+            "finish": finish,
+            "part_prefix": part_prefix,
+            "part_start_number": part_start_number,
+            "assembly_prefix": assembly_prefix,
+            "assembly_start_number": assembly_start_number,
+            "bolt_standard": bolt_standard,
+            "bolt_size": bolt_size,
+            "bolt_cut_length": bolt_cut_length,
+            "bolt_extra_length": bolt_extra_length,
+            "bolt_tolerance": bolt_tolerance,
+            "bolt_type": bolt_type,
+            "weld_type_above": weld_type_above,
+            "weld_type_below": weld_type_below,
+            "weld_prefix_above": weld_prefix_above,
+            "weld_prefix_below": weld_prefix_below,
+            "weld_size_above": weld_size_above,
+            "weld_size_below": weld_size_below,
+            "weld_length_above": weld_length_above,
+            "weld_length_below": weld_length_below,
+            "weld_edge_around": weld_edge_around,
+            "weld_workshop_site": weld_workshop_site,
+        }.items()
+        if value is not None
+    }
+    # Selected object types each given parameter does not apply to, e.g. `profile` for a weld
+    ignored_parameters: dict[str, set[str]] = {}
 
     total_changes: dict[str, int] = {
         "name": 0,
@@ -279,6 +383,9 @@ def set_elements_properties(
             continue
 
         processed_count += 1
+        type_label, applicable = next((label, params) for cls, label, params in _SETTABLE_PARAMETERS if isinstance(selected_object, cls))
+        for parameter in given_parameters - applicable:
+            ignored_parameters.setdefault(parameter, set()).add(type_label)
         try:
             if isinstance(selected_object, TeklaBoltGroup):
                 changes = selected_object.set_properties(
@@ -361,6 +468,9 @@ def set_elements_properties(
     elif property_errors:
         status = "error"
         message = f"No elements were modified, {len(property_errors)} elements reported errors"
+    elif ignored_parameters:
+        status = "warning"
+        message = "No elements were modified. The given parameters do not apply to the selected object types, see `ignored_parameters`"
     else:
         status = "warning"
         message = "No elements were modified"
@@ -376,6 +486,10 @@ def set_elements_properties(
         "property_errors": property_errors,
         "skipped_objects": skipped_objects,
     }
+    if ignored_parameters:
+        result["ignored_parameters"] = {parameter: sorted(types) for parameter, types in sorted(ignored_parameters.items())}
+    if warnings:
+        result["warnings"] = warnings
     if commit_success is not None:
         result["commit_success"] = commit_success
     return ToolResult(structured_content=result)
@@ -410,11 +524,14 @@ def get_elements_properties(
     (e.g. 'fillet', 'none'), `weld_prefix_above`/`weld_prefix_below`, `weld_size_above`/`weld_size_below` and
     `weld_length_above`/`weld_length_below` (0 means the full length). They also report `weld_edge_around`
     ('edge' or 'around') and `weld_workshop_site` ('workshop' or 'site').
+    IFC reference objects are returned in `reference_objects`. Other selected objects, such as cut parts or
+    reference models, are listed in `skipped_objects`.
 
     ### `mode="snapshot"`
     Returns full element snapshots for convention and QA checks, including basic element properties, UDAs, cutparts, welds and reinforcement.
     Directly selected reinforcement objects are returned in a dedicated `reinforcements` list, bolt groups in `bolts`
-    and welds in `welds` with the same fields as in `flat` mode.
+    and welds in `welds` with the same fields as in `flat` mode. Other selected objects, such as cut parts or IFC
+    reference objects, are listed in `skipped_objects`.
 
     ### `mode="compact"`
     Returns one row per selected element in `elements` with its GUID, type, name, position, profile, material
@@ -423,7 +540,8 @@ def get_elements_properties(
     beam reports 'Beam', so use name and material to tell what an element is.
     Fields that do not apply to the type are null. Assemblies report the profile and material of their main part.
     Reinforcement reports its grade as material and its bar size as size. Bolt groups report their bolt standard
-    as material and their diameter as size. Cut parts report the name, profile and material of the cutting part.
+    as material and their diameter as size. Welds report their weld type (e.g. 'fillet') as name and their size
+    as size, from the side above the line unless only the side below is welded. Cut parts report the name, profile and material of the cutting part.
     IFC reference objects also report `ifc_guid`, while `guid` stays the Tekla GUID.
     A field that fails to read is null and listed in `errors`. Selected objects of unsupported types are listed
     in `skipped_objects`. The returned GUIDs feed straight into `select_elements_by_guid` and other
@@ -458,8 +576,9 @@ def _get_snapshot_properties(selected_objects: Any) -> dict[str, Any]:
     bolts: list[dict[str, Any]] = []
     welds: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
+    skipped_objects: list[dict[str, str]] = []
 
-    for obj in wrap_model_objects(selected_objects):
+    for obj in _wrap_or_skip(selected_objects, (TeklaPart, TeklaAssembly, TeklaReinforcement, TeklaBoltGroup, TeklaWeld), skipped_objects):
         try:
             if isinstance(obj, TeklaPart):
                 parts.append(obj.to_snapshot().model_dump())
@@ -500,6 +619,7 @@ def _get_snapshot_properties(selected_objects: Any) -> dict[str, Any]:
         "bolts": bolts,
         "welds": welds,
         "errors": errors,
+        "skipped_objects": skipped_objects,
     }
 
 
@@ -535,8 +655,10 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
     flat_bolts: list[dict[str, Any]] = []
     flat_welds: list[dict[str, Any]] = []
     reference_objects: list[dict[str, Any]] = []
+    skipped_objects: list[dict[str, str]] = []
+    flat_types = (TeklaReferenceModelObject, TeklaAssembly, TeklaPart, TeklaReinforcement, TeklaBoltGroup, TeklaWeld)
 
-    for selected_object in wrap_model_objects(selected_objects):
+    for selected_object in _wrap_or_skip(selected_objects, flat_types, skipped_objects):
         try:
             props = selected_object.get_properties(resolved_props if resolved_props else None)
         except Exception as e:
@@ -591,6 +713,7 @@ def _get_flat_properties(selected_objects: Any, report_props_definitions: list[s
         "reference_objects": reference_objects,
         "resolution_errors": resolution_errors,
         "extraction_errors": extraction_errors,
+        "skipped_objects": skipped_objects,
     }
 
 
@@ -935,7 +1058,7 @@ def clear_elements_udas(
     uda_names: Annotated[list[str], Field(description="List of specific UDA names to clear")] = [],
 ) -> ToolResult:
     """
-    Clears user-defined attributes (UDAs) from selected Tekla parts and assemblies.
+    Clears user-defined attributes (UDAs) from selected Tekla objects: parts, assemblies, reinforcement, bolt groups, welds and IFC reference objects.
 
     If the list of specific UDA names is not provided, clears all UDAs.
 
@@ -949,11 +1072,11 @@ def clear_elements_udas(
     selected_objects = TeklaModel().get_selected_objects()
 
     cleared_udas = 0
-    modified_parts = 0
-    modified_assemblies = 0
+    # Modified objects per type, e.g. {'parts': 2, 'bolts': 1}
+    modified_counts: Counter[str] = Counter()
     errors: list[dict[str, Any]] = []
-
-    for selected_object in wrap_model_objects(selected_objects):
+    skipped_objects: list[dict[str, str]] = []
+    for selected_object in _wrap_or_skip(selected_objects, tuple(_UDA_TYPE_KEYS), skipped_objects):
         elem_errors: list[str] = []
         try:
             user_props = selected_object.get_all_user_properties()
@@ -978,10 +1101,7 @@ def clear_elements_udas(
             if elem_cleared:
                 if selected_object.modify():
                     cleared_udas += elem_cleared
-                    if isinstance(selected_object, TeklaPart):
-                        modified_parts += 1
-                    elif isinstance(selected_object, TeklaAssembly):
-                        modified_assemblies += 1
+                    modified_counts[next(key for cls, key in _UDA_TYPE_KEYS.items() if isinstance(selected_object, cls))] += 1
                 else:
                     elem_errors.append("Modify() failed")
         except Exception as e:
@@ -1005,14 +1125,14 @@ def clear_elements_udas(
         status = "error"
     else:
         status = "warning"
-    logger.info("Cleared %s UDAs from %s parts and %s assemblies, %d elements with errors", cleared_udas, modified_parts, modified_assemblies, len(errors))
+    logger.info("Cleared %s UDAs from %s, %d elements with errors", cleared_udas, dict(modified_counts), len(errors))
     result: dict = {
         "status": status,
         "selected_count": selected_objects.GetSize(),
         "cleared_udas_count": cleared_udas,
-        "modified_parts_count": modified_parts,
-        "modified_assemblies_count": modified_assemblies,
+        "modified_counts": dict(modified_counts),
         "errors": errors,
+        "skipped_objects": skipped_objects,
     }
     if commit_success is not None:
         result["commit_success"] = commit_success
@@ -1247,7 +1367,16 @@ def copy_properties_from_ifc(
         if tekla_guid not in matched_tekla_guids:
             unmatched.append({"tekla_object": tekla_guid, "reason": "No matching IFC reference found"})
 
-    if matches_made == 0:
+    # Commit like the other property tools do after changing UDAs
+    commit_success: bool | None = None
+    if properties_copied:
+        commit_success = TeklaModel().commit_changes()
+        if not commit_success:
+            logger.error("commit_changes() failed after copying %d properties from IFC", properties_copied)
+
+    if commit_success is False:
+        status = "error"
+    elif matches_made == 0:
         logger.error("copy_properties_from_ifc failed: No matches made between IFC and Tekla elements")
         status = "error"
     elif errors:
@@ -1258,15 +1387,16 @@ def copy_properties_from_ifc(
         status = "success"
 
     logger.info("IFC copy complete: %d matches, %d properties copied, %d errors, %d unmatched", matches_made, properties_copied, len(errors), len(unmatched))
-    return ToolResult(
-        structured_content={
-            "status": status,
-            "ifc_sources": len(ifc_sources),
-            "tekla_targets": len(tekla_targets),
-            "matches_made": matches_made,
-            "properties_copied": properties_copied,
-            "errors": errors,
-            "unmatched": unmatched,
-            "skipped_objects": skipped_objects,
-        }
-    )
+    result: dict[str, Any] = {
+        "status": status,
+        "ifc_sources": len(ifc_sources),
+        "tekla_targets": len(tekla_targets),
+        "matches_made": matches_made,
+        "properties_copied": properties_copied,
+        "errors": errors,
+        "unmatched": unmatched,
+        "skipped_objects": skipped_objects,
+    }
+    if commit_success is not None:
+        result["commit_success"] = commit_success
+    return ToolResult(structured_content=result)

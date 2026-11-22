@@ -18,7 +18,7 @@ from tekla_mcp_server.init import logger
 from tekla_mcp_server.models import FilterCondition, FilterGroup, FilterNode, SelectionMode, element_type_name
 from tekla_mcp_server.utils import mcp_handler
 from tekla_mcp_server.tekla.wrappers.model import TeklaModel
-from tekla_mcp_server.tekla.wrappers.model_object import wrap_model_objects
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaModelObject, wrap_model_objects
 from tekla_mcp_server.tekla.filter_builder import build_filter_expression
 from tekla_mcp_server.tekla.loader import ArrayList, Filter, FilterExpressionFileType
 from tekla_mcp_server.tekla.utils import refresh_attribute_files
@@ -311,7 +311,15 @@ def select_related_elements(
     selected_object_types = {"Assembly": "selected_assemblies", "Main Part": "selected_main_parts", "Parts": "selected_parts"}[mode]
 
     filtered_parts = ArrayList()
-    seen_part_guids: set[str] = set()
+    # Several selected elements can share one assembly, so add each object once in every mode
+    seen_guids: set[str] = set()
+
+    def add_once(obj: TeklaModelObject) -> None:
+        """Add an object to the new selection unless it is there already."""
+        if obj.guid not in seen_guids:
+            seen_guids.add(obj.guid)
+            filtered_parts.Add(obj.model_object)
+
     for selected_object in wrap_model_objects(selected_objects):
         try:
             assembly = selected_object.get_top_level_assembly()
@@ -322,19 +330,16 @@ def select_related_elements(
             logger.debug("No top-level assembly for %s, skipping", selected_object.guid)
             continue
         if mode == "Assembly":
-            filtered_parts.Add(assembly.model_object)
+            add_once(assembly)
         elif mode == "Main Part":
             try:
-                filtered_parts.Add(assembly.main_part.model_object)
+                add_once(assembly.main_part)
             except ValueError:
                 logger.warning("Assembly %s has no main part, skipping", assembly.guid)
                 continue
         elif mode == "Parts":
-            # Several selected elements can share one assembly, so add each part once
             for part in assembly.get_all_parts(include_embeds):
-                if part.guid not in seen_part_guids:
-                    seen_part_guids.add(part.guid)
-                    filtered_parts.Add(part.model_object)
+                add_once(part)
         processed_count += 1
 
     TeklaModel.select_objects(filtered_parts)

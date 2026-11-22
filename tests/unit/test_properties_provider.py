@@ -17,7 +17,7 @@ import pytest
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBoltGroup, TeklaPart, TeklaReinforcement, TeklaWeld
+from tekla_mcp_server.tekla.wrappers.model_object import TeklaAssembly, TeklaBoltGroup, TeklaBooleanPart, TeklaPart, TeklaReferenceModelObject, TeklaReinforcement, TeklaWeld
 
 pp = importlib.import_module("tekla_mcp_server.providers.properties_provider")
 
@@ -66,7 +66,9 @@ def _run(tool: Any, objects: list[Any], **kwargs: Any) -> dict[str, Any]:
     """
     selection = MagicMock()
     selection.GetSize.return_value = len(objects)
-    with patch.object(pp, "wrap_model_objects", return_value=objects):
+    # Tools wrap either the whole selection or each raw object, so both paths yield the mocks
+    selection.__iter__.side_effect = lambda: iter(objects)
+    with patch.object(pp, "wrap_model_objects", return_value=objects), patch.object(pp, "wrap_model_object", side_effect=lambda raw: raw):
         pp.TeklaModel.return_value.get_selected_objects.return_value = selection
         return tool(**kwargs).structured_content
 
@@ -230,7 +232,7 @@ class TestClearElementsUdasFailures:
 
         assert result["status"] == "partial"
         assert result["cleared_udas_count"] == 2
-        assert result["modified_parts_count"] == 1
+        assert result["modified_counts"] == {"parts": 1}
         assert result["errors"] == [{"guid": "P", "errors": ["'C': SetUserProperty failed"]}]
         model.commit_changes.assert_called_once()
 
@@ -247,7 +249,7 @@ class TestClearElementsUdasFailures:
 
         assert result["status"] == "error"
         assert result["cleared_udas_count"] == 0
-        assert result["modified_assemblies_count"] == 0
+        assert result["modified_counts"] == {}
         assert result["errors"] == [{"guid": "A", "errors": ["Modify() failed"]}]
         model.commit_changes.assert_not_called()
 
@@ -296,3 +298,99 @@ class TestClearElementsUdasFailures:
         assert result["status"] == "success"
         assert result["cleared_udas_count"] == 1
         assert result["errors"] == []
+
+
+class TestCompactWeldRow:
+    def test_weld_reports_type_and_size(self):
+        weld = _obj(TeklaWeld, "W", element_type="Weld", type_above="fillet", type_below="none", size_above=6.0, size_below=0.0)
+        row, errors = pp._compact_row(weld)
+        assert (row["name"], row["size"], row["profile"], row["material"], errors) == ("fillet", 6.0, None, None, [])
+
+    def test_weld_below_the_line_only_reports_that_side(self):
+        weld = _obj(TeklaWeld, "W", element_type="Weld", type_above="none", type_below="bevel", size_above=0.0, size_below=8.0)
+        row, _ = pp._compact_row(weld)
+        assert (row["name"], row["size"]) == ("bevel", 8.0)
+
+
+class TestUnreportedObjectsAreListed:
+    @pytest.mark.parametrize("mode", ["flat", "snapshot"])
+    def test_cut_part_is_skipped_not_dropped(self, model, mode):
+        part = _obj(TeklaPart, "P", get_properties=MagicMock(return_value={"guid": "P"}), to_snapshot=MagicMock())
+        cut = _obj(TeklaBooleanPart, "C")
+        cut.Identifier = MagicMock(**{"GUID.ToString.return_value": "C"})
+
+        result = _run(pp.get_elements_properties, [part, cut], mode=mode)
+
+        assert (result["selected_count"], result["processed_count"]) == (2, 1)
+        assert result["skipped_objects"] == [{"guid": "C", "type": type(cut).__name__}]
+        cut.get_properties.assert_not_called()
+
+    def test_snapshot_skips_reference_objects(self, model):
+        ifc = _obj(TeklaReferenceModelObject, "I")
+        ifc.Identifier = MagicMock(**{"GUID.ToString.return_value": "I"})
+        assert [s["guid"] for s in _run(pp.get_elements_properties, [ifc], mode="snapshot")["skipped_objects"]] == ["I"]
+
+
+class TestIgnoredParameters:
+    def test_part_parameters_on_a_weld_are_reported(self, model):
+        weld = _obj(TeklaWeld, "W", set_properties=MagicMock(return_value={"errors": []}))
+
+        result = _run(pp.set_elements_properties, [weld], name="X", profile="HEA300", phase=2)
+
+        assert result["ignored_parameters"] == {"name": ["weld"], "profile": ["weld"]}
+        assert "ignored_parameters" in result["message"]
+
+    def test_parameter_ignored_only_for_the_types_it_does_not_fit(self, model):
+        part = _obj(TeklaPart, "P", set_properties=MagicMock(return_value={"profile": 1, "errors": []}))
+        bolt = _obj(TeklaBoltGroup, "B", set_properties=MagicMock(return_value={"errors": []}))
+
+        result = _run(pp.set_elements_properties, [part, bolt], profile="HEA300")
+
+        assert result["status"] == "success"
+        assert result["ignored_parameters"] == {"profile": ["bolt"]}
+
+    def test_fitting_parameters_report_nothing(self, model):
+        part = _obj(TeklaPart, "P", set_properties=MagicMock(return_value={"name": 1, "errors": []}))
+        assert "ignored_parameters" not in _run(pp.set_elements_properties, [part], name="X")
+
+    def test_unreadable_bolt_catalog_is_a_warning(self, model):
+        bolt = _obj(TeklaBoltGroup, "B", set_properties=MagicMock(return_value={"bolt_size": 1, "errors": []}))
+        with patch.object(pp, "get_all_bolt_items", return_value=[]):
+            result = _run(pp.set_elements_properties, [bolt], bolt_size=20.0)
+        assert result["warnings"] == ["The bolt catalog could not be read, so `bolt_standard` and `bolt_size` were set without checking them"]
+
+
+class TestClearUdasCountsEveryType:
+    def test_bolt_and_weld_are_counted(self, model):
+        objects = [
+            _obj(cls, guid, get_all_user_properties=MagicMock(return_value={"comment": "x"}), set_user_property=MagicMock(return_value=True), modify=MagicMock(return_value=True))
+            for cls, guid in ((TeklaBoltGroup, "B"), (TeklaWeld, "W"), (TeklaPart, "P"))
+        ]
+
+        result = _run(pp.clear_elements_udas, objects, uda_names=["comment"])
+
+        assert result["cleared_udas_count"] == 3
+        assert result["modified_counts"] == {"bolts": 1, "welds": 1, "parts": 1}
+
+
+class TestCopyPropertiesFromIfcCommits:
+    def _ifc_and_part(self) -> list[Any]:
+        box = MagicMock()
+        box.matches.return_value = True
+        ifc = _obj(TeklaReferenceModelObject, "I", bounding_box=box, get_report_property=MagicMock(side_effect=lambda name: "I" if name == "GUID" else "IFC-VALUE"))
+        part = _obj(TeklaPart, "P", bounding_box=box, get_report_property=MagicMock(return_value="P"), set_user_property=MagicMock(return_value=True))
+        return [ifc, part]
+
+    def test_copied_properties_are_committed(self, model):
+        with patch.object(pp.BoundingBox, "matching_tolerances", return_value=(20.0, 0.05)):
+            result = _run(pp.copy_properties_from_ifc, self._ifc_and_part(), user_properties={"IfcName": "COMMENT"})
+
+        assert (result["status"], result["properties_copied"], result["commit_success"]) == ("success", 1, True)
+        model.commit_changes.assert_called_once()
+
+    def test_failed_commit_is_an_error(self, model):
+        model.commit_changes.return_value = False
+        with patch.object(pp.BoundingBox, "matching_tolerances", return_value=(20.0, 0.05)):
+            result = _run(pp.copy_properties_from_ifc, self._ifc_and_part(), user_properties={"IfcName": "COMMENT"})
+
+        assert (result["status"], result["commit_success"]) == ("error", False)

@@ -11,13 +11,14 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 if os.getenv("CI") == "true":
     pytest.skip("Skipping all tests (Tekla not available in CI)", allow_module_level=True)
 
-from tekla_mcp_server.models import FilterCondition, FilterGroup
+from tekla_mcp_server.models import FilterCondition, FilterGroup, SelectionMode
 
 sp = importlib.import_module("tekla_mcp_server.providers.selection_provider")
 
@@ -214,3 +215,20 @@ class TestPrepareTree:
     def test_plain_condition_is_kept(self):
         condition = _condition(field="part.name", op="Is Equal", value="A")
         assert sp._prepare_tree(condition) is condition
+
+
+class TestSelectRelatedElementsDeduplicates:
+    @pytest.mark.parametrize("mode,key", [("Assembly", "selected_assemblies_count"), ("Main Part", "selected_main_parts_count"), ("Parts", "selected_parts_count")])
+    def test_two_parts_of_one_assembly_select_it_once(self, mode, key):
+        main = MagicMock(guid="main")
+        assembly = MagicMock(guid="asm", main_part=main)
+        assembly.get_all_parts.return_value = [main, MagicMock(guid="secondary")]
+        selected = [MagicMock(get_top_level_assembly=MagicMock(return_value=assembly)) for _ in range(2)]
+        model = MagicMock()
+        model.get_selected_objects.return_value.GetSize.return_value = 2
+        with patch.object(sp, "TeklaModel") as model_class, patch.object(sp, "wrap_model_objects", return_value=selected):
+            model_class.return_value = model
+            result = sp.select_related_elements(mode=SelectionMode(mode)).structured_content
+
+        assert result[key] == (2 if mode == "Parts" else 1)
+        assert result["processed_count"] == 2
