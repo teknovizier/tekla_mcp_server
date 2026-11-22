@@ -71,3 +71,78 @@ def test_unit_with_many_parts_falls_back_to_one_search():
     lo, hi = searches[0]
     expected_lo, expected_hi = aabb(plates, 100.0)
     assert lo == pytest.approx(expected_lo) and hi == pytest.approx(expected_hi)
+
+
+def _part(cls: type, object_id: int, guid: str) -> MagicMock:
+    """Build a mocked wrapper of class `cls`."""
+    obj = MagicMock(spec=cls)
+    obj.id, obj.guid = object_id, guid
+    return obj
+
+
+class TestCutDeletesOnlyOwnCutters:
+    def _cut(self, cutters_by_guid: dict, target: MagicMock) -> dict:
+        """Run `cut_elements_with_cutters` with `delete_cutting_parts` on one selected target."""
+        model = MagicMock()
+        model.get_selected_objects.return_value.GetSize.return_value = 1
+        model.resolve_guids.return_value = (list(cutters_by_guid.values()), list(cutters_by_guid), [])
+        model.commit_changes.return_value = True
+        with (
+            patch.object(operations_module, "TeklaModel", return_value=model),
+            patch.object(operations_module, "wrap_model_object", side_effect=lambda raw: raw),
+            patch.object(operations_module, "wrap_model_objects", return_value=[target]),
+            patch.object(operations_module, "_solid_box"),
+            patch.object(operations_module, "_overlapping_cutters", side_effect=lambda box, cutters, boxes: cutters),
+        ):
+            return operations_module.cut_elements_with_cutters(cutter_guids=list(cutters_by_guid), delete_cutting_parts=True).structured_content
+
+    def test_cutter_from_a_cut_part_guid_is_kept(self):
+        """The operative part of an existing cut is that cut, so deleting it would remove the cut from its own part."""
+        operative = _part(operations_module.TeklaPart, 5, "cut-guid")
+        cut_part = _part(operations_module.TeklaBooleanPart, 5, "cut-guid")
+        cut_part.operative_part = operative
+        plain = _part(operations_module.TeklaPart, 6, "plain-guid")
+        target = _part(operations_module.TeklaPart, 1, "target")
+        target.add_cut.return_value = True
+
+        result = self._cut({"cut-guid": cut_part, "plain-guid": plain}, target)
+
+        operative.delete.assert_not_called()
+        plain.delete.assert_called_once()
+        assert (result["performed_cuts_count"], result["deleted_cutters_count"], result["kept_cut_part_guids"]) == (2, 1, ["cut-guid"])
+
+
+class TestBatchAttachConflictingTargets:
+    def test_object_with_several_targets_is_not_attached(self):
+        """An object has one parent, so pairs giving it two targets are skipped, the others still attach."""
+        attach = MagicMock(return_value=None)
+        pairs = [
+            operations_module.AttachmentPair(object_guid="r", target_guid="t1"),
+            operations_module.AttachmentPair(object_guid="R", target_guid="t2"),
+            operations_module.AttachmentPair(object_guid="s", target_guid="t1"),
+        ]
+        with (
+            patch.object(operations_module, "TeklaModel") as model_class,
+            patch.object(operations_module, "normalize_guid", side_effect=str.lower),
+            patch.object(operations_module, "_resolve_pair", side_effect=lambda model, o, t: (o, t, None)),
+        ):
+            model_class.return_value.commit_changes.return_value = True
+            result = operations_module._batch_attach("rebars", pairs, attach, lambda obj, target: True).structured_content
+
+        assert [c.args for c in attach.call_args_list] == [("s", "t1")]
+        assert result["attached"] == ["s"]
+        assert result["skipped"] == [{"object_guid": "r", "reason": "conflicting_targets", "target_guids": ["t1", "t2"]}]
+        assert result["status"] == "partial"
+
+    def test_repeated_identical_pair_is_not_a_conflict(self):
+        attach = MagicMock(return_value=None)
+        pairs = [operations_module.AttachmentPair(object_guid="r", target_guid="t1")] * 2
+        with (
+            patch.object(operations_module, "TeklaModel") as model_class,
+            patch.object(operations_module, "normalize_guid", side_effect=str.lower),
+            patch.object(operations_module, "_resolve_pair", side_effect=lambda model, o, t: (o, t, None)),
+        ):
+            model_class.return_value.commit_changes.return_value = True
+            result = operations_module._batch_attach("rebars", pairs, attach, lambda obj, target: True).structured_content
+
+        assert (result["attached"], result["skipped"]) == (["r"], [])

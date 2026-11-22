@@ -407,7 +407,10 @@ def _overlapping_cutters(target_box: BoundingBox | None, cutters: list[Any], cut
 def cut_elements_with_cutters(
     cutter_class: Annotated[int | None, Field(description="Tekla class of the parts to use as cutters")] = None,
     cutter_guids: Annotated[list[str], Field(description="GUIDs of the parts to use as cutters (e.g. from `get_elements_properties`)")] = [],
-    delete_cutting_parts: Annotated[bool, Field(description="Remove cutting parts after cuts are applied")] = False,
+    delete_cutting_parts: Annotated[
+        bool,
+        Field(description="Remove cutting parts after cuts are applied. A cutter given as a cut part GUID is an existing cut of another part and is never removed"),
+    ] = False,
 ) -> ToolResult:
     """
     Performs boolean cuts on selected model objects.
@@ -426,6 +429,8 @@ def cut_elements_with_cutters(
 
     missing_guids: list[str] = []
     unsupported_guids: list[str] = []
+    # Operative parts of existing cuts. Deleting one removes that cut from its own part
+    cut_part_cutter_ids: set[int] = set()
     if cutter_class is not None:
         cutters = list(wrap_model_objects(model.get_objects_by_class(cutter_class)))
         label = f"class {cutter_class}"
@@ -436,11 +441,14 @@ def cut_elements_with_cutters(
             cutter = wrap_model_object(raw_cutter)
             # The GUID of a cut part (e.g. `cutting_part_guid` from `get_elements_cut_parts`) resolves
             # to its BooleanPart, the part that shapes the cut is the operative part
-            if isinstance(cutter, TeklaBooleanPart):
+            from_cut_part = isinstance(cutter, TeklaBooleanPart)
+            if from_cut_part:
                 cutter = cutter.operative_part
             # Only a part can be set as the operative part of a boolean cut
             if isinstance(cutter, TeklaPart):
                 cutters.append(cutter)
+                if from_cut_part:
+                    cut_part_cutter_ids.add(cutter.id)
             else:
                 unsupported_guids.append(guid)
         if not cutters:
@@ -482,9 +490,14 @@ def cut_elements_with_cutters(
     # Delete cutters once, after every target has been processed, so a cutter
     # shared by multiple targets is removed only when it is no longer needed.
     deleted_cutters = 0
+    kept_cut_part_guids: list[str] = []
     if delete_cutting_parts and used_cutter_ids:
         for cutter in cutters:
-            if cutter.id in used_cutter_ids and cutter.delete():
+            if cutter.id not in used_cutter_ids:
+                continue
+            if cutter.id in cut_part_cutter_ids:
+                kept_cut_part_guids.append(cutter.guid)
+            elif cutter.delete():
                 deleted_cutters += 1
 
     commit_success: bool | None = None
@@ -513,6 +526,8 @@ def cut_elements_with_cutters(
         result["skipped_cutter_guids"] = skipped_cutter_guids
     if delete_cutting_parts:
         result["deleted_cutters_count"] = deleted_cutters
+    if kept_cut_part_guids:
+        result["kept_cut_part_guids"] = kept_cut_part_guids
     if commit_success is not None:
         result["commit_success"] = commit_success
     return ToolResult(structured_content=result)
@@ -813,8 +828,8 @@ def _batch_attach(mode: str, pairs: list[AttachmentPair], attach_fn, valid_fn) -
     """
     Attach each pair in one batch commit. Skip bad pairs and report.
 
-    GUIDs are normalized and repeated pairs are attached once. Items in `skipped`
-    failed before changing the model. Only `attach_fn` returning a reason means the
+    GUIDs are normalized and repeated pairs are attached once. An object paired with
+    several targets is not attached at all. Items in `skipped` failed before changing the model. Only `attach_fn` returning a reason means the
     model was never modified for that pair.
 
     Args:
@@ -839,7 +854,17 @@ def _batch_attach(mode: str, pairs: list[AttachmentPair], attach_fn, valid_fn) -
 
     # Spelling variants of one GUID resolve to the same object, so compare normalized pairs
     unique_pairs = dict.fromkeys((normalize_guid(pair.object_guid), normalize_guid(pair.target_guid)) for pair in pairs)
+    # An object has one parent, so pairing it with several targets is ambiguous. Attaching
+    # each pair in turn would let the last one win and report the object as attached twice
+    targets_by_object: dict[str, list[str]] = {}
     for object_guid, target_guid in unique_pairs:
+        targets_by_object.setdefault(object_guid, []).append(target_guid)
+    for object_guid, targets in targets_by_object.items():
+        if len(targets) > 1:
+            skipped.append({"object_guid": object_guid, "reason": "conflicting_targets", "target_guids": targets})
+    for object_guid, target_guid in unique_pairs:
+        if len(targets_by_object[object_guid]) > 1:
+            continue
         # Same GUID means the object would attach to itself - always invalid
         if object_guid == target_guid:
             skipped.append({"object_guid": object_guid, "reason": "self_attach"})

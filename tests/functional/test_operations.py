@@ -210,10 +210,33 @@ def test_cut_elements_with_cutters_by_cut_part_guid():
     cut_parts = get_elements_cut_parts().structured_content
     cut_part_guid = cut_parts["cutting_parts"][0]["guid"]
     TeklaModel.select_objects([model.get_object_by_guid(second_guid)])
-    result = cut_elements_with_cutters(cutter_guids=[cut_part_guid])
+    # Deleting the cutter would delete the first wall's cut, so it must be kept
+    result = cut_elements_with_cutters(cutter_guids=[cut_part_guid], delete_cutting_parts=True)
     assert result.structured_content["status"] == "success"
     assert result.structured_content["performed_cuts_count"] == 1
     assert result.structured_content["unsupported_guids"] == []
+    assert (result.structured_content["deleted_cutters_count"], result.structured_content["kept_cut_part_guids"]) == (0, [cut_part_guid])
+    TeklaModel.select_objects([model.get_object_by_guid(first_guid)])
+    assert [c["guid"] for c in get_elements_cut_parts().structured_content["cutting_parts"]] == [cut_part_guid]
+
+
+def test_attach_assemblies_conflicting_targets_attach_nothing():
+    """An assembly paired with two target assemblies is not attached to either."""
+    beams = [
+        BeamInput(start_point=PointInput(x=30000, y=y, z=0), end_point=PointInput(x=32000, y=y, z=0), profile="300*600", material="C30/37", tekla_class=11, name="MCP_TEST_ATTACH")
+        for y in (0, 1000, 2000)
+    ]
+    model = TeklaModel()
+    obj, first, second = (model.get_object_by_guid(r["guid"]).GetAssembly() for r in place_beams(beams=beams).structured_content["results"])
+    obj_guid, first_guid, second_guid = (a.Identifier.GUID.ToString() for a in (obj, first, second))
+
+    result = attach_assemblies(pairs=[AttachmentPair(object_guid=obj_guid, target_guid=first_guid), AttachmentPair(object_guid=obj_guid, target_guid=second_guid)])
+
+    assert (result.structured_content["status"], result.structured_content["attached_count"]) == ("error", 0)
+    assert result.structured_content["skipped"] == [{"object_guid": obj_guid, "reason": "conflicting_targets", "target_guids": [first_guid, second_guid]}]
+    for target in (first, second):
+        target.Select()
+        assert target.GetSubAssemblies().Count == 0
 
 
 def test_cut_elements_with_cutters_invalid_guid(model_objects):
