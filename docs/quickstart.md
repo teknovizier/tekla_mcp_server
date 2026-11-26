@@ -54,6 +54,31 @@ You will need to update the JSON configuration with your own paths. Replace all 
 }
 ```
 
+If this does not work due to Tekla errors (`Trimble.Remoting.RemotingIOException: Cannot connect to remoting service`), run the mcp server in a separate cmd window:
+
+```bash
+python src\tekla_mcp_server\mcp_server.py --transport http [--host 127.0.0.0] [--port 9000]
+```
+
+In MCP configuration json file, put the following as the `mcpServers` section:
+```json
+  "mcpServers": {
+    "tekla-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+		    "mcp-remote",
+		    "http://localhost:9000/mcp"
+      ],
+      "env": {
+        "TEKLA_MCP_LOG_LEVEL": "INFO",
+        "TEKLA_MCP_LOG_FILE_PATH": "C:\\Users\\lb89380\\projects\\plant-engineering\\tekla_mcp_server\\mcp_server.log",
+        "TEKLA_MCP_CONFIG_DIR": "C:\\Users\\lb89380\\projects\\plant-engineering\\tekla_mcp_server\\config"
+      }
+    }
+  }
+```
+
 ## Troubleshooting
 
 ### Python Package Conflict
