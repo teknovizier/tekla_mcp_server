@@ -7,6 +7,11 @@ speed-up modeling processes.
 
 from fastmcp import FastMCP
 from fastmcp.server.transforms import ResourcesAsTools, Transform
+import argparse
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from tekla_mcp_server.config import get_config
 from tekla_mcp_server.init import logger
@@ -50,6 +55,12 @@ mcp.add_provider(modeling_provider)
 
 # Run the MCP server locally
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run the Tekla MCP Server")
+    parser.add_argument("--transport", type=str, choices=["http", "stdio", "streamable-http", "sse"], default="http", help="Transport protocol to use (default: http)")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to run the server on")
+    parser.add_argument("--port", type=int, default=9000, help="Port to run the server on")
+    args = parser.parse_args()
+
     from tekla_mcp_server.embeddings import is_embeddings_enabled, check_embeddings_ready
 
     if not is_embeddings_enabled():
@@ -76,4 +87,7 @@ if __name__ == "__main__":
 
     mcp.add_transform(ResourcesAsTools(mcp))
 
-    mcp.run()
+    if args.transport == "stdio":
+        mcp.run(transport=args.transport)
+    else:
+        mcp.run(transport=args.transport, host=args.host, port=args.port)
