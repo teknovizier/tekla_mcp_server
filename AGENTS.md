@@ -26,7 +26,6 @@ Failures CI cannot catch (silent, delayed or Tekla-behavioral):
 - **Work plane**: to work in an object's local coordinates, save the current plane, set the local one, then restore it in a `finally` (`GetWorkPlaneHandler().GetCurrentTransformationPlane()` / `SetCurrentTransformationPlane(...)`). Leaving it changed corrupts later geometry.
 - **CI-enforced invariants** (pure-AST unit tests that fail the PR): `test_tool_annotations.py` requires every `@<provider>.tool` to pass `annotations` with a boolean `readOnlyHint` (and a boolean `destructiveHint` when not read-only), `test_docs_reference_parity.py` requires `docs/reference.md` to list exactly the tools and resources in code. Both scan only `providers/*_provider.py` (resources: only `resources_provider.py`), so a tool or resource defined elsewhere evades both checks.
 - **`readOnlyHint` is security-critical**: read-only mode (`ReadOnlyToolFilter`) only filters tool visibility - there is no runtime write-block, and CI checks the hint is present, not correct. A mutating tool mislabeled `readOnlyHint: True` will run in read-only mode. Only human review catches a wrong hint.
-- **Python floor vs CI**: `requires-python>=3.11`, but CI tests only 3.13, so CI will not catch 3.11-incompatible syntax or stdlib (e.g. PEP 695 `type` aliases). Code to the 3.11 floor.
 - **Logging uses lazy `%`-args**: in `logger.*` calls use `logger.info("x=%s", x)`, never f-strings (defers formatting, this is the one place f-strings are not used).
 
 ---

@@ -16,7 +16,7 @@
     alt="Python Tests"
   /></a>
   <a href="https://github.com/teknovizier/tekla_mcp_server/blob/main/docs/quickstart.md"><img
-    src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue?style=flat&logo=python"
+    src="https://img.shields.io/badge/python-3.13-blue?style=flat&logo=python"
     alt="Python versions"
   /></a>
   <a href="https://github.com/teknovizier/tekla_mcp_server/blob/main/LICENSE"><img

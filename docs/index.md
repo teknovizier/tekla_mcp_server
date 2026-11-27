@@ -6,7 +6,7 @@
 
 ## Getting Started
 
-- [Quickstart](quickstart.md) - Setup and first steps. Python 3.11+, install dependencies, configure settings
+- [Quickstart](quickstart.md) - Setup and first steps. Python 3.13+, install dependencies, configure settings
 - [Configuration](configuration.md) - Config files and environment variables
 - [Compatibility](compatibility.md) - Verified Tekla versions, MCP clients, and language models
 

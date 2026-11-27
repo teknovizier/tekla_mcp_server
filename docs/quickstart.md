@@ -1,6 +1,6 @@
 # Quickstart
 
-Python 3.11+ required. Install dependencies:
+Python 3.13+ required. Install dependencies:
 
 ```bash
 uv pip install -r requirements.txt
